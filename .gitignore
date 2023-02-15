@@ -9,7 +9,6 @@
 build/
 tmp/
 configs/
-node_modules/
 xivi.exe
 
 # Test
@@ -17,3 +16,9 @@ xivi.exe
 
 # Environment variables
 .env
+
+# Svelte
+.svelte-kit
+
+#node
+node_modules/
