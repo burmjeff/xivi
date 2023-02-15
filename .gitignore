@@ -1,0 +1,19 @@
+# macOS
+**/.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+
+# Dev build
+build/
+tmp/
+configs/
+node_modules/
+xivi.exe
+
+# Test
+*.out
+
+# Environment variables
+.env

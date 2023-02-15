@@ -1,0 +1,1 @@
+import{H as e}from"./httpHandler-b6dddb91.js";import{p as t,o,a,s as r}from"./stores-e34040d9.js";const s=async()=>{t.set(await new e().loadProducts()),o.set(new a),r.set("All")},n=Object.freeze(Object.defineProperty({__proto__:null,load:s},Symbol.toStringTag,{value:"Module"}));export{n as _,s as l};

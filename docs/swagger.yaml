@@ -1,0 +1,376 @@
+basePath: /api
+definitions:
+  models.Playlist:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      name:
+        maxLength: 255
+        type: string
+      updated_at:
+        type: string
+      url:
+        maxLength: 255
+        type: string
+    required:
+    - name
+    - url
+    type: object
+  models.PlaylistCreateParam:
+    properties:
+      name:
+        maxLength: 255
+        type: string
+      url:
+        maxLength: 255
+        type: string
+    required:
+    - name
+    - url
+    type: object
+  models.Template:
+    properties:
+      id:
+        type: integer
+      name:
+        maxLength: 255
+        type: string
+    required:
+    - name
+    type: object
+  models.TemplateCreateParam:
+    properties:
+      name:
+        maxLength: 255
+        type: string
+    required:
+    - name
+    type: object
+  models.TemplateGroup:
+    properties:
+      id:
+        type: integer
+      name:
+        maxLength: 255
+        type: string
+    required:
+    - name
+    type: object
+  models.TemplateGroupCreateParam:
+    properties:
+      name:
+        maxLength: 255
+        type: string
+    required:
+    - name
+    type: object
+info:
+  contact:
+    email: your@mail.com
+    name: API Support
+  description: This is an auto-generated API Docs.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: API
+  version: "1.0"
+paths:
+  /m3u/{id}:
+    post:
+      consumes:
+      - application/json
+      description: CreateM3U func generates new m3u file from template.
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Template'
+      summary: CreateM3U func generates new m3u file from template.
+      tags:
+      - M3U
+  /playlist:
+    delete:
+      consumes:
+      - application/json
+      description: Delete playlist by given ID.
+      parameters:
+      - description: Playlist ID
+        in: body
+        name: id
+        required: true
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: ok
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: delete playlist by given ID
+      tags:
+      - Playlist
+    post:
+      consumes:
+      - application/json
+      description: Create a new playlist and parse m3u.
+      parameters:
+      - description: Playlist
+        in: body
+        name: playlist
+        required: true
+        schema:
+          $ref: '#/definitions/models.PlaylistCreateParam'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Playlist'
+      security:
+      - ApiKeyAuth: []
+      summary: Create a new playlist
+      tags:
+      - Playlist
+    put:
+      consumes:
+      - application/json
+      description: Update playlist.
+      parameters:
+      - description: Playlist ID
+        in: body
+        name: id
+        required: true
+        schema:
+          type: string
+      - description: Name
+        in: body
+        name: name
+        required: true
+        schema:
+          type: string
+      - description: URL
+        in: body
+        name: url
+        required: true
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: ok
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: update playlist
+      tags:
+      - Playlist
+  /playlist/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Get playlist by given ID.
+      parameters:
+      - description: Playlist ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Playlist'
+      summary: get playlist by given ID
+      tags:
+      - Playlist
+  /playlist/group/convert/{id}:
+    post:
+      consumes:
+      - application/json
+      description: Convert a playlist group into a template group.
+      parameters:
+      - description: Playlist Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: TemplateGroup
+        in: body
+        name: templategroup
+        required: true
+        schema:
+          $ref: '#/definitions/models.TemplateGroupCreateParam'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.TemplateGroup'
+      summary: Convert a playlist group into a template group.
+      tags:
+      - Playlist
+  /template:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a template by given ID.
+      parameters:
+      - description: Template ID
+        in: body
+        name: id
+        required: true
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: ok
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: delete a template by given ID
+      tags:
+      - Template
+    post:
+      consumes:
+      - application/json
+      description: Create a new template.
+      parameters:
+      - description: Template
+        in: body
+        name: template
+        required: true
+        schema:
+          $ref: '#/definitions/models.TemplateCreateParam'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Template'
+      security:
+      - ApiKeyAuth: []
+      summary: Create a new template
+      tags:
+      - Template
+    put:
+      consumes:
+      - application/json
+      description: Update template.
+      parameters:
+      - description: Template ID
+        in: body
+        name: id
+        required: true
+        schema:
+          type: string
+      - description: Name
+        in: body
+        name: name
+        required: true
+        schema:
+          type: string
+      - description: URL
+        in: body
+        name: url
+        required: true
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: ok
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: update template
+      tags:
+      - Template
+  /template/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Get template by given ID.
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Template'
+      summary: get template by given ID
+      tags:
+      - Template
+  /template/item/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete template item by given ID.
+      parameters:
+      - description: Template Item ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: ok
+          schema:
+            type: string
+      summary: delete template by given ID
+      tags:
+      - Template item
+  /token/new:
+    get:
+      consumes:
+      - application/json
+      description: Create a new access token.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ok
+          schema:
+            type: string
+      summary: create a new access token
+      tags:
+      - Token
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
