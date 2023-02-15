@@ -1,5 +1,5 @@
 
-1. Setup: npm setup-all
+1. Setup: npm run setup-all
 2. Rename `.env.example` to `.env` and fill it with your environment values.
 3. Build it: npm run build-all
 4. Run it: npm run serve-win
