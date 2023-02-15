@@ -18,7 +18,7 @@ xivi.exe
 .env
 
 # Svelte
-.svelte-kit
+.svelte-kit/
 
 #node
 node_modules/
