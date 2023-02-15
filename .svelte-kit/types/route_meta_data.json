@@ -1,0 +1,17 @@
+{
+	"/": [
+		"src/routes/+page.ts",
+		"src/routes/+layout.ts",
+		"src/routes/+layout.ts"
+	],
+	"/order": [
+		"src/routes/+layout.ts"
+	],
+	"/products": [
+		"src/routes/products/+page.ts",
+		"src/routes/+layout.ts"
+	],
+	"/summary/[id]": [
+		"src/routes/+layout.ts"
+	]
+}
