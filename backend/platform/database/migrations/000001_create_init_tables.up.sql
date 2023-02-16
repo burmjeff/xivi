@@ -95,8 +95,56 @@ CREATE TABLE templatechannelitem (
     ON DELETE CASCADE
 );
 
+-- Create epg table
+CREATE TABLE epg (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR (255) UNIQUE NOT NULL,
+    url VARCHAR (255) NOT NULL
+);
+
+-- Create epgchannel table
+CREATE TABLE epgchannel (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channelid VARCHAR (255) NOT NULL,
+    displayname VARCHAR (255) NOT NULL,
+    icon VARCHAR (255)
+);
+
+-- Create epgprogramme table
+CREATE TABLE epgprogramme (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    start DATETIME DEFAULT (datetime('now','localtime')) NOT NULL,
+    stop DATETIME DEFAULT (datetime('now','localtime')) NOT NULL,
+    channel VARCHAR (20) NOT NULL,
+    title VARCHAR (255) NULL,
+    subtitle VARCHAR (255) NULL,
+    desc VARCHAR (500) NULL,
+    credits VARCHAR NULL,
+    date VARCHAR (4) NULL,
+    category_1 VARCHAR (20) NULL,
+    category_2 VARCHAR (20) NULL,
+    category_3 VARCHAR (20) NULL,
+    category_4 VARCHAR (20) NULL,
+    icon VARCHAR (255) NULL,
+    episodesystem VARCHAR (20) NULL,
+    episodenum VARCHAR (20) NULL,
+    ratingsystem VARCHAR (20) NULL,
+    ratingvalue VARCHAR (20) NULL,
+    lang VARCHAR (20) NULL
+);
+
+-- Create epgchannelitem table
+CREATE TABLE epgchannelitem (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    epg_channel_id INTEGER NOT NULL,
+    epg_programme_id INTEGER NOT NULL,
+    FOREIGN KEY (epg_channel_id) REFERENCES epg_channel(id),
+    FOREIGN KEY (epg_programme_id) REFERENCES epg_programme(id)
+);
+
 -- Add indexes
 CREATE INDEX idx_playlist_channel ON playlistchannel (name);
+CREATE INDEX idx_epg_epgprogramme ON epgprogramme (channel);
 
 -- Add triggers
 CREATE TRIGGER increment_tmpl_order
@@ -149,4 +197,12 @@ FOR EACH ROW
 BEGIN
     DELETE FROM channelurl WHERE playlist_id = old.id;
     DELETE FROM playlistchannel WHERE id NOT IN (SELECT playlist_channel_id FROM channelurl);
+END;
+
+CREATE TRIGGER delete_epg_channel_cascade
+AFTER DELETE ON epgprogramme
+FOR EACH ROW
+BEGIN
+    DELETE FROM epgchannelitem WHERE epg_programme_id = old.id;
+    DELETE FROM epgchannel WHERE id NOT IN (SELECT epg_channel_id FROM epgchannelitem);
 END;
