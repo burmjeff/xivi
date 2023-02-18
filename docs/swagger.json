@@ -50,6 +50,38 @@
                 }
             }
         },
+        "/epg/create/{id}": {
+            "post": {
+                "description": "CreateEPG func generates new epg xml file from template.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Epg"
+                ],
+                "summary": "CreateEPG func generates new epg xml file from template.",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Template ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Template"
+                        }
+                    }
+                }
+            }
+        },
         "/m3u/{id}": {
             "post": {
                 "description": "CreateM3U func generates new m3u file from template.",

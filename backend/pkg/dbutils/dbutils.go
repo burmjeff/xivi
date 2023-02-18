@@ -2,7 +2,11 @@ package dbutils
 
 import (
 	"database/sql"
+	"os"
 	"strings"
+	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 func NewNullString(s string) sql.NullString {
@@ -15,16 +19,20 @@ func NewNullString(s string) sql.NullString {
 	}
 }
 
-/*func CustomMapper(field reflect.Type, column string) string {
-	switch field.Kind() {
-	case reflect.Slice:
-		if field.Elem().Kind() == reflect.String {
-			return column
-		}
-	}
-	return strings.ToLower(column)
-}*/
-
 func CustomMapper(column string) string {
 	return strings.Replace(column, "[]", "_array_", 1)
+}
+
+func ConvertTime(timeStr string) (time.Time, error) {
+	localTime, err := time.LoadLocation(os.Getenv("TZ"))
+	if err != nil {
+		log.Error("No TZ provided", err)
+		return time.Now(), err
+	}
+	t, err := time.Parse("20060102150405 -0700", timeStr)
+	if err != nil {
+		return t, err
+	}
+	t = t.In(localTime)
+	return t, nil
 }

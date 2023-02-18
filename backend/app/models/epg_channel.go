@@ -2,13 +2,10 @@ package models
 
 // Channel struct to describe Template Channel object.
 type EpgChannel struct {
-	ID          int64  `db:"id" json:"id"`
+	ID          int64  `db:"id" json:"id" xml:"-"`
 	ChannelId   string `db:"channelid" json:"channelid" xml:"id,attr" validate:"required,lte=255"`
 	DisplayName string `db:"displayname" json:"displayname" xml:"display-name" validate:"lte=255"`
-	Icon        string `db:"icon" json:"-" xml:"-"`
-	IconSrc     struct {
-		Src string `json:"icon" xml:"src,attr"`
-	} `xml:"icon"`
+	Icon        Icon   `db:"icon" json:"icon,omitempty" xml:"icon,omitempty"`
 }
 
 type EpgChannelItem struct {

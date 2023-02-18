@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"strconv"
 	"xivi/backend/app/models"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/platform/database"
@@ -9,15 +10,14 @@ import (
 )
 
 // CreateEPG func generates a new epg file from template.
-// @Description CreateEPG func generates new epg file from template.
-// @Summary CreateEPG func generates new epg file from template.
-// @Tags EPG
+// @Description CreateEPG func generates new epg xml file from template.
+// @Summary CreateEPG func generates new epg xml file from template.
+// @Tags Epg
 // @Accept json
 // @Produce json
 // @Param id path string true "Template ID"
 // @Success 200 {object} models.Template
-// @Router /epg/{id} [post]
-/*
+// @Router /epg/create/{id} [post]
 func CreateEPG(c *fiber.Ctx) error {
 	// Catch template ID from URL.
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
@@ -49,7 +49,7 @@ func CreateEPG(c *fiber.Ctx) error {
 	}
 
 	epgTools := utils.EpgTools{Db: db}
-	go epgTools.CreateEpg(template)
+	go epgTools.CreateEpgXML(template)
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
@@ -58,7 +58,6 @@ func CreateEPG(c *fiber.Ctx) error {
 		"template": template,
 	})
 }
-*/
 
 // AddEpg func for createing a new epg.
 // @Summary Add a new epg

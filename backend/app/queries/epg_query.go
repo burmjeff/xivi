@@ -2,7 +2,6 @@ package queries
 
 import (
 	"strings"
-	"time"
 	"xivi/backend/app/models"
 	utils "xivi/backend/pkg/dbutils"
 
@@ -161,8 +160,6 @@ func (q *EpgQueries) GetEpgChannelByChannelId(channelID string) (models.EpgChann
 		return epgchannel, err
 	}
 
-	epgchannel.IconSrc.Src = epgchannel.Icon
-
 	// Return query result.
 	return epgchannel, nil
 }
@@ -173,7 +170,7 @@ func (q *EpgQueries) CreateEpgChannel(p *models.EpgChannel) (int64, error) {
 	query := `INSERT INTO epgchannel VALUES (null, ?, ?, ?)`
 
 	// Send query to database.
-	res, err := q.Exec(query, p.ChannelId, p.DisplayName, p.IconSrc.Src)
+	res, err := q.Exec(query, p.ChannelId, p.DisplayName, p.Icon.Src)
 	if err != nil {
 		// Return only error.
 		return 0, err
@@ -194,7 +191,7 @@ func (q *EpgQueries) UpdateEpgChannel(id int64, p *models.EpgChannel) error {
 	query := `UPDATE epgchannel SET channelid = ?, displayname = ?, icon = ? WHERE id = ?`
 
 	// Send query to database.
-	_, err := q.Exec(query, id, p.ChannelId, p.DisplayName, p.IconSrc.Src)
+	_, err := q.Exec(query, id, p.ChannelId, p.DisplayName, p.Icon.Src)
 	if err != nil {
 		// Return only error.
 		return err
@@ -239,29 +236,25 @@ func (q *EpgQueries) GetEpgProgrammes() ([]models.EpgProgramme, error) {
 }
 
 // Get Epg Programmes method for getting all programmes by channel.
-func (q *EpgQueries) GetProgrammesByChannel(id int64) ([]models.EpgProgramme, error) {
+func (q *EpgQueries) GetProgrammesByChannelId(channelID string) (*[]models.EpgProgramme, error) {
 	programmes := []models.EpgProgramme{}
 
 	// Define query string.
-	query := `SELECT DISTINCT epgprogramme.id
-	FROM epgchannel
-	JOIN epgchannelitem ON epgchannel.id = epgchannelitem.epg_channel_id
-	JOIN epgprogramme ON epgchannelitem.epg_programme_id = epgprogramme.id 
-	WHERE epgchannel.id = ?`
+	query := `SELECT * FROM epgprogramme WHERE channel = ?`
 
 	// Send query to database.
-	err := q.Select(&programmes, query, id)
+	err := q.Select(&programmes, query, channelID)
 	if err != nil {
 		// Return empty object and error.
-		return programmes, err
+		return nil, err
 	}
 
 	// Return query result.
-	return programmes, nil
+	return &programmes, nil
 }
 
 // Get Epg Programme method for getting one programme by given ID.
-func (q *EpgQueries) GetEpgProgramme(id int64) (models.EpgProgramme, error) {
+func (q *EpgQueries) GetEpgProgramme(id int64) (*models.EpgProgramme, error) {
 	// Define programme variable.
 	programme := models.EpgProgramme{}
 
@@ -272,15 +265,16 @@ func (q *EpgQueries) GetEpgProgramme(id int64) (models.EpgProgramme, error) {
 	err := q.Select(&programme, query, id)
 	if err != nil {
 		// Return empty object and error.
-		return programme, err
+		return nil, err
 	}
 
 	// Return query result.
-	return programme, nil
+	return &programme, nil
 }
 
 // Get Epg Programme method for getting one programme by given ID.
-func (q *EpgQueries) GetEpgProgrammeByChannelandTime(channelID string, start time.Time) (models.EpgProgramme, error) {
+func (q *EpgQueries) GetEpgProgrammeByChannelandTime(channelID string, start *models.Time) (models.EpgProgramme, error) {
+
 	// Define programme variable.
 	programme := models.EpgProgramme{}
 
