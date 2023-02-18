@@ -1,4 +1,9 @@
+## XIVI
+Description here... 
+### ToDo
+- [ ] Fix all the things
 
+### Swagger
 1. Setup: npm run setup-all
 2. Rename `.env.example` to `.env` and fill it with your environment values.
 3. Build it: npm run build-all
