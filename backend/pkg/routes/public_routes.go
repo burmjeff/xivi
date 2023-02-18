@@ -20,4 +20,5 @@ func PublicRoutes(a *fiber.App) {
 	route.Post("/m3u/:id", controllers.CreateM3U)                               // create m3u from template id
 	route.Post("/template", controllers.CreateTemplate)                         // create a new template
 	route.Delete("/template/item/:id", controllers.DeleteTemplateItem)          // delete one playlist by ID
+	route.Post("/epg", controllers.AddEpg)                                      // Add a new Epg
 }

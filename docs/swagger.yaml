@@ -1,5 +1,33 @@
 basePath: /api
 definitions:
+  models.Epg:
+    properties:
+      id:
+        type: integer
+      name:
+        maxLength: 255
+        type: string
+      orderr:
+        type: integer
+      url:
+        maxLength: 255
+        type: string
+    required:
+    - name
+    - url
+    type: object
+  models.EpgAddParam:
+    properties:
+      name:
+        maxLength: 255
+        type: string
+      url:
+        maxLength: 255
+        type: string
+    required:
+    - name
+    - url
+    type: object
   models.Playlist:
     properties:
       created_at:
@@ -78,6 +106,28 @@ info:
   title: API
   version: "1.0"
 paths:
+  /epg:
+    post:
+      consumes:
+      - application/json
+      description: Add a new epg and parse m3u.
+      parameters:
+      - description: Epg
+        in: body
+        name: epg
+        required: true
+        schema:
+          $ref: '#/definitions/models.EpgAddParam'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Epg'
+      summary: Add a new epg
+      tags:
+      - Epg
   /m3u/{id}:
     post:
       consumes:

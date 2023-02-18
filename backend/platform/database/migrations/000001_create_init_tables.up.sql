@@ -99,7 +99,8 @@ CREATE TABLE templatechannelitem (
 CREATE TABLE epg (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR (255) UNIQUE NOT NULL,
-    url VARCHAR (255) NOT NULL
+    url VARCHAR (255) NOT NULL,
+    orderr INTEGER UNIQUE NOT NULL
 );
 
 -- Create epgchannel table
@@ -116,21 +117,22 @@ CREATE TABLE epgprogramme (
     start DATETIME DEFAULT (datetime('now','localtime')) NOT NULL,
     stop DATETIME DEFAULT (datetime('now','localtime')) NOT NULL,
     channel VARCHAR (20) NOT NULL,
-    title VARCHAR (255) NULL,
+    "title.value" VARCHAR (255) NULL,
+    "title.lang" VARCHAR (20) NULL,
     subtitle VARCHAR (255) NULL,
     desc VARCHAR (500) NULL,
-    credits VARCHAR NULL,
-    date VARCHAR (4) NULL,
-    category_1 VARCHAR (20) NULL,
-    category_2 VARCHAR (20) NULL,
-    category_3 VARCHAR (20) NULL,
-    category_4 VARCHAR (20) NULL,
-    icon VARCHAR (255) NULL,
-    episodesystem VARCHAR (20) NULL,
-    episodenum VARCHAR (20) NULL,
-    ratingsystem VARCHAR (20) NULL,
-    ratingvalue VARCHAR (20) NULL,
-    lang VARCHAR (20) NULL
+    categories VARCHAR NULL,
+    "icon.src" VARCHAR (255) NULL,
+    directors VARCHAR NULL,
+    presenters VARCHAR NULL,
+    producers VARCHAR NULL,
+    actors VARCHAR NULL,
+    "episodenumber.system" VARCHAR (20) NULL,
+    "episodenumber.value" VARCHAR (20) NULL,
+    "rating.system" VARCHAR (20) NULL,
+    "rating.value" VARCHAR (20) NULL,
+    "video.quality" VARCHAR (20) NULL,
+    date VARCHAR (4) NULL
 );
 
 -- Create epgchannelitem table
@@ -187,6 +189,17 @@ BEGIN
     SET orderr = (
         SELECT MAX(orderr) + 1
         FROM channelurl
+    )
+    WHERE id = new.id;
+END;
+
+CREATE TRIGGER increment_epg_order
+AFTER INSERT ON epg
+BEGIN
+    UPDATE epg
+    SET orderr = (
+        SELECT MAX(orderr) + 1
+        FROM epg
     )
     WHERE id = new.id;
 END;

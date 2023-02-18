@@ -1,0 +1,127 @@
+package controllers
+
+import (
+	"xivi/backend/app/models"
+	"xivi/backend/pkg/utils"
+	"xivi/backend/platform/database"
+
+	"github.com/gofiber/fiber/v2"
+)
+
+// CreateEPG func generates a new epg file from template.
+// @Description CreateEPG func generates new epg file from template.
+// @Summary CreateEPG func generates new epg file from template.
+// @Tags EPG
+// @Accept json
+// @Produce json
+// @Param id path string true "Template ID"
+// @Success 200 {object} models.Template
+// @Router /epg/{id} [post]
+/*
+func CreateEPG(c *fiber.Ctx) error {
+	// Catch template ID from URL.
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Checking, if template with given ID is exists.
+	template, err := db.GetTemplate(id)
+	if err != nil {
+		// Return status 404 and template not found error.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "template with this ID not found",
+		})
+	}
+
+	epgTools := utils.EpgTools{Db: db}
+	go epgTools.CreateEpg(template)
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error":    false,
+		"msg":      nil,
+		"template": template,
+	})
+}
+*/
+
+// AddEpg func for createing a new epg.
+// @Summary Add a new epg
+// @Description Add a new epg and parse m3u.
+// @Tags Epg
+// @Accept json
+// @Produce json
+// @Param epg body models.EpgAddParam true "Epg"
+// @Success 200 {object} models.Epg
+// @Router /epg [post]
+func AddEpg(c *fiber.Ctx) error {
+	// Create new Epg struct
+	epg := &models.Epg{}
+
+	// Check, if received JSON data is valid.
+	if err := c.BodyParser(epg); err != nil {
+		// Return status 400 and error message.
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create a new validator for a Epg model.
+	validate := utils.NewValidator()
+
+	// Validate epg fields.
+	if err := validate.Struct(epg); err != nil {
+		// Return, if some fields are not valid.
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   utils.ValidatorErrors(err),
+		})
+	}
+
+	// Create epg.
+	id, err := db.CreateEpg(epg)
+	if err != nil {
+		// Return status 500 and error message.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	//TODO async Parse m3u and insert channels
+	epgParser := utils.EpgParser{Db: db}
+	go epgParser.ParseEpg(id, epg.URL)
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"epg":   epg,
+	})
+}

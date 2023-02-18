@@ -17,6 +17,7 @@ const dbFileName = "./configs/xivi.db"
 type Queries struct {
 	*queries.PlaylistQueries // load queries from Playlist model
 	*queries.TemplateQueries // load queries from Template model
+	*queries.EpgQueries      // load queries from Epg model
 }
 
 // OpenDBConnection func for opening database connection.
@@ -30,6 +31,7 @@ func OpenDBConnection() (*Queries, error) {
 		// Set queries from models:
 		PlaylistQueries: &queries.PlaylistQueries{DB: db}, // from Playlist model
 		TemplateQueries: &queries.TemplateQueries{DB: db}, // from Template model
+		EpgQueries:      &queries.EpgQueries{DB: db},      // from Epg model
 	}, nil
 }
 
