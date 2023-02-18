@@ -391,7 +391,7 @@ func (q *TemplateQueries) DeleteTmplGroupItem(id int64) error {
 	return nil
 }
 
-// GetChannels method for getting all channels.
+// GetTmplChannels method for getting all template channels.
 func (q *TemplateQueries) GetTmplChannels() ([]models.TemplateChannel, error) {
 	channels := []models.TemplateChannel{}
 
@@ -418,6 +418,29 @@ func (q *TemplateQueries) GetChannelsByTmpl(id int64) ([]models.TemplateChannel,
 
 	// Send query to database.
 	err := q.Get(&channels, query, id)
+	if err != nil {
+		// Return empty object and error.
+		return channels, err
+	}
+
+	// Return query result.
+	return channels, nil
+}
+
+// GetChannels method for getting all channel tvgids by Template.
+func (q *TemplateQueries) GettvgidByTmpl(id int64) ([]string, error) {
+	channels := []string{}
+
+	// Define query string.
+	query := `SELECT tc.tvgid
+				FROM templatechannel tc
+				JOIN templategroupitem tgi ON tgi.channel_id = tc.id
+				JOIN templateitem ti ON ti.group_id = tgi.group_id
+				JOIN template t ON t.id = ti.template_id
+				WHERE t.id = ? AND tc.tvgid IS NOT NULL`
+
+	// Send query to database.
+	err := q.Select(&channels, query, id)
 	if err != nil {
 		// Return empty object and error.
 		return channels, err

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"fmt"
 	"xivi/backend/app/queries"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -36,7 +37,7 @@ func OpenDBConnection() (*Queries, error) {
 }
 
 func getDB() (*sqlx.DB, error) {
-	return sqlx.Open("sqlite3", dbFileName)
+	return sqlx.Open("sqlite3", fmt.Sprintf("%s?parseTime=true", dbFileName))
 }
 
 func InitDB() error {

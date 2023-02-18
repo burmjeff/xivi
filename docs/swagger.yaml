@@ -128,6 +128,27 @@ paths:
       summary: Add a new epg
       tags:
       - Epg
+  /epg/create/{id}:
+    post:
+      consumes:
+      - application/json
+      description: CreateEPG func generates new epg xml file from template.
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Template'
+      summary: CreateEPG func generates new epg xml file from template.
+      tags:
+      - Epg
   /m3u/{id}:
     post:
       consumes:

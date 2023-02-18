@@ -108,7 +108,7 @@ CREATE TABLE epgchannel (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     channelid VARCHAR (255) NOT NULL,
     displayname VARCHAR (255) NOT NULL,
-    icon VARCHAR (255)
+    "icon.src" VARCHAR (255)
 );
 
 -- Create epgprogramme table
@@ -147,6 +147,7 @@ CREATE TABLE epgchannelitem (
 -- Add indexes
 CREATE INDEX idx_playlist_channel ON playlistchannel (name);
 CREATE INDEX idx_epg_epgprogramme ON epgprogramme (channel);
+CREATE INDEX idx_template_tvgid ON templatechannel (tvgid);
 
 -- Add triggers
 CREATE TRIGGER increment_tmpl_order
