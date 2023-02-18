@@ -23,6 +23,40 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/epg": {
+            "post": {
+                "description": "Add a new epg and parse m3u.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Epg"
+                ],
+                "summary": "Add a new epg",
+                "parameters": [
+                    {
+                        "description": "Epg",
+                        "name": "epg",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.EpgAddParam"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Epg"
+                        }
+                    }
+                }
+            }
+        },
         "/m3u/{id}": {
             "post": {
                 "description": "CreateM3U func generates new m3u file from template.",
@@ -479,6 +513,46 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "models.Epg": {
+            "type": "object",
+            "required": [
+                "name",
+                "url"
+            ],
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "orderr": {
+                    "type": "integer"
+                },
+                "url": {
+                    "type": "string",
+                    "maxLength": 255
+                }
+            }
+        },
+        "models.EpgAddParam": {
+            "type": "object",
+            "required": [
+                "name",
+                "url"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "url": {
+                    "type": "string",
+                    "maxLength": 255
+                }
+            }
+        },
         "models.Playlist": {
             "type": "object",
             "required": [

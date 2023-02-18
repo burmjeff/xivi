@@ -24,13 +24,6 @@ type M3uParser struct {
 	matchedPlaylist int64
 }
 
-func errorLogger(err error) {
-	if err != nil {
-		log.Fatalln(err)
-		os.Exit(1)
-	}
-}
-
 // ParseM3u - Parses the content of local file/URL.
 func (m *M3uParser) ParseM3u(playlistID int64, path string) {
 	m.playlistID = playlistID
@@ -56,14 +49,23 @@ func (m *M3uParser) ParseM3u(playlistID int64, path string) {
 	if isValidURL(path) {
 		log.Infoln("Started parsing m3u URL...")
 		resp, err := http.Get(path)
-		errorLogger(err)
+		if err != nil {
+			log.Error("Unable to get M3U FILE: ", err)
+			return
+		}
 		body, err := io.ReadAll(resp.Body)
-		errorLogger(err)
+		if err != nil {
+			log.Error("Unable to get M3U FILE: ", err)
+			return
+		}
 		m.content = string(body)
 	} else {
 		log.Infoln("Started parsing m3u file...")
 		body, err := os.ReadFile(path)
-		errorLogger(err)
+		if err != nil {
+			log.Error("Unable to get M3U FILE: ", err)
+			return
+		}
 		m.content = string(body)
 	}
 
