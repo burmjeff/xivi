@@ -8,9 +8,9 @@
 # Dev build
 build/
 tmp/
-configs/
+/configs/
 xivi.exe
-models/
+/models/
 
 # Test
 *.out
