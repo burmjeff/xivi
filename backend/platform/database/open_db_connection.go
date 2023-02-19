@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"os"
 	"xivi/backend/app/queries"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -11,8 +12,6 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	log "github.com/sirupsen/logrus"
 )
-
-const dbFileName = "./configs/xivi.db"
 
 // Queries struct for collect all app queries.
 type Queries struct {
@@ -37,7 +36,7 @@ func OpenDBConnection() (*Queries, error) {
 }
 
 func getDB() (*sqlx.DB, error) {
-	return sqlx.Open("sqlite3", fmt.Sprintf("%s?parseTime=true", dbFileName))
+	return sqlx.Open("sqlite3", fmt.Sprintf("%s/xivi.db?parseTime=true", os.Getenv("CONFIG_PATH")))
 }
 
 func InitDB() error {
