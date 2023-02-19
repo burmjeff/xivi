@@ -28,7 +28,7 @@ RUN go mod download
 
 ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
 RUN go install github.com/swaggo/swag/cmd/swag@latest \
-    && swag init -g /app/main.go \
+    && swag init \
     && go mod tidy \
     && go build -ldflags="-s -w" -buildvcs=false -mod=readonly -v -o apiserver .
 
