@@ -19,11 +19,11 @@ FROM golang:alpine as server-builder
 
 RUN apk add build-base
 
-WORKDIR /app
+WORKDIR /build
 
-COPY backend /app/backend
-COPY go.* /app
-COPY *.go /app
+COPY backend/ /build/backend
+COPY go.* .
+COPY *.go .
 RUN go mod download
 
 ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
@@ -58,10 +58,10 @@ RUN mkdir -p /app
 WORKDIR /app
 
 COPY --from=app-builder /app/build /app/build
-COPY --from=server-builder ["/build/apiserver", "/build/.env", "/app/"]
+COPY --from=server-builder ["/build/apiserver", "/app/"]
 
 VOLUME $CONFIG_PATH $M3U_FILEPATH $EPG_FILEPATH $MODEL_PATH
 
 EXPOSE $SERVER_PORT
 
-ENTRYPOINT ["/apiserver"]
+ENTRYPOINT ["/app/apiserver"]
