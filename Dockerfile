@@ -26,7 +26,7 @@ COPY go.* .
 COPY *.go .
 RUN go mod download
 
-ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+ENV CGO_ENABLED=1 GOOS=linux GOARCH=amd64
 RUN go install github.com/swaggo/swag/cmd/swag@latest \
     && swag init \
     && go mod tidy \
