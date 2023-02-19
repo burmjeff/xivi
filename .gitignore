@@ -11,6 +11,7 @@ tmp/
 /configs/
 xivi.exe
 /models/
+/docs/
 
 # Test
 *.out
