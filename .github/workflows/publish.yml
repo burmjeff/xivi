@@ -31,6 +31,6 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
-          tags: ${{ secrets.DOCKER_HUB_USERNAME }}/xivi:latest
-          cache-from: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/xivi:buildcache
-          cache-to: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/xivi:buildcache,mode=max
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/xivi:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/xivi:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/xivi:buildcache,mode=max
