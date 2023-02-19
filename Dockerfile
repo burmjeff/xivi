@@ -35,11 +35,30 @@ RUN go build -ldflags="-s -w" -buildvcs=false -mod=readonly -v -o apiserver .
 
 FROM alpine as deployment
 
+# environment variables
+ENV APP_NAME="Xivi" \
+APP_VERSION="1.0" \
+SERVER_HOST="0.0.0.0" \
+SERVER_PORT=8080 \
+CONFIG_PATH="/configs" \
+M3U_FILEPATH="/configs/stream" \
+EPG_FILEPATH="/configs/stream" \
+MODEL_PATH="/models" \
+MODEL_NAME="sentence-transformers/LaBSE" \
+SERVER_READ_TIMEOUT=60 \
+TZ="America/New_York" \
+JWT_SECRET_KEY="secret" \
+JWT_SECRET_KEY_EXPIRE_MINUTES_COUNT=15
+
+RUN mkdir -p /app
+
 WORKDIR /app
 
 COPY --from=app-builder /app/build /app/build
 COPY --from=server-builder ["/build/apiserver", "/build/.env", "/app/"]
 
-EXPOSE 8080
+VOLUME $CONFIG_PATH $M3U_FILEPATH $EPG_FILEPATH $MODEL_PATH
+
+EXPOSE $SERVER_PORT
 
 ENTRYPOINT ["/apiserver"]
