@@ -3,9 +3,9 @@ package app
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
+	"strconv"
 
 	"xivi/backend/pkg/configs"
 	"xivi/backend/pkg/middleware"
@@ -13,6 +13,7 @@ import (
 	"xivi/backend/platform/database"
 
 	"github.com/gofiber/fiber/v2"
+	log "github.com/sirupsen/logrus"
 )
 
 // StartServerWithGracefulShutdown function for starting server with a graceful shutdown.
@@ -44,13 +45,19 @@ func StartServerWithGracefulShutdown(a *fiber.App) {
 
 // StartServer func for starting a simple server.
 func StartServer() {
+	serverHost := os.Getenv("SERVER_HOST")
+	serverPort, err := strconv.Atoi(os.Getenv("SERVER_PORT"))
+	if err != nil {
+		log.Error("Not a valid Port: ", os.Getenv("SERVER_PORT"))
+		return
+	}
 
 	//Initialize DB
 	database.InitDB()
 
 	//config values
-	host := flag.String(os.Getenv("SERVER_HOST"), "localhost", "Server Host")
-	port := flag.Int(os.Getenv("SERVER_PORT"), 8080, "Server Port")
+	host := flag.String("host", serverHost, "Server Host")
+	port := flag.Int("port", serverPort, "Server Port")
 	serverPath := fmt.Sprintf("%s:%d", *host, *port)
 
 	// Define Fiber config.

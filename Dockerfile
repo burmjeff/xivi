@@ -54,6 +54,8 @@ JWT_SECRET_KEY="secret" \
 JWT_SECRET_KEY_EXPIRE_MINUTES_COUNT=15
 
 RUN mkdir -p /app
+RUN mkdir -p $CONFIG_PATH
+RUN mkdir -p $MODEL_PATH
 
 WORKDIR /app
 
