@@ -150,7 +150,7 @@ CREATE TABLE templatechannelvectors (
     name VARCHAR (255) UNIQUE NOT NULL,
     channel_id INTEGER NOT NULL,
     FOREIGN KEY (name) REFERENCES channelvectors(name),
-    FOREIGN KEY (channel_id) REFERENCES templatechannel(id),
+    FOREIGN KEY (channel_id) REFERENCES templatechannel(id)
 );
 
 -- Create channelvectors table
