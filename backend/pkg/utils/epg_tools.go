@@ -11,8 +11,7 @@ import (
 )
 
 type EpgTools struct {
-	Db       *database.Queries
-	filePath string
+	Db *database.Queries
 }
 
 func (m *EpgTools) CreateEpgXML(template models.Template) {
