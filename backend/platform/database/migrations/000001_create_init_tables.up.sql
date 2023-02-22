@@ -144,10 +144,28 @@ CREATE TABLE epgchannelitem (
     FOREIGN KEY (epg_programme_id) REFERENCES epg_programme(id)
 );
 
+-- Create templatechannelvectors table
+CREATE TABLE templatechannelvectors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR (255) UNIQUE NOT NULL,
+    channel_id INTEGER NOT NULL,
+    FOREIGN KEY (name) REFERENCES channelvectors(name),
+    FOREIGN KEY (channel_id) REFERENCES templatechannel(id),
+);
+
+-- Create channelvectors table
+CREATE TABLE channelvectors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR (255) UNIQUE NOT NULL,
+    vector BLOB NOT NULL
+);
+
 -- Add indexes
 CREATE INDEX idx_playlist_channel ON playlistchannel (name);
 CREATE INDEX idx_epg_epgprogramme ON epgprogramme (channel);
 CREATE INDEX idx_template_tvgid ON templatechannel (tvgid);
+CREATE INDEX idx_template_vector ON templatechannelvectors (name);
+CREATE INDEX idx_playlist_vector ON channelvectors (name);
 
 -- Add triggers
 CREATE TRIGGER increment_tmpl_order
@@ -219,4 +237,11 @@ FOR EACH ROW
 BEGIN
     DELETE FROM epgchannelitem WHERE epg_programme_id = old.id;
     DELETE FROM epgchannel WHERE id NOT IN (SELECT epg_channel_id FROM epgchannelitem);
+END;
+
+CREATE TRIGGER delete_template_channel_cascade
+AFTER DELETE ON templatechannel
+FOR EACH ROW
+BEGIN
+    DELETE FROM templatechannelvectors WHERE channel_id = old.id;
 END;

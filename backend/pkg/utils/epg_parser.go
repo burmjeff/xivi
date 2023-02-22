@@ -70,6 +70,7 @@ func (m *EpgParser) ParseEpg(playlistID int64, path string) {
 				log.Info("EPG XML PARSER: Channel already exists: ", channel.DisplayName)
 			}
 		}
+		go AddChannelVector(m.Db, channel.ChannelId)
 	}
 
 	for _, programme := range epg.Programmes {
