@@ -18,6 +18,7 @@ type Queries struct {
 	*queries.PlaylistQueries // load queries from Playlist model
 	*queries.TemplateQueries // load queries from Template model
 	*queries.EpgQueries      // load queries from Epg model
+	*queries.VectorQueries   // load queries from Vector model
 }
 
 // OpenDBConnection func for opening database connection.
@@ -32,6 +33,7 @@ func OpenDBConnection() (*Queries, error) {
 		PlaylistQueries: &queries.PlaylistQueries{DB: db}, // from Playlist model
 		TemplateQueries: &queries.TemplateQueries{DB: db}, // from Template model
 		EpgQueries:      &queries.EpgQueries{DB: db},      // from Epg model
+		VectorQueries:   &queries.VectorQueries{DB: db},   // from Vector model
 	}, nil
 }
 

@@ -7,9 +7,10 @@ package utils
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math"
 	"os"
+	"xivi/backend/app/models"
+	"xivi/backend/platform/database"
 
 	"github.com/nlpodyssey/cybertron/pkg/models/bert"
 	"github.com/nlpodyssey/cybertron/pkg/tasks"
@@ -17,9 +18,27 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const limit = 10
+func AddChannelVector(db *database.Queries, name string) {
+	_, err := db.GetChannelVector(name)
+	if err != nil {
+		vector, err := VectorizeString(name)
+		if err != nil {
+			log.Error("VECTORIZE_STRING: ", err)
+			return
+		}
+		channelVector := models.ChannelVector{Name: name, Vector: vector}
+		err = db.CreateChannelVector(channelVector)
+		if err != nil {
+			log.Error("VECTORIZE_STRING: ", err)
+			return
+		}
 
-func VectorizeString(text string) {
+		log.Info("VECTOR_TOOLS: ADDED VECTOR FOR ", name)
+	}
+
+}
+
+func VectorizeString(text string) ([]float64, error) {
 	modelsDir := os.Getenv("MODEL_PATH")
 	modelName := os.Getenv("MODEL_NAME")
 
@@ -28,22 +47,24 @@ func VectorizeString(text string) {
 		ModelName: modelName,
 	})
 	if err != nil {
-		log.Error("VECTORIZE_STRING: ", err)
-		return
+		return nil, err
 	}
 	defer tasks.Finalize(m)
 
-	fn := func(text string) *textencoding.Response {
+	fn := func(text string) (*textencoding.Response, error) {
 		result, err := m.Encode(context.Background(), text, int(bert.MeanPooling))
 		if err != nil {
-			log.Error("VECTORIZE_STRING: ", err)
-			return nil
+			return nil, err
 		}
-		return &result
+		return &result, nil
 	}
 
-	r1 := fn(text)
-	fmt.Println(r1.Vector.Data().F64()[:limit])
+	r1, err := fn(text)
+	if err != nil {
+		return nil, err
+	}
+
+	return r1.Vector.Data().F64(), nil
 
 	//fmt.Println(Cosine(r1.Vector.Data().F64(), r2.Vector.Data().F64()))
 }

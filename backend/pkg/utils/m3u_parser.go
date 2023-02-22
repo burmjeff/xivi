@@ -123,6 +123,7 @@ func (m *M3uParser) parseLine(lineNumber int) {
 
 		if tvgID != "" {
 			playlistChannel.TvgID = tvgID
+			go AddChannelVector(m.Db, tvgID)
 		}
 		if tvgName != "" {
 			playlistChannel.Name = tvgName
