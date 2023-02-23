@@ -52,7 +52,7 @@ func InitDB() error {
 		log.Fatalf("Failed to create database driver: %v", err)
 	}
 
-	fsrc, err := (&file.File{}).Open("file://./backend/platform/database/migrations")
+	fsrc, err := (&file.File{}).Open("file://./database_migrations")
 	if err != nil {
 		return err
 	}
