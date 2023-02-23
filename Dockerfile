@@ -61,7 +61,7 @@ WORKDIR /app
 
 COPY --from=app-builder /app/build /app/build
 COPY --from=server-builder ["/build/apiserver", "/app/"]
-COPY database_migrations/ /app/
+COPY database_migrations/ /app/database_migrations
 
 VOLUME $CONFIG_PATH $M3U_FILEPATH $EPG_FILEPATH $MODEL_PATH
 
