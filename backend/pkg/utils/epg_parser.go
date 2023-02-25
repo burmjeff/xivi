@@ -24,7 +24,7 @@ func (m *EpgParser) ParseEpg(playlistID int64, path string) {
 	log.SetFormatter(&log.TextFormatter{TimestampFormat: "2006-01-02 15:04:05", FullTimestamp: true})
 	// Only log the warning severity or above.
 	log.SetLevel(log.InfoLevel)
-	log.Infoln("Parser started")
+	log.Infoln("EPG Parser started")
 
 	if isValidURL(path) {
 		log.Infoln("Started parsing xml URL...")
@@ -55,6 +55,10 @@ func (m *EpgParser) ParseEpg(playlistID int64, path string) {
 		defer file.Close()
 	}
 
+	vectorIn := make(chan string)
+	//vectorOut := make(chan interface{})
+	go VectorQueue(vectorIn, m.Db)
+
 	// Print out the parsed data
 	for _, channel := range epg.Channels {
 		if channel.ChannelId != "" {
@@ -69,9 +73,12 @@ func (m *EpgParser) ParseEpg(playlistID int64, path string) {
 			} else {
 				log.Info("EPG XML PARSER: Channel already exists: ", channel.DisplayName)
 			}
+			vectorIn <- channel.ChannelId
 		}
-		go AddChannelVector(m.Db, channel.ChannelId)
+
 	}
+
+	close(vectorIn)
 
 	for _, programme := range epg.Programmes {
 		//Convert times
@@ -100,6 +107,7 @@ func (m *EpgParser) ParseEpg(playlistID int64, path string) {
 		}
 
 	}
+	log.Infoln("EPG Parser Finished")
 
 }
 

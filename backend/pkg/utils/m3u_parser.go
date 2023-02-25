@@ -85,16 +85,21 @@ func (m *M3uParser) ParseM3u(playlistID int64, path string) {
 }
 
 func (m *M3uParser) parseLines() {
+	vectorIn := make(chan string)
+	//vectorOut := make(chan interface{})
+	go VectorQueue(vectorIn, m.Db)
+
 	re := CompileRegex("#EXTINF")
 
 	for lineNumber := range m.lines {
 		if re.Match([]byte(m.lines[lineNumber])) {
-			m.parseLine(lineNumber)
+			m.parseLine(lineNumber, vectorIn)
 		}
 	}
+	close(vectorIn)
 }
 
-func (m *M3uParser) parseLine(lineNumber int) {
+func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 	validate := NewValidator()
 	playlistGroup := &models.PlaylistGroup{}
 	playlistChannel := &models.PlaylistChannel{}
@@ -123,7 +128,7 @@ func (m *M3uParser) parseLine(lineNumber int) {
 
 		if tvgID != "" {
 			playlistChannel.TvgID = tvgID
-			go AddChannelVector(m.Db, tvgID)
+			vectorIn <- tvgID
 		}
 		if tvgName != "" {
 			playlistChannel.Name = tvgName

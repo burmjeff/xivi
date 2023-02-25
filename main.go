@@ -1,6 +1,9 @@
 package main
 
 import (
+	"errors"
+	"log"
+	"os"
 	"xivi/backend/app"
 
 	_ "xivi/docs" // load API Docs files (Swagger)
@@ -22,7 +25,35 @@ import (
 // @name Authorization
 
 func main() {
+	CONFIG_PATH := os.Getenv("CONFIG_PATH")
+	M3U_FILEPATH := os.Getenv("M3U_FILEPATH")
+	EPG_FILEPATH := os.Getenv("EPG_FILEPATH")
+	MODEL_PATH := os.Getenv("MODEL_PATH")
 
 	// Start server (with graceful shutdown).
+	if _, err := os.Stat(CONFIG_PATH); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(CONFIG_PATH, os.ModePerm)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+	if _, err := os.Stat(M3U_FILEPATH); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(M3U_FILEPATH, os.ModePerm)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+	if _, err := os.Stat(EPG_FILEPATH); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(EPG_FILEPATH, os.ModePerm)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+	if _, err := os.Stat(MODEL_PATH); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(MODEL_PATH, os.ModePerm)
+		if err != nil {
+			log.Println(err)
+		}
+	}
 	app.StartServer()
 }

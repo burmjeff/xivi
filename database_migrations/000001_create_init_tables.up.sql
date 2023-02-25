@@ -160,12 +160,20 @@ CREATE TABLE channelvectors (
     vector BLOB NOT NULL
 );
 
+-- Create channelfilters table
+CREATE TABLE channelfilters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    oldname VARCHAR (255) UNIQUE NOT NULL,
+    newname VARCHAR (255) NOT NULL
+);
+
 -- Add indexes
 CREATE INDEX idx_playlist_channel ON playlistchannel (name);
 CREATE INDEX idx_epg_epgprogramme ON epgprogramme (channel);
 CREATE INDEX idx_template_tvgid ON templatechannel (tvgid);
 CREATE INDEX idx_template_vector ON templatechannelvectors (name);
 CREATE INDEX idx_playlist_vector ON channelvectors (name);
+CREATE INDEX idx_channel_filters ON channelfilters (oldname);
 
 -- Add triggers
 CREATE TRIGGER increment_tmpl_order
