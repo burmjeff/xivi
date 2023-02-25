@@ -18,29 +18,35 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+func VectorQueue(in <-chan string, db *database.Queries) {
+	for name := range in {
+		AddChannelVector(db, name)
+	}
+}
+
 func AddChannelVector(db *database.Queries, name string) {
 	_, err := db.GetChannelVector(name)
 	if err != nil {
 		vector, err := VectorizeString(name)
 		if err != nil {
-			log.Error("VECTORIZE_STRING: ", err)
+			log.Warn("VECTORIZE_STRING: ", err)
 			return
 		}
 		channelVector := models.ChannelVector{Name: name, Vector: vector}
 		err = db.CreateChannelVector(channelVector)
 		if err != nil {
-			log.Error("VECTORIZE_STRING: ", err)
+			log.Warn("VECTORIZE_STRING: ", err)
 			return
 		}
 
 		log.Info("VECTOR_TOOLS: ADDED VECTOR FOR ", name)
 	}
-
 }
 
 func VectorizeString(text string) ([]float64, error) {
 	modelsDir := os.Getenv("MODEL_PATH")
-	modelName := os.Getenv("MODEL_NAME")
+	//TODO: NEW MODELS
+	modelName := textencoding.DefaultModel
 
 	m, err := tasks.Load[textencoding.Interface](&tasks.Config{
 		ModelsDir: modelsDir,
@@ -51,20 +57,12 @@ func VectorizeString(text string) ([]float64, error) {
 	}
 	defer tasks.Finalize(m)
 
-	fn := func(text string) (*textencoding.Response, error) {
-		result, err := m.Encode(context.Background(), text, int(bert.MeanPooling))
-		if err != nil {
-			return nil, err
-		}
-		return &result, nil
-	}
-
-	r1, err := fn(text)
+	fn, err := m.Encode(context.Background(), text, int(bert.MeanPooling))
 	if err != nil {
 		return nil, err
 	}
 
-	return r1.Vector.Data().F64(), nil
+	return fn.Vector.Data().F64(), nil
 
 	//fmt.Println(Cosine(r1.Vector.Data().F64(), r2.Vector.Data().F64()))
 }

@@ -53,7 +53,7 @@ func (q *VectorQueries) GetChannelVector(name string) (models.ChannelVector, err
 	query := `SELECT * FROM channelvectors WHERE name = ?`
 
 	// Send query to database.
-	err := q.Select(&vectorChannel, query, name)
+	err := q.Get(&vectorChannel, query, name)
 	if err != nil {
 		// Return empty object and error.
 		return vectorChannel, err
@@ -77,4 +77,22 @@ func (q *VectorQueries) CreateChannelVector(channelVector models.ChannelVector) 
 
 	// Return query result.
 	return nil
+}
+
+// GetChannelVector method
+func (q *VectorQueries) GetFilter(oldName string) (models.ChannelFilter, error) {
+	filter := models.ChannelFilter{}
+
+	// Define query string.
+	query := `SELECT * FROM channelfilters WHERE oldname = ?`
+
+	// Send query to database.
+	err := q.Get(&filter, query, oldName)
+	if err != nil {
+		// Return empty object and error.
+		return filter, err
+	}
+
+	// Return query result.
+	return filter, nil
 }
