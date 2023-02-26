@@ -4,10 +4,14 @@ import (
 	"errors"
 	"log"
 	"os"
-	"xivi/backend/app"
 
+	"xivi/backend/app"
+	"xivi/backend/pkg/configs"
+	"xivi/backend/pkg/middleware"
+	"xivi/backend/pkg/routes"
 	_ "xivi/docs" // load API Docs files (Swagger)
 
+	"github.com/gofiber/fiber/v2"
 	_ "github.com/joho/godotenv/autoload" // load .env file automatically
 )
 
@@ -19,10 +23,10 @@ import (
 // @contact.email your@mail.com
 // @license.name Apache 2.0
 // @license.url http://www.apache.org/licenses/LICENSE-2.0.html
-// @BasePath /api
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header
 // @name Authorization
+// @BasePath /api
 
 func main() {
 	CONFIG_PATH := os.Getenv("CONFIG_PATH")
@@ -55,5 +59,22 @@ func main() {
 			log.Println(err)
 		}
 	}
-	app.StartServer()
+
+	// Define Fiber config.
+	config := configs.FiberConfig()
+
+	// Define a new Fiber app with config.
+	a := fiber.New(config)
+
+	// Middlewares.
+	middleware.FiberMiddleware(a) // Register Fiber's middleware for app.
+
+	// Routes.
+	routes.SvelteRoute(a)
+	routes.SwaggerRoute(a)  // Register a route for API Docs (Swagger).
+	routes.PublicRoutes(a)  // Register a public routes for app.
+	routes.PrivateRoutes(a) // Register a private routes for app.
+	routes.NotFoundRoute(a) // Register route for 404 Error.
+
+	app.StartServer(a)
 }
