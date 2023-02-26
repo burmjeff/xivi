@@ -128,6 +128,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 
 		if tvgID != "" {
 			playlistChannel.TvgID = tvgID
+			//Add new channel vectors
 			vectorIn <- tvgID
 		}
 		if tvgName != "" {
@@ -206,6 +207,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 			log.Warnln(err)
 			return
 		}
+		playlistChannel.ID = playlistChannelID
 
 		//Set channel URL model
 		channelURL.Url = streamLink
@@ -217,6 +219,9 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 			log.Warnln(err)
 			return
 		}
+
+		//TODO: try to match tvgid to template only if auto-match=true
+		MatchChanneltoTemplate(m.Db, playlistChannel)
 
 	}
 }

@@ -469,16 +469,35 @@ func (q *TemplateQueries) GetTmplChannel(id int64) (models.TemplateChannel, erro
 	return channel, nil
 }
 
-// GetChannel method for getting one channel by given ID.
+// GetChannel method for getting one channel by given name.
 func (q *TemplateQueries) GetTmplChannelByName(name string) (models.TemplateChannel, error) {
 	// Define channel variable.
 	channel := models.TemplateChannel{}
 
 	// Define query string.
-	query := `SELECT * FROM templatechannel WHERE name = $1`
+	query := `SELECT * FROM templatechannel WHERE name = ?`
 
 	// Send query to database.
 	err := q.Get(&channel, query, name)
+	if err != nil {
+		// Return empty object and error.
+		return channel, err
+	}
+
+	// Return query result.
+	return channel, nil
+}
+
+// GetChannel method for getting one channel by given tvgid.
+func (q *TemplateQueries) GetTmplChannelBytvgid(tvgid string) (models.TemplateChannel, error) {
+	// Define channel variable.
+	channel := models.TemplateChannel{}
+
+	// Define query string.
+	query := `SELECT * FROM templatechannel WHERE tvgid = ?`
+
+	// Send query to database.
+	err := q.Get(&channel, query, tvgid)
 	if err != nil {
 		// Return empty object and error.
 		return channel, err
