@@ -77,10 +77,10 @@ func StartServer() {
 	routes.NotFoundRoute(app) // Register route for 404 Error.
 
 	// serve static files
-	//app.Static("/", "./build")
-	//app.Get("/", func(c *fiber.Ctx) error {
-	//	return c.Render("index", "./build")
-	//})
+	app.Static("/", "./build")
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.Render("index", "./build")
+	})
 
 	// Run server.
 	log.Printf("Server starting at http://%s ...\n", serverPath)
