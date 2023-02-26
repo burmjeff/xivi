@@ -1,99 +1,57 @@
-// Copyright 2022 The NLP Odyssey Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package utils
 
 import (
-	"context"
-	"errors"
-	"math"
-	"os"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
-
-	"github.com/nlpodyssey/cybertron/pkg/models/bert"
-	"github.com/nlpodyssey/cybertron/pkg/tasks"
-	"github.com/nlpodyssey/cybertron/pkg/tasks/textencoding"
-	log "github.com/sirupsen/logrus"
 )
 
-func VectorQueue(in <-chan string, db *database.Queries) {
-	for name := range in {
-		AddChannelVector(db, name)
+// Search for filter match
+func SearchFilter(db *database.Queries, id string) (string, error) {
+	match, err := db.GetFilter(id)
+	if err != nil {
+		return "", err
 	}
+	return match.NewName, nil
 }
 
-func AddChannelVector(db *database.Queries, name string) {
-	_, err := db.GetChannelVector(name)
+// Search if tvgid matches for playlist channel and add to template if match
+func MatchChanneltoTemplate(db *database.Queries, channel *models.PlaylistChannel) error {
+	tmplChannelItem := &models.TemplateChannelItem{}
+	channelMatch := &models.TemplateChannel{}
+	tmplChannelItem.PlaylistChannelId = channel.ID
+
+	filterMatch, err := SearchFilter(db, channel.TvgID)
 	if err != nil {
-		vector, err := VectorizeString(name)
+		*channelMatch, err = db.GetTmplChannelBytvgid(channel.TvgID)
 		if err != nil {
-			log.Warn("VECTORIZE_STRING: ", err)
-			return
+			return err
 		}
-		channelVector := models.ChannelVector{Name: name, Vector: vector}
-		err = db.CreateChannelVector(channelVector)
-		if err != nil {
-			log.Warn("VECTORIZE_STRING: ", err)
-			return
-		}
-
-		log.Info("VECTOR_TOOLS: ADDED VECTOR FOR ", name)
-	}
-}
-
-func VectorizeString(text string) ([]float64, error) {
-	modelsDir := os.Getenv("MODEL_PATH")
-	//TODO: NEW MODELS
-	modelName := textencoding.DefaultModel
-
-	m, err := tasks.Load[textencoding.Interface](&tasks.Config{
-		ModelsDir: modelsDir,
-		ModelName: modelName,
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer tasks.Finalize(m)
-
-	fn, err := m.Encode(context.Background(), text, int(bert.MeanPooling))
-	if err != nil {
-		return nil, err
-	}
-
-	return fn.Vector.Data().F64(), nil
-
-	//fmt.Println(Cosine(r1.Vector.Data().F64(), r2.Vector.Data().F64()))
-}
-
-func Cosine(a []float64, b []float64) (cosine float64, err error) {
-	count := 0
-	length_a := len(a)
-	length_b := len(b)
-	if length_a > length_b {
-		count = length_a
 	} else {
-		count = length_b
-	}
-	sumA := 0.0
-	s1 := 0.0
-	s2 := 0.0
-	for k := 0; k < count; k++ {
-		if k >= length_a {
-			s2 += math.Pow(b[k], 2)
-			continue
+		*channelMatch, err = db.GetTmplChannelBytvgid(filterMatch)
+		if err != nil {
+			return err
 		}
-		if k >= length_b {
-			s1 += math.Pow(a[k], 2)
-			continue
+	}
+
+	tmplChannelItem.ChannelId = channelMatch.ID
+
+	_, err = db.CreateTmplChannelItem(tmplChannelItem)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Create filter, dont create if template channel exists with same tvgid
+func CreateFilter(db *database.Queries, oldName string, newName string) error {
+	channelFilter := &models.ChannelFilter{OldName: oldName, NewName: newName}
+	_, err := db.GetTmplChannelBytvgid(oldName)
+	if err != nil {
+		err := db.CreateFilter(*channelFilter)
+		if err != nil {
+			return err
 		}
-		sumA += a[k] * b[k]
-		s1 += math.Pow(a[k], 2)
-		s2 += math.Pow(b[k], 2)
 	}
-	if s1 == 0 || s2 == 0 {
-		return 0.0, errors.New("vectors should not be null (all zeros)")
-	}
-	return sumA / (math.Sqrt(s1) * math.Sqrt(s2)), nil
+	return nil
 }
