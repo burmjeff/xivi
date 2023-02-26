@@ -42,9 +42,6 @@
 </div>
 
 <style lang="postcss">
-	figure {
-		@apply flex relative flex-col;
-	}
 	@keyframes glow {
 		0% {
 			@apply bg-primary-400/50;
