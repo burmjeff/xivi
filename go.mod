@@ -65,7 +65,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang-migrate/migrate/v4 v4.15.2
 	github.com/josharian/intern v1.0.0 // indirect
-	github.com/klauspost/compress v1.15.15 // indirect
+	github.com/klauspost/compress v1.16.0 // indirect
 	github.com/leodido/go-urn v1.2.1 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/nlpodyssey/cybertron v0.1.2
