@@ -180,7 +180,7 @@ func (q *PlaylistQueries) GetPlGroupByName(name string) (models.PlaylistGroup, e
 // Create Playlist Group method for creating group by given Playlist Group object.
 func (q *PlaylistQueries) CreatePlGroup(p *models.PlaylistGroup) (int64, error) {
 	// Define query string.
-	query := `INSERT INTO playlistgroup VALUES (null, $1)`
+	query := `INSERT INTO playlistgroup VALUES (null, ?)`
 
 	// Send query to database.
 	res, err := q.Exec(query, p.Name)
@@ -201,10 +201,10 @@ func (q *PlaylistQueries) CreatePlGroup(p *models.PlaylistGroup) (int64, error) 
 // Update Playlist Group method for updating group by given Playlist Group object.
 func (q *PlaylistQueries) UpdatePlGroup(id int64, p *models.PlaylistGroup) error {
 	// Define query string.
-	query := `UPDATE playlistgroup SET name = $2 WHERE id = $1`
+	query := `UPDATE playlistgroup SET name = ? WHERE id = ?`
 
 	// Send query to database.
-	_, err := q.Exec(query, id, p.Name)
+	_, err := q.Exec(query, p.Name, id)
 	if err != nil {
 		// Return only error.
 		return err
@@ -217,10 +217,83 @@ func (q *PlaylistQueries) UpdatePlGroup(id int64, p *models.PlaylistGroup) error
 // Delete Playlist Group method for delete Playlist Group by given ID.
 func (q *PlaylistQueries) DeletePlGroup(id int64) error {
 	// Define query string.
-	query := `DELETE FROM playlistgroup WHERE id = $1`
+	query := `DELETE FROM playlistgroup WHERE id = ?`
 
 	// Send query to database.
 	_, err := q.Exec(query, id)
+	if err != nil {
+		// Return only error.
+		return err
+	}
+
+	// This query returns nothing.
+	return nil
+}
+
+// Get Playlist Group method for getting one goup by given ID.
+func (q *PlaylistQueries) GetPlItems(id int64) ([]models.PlaylistItem, error) {
+	// Define playlist variable.
+	items := []models.PlaylistItem{}
+
+	// Define query string.
+	query := `SELECT * FROM playlistitem WHERE playlist_id = ?`
+
+	// Send query to database.
+	err := q.Select(&items, query, id)
+	if err != nil {
+		// Return empty object and error.
+		return items, err
+	}
+
+	// Return query result.
+	return items, nil
+}
+
+// Get Playlist Group method for getting one goup by given ID.
+func (q *PlaylistQueries) GetPlItemExists(item *models.PlaylistItem) error {
+	var playlistItemId int64
+	// Define query string.
+	query := `SELECT id FROM playlistitem WHERE playlist_id = ? AND group_id = ? LIMIT 1`
+
+	// Send query to database.
+	err := q.Get(&playlistItemId, query, item.PlaylistId, item.GroupId)
+	if err != nil {
+		// Return empty object and error.
+		return err
+	}
+
+	// Return query result.
+	return nil
+}
+
+// Create Playlist Group method for creating group by given Playlist Group object.
+func (q *PlaylistQueries) CreatePlItem(p *models.PlaylistItem) (int64, error) {
+	// Define query string.
+	query := `INSERT INTO playlistitem VALUES (null, ?, ?)`
+
+	// Send query to database.
+	res, err := q.Exec(query, p.PlaylistId, p.GroupId)
+	if err != nil {
+		// Return only error.
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		log.Warnln("Error retrieving the ID: %v", err)
+		return 0, err
+	}
+
+	// This query returns nothing.
+	return id, nil
+}
+
+// Update Playlist Group method for updating group by given Playlist Group object.
+func (q *PlaylistQueries) UpdatePlItem(id int64, p *models.PlaylistItem) error {
+	// Define query string.
+	query := `UPDATE playlistitem SET playlist_id = ?, group_id = ? WHERE id = ?`
+
+	// Send query to database.
+	_, err := q.Exec(query, p.PlaylistId, p.GroupId, id)
 	if err != nil {
 		// Return only error.
 		return err
@@ -257,7 +330,7 @@ func (q *PlaylistQueries) GetChannelsByPl(id int64) ([]models.PlaylistChannel, e
 	FROM playlist
 	JOIN channelurl ON playlist.id = channelurl.playlist_id
 	JOIN playlistchannel ON channelurl.playlist_channel_id = playlistchannel.id 
-	WHERE playlist.id = $1`
+	WHERE playlist.id = ?`
 
 	// Send query to database.
 	err := q.Select(&channels, query, id)
@@ -275,7 +348,7 @@ func (q *PlaylistQueries) GetChannelsByPlGroup(id int64) ([]models.PlaylistChann
 	channels := []models.PlaylistChannel{}
 
 	// Define query string.
-	query := `SELECT * FROM playlistchannel WHERE group_id = $1`
+	query := `SELECT * FROM playlistchannel WHERE group_id = ?`
 
 	// Send query to database.
 	err := q.Select(&channels, query, id)

@@ -146,11 +146,23 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 				playlistGroup.Name = group
 				groupId, err := m.Db.CreatePlGroup(playlistGroup)
 				if err != nil {
+					log.Warn("FAILED TO CREATE PLAYLIST GROUP: ", err)
+				} else {
 					playlistChannel.GroupID = groupId
 				}
 			} else {
 				playlistChannel.GroupID = foundGroup.ID
 			}
+
+			playlistItem := &models.PlaylistItem{PlaylistId: m.playlistID, GroupId: playlistChannel.GroupID}
+			err = m.Db.GetPlItemExists(playlistItem)
+			if err != nil {
+				_, err := m.Db.CreatePlItem(playlistItem)
+				if err != nil {
+					log.Warn("FAILED TO CREATE PLAYLIST ITEM: ", err)
+				}
+			}
+
 		}
 
 		// Validate playlist fields.

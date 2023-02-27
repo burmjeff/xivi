@@ -11,15 +11,14 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// GetPlaylists func gets all exists playlists.
-// @Description Get all exists playlists.
-// @Summary get all exists playlists
-// @Tags Playlists
+// GetPlaylists func gets all playlists.
+// @Description Get all playlists.
+// @Summary get all playlists
+// @Tags Playlist
 // @Accept json
 // @Produce json
 // @Success 200 {array} models.Playlist
 // @Router /playlists [get]
-
 func GetPlaylists(c *fiber.Ctx) error {
 	// Create database connection.
 	db, err := database.OpenDBConnection()
@@ -97,6 +96,69 @@ func GetPlaylist(c *fiber.Ctx) error {
 		"error":    false,
 		"msg":      nil,
 		"playlist": playlist,
+	})
+}
+
+// GetPlaylistGroups func gets playlist groups by given playlist ID or 404 error.
+// @Description Get playlist groups by given playlist ID
+// @Summary get playlist groups by given playlist ID
+// @Tags Playlist
+// @Accept json
+// @Produce json
+// @Param id path string true "Playlist ID"
+// @Success 200 {array} models.PlaylistGroup
+// @Router /playlist/{id}/groups [get]
+func GetPlaylistGroups(c *fiber.Ctx) error {
+	// Catch playlist ID from URL.
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Get playlistItems by ID.
+	playlistItems, err := db.GetPlItems(id)
+	if err != nil {
+		// Return, if playlistitem not found.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":          true,
+			"msg":            "playlistgroup with the given ID is not found",
+			"playlistgroups": nil,
+		})
+	}
+
+	// Get playlist groups by item.
+	var groups []models.PlaylistGroup
+	for _, item := range playlistItems {
+		group, err := db.GetPlGroup(item.GroupId)
+		if err != nil {
+			// Return, if playlist not found.
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error":          true,
+				"msg":            "playlist groups not found",
+				"playlistgroups": nil,
+			})
+		}
+		groups = append(groups, group)
+	}
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error":          false,
+		"msg":            nil,
+		"playlistgroups": groups,
 	})
 }
 
