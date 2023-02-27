@@ -1,7 +1,7 @@
 <script>
     import TemplateList from '../../components/TemplateList.svelte';
     import TemplateGroupList from '../../components/TemplateGroupList.svelte';
-    import PlayList from '../../components/PlayList.svelte';
+    import Playlist from '../../components/Playlist.svelte';
 </script>
 
 <div class="container h-full mx-auto flex justify-center items-center">
@@ -10,7 +10,7 @@
         <div style="display: flex;">
             <TemplateList/>
             <TemplateGroupList/>
-            <PlayList/>
+            <Playlist/>
         </div>
 		<!-- / -->
 		<div class="flex justify-center space-x-2">

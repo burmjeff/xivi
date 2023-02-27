@@ -41,6 +41,16 @@ CREATE TABLE channelurl (
     FOREIGN KEY (playlist_channel_id) REFERENCES playlistchannel(id)
 );
 
+-- Create templateitem table
+CREATE TABLE playlistitem (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    playlist_id INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    FOREIGN KEY (playlist_id) REFERENCES playlist(id),
+    FOREIGN KEY (group_id) REFERENCES playlistgroup(id)
+    ON DELETE CASCADE
+);
+
 -- Create template table
 CREATE TABLE template (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -229,6 +239,15 @@ BEGIN
         FROM epg
     )
     WHERE id = new.id;
+END;
+
+CREATE TRIGGER delete_channelurl_cascade
+AFTER DELETE ON channelurl
+FOR EACH ROW
+BEGIN
+    DELETE FROM playlistchannel WHERE id NOT IN (SELECT playlist_channel_id FROM channelurl);
+    DELETE FROM playlistitem WHERE group_id NOT IN (SELECT group_id FROM playlistchannel);
+    DELETE FROM playlistgroup WHERE id NOT IN (SELECT group_id FROM playlistchannel);
 END;
 
 CREATE TRIGGER delete_playlist_cascade
