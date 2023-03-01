@@ -11,12 +11,6 @@ type Playlist struct {
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
-type PlaylistItem struct {
-	ID         int64 `db:"id" json:"id"`
-	PlaylistId int64 `db:"playlist_id" json:"playlist_id" validate:"required"`
-	GroupId    int64 `db:"group_id" json:"group_id" validate:"required"`
-}
-
 type PlaylistCreateParam struct {
 	Name string `json:"name" validate:"required,lte=255"`
 	URL  string `json:"url" validate:"required,lte=255"`

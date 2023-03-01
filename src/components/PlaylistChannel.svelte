@@ -9,7 +9,7 @@
     let channels: typeof playlistChannels
 
     onMount(async () => {
-        fetch('/api/playlists')
+        fetch(`/api/playlist/${playlistId}/group/${groupId}/channels`)
         .then(response => response.json())
         .then(data => {
             console.log(data);
@@ -18,7 +18,6 @@
             console.log(error);
             return [];
         });
-        $channels = $playlistChannels.filter((channel: { group_id: number }) => channel.group_id === groupId);
         });
 
   </script>
@@ -32,11 +31,11 @@
       </tr>
     </thead>
     <tbody>
-      {#each $channels as channel}
+      {#each $playlistChannels as channel}
         <tr>
+          <td>{channel.group_id}</td>
           <td>{channel.name}</td>
           <td>{channel.tvgid}</td>
-          <td>{channel.group_id}</td>
         </tr>
       {/each}
     </tbody>
