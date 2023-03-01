@@ -108,7 +108,7 @@ func (q *PlaylistQueries) ChannelUrlExists(playlistID int64, plChannelID int64) 
 	var channelID int64
 
 	// Define query string.
-	query := `SELECT id FROM channelurl WHERE playlist_id = $1 AND playlist_channel_id = $2`
+	query := `SELECT id FROM channelurl WHERE playlist_id = ? AND playlist_channel_id = ?`
 
 	// Send query to database.
 	err := q.Get(&channelID, query, playlistID, plChannelID)
@@ -122,14 +122,16 @@ func (q *PlaylistQueries) ChannelUrlExists(playlistID int64, plChannelID int64) 
 }
 
 // Get Playlist Groups method
-func (q *PlaylistQueries) GetPlGroups() ([]models.PlaylistGroup, error) {
+func (q *PlaylistQueries) GetPlGroups(item *models.PlaylistGroupItem) ([]models.PlaylistGroup, error) {
 	playlistgroup := []models.PlaylistGroup{}
 
 	// Define query string.
-	query := `SELECT * FROM playlistgroup`
+	query := `SELECT playlistgroup.* FROM playlistgroup
+	JOIN playlist_group_item ON playlistgroup.id = playlist_group_item.group_id
+	WHERE playlist_group_item.playlist_id = ?;`
 
 	// Send query to database.
-	err := q.Select(&playlistgroup, query)
+	err := q.Select(&playlistgroup, query, item.PlaylistId)
 	if err != nil {
 		// Return empty object and error.
 		return playlistgroup, err
@@ -139,7 +141,7 @@ func (q *PlaylistQueries) GetPlGroups() ([]models.PlaylistGroup, error) {
 	return playlistgroup, nil
 }
 
-// Get Playlist Group method for getting one goup by given ID.
+// Get Playlist Group method for getting one group by given ID.
 func (q *PlaylistQueries) GetPlGroup(id int64) (models.PlaylistGroup, error) {
 	// Define playlist variable.
 	group := models.PlaylistGroup{}
@@ -230,46 +232,10 @@ func (q *PlaylistQueries) DeletePlGroup(id int64) error {
 	return nil
 }
 
-// Get Playlist Group method for getting one goup by given ID.
-func (q *PlaylistQueries) GetPlItems(id int64) ([]models.PlaylistItem, error) {
-	// Define playlist variable.
-	items := []models.PlaylistItem{}
-
-	// Define query string.
-	query := `SELECT * FROM playlistitem WHERE playlist_id = ?`
-
-	// Send query to database.
-	err := q.Select(&items, query, id)
-	if err != nil {
-		// Return empty object and error.
-		return items, err
-	}
-
-	// Return query result.
-	return items, nil
-}
-
-// Get Playlist Group method for getting one goup by given ID.
-func (q *PlaylistQueries) GetPlItemExists(item *models.PlaylistItem) error {
-	var playlistItemId int64
-	// Define query string.
-	query := `SELECT id FROM playlistitem WHERE playlist_id = ? AND group_id = ? LIMIT 1`
-
-	// Send query to database.
-	err := q.Get(&playlistItemId, query, item.PlaylistId, item.GroupId)
-	if err != nil {
-		// Return empty object and error.
-		return err
-	}
-
-	// Return query result.
-	return nil
-}
-
 // Create Playlist Group method for creating group by given Playlist Group object.
-func (q *PlaylistQueries) CreatePlItem(p *models.PlaylistItem) (int64, error) {
+func (q *PlaylistQueries) CreatePlGroupItem(p *models.PlaylistGroupItem) (int64, error) {
 	// Define query string.
-	query := `INSERT INTO playlistitem VALUES (null, ?, ?)`
+	query := `INSERT INTO playlist_group_item VALUES (?, ?)`
 
 	// Send query to database.
 	res, err := q.Exec(query, p.PlaylistId, p.GroupId)
@@ -287,31 +253,19 @@ func (q *PlaylistQueries) CreatePlItem(p *models.PlaylistItem) (int64, error) {
 	return id, nil
 }
 
-// Update Playlist Group method for updating group by given Playlist Group object.
-func (q *PlaylistQueries) UpdatePlItem(id int64, p *models.PlaylistItem) error {
-	// Define query string.
-	query := `UPDATE playlistitem SET playlist_id = ?, group_id = ? WHERE id = ?`
-
-	// Send query to database.
-	_, err := q.Exec(query, p.PlaylistId, p.GroupId, id)
-	if err != nil {
-		// Return only error.
-		return err
-	}
-
-	// This query returns nothing.
-	return nil
-}
-
-// GetChannels method for getting all channels.
-func (q *PlaylistQueries) GetPlChannels() ([]models.PlaylistChannel, error) {
+// Get Playlist Group Items method for getting Playlist Group Items.
+func (q *PlaylistQueries) GetPlChannels(item *models.PlaylistGroupChannel) ([]models.PlaylistChannel, error) {
+	// Define playlist variable.
 	channels := []models.PlaylistChannel{}
 
 	// Define query string.
-	query := `SELECT * FROM playlistchannel`
+	query := `SELECT playlistchannel.*
+	FROM playlistchannel
+	JOIN playlist_group_channel ON playlistchannel.id = playlist_group_channel.channel_id
+	WHERE playlist_group_channel.playlist_id = ? AND playlist_group_channel.group_id = ?;`
 
 	// Send query to database.
-	err := q.Select(&channels, query)
+	err := q.Select(&channels, query, item.PlaylistId, item.GroupId)
 	if err != nil {
 		// Return empty object and error.
 		return channels, err
@@ -319,6 +273,27 @@ func (q *PlaylistQueries) GetPlChannels() ([]models.PlaylistChannel, error) {
 
 	// Return query result.
 	return channels, nil
+}
+
+// Create Playlist Group method for creating group by given Playlist Group object.
+func (q *PlaylistQueries) CreatePlGroupChannel(p *models.PlaylistGroupChannel) (int64, error) {
+	// Define query string.
+	query := `INSERT INTO playlist_group_channel VALUES (?, ?, ?)`
+
+	// Send query to database.
+	res, err := q.Exec(query, p.PlaylistId, p.GroupId, p.ChannelId)
+	if err != nil {
+		// Return only error.
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		log.Warnln("Error retrieving the ID: %v", err)
+		return 0, err
+	}
+
+	// This query returns nothing.
+	return id, nil
 }
 
 // GetChannels method for getting all channels by Playlist.

@@ -41,13 +41,24 @@ CREATE TABLE channelurl (
     FOREIGN KEY (playlist_channel_id) REFERENCES playlistchannel(id)
 );
 
--- Create templateitem table
-CREATE TABLE playlistitem (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+-- Create playlist_group_item table
+CREATE TABLE playlist_group_item (
     playlist_id INTEGER NOT NULL,
-    group_id INTEGER NOT NULL,
+    group_id INTEGER NULL,
+    PRIMARY KEY (playlist_id, group_id),
     FOREIGN KEY (playlist_id) REFERENCES playlist(id),
     FOREIGN KEY (group_id) REFERENCES playlistgroup(id)
+    ON DELETE CASCADE
+);
+
+-- Create playlist_group_channel table
+CREATE TABLE playlist_group_channel (
+    playlist_id INTEGER NOT NULL,
+    group_id INTEGER NULL,
+    channel_id INTEGER NOT NULL,
+    PRIMARY KEY (playlist_id, group_id, channel_id),
+    FOREIGN KEY (playlist_id, group_id) REFERENCES playlistitem(playlist_id, group_id),
+    FOREIGN KEY (channel_id) REFERENCES playlistchannel(id)
     ON DELETE CASCADE
 );
 

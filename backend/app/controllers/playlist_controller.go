@@ -110,7 +110,7 @@ func GetPlaylist(c *fiber.Ctx) error {
 // @Router /playlist/{id}/groups [get]
 func GetPlaylistGroups(c *fiber.Ctx) error {
 	// Catch playlist ID from URL.
-	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	playlist_id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -129,36 +129,80 @@ func GetPlaylistGroups(c *fiber.Ctx) error {
 	}
 
 	// Get playlistItems by ID.
-	playlistItems, err := db.GetPlItems(id)
+	playlistGroupItem := &models.PlaylistGroupItem{PlaylistId: playlist_id}
+	playlistGroups, err := db.GetPlGroups(playlistGroupItem)
 	if err != nil {
-		// Return, if playlistitem not found.
+		// Return, if playlist not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error":          true,
-			"msg":            "playlistgroup with the given ID is not found",
+			"msg":            "playlist groups not found",
 			"playlistgroups": nil,
 		})
-	}
-
-	// Get playlist groups by item.
-	var groups []models.PlaylistGroup
-	for _, item := range playlistItems {
-		group, err := db.GetPlGroup(item.GroupId)
-		if err != nil {
-			// Return, if playlist not found.
-			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-				"error":          true,
-				"msg":            "playlist groups not found",
-				"playlistgroups": nil,
-			})
-		}
-		groups = append(groups, group)
 	}
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
 		"error":          false,
 		"msg":            nil,
-		"playlistgroups": groups,
+		"playlistgroups": playlistGroups,
+	})
+}
+
+// GetPlaylistChannels func gets playlist channels by given playlist ID or 404 error.
+// @Description Get playlist channels by given playlist ID
+// @Summary get playlist channels by given playlist ID
+// @Tags Playlist
+// @Accept json
+// @Produce json
+// @Param playlist_id path string true "Playlist ID"
+// @Param group_id path string true "Group ID"
+// @Success 200 {array} models.PlaylistChannel
+// @Router /playlist/{playlist_id}/group/{group_id}/channels [get]
+func GetPlaylistGroupChannels(c *fiber.Ctx) error {
+	// Catch playlist ID from URL.
+	playlist_id, err := strconv.ParseInt(c.Params("playlist_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	// Catch group ID from URL.
+	group_id, err := strconv.ParseInt(c.Params("group_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Get playlist channels by playlist.
+	playlistGroupChannel := &models.PlaylistGroupChannel{PlaylistId: playlist_id, GroupId: group_id}
+	channels, err := db.GetPlChannels(playlistGroupChannel)
+	if err != nil {
+		// Return, if playlist not found.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":          true,
+			"msg":            "playlist groups not found",
+			"playlistgroups": nil,
+		})
+	}
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error":            false,
+		"msg":              nil,
+		"playlistchannels": channels,
 	})
 }
 
