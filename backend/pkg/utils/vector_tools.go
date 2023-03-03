@@ -46,7 +46,7 @@ func AddChannelVector(db *database.Queries, name string) {
 func VectorizeString(text string) ([]float64, error) {
 	modelsDir := os.Getenv("MODEL_PATH")
 	//TODO: NEW MODELS
-	modelName := textencoding.DefaultModel
+	modelName := os.Getenv("MODEL_NAME")
 
 	m, err := tasks.Load[textencoding.Interface](&tasks.Config{
 		ModelsDir: modelsDir,

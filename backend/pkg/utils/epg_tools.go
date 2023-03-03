@@ -21,9 +21,9 @@ func (m *EpgTools) CreateEpgXML(template models.Template) {
 		SourceInfoName: fmt.Sprintf("%s - %s", os.Getenv("APP_NAME"), os.Getenv("APP_VERSION")),
 	}
 
-	channelIDs, err := m.Db.GettvgidByTmpl(template.ID)
+	channelIDs, err := m.Db.GetTmplTvgids(template.ID)
 	if err != nil {
-		log.Error("No tvgid found for template: ", template.ID)
+		log.Error("No tvgids found for template: ", template.ID)
 		return
 	}
 

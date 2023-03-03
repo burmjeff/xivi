@@ -101,90 +101,20 @@ func (q *TemplateQueries) DeleteTemplate(id int64) error {
 	return nil
 }
 
-// GetTemplates method
-func (q *TemplateQueries) GetTmplItems(id int64) ([]models.TemplateItem, error) {
-	templateitems := []models.TemplateItem{}
-
-	// Define query string.
-	query := `SELECT * FROM templateitem WHERE template_id = $1 ORDER BY orderr ASC`
-
-	// Send query to database.
-	err := q.Select(&templateitems, query, id)
-	if err != nil {
-		// Return empty object and error.
-		log.Error(err)
-		return nil, err
-	}
-
-	// Return query result.
-	return templateitems, nil
-}
-
-// GetTemplate method for getting one template by given ID.
-func (q *TemplateQueries) GetTmplItem(id int64) (models.TemplateItem, error) {
-	templateitem := models.TemplateItem{}
-
-	// Define query string.
-	query := `SELECT * FROM templateitem WHERE id = $1`
-
-	// Send query to database.
-	err := q.Get(&templateitem, query, id)
-	if err != nil {
-		// Return empty object and error.
-		return templateitem, err
-	}
-
-	// Return query result.
-	return templateitem, nil
-}
-
 // CreateTemplate method for creating a template by given Template object.
-func (q *TemplateQueries) CreateTmplItem(p *models.TemplateItem) (int64, error) {
+func (q *TemplateQueries) CreateTmplGroupItem(p *models.TemplateGroupItem) error {
 	// Define query string.
-	query := `INSERT INTO templateitem VALUES (null, $1, $2, $3)`
+	query := `INSERT INTO template_group_item VALUES (?, ?, ?)`
 
 	// Send query to database.
-	res, err := q.Exec(query, p.TemplateId, p.GroupId, p.Order)
-	if err != nil {
-		// Return only error.
-		return 0, err
-	}
-
-	id, err := res.LastInsertId()
-	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
-		return 0, err
-	}
-
-	// This query returns nothing.
-	return id, nil
-}
-
-// UpdateTemplate method for updating template by given Template object.
-func (q *TemplateQueries) UpdateTmplItem(id int64, p *models.TemplateItem) error {
-	// Define query string.
-	query := `UPDATE templateitem SET template_id = $2, group_id = $3, orderr = $4 WHERE id = $1`
-
-	// Send query to database.
-	_, err := q.Exec(query, id, p.TemplateId, p.GroupId, p.Order)
+	_, err := q.Exec(query, p.TemplateId, p.GroupId, p.Order)
 	if err != nil {
 		// Return only error.
 		return err
 	}
 
-	// This query returns nothing.
-	return nil
-}
-
-// DeleteTemplate method for delete template by given ID.
-func (q *TemplateQueries) DeleteTmplItem(id int64) error {
-	// Define query string.
-	query := `DELETE FROM templateitem WHERE id = $1`
-
-	// Send query to database.
-	_, err := q.Exec(query, id)
 	if err != nil {
-		// Return only error.
+		log.Warnln("Error retrieving the ID: %v", err)
 		return err
 	}
 
@@ -301,73 +231,20 @@ func (q *TemplateQueries) DeleteTmplGroup(id int64) error {
 	return nil
 }
 
-// GetTemplates method
-func (q *TemplateQueries) GetTmplGroupItems(id int64) ([]models.TemplateGroupItem, error) {
-	templategroupitems := []models.TemplateGroupItem{}
-
-	// Define query string.
-	query := `SELECT * FROM templategroupitem WHERE group_id = $1 ORDER BY orderr ASC`
-
-	// Send query to database.
-	err := q.Select(&templategroupitems, query, id)
-	if err != nil {
-		// Return empty object and error.
-		return templategroupitems, err
-	}
-
-	// Return query result.
-	return templategroupitems, nil
-}
-
-// GetTemplate method for getting one template by given ID.
-func (q *TemplateQueries) GetTmplGroupItem(id int64) (models.TemplateGroupItem, error) {
-	groupitem := models.TemplateGroupItem{}
-
-	// Define query string.
-	query := `SELECT * FROM templategroupitem WHERE id = $1`
-
-	// Send query to database.
-	err := q.Get(&groupitem, query, id)
-	if err != nil {
-		// Return empty object and error.
-		return groupitem, err
-	}
-
-	// Return query result.
-	return groupitem, nil
-}
-
 // CreateTemplate method for creating a template by given Template object.
-func (q *TemplateQueries) CreateTmplGroupItem(p *models.TemplateGroupItem) (int64, error) {
+func (q *TemplateQueries) CreateTmplGroupChannel(p *models.TemplateGroupChannel) error {
 	// Define query string.
-	query := `INSERT INTO templategroupitem VALUES (null, $1, $2, $3)`
+	query := `INSERT INTO template_group_channel VALUES (?, ?, ?)`
 
 	// Send query to database.
-	res, err := q.Exec(query, p.GroupId, p.ChannelId, p.Order)
+	_, err := q.Exec(query, p.GroupId, p.ChannelId, p.Order)
 	if err != nil {
 		// Return only error.
-		return 0, err
+		return err
 	}
 
-	id, err := res.LastInsertId()
 	if err != nil {
 		log.Warnln("Error retrieving the ID: %v", err)
-		return 0, err
-	}
-
-	// This query returns nothing.
-	return id, nil
-}
-
-// UpdateTemplate method for updating template by given Template object.
-func (q *TemplateQueries) UpdateTmplGroupItem(id int64, p *models.TemplateGroupItem) error {
-	// Define query string.
-	query := `UPDATE templategroupitem SET group_id = $2, channel_id = $3, orderr = $4 WHERE id = $1`
-
-	// Send query to database.
-	_, err := q.Exec(query, id, p.GroupId, p.ChannelId, p.Order)
-	if err != nil {
-		// Return only error.
 		return err
 	}
 
@@ -375,13 +252,35 @@ func (q *TemplateQueries) UpdateTmplGroupItem(id int64, p *models.TemplateGroupI
 	return nil
 }
 
-// DeleteTemplate method for delete template by given ID.
-func (q *TemplateQueries) DeleteTmplGroupItem(id int64) error {
+// GetChannel method for getting one group by given Name.
+func (q *TemplateQueries) GetTmplGroupChannels(template_id int64) ([]models.TemplateGroupChannel, error) {
+	// Define group variable.
+	tmplGroupChannels := []models.TemplateGroupChannel{}
+
 	// Define query string.
-	query := `DELETE FROM templategroupitem WHERE id = $1`
+	query := `SELECT template_group_channel.* FROM template_group_channel 
+		JOIN template_group_item ON template_group_channel.group_id = template_group_item.group_id
+		WHERE template_group_item.template_id = ? 
+		ORDER BY orderr ASC`
 
 	// Send query to database.
-	_, err := q.Exec(query, id)
+	err := q.Select(&tmplGroupChannels, query, template_id)
+	if err != nil {
+		// Return empty object and error.
+		return tmplGroupChannels, err
+	}
+
+	// Return query result.
+	return tmplGroupChannels, nil
+}
+
+// DeleteTemplate method for delete template by given ID.
+func (q *TemplateQueries) DeleteTmplGroupItem(p *models.TemplateGroupItem) error {
+	// Define query string.
+	query := `DELETE FROM template_group_item WHERE template_id = ? AND group_id = ?`
+
+	// Send query to database.
+	_, err := q.Exec(query, p.TemplateId, p.GroupId)
 	if err != nil {
 		// Return only error.
 		return err
@@ -414,7 +313,7 @@ func (q *TemplateQueries) GetChannelsByTmpl(id int64) ([]models.TemplateChannel,
 	channels := []models.TemplateChannel{}
 
 	// Define query string.
-	query := `SELECT * FROM templatechannel WHERE TemplateID = $1`
+	query := `SELECT * FROM templatechannel WHERE TemplateID = ?`
 
 	// Send query to database.
 	err := q.Get(&channels, query, id)
@@ -428,16 +327,13 @@ func (q *TemplateQueries) GetChannelsByTmpl(id int64) ([]models.TemplateChannel,
 }
 
 // GetChannels method for getting all channel tvgids by Template.
-func (q *TemplateQueries) GettvgidByTmpl(id int64) ([]string, error) {
+func (q *TemplateQueries) GetTmplTvgids(id int64) ([]string, error) {
 	channels := []string{}
 
 	// Define query string.
-	query := `SELECT tc.tvgid
-				FROM templatechannel tc
-				JOIN templategroupitem tgi ON tgi.channel_id = tc.id
-				JOIN templateitem ti ON ti.group_id = tgi.group_id
-				JOIN template t ON t.id = ti.template_id
-				WHERE t.id = ? AND tc.tvgid IS NOT NULL`
+	query := `SELECT templatechannel.tvgid FROM templatechannel
+		JOIN template_group_channel ON templatechannel.id = template_group_channel.channel_id
+		WHERE template_group_channel.template_id = ? AND templatechannel.tvgid IS NOT NULL`
 
 	// Send query to database.
 	err := q.Select(&channels, query, id)
@@ -456,7 +352,7 @@ func (q *TemplateQueries) GetTmplChannel(id int64) (models.TemplateChannel, erro
 	channel := models.TemplateChannel{}
 
 	// Define query string.
-	query := `SELECT * FROM templatechannel WHERE id = $1`
+	query := `SELECT * FROM templatechannel WHERE id = ?`
 
 	// Send query to database.
 	err := q.Get(&channel, query, id)

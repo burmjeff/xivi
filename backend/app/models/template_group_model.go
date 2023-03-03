@@ -7,7 +7,12 @@ type TemplateGroup struct {
 }
 
 type TemplateGroupItem struct {
-	ID        int64 `db:"id" json:"id"`
+	TemplateId int64 `db:"template_id" json:"template_id" validate:"required"`
+	GroupId    int64 `db:"group_id" json:"group_id" validate:"required"`
+	Order      int64 `db:"orderr" json:"orderr"`
+}
+
+type TemplateGroupChannel struct {
 	GroupId   int64 `db:"group_id" json:"group_id" validate:"required"`
 	ChannelId int64 `db:"channel_id" json:"channel_id" validate:"required"`
 	Order     int64 `db:"orderr" json:"orderr"`

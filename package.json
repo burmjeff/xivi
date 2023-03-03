@@ -25,7 +25,6 @@
 	},
 	"devDependencies": {
 		"@skeletonlabs/skeleton": "^0.132.5",
-		"@sveltejs/adapter-static": "^2.0.1",
 		"@sveltejs/kit": "^1.8.5",
 		"@tailwindcss/forms": "^0.5.3",
 		"@typescript-eslint/eslint-plugin": "^5.53.0",
@@ -49,6 +48,7 @@
 	},
 	"type": "module",
 	"dependencies": {
+		"@sveltejs/adapter-static": "^2.0.1",
 		"axios": "^1.3.4",
 		"bootstrap": "^5.2.3"
 	}

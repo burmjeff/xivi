@@ -319,14 +319,16 @@ func (q *PlaylistQueries) GetChannelsByPl(id int64) ([]models.PlaylistChannel, e
 }
 
 // GetChannels method for getting all channels by Playlist Group.
-func (q *PlaylistQueries) GetChannelsByPlGroup(id int64) ([]models.PlaylistChannel, error) {
+func (q *PlaylistQueries) GetPlGroupChannels(plGroupItem models.PlaylistGroupItem) ([]models.PlaylistChannel, error) {
 	channels := []models.PlaylistChannel{}
 
 	// Define query string.
-	query := `SELECT * FROM playlistchannel WHERE group_id = ?`
+	query := `SELECT playlistchannel.* FROM playlistchannel
+	JOIN playlist_group_channel ON playlistchannel.id = playlist_group_channel.channel_id
+	WHERE playlist_group_channel.playlist_id = ? AND playlist_group_channel.group_id = ?;`
 
 	// Send query to database.
-	err := q.Select(&channels, query, id)
+	err := q.Select(&channels, query, plGroupItem.PlaylistId, plGroupItem.GroupId)
 	if err != nil {
 		// Return empty object and error.
 		log.Error(err)
@@ -397,10 +399,10 @@ func (q *PlaylistQueries) GetPlChannelsByTvgID(tvgid string) ([]models.PlaylistC
 // CreateChannel method for creating a Channel by given Channel object.
 func (q *PlaylistQueries) CreatePlChannel(p *models.PlaylistChannel) (int64, error) {
 	// Define query string.
-	query := `INSERT INTO playlistchannel VALUES (null, $1, $2, $3, $4, $5, $6, $7)`
+	query := `INSERT INTO playlistchannel VALUES (null, ?, ?, ?, ?, ?, ?)`
 
 	// Send query to database.
-	res, err := q.Exec(query, utils.NewNullString(p.TvgID), p.Name, utils.NewNullString(p.Logo), p.GroupID, p.Enabled, p.CreatedAt, p.UpdatedAt)
+	res, err := q.Exec(query, utils.NewNullString(p.TvgID), p.Name, utils.NewNullString(p.Logo), p.Enabled, p.CreatedAt, p.UpdatedAt)
 	if err != nil {
 		// Return only error.
 		return 0, err
@@ -419,10 +421,10 @@ func (q *PlaylistQueries) CreatePlChannel(p *models.PlaylistChannel) (int64, err
 // UpdatePlaylist method for updating a channel by given Channel object.
 func (q *PlaylistQueries) UpdatePlChannel(id int64, p *models.PlaylistChannel) error {
 	// Define query string.
-	query := `UPDATE playlistchannel SET tvgid = $2, name = $3, tvg_logo = $4, group_id = $5, enabled = $6, updated_at = $7 WHERE id = $1`
+	query := `UPDATE playlistchannel SET tvgid = ?, name = ?, tvg_logo = ?, enabled = ?, updated_at = ? WHERE id = ?`
 
 	// Send query to database.
-	_, err := q.Exec(query, id, p.TvgID, p.Name, p.Logo, p.GroupID, p.Enabled, p.UpdatedAt)
+	_, err := q.Exec(query, p.TvgID, p.Name, p.Logo, p.Enabled, p.UpdatedAt, id)
 	if err != nil {
 		// Return only error.
 		return err

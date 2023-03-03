@@ -377,19 +377,28 @@ func DeleteTemplate(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// DeleteTemplateItem func to delete a template Item by given ID.
-// @Description Delete template item by given ID.
-// @Summary delete template by given ID
-// @Tags Template item
+// DeleteTemplateGroupItem func to delete a template Group Item by given group id and playlist id.
+// @Description Delete template Group item by given ID.
+// @Summary delete template Group item by given ID
+// @Tags Template Group item
 // @Accept json
 // @Produce json
-// @Param id path string true "Template Item ID"
+// @Param id path string true "Template ID"
 // @Success 204 {string} status "ok"
-// @Router /template/item/{id} [delete]
-func DeleteTemplateItem(c *fiber.Ctx) error {
+// @Router /template/{template_id}/group/{group_id}/item [delete]
+func DeleteTemplateGroupItem(c *fiber.Ctx) error {
 
-	// Catch templateItem ID from URL.
-	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	// Catch template ID from URL.
+	template_id, err := strconv.ParseInt(c.Params("template_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Catch group ID from URL.
+	group_id, err := strconv.ParseInt(c.Params("group_id"), 10, 64)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -407,18 +416,9 @@ func DeleteTemplateItem(c *fiber.Ctx) error {
 		})
 	}
 
-	// Checking, if template with given ID is exists.
-	foundTemplateItem, err := db.GetTmplItem(id)
-	if err != nil {
-		// Return status 404 and template not found error.
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": true,
-			"msg":   "template item with this ID not found",
-		})
-	}
-
 	// Delete template by given ID.
-	if err := db.DeleteTmplItem(foundTemplateItem.ID); err != nil {
+	templateGroupItem := &models.TemplateGroupItem{TemplateId: template_id, GroupId: group_id}
+	if err := db.DeleteTmplGroupItem(templateGroupItem); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -427,7 +427,7 @@ func DeleteTemplateItem(c *fiber.Ctx) error {
 	}
 
 	m3uTools := utils.M3uTools{Db: db}
-	go m3uTools.RemoveM3uItems(foundTemplateItem)
+	go m3uTools.RemoveM3uItems(templateGroupItem)
 
 	// Return status 204 no content.
 	return c.SendStatus(fiber.StatusNoContent)

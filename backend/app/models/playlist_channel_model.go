@@ -10,7 +10,6 @@ type PlaylistChannel struct {
 	TvgID     string    `db:"tvgid" json:"tvgid" validate:"lte=255"`
 	Name      string    `db:"name"  json:"name" validate:"required,lte=255"`
 	Logo      string    `db:"tvg_logo" json:"tvg_logo" validate:"lte=255"`
-	GroupID   int64     `db:"group_id" json:"group_id"`
 	Enabled   bool      `db:"enabled" json:"enabled"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`

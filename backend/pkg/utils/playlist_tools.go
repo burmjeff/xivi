@@ -12,13 +12,11 @@ type PlaylistTools struct {
 }
 
 // Convert all playlist channels in playlist group to template channels attached to given group name.
-func (p *PlaylistTools) ConvertPlGroup(templateGroup int64, playlistGroup []models.PlaylistChannel) {
-	for _, channel := range playlistGroup {
+func (p *PlaylistTools) ConvertPlGroup(templateGroup int64, playlistChannels []models.PlaylistChannel) {
+	for _, channel := range playlistChannels {
 		channelID := p.ConvertPlChannel(channel)
-		tmplGroupItem := &models.TemplateGroupItem{}
-		tmplGroupItem.GroupId = templateGroup
-		tmplGroupItem.ChannelId = channelID
-		_, err := p.Db.CreateTmplGroupItem(tmplGroupItem)
+		tmplGroupChannel := &models.TemplateGroupChannel{GroupId: templateGroup, ChannelId: channelID}
+		err := p.Db.CreateTmplGroupChannel(tmplGroupChannel)
 		if err != nil {
 			log.Warnln(err)
 		}

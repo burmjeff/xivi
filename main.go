@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	_ "github.com/joho/godotenv/autoload" // load .env file automatically
+	"github.com/rs/zerolog"
 )
 
 // @title API
@@ -33,6 +34,8 @@ func main() {
 	M3U_FILEPATH := os.Getenv("M3U_FILEPATH")
 	EPG_FILEPATH := os.Getenv("EPG_FILEPATH")
 	MODEL_PATH := os.Getenv("MODEL_PATH")
+
+	zerolog.SetGlobalLevel(zerolog.ErrorLevel)
 
 	// Start server (with graceful shutdown).
 	if _, err := os.Stat(CONFIG_PATH); errors.Is(err, os.ErrNotExist) {
