@@ -128,7 +128,7 @@ func GetPlaylistGroups(c *fiber.Ctx) error {
 		})
 	}
 
-	// Get playlistItems by ID.
+	// Get playlist_group_items by ID.
 	playlistGroupItem := &models.PlaylistGroupItem{PlaylistId: playlist_id}
 	playlistGroups, err := db.GetPlGroups(playlistGroupItem)
 	if err != nil {
@@ -501,16 +501,24 @@ func DeletePlaylist(c *fiber.Ctx) error {
 // @Tags Playlist
 // @Accept json
 // @Produce json
-// @Param id path string true "Playlist Group ID"
+// @Param playlist_id path string true "Playlist ID"
+// @Param group_id path string true "Group ID"
 // @Param templategroup body models.TemplateGroupCreateParam true "TemplateGroup"
 // @Success 200 {object} models.TemplateGroup
-// @Router /playlist/group/convert/{id} [post]
+// @Router /playlist/{playlist_id}/group/{group_id}/convert [post]
 func ConvertPlaylistGroup(c *fiber.Ctx) error {
 	// Create new Template struct
 	templateGroup := &models.TemplateGroup{}
 
 	// Catch playlist ID from URL.
-	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	playlist_id, err := strconv.ParseInt(c.Params("playlist_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	group_id, err := strconv.ParseInt(c.Params("group_id"), 10, 64)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -549,14 +557,15 @@ func ConvertPlaylistGroup(c *fiber.Ctx) error {
 		})
 	}
 
+	playlistGroupItem := models.PlaylistGroupItem{PlaylistId: playlist_id, GroupId: group_id}
 	// Get playlistgroup by ID.
-	playlistChannels, err := db.GetChannelsByPlGroup(id)
+	playlistChannels, err := db.GetPlGroupChannels(playlistGroupItem)
 	if err != nil {
 		// Return, if playlistgroup not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error":           true,
-			"msg":             "playlist group with the given ID is not found",
-			"playlistGroupID": id,
+			"error":             true,
+			"msg":               "playlist group with the given ID is not found",
+			"playlistGroupItem": playlistGroupItem,
 		})
 	}
 

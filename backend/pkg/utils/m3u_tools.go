@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
@@ -13,26 +14,22 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var host string
-var port int
-
 type M3uTools struct {
-	Db        *database.Queries
-	tmplItems []models.TemplateItem
-	template  models.Template
+	Db       *database.Queries
+	template models.Template
+	host     string
+	port     int
 }
 
 func (m *M3uTools) CreateM3u(template models.Template) {
-	host = "127.0.0.1"
-	port = 8000
-	m.template = template
-
-	tmplItems, err := m.Db.GetTmplItems(template.ID)
+	m.host = os.Getenv("STREAMING_HOST")
+	port, err := strconv.Atoi(os.Getenv("STREAMING_PORT"))
 	if err != nil {
-		log.Warnln(err)
+		log.Error("Not a valid Streaming Port: ", os.Getenv("STREAMING_PORT"))
 		return
 	}
-	m.tmplItems = tmplItems
+	m.port = port
+	m.template = template
 
 	reader, err := m.marshall()
 	if err != nil {
@@ -44,11 +41,11 @@ func (m *M3uTools) CreateM3u(template models.Template) {
 
 }
 
-func (m *M3uTools) RemoveM3uItems(templateItem models.TemplateItem) {
+func (m *M3uTools) RemoveM3uItems(templateGroupItem *models.TemplateGroupItem) {
 	// Create a new string variable to hold the filtered content.
 	var filtered string
 
-	template, err := m.Db.GetTemplate(templateItem.TemplateId)
+	template, err := m.Db.GetTemplate(templateGroupItem.TemplateId)
 	if err != nil {
 		log.Error("Error finding Template: ", err)
 		return
@@ -62,7 +59,7 @@ func (m *M3uTools) RemoveM3uItems(templateItem models.TemplateItem) {
 		return
 	}
 
-	group, err := m.Db.GetTmplGroup(templateItem.GroupId)
+	group, err := m.Db.GetTmplGroup(templateGroupItem.GroupId)
 	if err != nil {
 		log.Error("Error finding Group: ", err)
 		return
@@ -108,7 +105,7 @@ func (m *M3uTools) marshall() (io.Reader, error) {
 func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 	chNo := 1
 
-	xmltvURL := fmt.Sprintf("http://%s:%d/xmltv/%s.xml", host, port, m.template.Name)
+	xmltvURL := fmt.Sprintf("http://%s:%d/xmltv/%s.xml", m.host, m.port, m.template.Name)
 
 	_, err := writer.WriteString(fmt.Sprintf("#EXTM3U url-tvg=\"%s\" x-tvg-url=\"%s\"\n", xmltvURL, xmltvURL))
 	if err != nil {
@@ -116,33 +113,32 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 		return nil
 	}
 
-	for _, item := range m.tmplItems {
+	tmplGroupChannels, err := m.Db.GetTmplGroupChannels(m.template.ID)
+	if err != nil {
+		log.Warnln(err)
+		return err
+	}
+
+	for _, item := range tmplGroupChannels {
 		group, err := m.Db.GetTmplGroup(item.GroupId)
 		if err != nil {
 			log.Warnln(err)
 			continue
 		}
 		log.Println("M3U Creation: Found Template Group: ", group.Name)
-		tmplGroupItems, err := m.Db.GetTmplGroupItems(group.ID)
+		channel, err := m.Db.GetTmplChannel(item.ChannelId)
 		if err != nil {
 			log.Warnln(err)
 			continue
 		}
-		for _, groupItem := range tmplGroupItems {
-			channel, err := m.Db.GetTmplChannel(groupItem.ChannelId)
-			if err != nil {
-				log.Warnln(err)
-				continue
-			}
-			log.Println("M3U Creation: Adding Template Channel: ", channel.Name)
-			channelURL := fmt.Sprintf("http://%s:%d/stream/%s", host, port, channel.Uuid)
-			_, err = writer.WriteString(fmt.Sprintf("#EXTINF:-1 tvg-chno=\"%d\" tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n%s\n", chNo, channel.Name, channel.TvgID, channel.Logo, group.Name, channel.Name, channelURL))
-			if err != nil {
-				log.Error(err)
-				continue
-			}
-			chNo++
+		log.Println("M3U Creation: Adding Template Channel: ", channel.Name)
+		channelURL := fmt.Sprintf("http://%s:%d/stream/%s", m.host, m.port, channel.Uuid)
+		_, err = writer.WriteString(fmt.Sprintf("#EXTINF:-1 tvg-chno=\"%d\" tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n%s\n", chNo, channel.Name, channel.TvgID, channel.Logo, group.Name, channel.Name, channelURL))
+		if err != nil {
+			log.Error(err)
+			continue
 		}
+		chNo++
 	}
 
 	return writer.Flush()

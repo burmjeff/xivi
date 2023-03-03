@@ -138,6 +138,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 			playlistChannel.Logo = tvgLogo
 		}
 
+		var groupID int64 = 0
 		if group != "" {
 			// Checking, if playlist with given ID is exists.
 			foundGroup, err := m.Db.GetPlGroupByName(group)
@@ -148,14 +149,14 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 				if err != nil {
 					log.Warn("FAILED TO CREATE PLAYLIST GROUP: ", err)
 				} else {
-					playlistChannel.GroupID = groupId
+					groupID = groupId
 				}
 			} else {
-				playlistChannel.GroupID = foundGroup.ID
+				groupID = foundGroup.ID
 			}
 		}
 
-		playlistGroupItem := &models.PlaylistGroupItem{PlaylistId: m.playlistID, GroupId: playlistChannel.GroupID}
+		playlistGroupItem := &models.PlaylistGroupItem{PlaylistId: m.playlistID, GroupId: groupID}
 		_, err := m.Db.CreatePlGroupItem(playlistGroupItem)
 		if err != nil {
 			log.Warn("FAILED TO CREATE PLAYLIST_GROUP_ITEM: ", err)
@@ -207,7 +208,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 					}
 				}
 				playlistChannel.ID = channelID
-				m.createPlaylistGroupChannel(playlistChannel)
+				m.createPlaylistGroupChannel(groupID, playlistChannel)
 
 				return
 			}
@@ -220,7 +221,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 			return
 		}
 		playlistChannel.ID = playlistChannelID
-		m.createPlaylistGroupChannel(playlistChannel)
+		m.createPlaylistGroupChannel(groupID, playlistChannel)
 
 		//Set channel URL model
 		channelURL.Url = streamLink
@@ -239,9 +240,9 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 	}
 }
 
-func (m *M3uParser) createPlaylistGroupChannel(playlistChannel *models.PlaylistChannel) {
+func (m *M3uParser) createPlaylistGroupChannel(groupID int64, playlistChannel *models.PlaylistChannel) {
 
-	playlistGroupChannel := &models.PlaylistGroupChannel{PlaylistId: m.playlistID, GroupId: playlistChannel.GroupID, ChannelId: playlistChannel.ID}
+	playlistGroupChannel := &models.PlaylistGroupChannel{PlaylistId: m.playlistID, GroupId: groupID, ChannelId: playlistChannel.ID}
 	_, err := m.Db.CreatePlGroupChannel(playlistGroupChannel)
 	if err != nil {
 		log.Warn("FAILED TO CREATE PLAYLIST_GROUP_CHANNEL: ", err)

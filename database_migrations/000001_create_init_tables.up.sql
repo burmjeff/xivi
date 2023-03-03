@@ -21,11 +21,9 @@ CREATE TABLE playlistchannel (
     tvgid VARCHAR (255) NULL,
     name VARCHAR (255) NOT NULL,
     tvg_logo VARCHAR (255) NULL,
-    group_id INTEGER NULL,
     enabled BOOLEAN NOT NULL,
     created_at DATETIME DEFAULT (datetime('now','localtime')),
-    updated_at DATETIME DEFAULT (datetime('now','localtime')),
-    FOREIGN KEY (group_id) REFERENCES playlistgroup(id)
+    updated_at DATETIME DEFAULT (datetime('now','localtime'))
 );
 
 -- Create channelurl table
@@ -34,11 +32,11 @@ CREATE TABLE channelurl (
     url VARCHAR (255) NOT NULL,
     playlist_id INTEGER NOT NULL,
     playlist_channel_id INTEGER NOT NULL,
-    orderr INTEGER UNIQUE NOT NULL,
+    orderr INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT (datetime('now','localtime')),
     updated_at DATETIME DEFAULT (datetime('now','localtime')),
-    FOREIGN KEY (playlist_id) REFERENCES playlist(id),
-    FOREIGN KEY (playlist_channel_id) REFERENCES playlistchannel(id)
+    FOREIGN KEY (playlist_id) REFERENCES playlist(id) ON DELETE CASCADE,
+    FOREIGN KEY (playlist_channel_id) REFERENCES playlistchannel(id) ON DELETE CASCADE
 );
 
 -- Create playlist_group_item table
@@ -46,9 +44,8 @@ CREATE TABLE playlist_group_item (
     playlist_id INTEGER NOT NULL,
     group_id INTEGER NULL,
     PRIMARY KEY (playlist_id, group_id),
-    FOREIGN KEY (playlist_id) REFERENCES playlist(id),
-    FOREIGN KEY (group_id) REFERENCES playlistgroup(id)
-    ON DELETE CASCADE
+    FOREIGN KEY (playlist_id) REFERENCES playlist(id) ON DELETE CASCADE,
+    FOREIGN KEY (group_id) REFERENCES playlistgroup(id) ON DELETE CASCADE
 );
 
 -- Create playlist_group_channel table
@@ -57,9 +54,8 @@ CREATE TABLE playlist_group_channel (
     group_id INTEGER NULL,
     channel_id INTEGER NOT NULL,
     PRIMARY KEY (playlist_id, group_id, channel_id),
-    FOREIGN KEY (playlist_id, group_id) REFERENCES playlistitem(playlist_id, group_id),
-    FOREIGN KEY (channel_id) REFERENCES playlistchannel(id)
-    ON DELETE CASCADE
+    FOREIGN KEY (playlist_id, group_id) REFERENCES playlist_group_item(playlist_id, group_id) ON DELETE CASCADE,
+    FOREIGN KEY (channel_id) REFERENCES playlistchannel(id) ON DELETE CASCADE
 );
 
 -- Create template table
@@ -83,26 +79,24 @@ CREATE TABLE templatechannel (
     uuid VARCHAR (255) UNIQUE NOT NULL
 );
 
--- Create templateitem table
-CREATE TABLE templateitem (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+-- Create template_group_item table
+CREATE TABLE template_group_item (
     template_id INTEGER NOT NULL,
     group_id INTEGER NOT NULL,
-    orderr INTEGER UNIQUE NOT NULL,
-    FOREIGN KEY (template_id) REFERENCES template(id),
-    FOREIGN KEY (group_id) REFERENCES templategroup(id)
-    ON DELETE CASCADE
+    orderr INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (template_id, group_id),
+    FOREIGN KEY (template_id) REFERENCES template(id) ON DELETE CASCADE,
+    FOREIGN KEY (group_id) REFERENCES templategroup(id) ON DELETE CASCADE
 );
 
--- Create templategroupitem table
-CREATE TABLE templategroupitem (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    group_id INTEGER NOT NULL,
+-- Create template_group_channel table
+CREATE TABLE template_group_channel (
+    group_id INTEGER NULL,
     channel_id INTEGER NOT NULL,
-    orderr INTEGER UNIQUE NOT NULL,
-    FOREIGN KEY (group_id) REFERENCES templategroup(id),
-    FOREIGN KEY (channel_id) REFERENCES templatechannel(id)
-    ON DELETE CASCADE
+    orderr INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (group_id, channel_id),
+    FOREIGN KEY (group_id) REFERENCES templategroup(id) ON DELETE CASCADE,
+    FOREIGN KEY (channel_id) REFERENCES templatechannel(id) ON DELETE CASCADE
 );
 
 -- Create templatechannelitem table
@@ -110,9 +104,9 @@ CREATE TABLE templatechannelitem (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     channel_id INTEGER NOT NULL,
     playlist_channel_id INTEGER NOT NULL,
-    orderr INTEGER UNIQUE NOT NULL,
-    FOREIGN KEY (channel_id) REFERENCES templatechannel(id),
-    FOREIGN KEY (playlist_channel_id) REFERENCES playlistchannel(id)
+    orderr INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (channel_id) REFERENCES templatechannel(id) ON DELETE CASCADE,
+    FOREIGN KEY (playlist_channel_id) REFERENCES playlistchannel(id) ON DELETE CASCADE
     ON DELETE CASCADE
 );
 
@@ -121,7 +115,7 @@ CREATE TABLE epg (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR (255) UNIQUE NOT NULL,
     url VARCHAR (255) NOT NULL,
-    orderr INTEGER UNIQUE NOT NULL
+    orderr INTEGER NOT NULL DEFAULT 0
 );
 
 -- Create epgchannel table
@@ -161,8 +155,8 @@ CREATE TABLE epgchannelitem (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     epg_channel_id INTEGER NOT NULL,
     epg_programme_id INTEGER NOT NULL,
-    FOREIGN KEY (epg_channel_id) REFERENCES epg_channel(id),
-    FOREIGN KEY (epg_programme_id) REFERENCES epg_programme(id)
+    FOREIGN KEY (epg_channel_id) REFERENCES epg_channel(id) ON DELETE CASCADE,
+    FOREIGN KEY (epg_programme_id) REFERENCES epg_programme(id) ON DELETE CASCADE
 );
 
 -- Create templatechannelvectors table
@@ -170,8 +164,8 @@ CREATE TABLE templatechannelvectors (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR (255) UNIQUE NOT NULL,
     channel_id INTEGER NOT NULL,
-    FOREIGN KEY (name) REFERENCES channelvectors(name),
-    FOREIGN KEY (channel_id) REFERENCES templatechannel(id)
+    FOREIGN KEY (name) REFERENCES channelvectors(name) ON DELETE CASCADE,
+    FOREIGN KEY (channel_id) REFERENCES templatechannel(id) ON DELETE CASCADE
 );
 
 -- Create channelvectors table
@@ -195,28 +189,24 @@ CREATE INDEX idx_template_tvgid ON templatechannel (tvgid);
 CREATE INDEX idx_template_vector ON templatechannelvectors (name);
 CREATE INDEX idx_playlist_vector ON channelvectors (name);
 CREATE INDEX idx_channel_filters ON channelfilters (oldname);
+CREATE INDEX idx_template_group_item_orderr ON template_group_item (orderr);
+CREATE INDEX idx_template_group_channel_orderr ON template_group_channel (orderr);
 
 -- Add triggers
-CREATE TRIGGER increment_tmpl_order
-AFTER INSERT ON templateitem
+CREATE TRIGGER template_group_item_order
+AFTER INSERT ON template_group_item
+FOR EACH ROW
 BEGIN
-    UPDATE templateitem
-    SET orderr = (
-        SELECT MAX(orderr) + 1
-        FROM templateitem
-    )
-    WHERE id = new.id;
+  UPDATE template_group_item SET orderr = COALESCE((SELECT MAX(orderr) FROM template_group_item), 0) + 1
+  WHERE ROWID = new.ROWID;
 END;
 
-CREATE TRIGGER increment_tmpl_group_order
-AFTER INSERT ON templategroupitem
+CREATE TRIGGER template_group_channel_order
+AFTER INSERT ON template_group_channel
+FOR EACH ROW
 BEGIN
-    UPDATE templategroupitem
-    SET orderr = (
-        SELECT MAX(orderr) + 1
-        FROM templategroupitem
-    )
-    WHERE id = new.id;
+  UPDATE template_group_channel SET orderr = COALESCE((SELECT MAX(orderr) FROM template_group_channel), 0) + 1
+  WHERE ROWID = new.ROWID;
 END;
 
 CREATE TRIGGER increment_tmpl_channel_order
@@ -252,13 +242,21 @@ BEGIN
     WHERE id = new.id;
 END;
 
+CREATE TRIGGER delete_playlistchannel_cascade
+AFTER DELETE ON playlistchannel
+FOR EACH ROW
+BEGIN
+    DELETE FROM playlist_group_item WHERE group_id NOT IN (SELECT group_id FROM playlist_group_channel);
+    DELETE FROM playlistgroup WHERE id NOT IN (SELECT group_id FROM playlist_group_item);
+END;
+
 CREATE TRIGGER delete_channelurl_cascade
 AFTER DELETE ON channelurl
 FOR EACH ROW
 BEGIN
     DELETE FROM playlistchannel WHERE id NOT IN (SELECT playlist_channel_id FROM channelurl);
-    DELETE FROM playlistitem WHERE group_id NOT IN (SELECT group_id FROM playlistchannel);
-    DELETE FROM playlistgroup WHERE id NOT IN (SELECT group_id FROM playlistchannel);
+    DELETE FROM playlist_group_item WHERE group_id NOT IN (SELECT group_id FROM playlist_group_channel);
+    DELETE FROM playlistgroup WHERE id NOT IN (SELECT group_id FROM playlist_group_item);
 END;
 
 CREATE TRIGGER delete_playlist_cascade
