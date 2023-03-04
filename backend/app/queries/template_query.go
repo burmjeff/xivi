@@ -123,7 +123,7 @@ func (q *TemplateQueries) CreateTmplGroupItem(p *models.TemplateGroupItem) error
 }
 
 // GetGroups method
-func (q *TemplateQueries) GetTmplGroups() ([]models.TemplateGroup, error) {
+func (q *TemplateQueries) GetAllTmplGroups() ([]models.TemplateGroup, error) {
 	templategroup := []models.TemplateGroup{}
 
 	// Define query string.
@@ -131,6 +131,27 @@ func (q *TemplateQueries) GetTmplGroups() ([]models.TemplateGroup, error) {
 
 	// Send query to database.
 	err := q.Select(&templategroup, query)
+	if err != nil {
+		// Return empty object and error.
+		return templategroup, err
+	}
+
+	// Return query result.
+	return templategroup, nil
+}
+
+// GetGroups method
+func (q *TemplateQueries) GetTmplGroups(item *models.TemplateGroupItem) ([]models.TemplateGroup, error) {
+	templategroup := []models.TemplateGroup{}
+
+	// Define query string.
+	query := `SELECT templategroup.* FROM templategroup
+	JOIN template_group_item ON templategroup.id = template_group_item.group_id
+	WHERE template_group_item.template_id = ?
+	ORDER BY template_group_item.orderr ASC`
+
+	// Send query to database.
+	err := q.Select(&templategroup, query, item.TemplateId)
 	if err != nil {
 		// Return empty object and error.
 		return templategroup, err
@@ -272,6 +293,28 @@ func (q *TemplateQueries) GetTmplGroupChannels(template_id int64) ([]models.Temp
 
 	// Return query result.
 	return tmplGroupChannels, nil
+}
+
+// GetChannel method for getting one group by given Name.
+func (q *TemplateQueries) GetTmplChannelsByGroup(item *models.TemplateGroupChannel) ([]models.TemplateChannel, error) {
+	// Define group variable.
+	tmplChannels := []models.TemplateChannel{}
+
+	// Define query string.
+	query := `SELECT templatechannel.* FROM templatechannel 
+		JOIN template_group_channel ON templatechannel.id = template_group_channel.channel_id
+		WHERE template_group_channel.group_id = ? 
+		ORDER BY template_group_channel.orderr ASC`
+
+	// Send query to database.
+	err := q.Select(&tmplChannels, query, item.GroupId)
+	if err != nil {
+		// Return empty object and error.
+		return tmplChannels, err
+	}
+
+	// Return query result.
+	return tmplChannels, nil
 }
 
 // DeleteTemplate method for delete template by given ID.
