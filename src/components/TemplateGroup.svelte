@@ -1,18 +1,18 @@
-<!-- PlaylistGroup.svelte -->
+<!-- TemplateGroup.svelte -->
 <script lang="ts">
-    import PlaylistChannel from './PlaylistChannel.svelte';
+    import TemplateChannel from './TemplateChannel.svelte';
     import { onMount } from 'svelte';
     import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
-    import {playlistGroups} from '../stores/playlist_store';
+    import {templateGroups} from '../stores/template_store';
   
-    export let playlistId: number;
+    export let templateId: number;
   
     onMount(async () => {
-        fetch(`/api/playlist/${playlistId}/groups`)
+        fetch(`/api/template/${templateId}/groups`)
         .then(response => response.json())
         .then(data => {
             console.log(data);
-            playlistGroups.set(data.playlistgroups);
+            templateGroups.set(data.templategroups);
         }).catch(error => {
             console.log(error);
             return [];
@@ -21,12 +21,12 @@
   </script>
 
   <Accordion>
-    {#each $playlistGroups as group}
+    {#each $templateGroups as group}
         <AccordionItem>
             <svelte:fragment slot="lead">{group.id}</svelte:fragment>
             <svelte:fragment slot="summary"><h3>{group.name}</h3></svelte:fragment>
             <svelte:fragment slot="content">
-              <PlaylistChannel playlistId={playlistId} groupId={group.id} />
+              <TemplateChannel groupId={group.id} />
             </svelte:fragment>
         </AccordionItem>
     {/each}

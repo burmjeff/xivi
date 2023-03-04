@@ -1,6 +1,6 @@
 <script>
-    import TemplateList from '../../components/TemplateList.svelte';
-    import TemplateGroupList from '../../components/TemplateGroupList.svelte';
+    import Template from '../../components/Template.svelte';
+    import TemplateGroupList from '../../components/Template_Group_List.svelte';
     import Playlist from '../../components/Playlist.svelte';
 </script>
 
@@ -8,7 +8,7 @@
 	<div class="space-y-10 text-center">
 		<h2 class="font-bold">Welcome to Skeleton.</h2>
         <div style="display: flex;">
-            <TemplateList/>
+            <Template/>
             <TemplateGroupList/>
             <Playlist/>
         </div>

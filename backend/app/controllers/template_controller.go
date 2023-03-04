@@ -58,12 +58,12 @@ func GetTemplates(c *fiber.Ctx) error {
 // @Tags Template
 // @Accept json
 // @Produce json
-// @Param id path string true "Template ID"
+// @Param template_id path string true "Template ID"
 // @Success 200 {object} models.Template
-// @Router /template/{id} [get]
+// @Router /template/{template_id} [get]
 func GetTemplate(c *fiber.Ctx) error {
 	// Catch template ID from URL.
-	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	template_id, err := strconv.ParseInt(c.Params("template_id"), 10, 64)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -82,7 +82,7 @@ func GetTemplate(c *fiber.Ctx) error {
 	}
 
 	// Get template by ID.
-	template, err := db.GetTemplate(id)
+	template, err := db.GetTemplate(template_id)
 	if err != nil {
 		// Return, if template not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -377,13 +377,14 @@ func DeleteTemplate(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// DeleteTemplateGroupItem func to delete a template Group Item by given group id and playlist id.
+// DeleteTemplateGroupItem func to delete a template Group Item by given group id and templatet id.
 // @Description Delete template Group item by given ID.
 // @Summary delete template Group item by given ID
 // @Tags Template Group item
 // @Accept json
 // @Produce json
-// @Param id path string true "Template ID"
+// @Param template_id path string true "Template ID"
+// @Param group_id path string true "Group ID"
 // @Success 204 {string} status "ok"
 // @Router /template/{template_id}/group/{group_id}/item [delete]
 func DeleteTemplateGroupItem(c *fiber.Ctx) error {
@@ -431,4 +432,140 @@ func DeleteTemplateGroupItem(c *fiber.Ctx) error {
 
 	// Return status 204 no content.
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+// GetTemplateGroups func gets template groups by given template ID or 404 error.
+// @Description Get template groups by given template ID
+// @Summary get template groups by given template ID
+// @Tags Template
+// @Accept json
+// @Produce json
+// @Param template_id path string true "Template ID"
+// @Success 200 {array} models.TemplateGroup
+// @Router /template/{template_id}/groups [get]
+func GetTemplateGroups(c *fiber.Ctx) error {
+	// Catch template ID from URL.
+	template_id, err := strconv.ParseInt(c.Params("template_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Get Template groups by Template.
+	templateGroupItem := &models.TemplateGroupItem{TemplateId: template_id}
+	groups, err := db.GetTmplGroups(templateGroupItem)
+	if err != nil {
+		// Return, if template not found.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":          true,
+			"msg":            "template groups not found",
+			"templategroups": nil,
+		})
+	}
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error":          false,
+		"msg":            nil,
+		"templategroups": groups,
+	})
+}
+
+// GetAllTemplateGroups func gets all template groups.
+// @Description Get all template group
+// @Summary get all template groups
+// @Tags Template
+// @Accept json
+// @Produce json
+// @Success 200 {array} models.TemplateGroup
+// @Router /template/groups/all [get]
+func GetAllTemplateGroups(c *fiber.Ctx) error {
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Get Template groups.
+	groups, err := db.GetAllTmplGroups()
+	if err != nil {
+		// Return, if template not found.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":          true,
+			"msg":            "template groups not found",
+			"templategroups": nil,
+		})
+	}
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error":          false,
+		"msg":            nil,
+		"templategroups": groups,
+	})
+}
+
+// GetTemplateChannels func gets template channels by given group ID or 404 error.
+// @Description Get template channels by given group ID
+// @Summary get template channels by given group ID
+// @Tags Template
+// @Accept json
+// @Produce json
+// @Param group_id path string true "Group ID"
+// @Success 200 {array} models.TemplateChannel
+// @Router /template/group/{group_id}/channels [get]
+func GetTemplateGroupChannels(c *fiber.Ctx) error {
+	// Catch group ID from URL.
+	group_id, err := strconv.ParseInt(c.Params("group_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Get Template channels by group.
+	templateGroupChannel := &models.TemplateGroupChannel{GroupId: group_id}
+	channels, err := db.GetTmplChannelsByGroup(templateGroupChannel)
+	if err != nil {
+		// Return, if template not found.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":            true,
+			"msg":              "template channels not found",
+			"templatechannels": nil,
+		})
+	}
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error":            false,
+		"msg":              nil,
+		"templatechannels": channels,
+	})
 }

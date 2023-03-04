@@ -11,7 +11,7 @@ func PublicRoutes(a *fiber.App) {
 	// Create routes group.
 	route := a.Group("/api")
 
-	// Routes for GET method:
+	// Playlist Routes:
 	route.Get("/token/new", controllers.GetNewAccessToken)                                             // create a new access tokens
 	route.Get("/playlists", controllers.GetPlaylists)                                                  // get list of all playlists
 	route.Get("/playlist/:id", controllers.GetPlaylist)                                                // get one playlist by ID
@@ -20,8 +20,18 @@ func PublicRoutes(a *fiber.App) {
 	route.Post("/playlist", controllers.CreatePlaylist)                                                // create a new playlist
 	route.Post("/playlist/:playlist_id/group/:group_id/convert", controllers.ConvertPlaylistGroup)     // convert playlistgroup
 	route.Post("/m3u/:id", controllers.CreateM3U)                                                      // create m3u from template id
-	route.Post("/template", controllers.CreateTemplate)                                                // create a new template
-	route.Delete("/template/:template_id/group/:group_id/item", controllers.DeleteTemplateGroupItem)   // delete one playlist by ID
-	route.Post("/epg", controllers.AddEpg)                                                             // Add a new Epg
-	route.Post("/epg/create/:id", controllers.CreateEPG)                                               // Creat a new Epg xml
+
+	// Template Routes
+	route.Get("/templates", controllers.GetTemplates)                                                // get list of all playlists
+	route.Get("/template/:template_id", controllers.GetTemplate)                                     // get one playlist by ID
+	route.Get("/template/:template_id/groups", controllers.GetTemplateGroups)                        // get groups by playlist_id
+	route.Get("/template/groups/all", controllers.GetAllTemplateGroups)                              // get groups by playlist_id
+	route.Get("/template/group/:group_id/channels", controllers.GetTemplateGroupChannels)            // get channels by playlist and group
+	route.Post("/template", controllers.CreateTemplate)                                              // create a new template
+	route.Delete("/template/:template_id/group/:group_id/item", controllers.DeleteTemplateGroupItem) // delete one playlist by ID
+
+	// EPG Routes
+	route.Post("/epg", controllers.AddEpg)               // Add a new Epg
+	route.Post("/epg/create/:id", controllers.CreateEPG) // Creat a new Epg xml
+
 }

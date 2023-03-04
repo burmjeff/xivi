@@ -1,7 +1,7 @@
-<!-- ChannelTable.svelte -->
+<!-- PlaylistChannel.svelte -->
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { playlistChannels } from '../stores/playliststore';
+    import { playlistChannels } from '../stores/playlist_store';
   
     export let playlistId: number;
     export let groupId: number;
@@ -25,15 +25,15 @@
   <table class="table">
     <thead>
       <tr>
+        <th>Logo</th>
         <th>Name</th>
-        <th>Description</th>
-        <th>Group ID</th>
+        <th>tvg-id</th>
       </tr>
     </thead>
     <tbody>
       {#each $playlistChannels as channel}
         <tr>
-          <td>{channel.group_id}</td>
+          <td>{channel.tvg_logo}</td>
           <td>{channel.name}</td>
           <td>{channel.tvgid}</td>
         </tr>
