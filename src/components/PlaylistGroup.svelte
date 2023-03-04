@@ -3,7 +3,7 @@
     import PlaylistChannel from './PlaylistChannel.svelte';
     import { onMount } from 'svelte';
     import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
-    import {playlistGroups} from '../stores/playlist_store';
+    import {playlistGroups} from '@xivi/stores/playlist_store';
   
     export let playlistId: number;
   

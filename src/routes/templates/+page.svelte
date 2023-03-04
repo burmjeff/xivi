@@ -1,7 +1,7 @@
 <script>
-    import Template from '../../components/Template.svelte';
-    import TemplateGroupList from '../../components/Template_Group_List.svelte';
-    import Playlist from '../../components/Playlist.svelte';
+    import Template from '@xivi/components/Template.svelte';
+    import TemplateGroupList from '@xivi/components/Template_Group_List.svelte';
+    import Playlist from '@xivi/components/Playlist.svelte';
 </script>
 
 <div class="container h-full mx-auto flex justify-center items-center">

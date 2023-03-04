@@ -1,7 +1,7 @@
 <!-- TemplateChannel.svelte -->
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { templateChannels } from '../stores/template_store';
+    import { templateChannels } from '@xivi/stores/template_store';
   
     export let groupId: number;
   

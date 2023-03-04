@@ -1,7 +1,7 @@
 <!-- PlaylistChannel.svelte -->
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { playlistChannels } from '../stores/playlist_store';
+    import { playlistChannels } from '@xivi/stores/playlist_store';
   
     export let playlistId: number;
     export let groupId: number;
