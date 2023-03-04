@@ -3,7 +3,7 @@
     import PlaylistGroup from './PlaylistGroup.svelte';
     import { onMount } from 'svelte';
     import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
-    import { playlists } from '../stores/playlist_store';
+    import { playlists } from '@xivi/stores/playlist_store';
 
     onMount(async () => {
         fetch('/api/playlists')

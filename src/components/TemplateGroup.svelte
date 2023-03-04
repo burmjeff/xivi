@@ -3,7 +3,7 @@
     import TemplateChannel from './TemplateChannel.svelte';
     import { onMount } from 'svelte';
     import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
-    import {templateGroups} from '../stores/template_store';
+    import {templateGroups} from '@xivi/stores/template_store';
   
     export let templateId: number;
   

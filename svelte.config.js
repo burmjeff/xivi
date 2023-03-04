@@ -14,7 +14,10 @@ const config = {
 			fallback: 'index.html',
 			precompress: true,
 			strict: true
-		})
+		}),
+		alias: {
+			'@xivi': './src'
+		}
 	}
 };
 

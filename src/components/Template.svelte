@@ -3,7 +3,7 @@
     import TemplateGroup from './TemplateGroup.svelte';
     import { onMount } from 'svelte';
     import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
-    import { templates } from '../stores/template_store';
+    import { templates } from '@xivi/stores/template_store';
 
     onMount(async () => {
         fetch('/api/templates')
