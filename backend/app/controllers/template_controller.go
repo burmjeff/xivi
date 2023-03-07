@@ -108,7 +108,6 @@ func GetTemplate(c *fiber.Ctx) error {
 // @Produce json
 // @Param template body models.TemplateCreateParam true "Template"
 // @Success 200 {object} models.Template
-// @Security ApiKeyAuth
 // @Router /template [post]
 func CreateTemplate(c *fiber.Ctx) error {
 	// Get now time.
@@ -567,5 +566,66 @@ func GetTemplateGroupChannels(c *fiber.Ctx) error {
 		"error":            false,
 		"msg":              nil,
 		"templatechannels": channels,
+	})
+}
+
+// CreateTemplateGroup func for creating a new template group.
+// @Summary Create a new template group
+// @Description Create a new template group.
+// @Tags Template
+// @Accept json
+// @Produce json
+// @Param templategroup body models.TemplateGroupCreateParam true "Template Group"
+// @Success 200 {object} models.TemplateGroup
+// @Router /template/group [post]
+func CreateTemplateGroup(c *fiber.Ctx) error {
+	// Create new Template struct
+	templateGroup := &models.TemplateGroup{}
+
+	// Check, if received JSON data is valid.
+	if err := c.BodyParser(templateGroup); err != nil {
+		// Return status 400 and error message.
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create a new validator for a Template model.
+	validate := utils.NewValidator()
+
+	// Validate template fields.
+	if err := validate.Struct(templateGroup); err != nil {
+		// Return, if some fields are not valid.
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   utils.ValidatorErrors(err),
+		})
+	}
+
+	// Create template.
+	if _, err := db.CreateTmplGroup(templateGroup); err != nil {
+		// Return status 500 and error message.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error":         false,
+		"msg":           nil,
+		"templategroup": templateGroup,
 	})
 }
