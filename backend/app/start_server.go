@@ -32,7 +32,7 @@ func StartServer(app *fiber.App) {
 	// serve static files
 	app.Static("/", "./build")
 	app.Get("/", func(c *fiber.Ctx) error {
-		return c.Render("index", "./build")
+		return c.Render("index", nil)
 	})
 
 	// Run server.

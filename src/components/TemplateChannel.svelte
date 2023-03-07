@@ -32,7 +32,7 @@
     <tbody>
         {#each $templateChannels as channel}
             <tr>
-                <td>{channel.logo}</td>
+                <td><img class="w-14" src="{channel.logo}" alt="Logo"></td>
                 <td>{channel.name}</td>
                 <td>{channel.tvgid}</td>
             </tr>

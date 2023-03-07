@@ -28,6 +28,7 @@ func PublicRoutes(a *fiber.App) {
 	route.Get("/template/groups/all", controllers.GetAllTemplateGroups)                              // get groups by playlist_id
 	route.Get("/template/group/:group_id/channels", controllers.GetTemplateGroupChannels)            // get channels by playlist and group
 	route.Post("/template", controllers.CreateTemplate)                                              // create a new template
+	route.Post("/template/group", controllers.CreateTemplateGroup)                                   // create a new template
 	route.Delete("/template/:template_id/group/:group_id/item", controllers.DeleteTemplateGroupItem) // delete one playlist by ID
 
 	// EPG Routes
