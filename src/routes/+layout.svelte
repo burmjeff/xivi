@@ -1,11 +1,12 @@
 <script>
-	import '@skeletonlabs/skeleton/themes/theme-skeleton.css';
-	import '@skeletonlabs/skeleton/styles/all.css';
 	import '@xivi/app.postcss';
 	import { AppShell, AppBar, Modal } from '@skeletonlabs/skeleton';
 	import { Avatar } from '@skeletonlabs/skeleton';
 	import { computePosition, autoUpdate, flip, shift, offset, arrow } from '@floating-ui/dom';
 	import { storePopup } from '@skeletonlabs/skeleton';
+	import { initializeStores } from '@skeletonlabs/skeleton';
+
+	initializeStores();
 
 	storePopup.set({ computePosition, autoUpdate, flip, shift, offset, arrow });
 </script>

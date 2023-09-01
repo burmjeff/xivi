@@ -2,13 +2,15 @@
 <script lang="ts">
     import PlaylistChannel from './PlaylistChannel.svelte';
     import { onMount } from 'svelte';
-    import { Accordion, AccordionItem, popup, ListBox, ListBoxItem, type PopupSettings, type ModalSettings } from '@skeletonlabs/skeleton';
+    import { Accordion, AccordionItem, popup, ListBox, ListBoxItem, type PopupSettings } from '@skeletonlabs/skeleton';
     import {playlistGroups} from '@xivi/stores/playlist_store';
     import {templates} from '@xivi/stores/template_store';
-    import { modalStore } from '@skeletonlabs/skeleton';
+    import { Modal, getModalStore } from '@skeletonlabs/skeleton';
+    import type { ModalSettings, ModalComponent, ModalStore } from '@skeletonlabs/skeleton';
     import IconParkOutlineTransferData from '~icons/icon-park-outline/transfer-data'
   
     export let playlistId: number;
+    const modalStore = getModalStore();
   
     onMount(async () => {
         fetch(`/api/playlist/${playlistId}/groups`)
