@@ -65,7 +65,6 @@
         <Accordion>
             {#each $playlists as playlist}
                 <AccordionItem key={playlist.id}>
-                    <svelte:fragment slot="lead">{playlist.id}</svelte:fragment>
                     <svelte:fragment slot="summary"><h4>{playlist.name}</h4></svelte:fragment>
                     <svelte:fragment slot="content">
                         <PlaylistGroup playlistId={playlist.id} />

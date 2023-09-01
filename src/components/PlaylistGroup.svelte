@@ -66,7 +66,6 @@
     {#each $playlistGroups as group}
         <section class="flex items-start space-x-4 ">
             <AccordionItem key={group.id}>
-                <svelte:fragment slot="lead" > {group.id}</svelte:fragment>
                 <svelte:fragment slot="summary"><h4>{group.name}</h4></svelte:fragment>
                 <svelte:fragment slot="content">
                 <PlaylistChannel playlistId={playlistId} groupId={group.id} />
