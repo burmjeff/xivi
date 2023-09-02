@@ -7,17 +7,21 @@
     import {flip} from 'svelte/animate';
     import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
     import type { TemplateGroup } from '@xivi/data/template_entities';
-  
+    import {fade} from 'svelte/transition';
+    import {cubicIn} from 'svelte/easing';
+
+    let items: TemplateGroup[]
+
+    const updateTemplateGroups = async () => {
+        const response = await fetch('/api/template/groups/all');
+        const data = await response.json();
+        return data.templategroups;
+    }
+
     onMount(async () => {
-        fetch(`/api/template/groups/all`)
-        .then(response => response.json())
-        .then(data => {
-            console.log(data);
-            templateGroups.set(data.templategroups);
-        }).catch(error => {
-            console.log(error);
-            return [];
-        });
+        const fetchedData = await updateTemplateGroups();
+        templateGroups.set(fetchedData);
+        items = $templateGroups
         });
 
     let templateGroupSettings: PopupSettings = {
@@ -38,9 +42,13 @@
                 },
                 body: JSON.stringify(inputName)
                 });
-                const data = await response.json();
-                console.log('Created template group:', data);
-                templateGroups.set(data.templateGroups);
+                if (response.ok) {
+                    const fetchedData = await updateTemplateGroups();
+                    templateGroups.set(fetchedData);
+                    items = $templateGroups
+                } else {
+                    console.error('Error:', response.status, response.statusText);
+                }
             } catch (error) {
                 console.log('Error creating templateGroup:', error);
                 return [];
@@ -48,20 +56,17 @@
         }
     }
 
-    export let items: TemplateGroup[]
-
     const flipDurationMs = 300;
     let shouldIgnoreDndEvents = false;
     function handleDndConsider(e: CustomEvent<DndEvent<TemplateGroup>>) {
-        items = e.detail.items;
         console.warn(`got consider ${JSON.stringify(e.detail, null, 2)}`);
         const {trigger, id} = e.detail.info;
         if (trigger === TRIGGERS.DRAG_STARTED) {
             console.warn(`copying ${id}`);
             const idx = items.findIndex(item => item.id === Number(id));
             const newId = `${id}_copy_${Math.round(Math.random()*100000)}`;
-						// the line below was added in order to be compatible with version svelte-dnd-action 0.7.4 and above 
-					  //e.detail.items = e.detail.items.filter(item => !item[SHADOW_ITEM_MARKER_PROPERTY_NAME]);
+			// the line below was added in order to be compatible with version svelte-dnd-action 0.7.4 and above 
+			e.detail.items = e.detail.items.filter(item => !item[SHADOW_ITEM_MARKER_PROPERTY_NAME]);
             e.detail.items.splice(idx, 0, {...items[idx], id: Number(newId)});
             items = e.detail.items;
             shouldIgnoreDndEvents = true;
@@ -73,8 +78,7 @@
             items = [...items];
         }
     }
-    function handleDndFinalize(e: CustomEvent<DndEvent>) {
-        let items = e.detail.items;
+    function handleDndFinalize(e: CustomEvent<DndEvent<TemplateGroup>>) {
         console.warn(`got finalize ${JSON.stringify(e.detail, null, 2)}`);
         if (!shouldIgnoreDndEvents) {
             items = e.detail.items;
@@ -84,7 +88,6 @@
             shouldIgnoreDndEvents = false;
         }
     }
-
 </script>
 
 <div class="card card-hover p-2">
@@ -96,7 +99,7 @@
     {#if $templateGroups.length > 0}
                 <Accordion>
                     <section use:dndzone={{items, flipDurationMs}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
-                        {#each $templateGroups as group (group.id)}
+                        {#each items as group(group.id)}
                             <div animate:flip="{{duration: flipDurationMs}}">
                                 <AccordionItem key={group.id}>
                                     <svelte:fragment slot="summary"><h4>{group.name}</h4></svelte:fragment>
@@ -104,6 +107,9 @@
                                         <TemplateChannel groupId={group.id} />
                                     </svelte:fragment>
                                 </AccordionItem>
+                                {#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+                                    <div in:fade={{duration:200, easing: cubicIn}} class='custom-shadow-item'>{group.name}</div>
+                                {/if}
                             </div>
                         {/each}
                     </section>
@@ -124,3 +130,15 @@
         </label>
     </div>
 </div>
+
+<style>
+    .custom-shadow-item {
+		position: absolute;
+		top: 0; left:0; right: 0; bottom: 0;
+		visibility: visible;
+		border: 2px dashed grey;
+		background: lightblue;
+		opacity: 0.6;
+		margin: 0;
+	}
+</style>
