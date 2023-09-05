@@ -5,18 +5,24 @@
     import { onMount } from 'svelte';
     import { Accordion, AccordionItem, popup, type PopupSettings } from '@skeletonlabs/skeleton';
     import { playlists } from '@xivi/stores/playlist_store';
+    import {flip} from 'svelte/animate';
+    import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
+    import type { Playlist } from '@xivi/data/playlist_entities';
+    import {fade} from 'svelte/transition';
+    import {cubicIn} from 'svelte/easing';
 
-    onMount(
-        async () => {
-            fetch('/api/playlists')
-            .then(response => response.json())
-            .then(data => {
-                console.log('Fetched data:', data);
-                playlists.set(data.playlists);
-            }).catch(error => {
-                console.log('Error fetching data:', error);
-                return [];
-            });
+    let items: Playlist[];
+
+    const updatePlaylists = async () => {
+        const response = await fetch('/api/playlists');
+        const data = await response.json();
+        return data.playlists;
+    }
+  
+    onMount(async () => {
+        const fetchedData = await updatePlaylists();
+        playlists.set(fetchedData);
+        items = $playlists
         });
 
     let playlistSettings: PopupSettings = {
@@ -47,11 +53,34 @@
                 const data = await response.json();
                 console.log('Created playlist:', data);
                 playlists.set(data.playlists);
+                items = $playlists
             } catch (error) {
                 console.log('Error creating playlist:', error);
                 return [];
             }
         }
+    }
+
+    const flipDurationMs = 300;
+    function handleDndConsider(e: CustomEvent<DndEvent<Playlist>>) {
+        console.warn(`got consider ${JSON.stringify(e.detail, null, 2)}`);
+        const {trigger, id} = e.detail.info;
+        if (trigger === TRIGGERS.DRAG_STARTED) {
+            //console.warn(`copying ${id}`);
+            //const idx = items.findIndex(item => item.id === Number(id));
+            //const newId = `${id}_copy_${Math.round(Math.random()*100000)}`;
+			// the line below was added in order to be compatible with version svelte-dnd-action 0.7.4 and above 
+			e.detail.items = e.detail.items.filter(item => !item[SHADOW_ITEM_MARKER_PROPERTY_NAME]);
+            //e.detail.items.splice(idx, 0, {...items[idx], id: Number(newId)});
+            items = e.detail.items;
+        }
+        else {
+            items = e.detail.items;
+        }
+    }
+    function handleDndFinalize(e: CustomEvent<DndEvent<Playlist>>) {
+        console.warn(`got finalize ${JSON.stringify(e.detail, null, 2)}`);
+        items = e.detail.items;
     }
 </script>
 
@@ -63,14 +92,21 @@
     
     {#if $playlists.length > 0}
         <Accordion>
-            {#each $playlists as playlist}
-                <AccordionItem key={playlist.id}>
-                    <svelte:fragment slot="summary"><h4>{playlist.name}</h4></svelte:fragment>
-                    <svelte:fragment slot="content">
-                        <PlaylistGroup playlistId={playlist.id} />
-                    </svelte:fragment>
-                </AccordionItem>
-            {/each}
+            <section use:dndzone={{items, flipDurationMs}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
+                {#each items as playlist(playlist.id)}
+                    <div id="div1" animate:flip={{duration: flipDurationMs}}>
+                        <AccordionItem key={playlist.id}>
+                            <svelte:fragment slot="summary"><h4>{playlist.name}</h4></svelte:fragment>
+                            <svelte:fragment slot="content">
+                                <PlaylistGroup playlistId={playlist.id} />
+                            </svelte:fragment>
+                        </AccordionItem>
+                        {#if playlist[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+                            <div in:fade={{duration:200, easing: cubicIn}} class='custom-shadow-item'>{playlist.name}</div>
+                        {/if}
+                    </div>
+                {/each}
+            </section>
         </Accordion>
     {:else}
         <p>No playlists found</p>
@@ -92,3 +128,21 @@
         </label>
     </div>
 </div>
+
+<style>
+    #div1 {
+		position: relative;
+		text-align: center;
+		margin: 0.2em;
+		padding: 0.3em;
+	}
+    .custom-shadow-item {
+		position: absolute;
+		top: 0; left:0; right: 0; bottom: 0;
+		visibility: visible;
+		border: 3px dashed grey;
+		background: lightblue;
+		opacity: 0.6;
+		margin: 0;
+	}
+</style>
