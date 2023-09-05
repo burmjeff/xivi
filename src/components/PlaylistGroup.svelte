@@ -8,20 +8,26 @@
     import { Modal, getModalStore } from '@skeletonlabs/skeleton';
     import type { ModalSettings, ModalComponent, ModalStore } from '@skeletonlabs/skeleton';
     import IconParkOutlineTransferData from '~icons/icon-park-outline/transfer-data'
+    import {flip} from 'svelte/animate';
+    import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
+    import type { PlaylistGroup } from '@xivi/data/playlist_entities';
+    import {fade} from 'svelte/transition';
+    import {cubicIn} from 'svelte/easing';
   
     export let playlistId: number;
     const modalStore = getModalStore();
+    let items: PlaylistGroup[];
+
+    const updatePlaylistGroups = async () => {
+        const response = await fetch(`/api/playlist/${playlistId}/groups`);
+        const data = await response.json();
+        return data.playlistgroups;
+    }
   
     onMount(async () => {
-        fetch(`/api/playlist/${playlistId}/groups`)
-        .then(response => response.json())
-        .then(data => {
-            console.log(data);
-            playlistGroups.set(data.playlistgroups);
-        }).catch(error => {
-            console.log(error);
-            return [];
-        });
+        const fetchedData = await updatePlaylistGroups();
+        playlistGroups.set(fetchedData);
+        items = $playlistGroups
         });
 
     function modalPrompt(groupId: number): void {
@@ -61,6 +67,28 @@
                 return [];
             }
         }
+    }
+
+    const flipDurationMs = 300;
+    function handleDndConsider(e: CustomEvent<DndEvent<PlaylistGroup>>) {
+        console.warn(`got consider ${JSON.stringify(e.detail, null, 2)}`);
+        const {trigger, id} = e.detail.info;
+        if (trigger === TRIGGERS.DRAG_STARTED) {
+            //console.warn(`copying ${id}`);
+            //const idx = items.findIndex(item => item.id === Number(id));
+            //const newId = `${id}_copy_${Math.round(Math.random()*100000)}`;
+			// the line below was added in order to be compatible with version svelte-dnd-action 0.7.4 and above 
+			e.detail.items = e.detail.items.filter(item => !item[SHADOW_ITEM_MARKER_PROPERTY_NAME]);
+            //e.detail.items.splice(idx, 0, {...items[idx], id: Number(newId)});
+            items = e.detail.items;
+        }
+        else {
+            items = e.detail.items;
+        }
+    }
+    function handleDndFinalize(e: CustomEvent<DndEvent<PlaylistGroup>>) {
+        console.warn(`got finalize ${JSON.stringify(e.detail, null, 2)}`);
+        items = e.detail.items;
     }
   </script>
 
