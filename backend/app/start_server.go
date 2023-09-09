@@ -29,12 +29,6 @@ func StartServer(app *fiber.App) {
 	port := flag.Int("port", serverPort, "Server Port")
 	serverPath := fmt.Sprintf("%s:%d", *host, *port)
 
-	// serve static files
-	app.Static("/", "./build")
-	app.Get("/", func(c *fiber.Ctx) error {
-		return c.Render("index", nil)
-	})
-
 	// Run server.
 	log.Printf("Server starting at http://%s ...\n", serverPath)
 	if err := app.Listen(serverPath); err != nil {

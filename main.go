@@ -73,8 +73,8 @@ func main() {
 	middleware.FiberMiddleware(a) // Register Fiber's middleware for app.
 
 	// Routes.
-	routes.SvelteRoute(a)
-	routes.SwaggerRoute(a)  // Register a route for API Docs (Swagger).
+	routes.SvelteRoutes(a)
+	routes.SwaggerRoutes(a) // Register a route for API Docs (Swagger).
 	routes.PublicRoutes(a)  // Register a public routes for app.
 	routes.PrivateRoutes(a) // Register a private routes for app.
 	routes.NotFoundRoute(a) // Register route for 404 Error.

@@ -4,14 +4,17 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// SwaggerRoute func for describe group of API Docs routes.
-func SvelteRoute(a *fiber.App) {
+// Svelte Routes
+func SvelteRoutes(a *fiber.App) {
 	// Create routes group.
-	route := a.Group("/")
-	route.Static("/", "./build")
+	router := a.Group("/")
+	router.Static("/", "./build")
 
 	// Routes for GET method:
-	route.Get("/", func(c *fiber.Ctx) error {
+	router.Get("/", func(c *fiber.Ctx) error {
+		return c.Render("index", nil)
+	})
+	router.Get("/templates", func(c *fiber.Ctx) error {
 		return c.Render("index", nil)
 	})
 }
