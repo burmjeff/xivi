@@ -36,7 +36,7 @@ func (p *PlaylistTools) ConvertPlChannel(playlistChannel models.PlaylistChannel)
 		templateChannel.TvgID = playlistChannel.TvgID
 	}
 	if playlistChannel.Logo != "" {
-		templateChannel.LogoId = CreateLogo(p.Db, playlistChannel.Logo)
+		templateChannel.LogoId, _ = CreateLogo(p.Db, playlistChannel.Logo)
 	}
 	templateChannel.Uuid = CreateUuid()
 

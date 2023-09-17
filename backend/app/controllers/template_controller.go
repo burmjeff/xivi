@@ -11,15 +11,14 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// GetTemplates func gets all existing templates.
-// @Description Get all existing templates.
-// @Summary get all existing templates
-// @Tags Templates
+// GetTemplates func gets all templates.
+// @Description Get all templates.
+// @Summary get all templates
+// @Tags Template
 // @Accept json
 // @Produce json
 // @Success 200 {array} models.Template
 // @Router /templates [get]
-
 func GetTemplates(c *fiber.Ctx) error {
 	// Create database connection.
 	db, err := database.OpenDBConnection()

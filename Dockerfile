@@ -2,7 +2,7 @@
 # svelte-builder
 #
 
-FROM node:alpine as app-builder
+FROM node:20.5.1-alpine3.17 as app-builder
 
 WORKDIR /app
 COPY . /app
@@ -15,9 +15,13 @@ RUN npx vite build
 # server-builder
 #
 
-FROM golang:alpine as server-builder
+FROM golang:1.21.0-alpine3.17 as server-builder
+
+RUN echo "@main https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories
+RUN echo "@community https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
 
 RUN apk add build-base
+RUN apk add --no-cache vips-dev@community=8.13.3-r1
 
 WORKDIR /build
 
@@ -28,17 +32,19 @@ RUN go mod download
 
 ENV CGO_ENABLED=1 GOOS=linux GOARCH=amd64
 RUN go install github.com/swaggo/swag/cmd/swag@latest \
-    && swag init \
-    && go mod tidy \
-    && go build -ldflags="-s -w" -buildvcs=false -mod=readonly -v -o apiserver .
+    && swag init
+RUN go mod tidy
+RUN go build -ldflags="-s -w" -buildvcs=false -mod=readonly -v -o apiserver .
 
 #
 # deploy
 #
 
-FROM alpine as deployment
+FROM alpine:3.17.5 as deployment
 
-RUN apk add vips --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community --no-cache
+RUN echo "@community https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
+
+RUN apk add vips@community=8.13.3-r1
 
 # environment variables
 ENV APP_NAME="Xivi" \

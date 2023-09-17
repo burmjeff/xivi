@@ -77,7 +77,7 @@ CREATE TABLE templatechannel (
     tvgid VARCHAR (255) UNIQUE NULL,
     logo_id INTEGER NULL,
     uuid VARCHAR (255) UNIQUE NOT NULL,
-    FOREIGN KEY (logo) REFERENCES logo(id)
+    FOREIGN KEY (logo_id) REFERENCES logo(id)
 );
 
 -- Create logo table
