@@ -17,20 +17,20 @@ type ImageTools struct {
 	Db *database.Queries
 }
 
-func CreateLogo(db *database.Queries, logoUrl string) int64 {
+func CreateLogo(db *database.Queries, logoUrl string) (int64, error) {
 	validate := NewValidator()
 	logo := &models.Logo{}
 
 	img, err := downloadImage(logoUrl)
 	if err != nil {
 		log.Warnln("Failed Image Download: ", err)
-		return 0
+		return 0, err
 	}
 
 	imgPath, err := normalizeImage(img)
 	if err != nil {
 		log.Warnln(err)
-		return 0
+		return 0, err
 	}
 	logo.Img = imgPath
 
@@ -43,14 +43,14 @@ func CreateLogo(db *database.Queries, logoUrl string) int64 {
 		if err != nil {
 			log.Warnln(err)
 		} else {
-			return logoID
+			return logoID, nil
 		}
 
 	}
-	return 0
+	return 0, err
 }
 
-func downloadImage(URL string) (io.Reader, error) {
+func downloadImage(URL string) ([]byte, error) {
 	//Get the response bytes from the url
 	response, err := http.Get(URL)
 	if err != nil {
@@ -61,19 +61,20 @@ func downloadImage(URL string) (io.Reader, error) {
 	if response.StatusCode != 200 {
 		return nil, errors.New("Received non 200 response code")
 	}
+	imgBuf, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, err
+	}
 
-	return response.Body, nil
+	return imgBuf, nil
 }
 
-func normalizeImage(img io.Reader) (string, error) {
-	vips.Startup(nil)
-	defer vips.Shutdown()
-
-	image1, err := vips.NewImageFromReader(img)
+func normalizeImage(img []byte) (string, error) {
+	image1, err := vips.NewImageFromBuffer(img)
 	if err != nil {
 		return "", err
 	}
-	imageScale := (256 / image1.Width())
+	imageScale := 256 / image1.Width()
 
 	image1.ThumbnailWithSize((image1.Width() * imageScale), (image1.Height() * imageScale), vips.InterestingAll, vips.SizeBoth)
 	ep := vips.NewDefaultPNGExportParams()

@@ -5,3 +5,7 @@ type Logo struct {
 	ID  int64  `db:"id" json:"id"`
 	Img string `db:"img" json:"img"`
 }
+
+type LogoCreateParam struct {
+	Img string `json:"img" validate:"required,lte=255"`
+}
