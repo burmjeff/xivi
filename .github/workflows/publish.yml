@@ -11,22 +11,27 @@ jobs:
     steps:
       -
         name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       -
         name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
       -
         name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:rootless
+            network=host
+
       -
         name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       -
         name: Build and push
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           context: .
           platforms: linux/amd64
@@ -34,4 +39,3 @@ jobs:
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/xivi:latest
           cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/xivi:buildcache
           cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/xivi:buildcache,mode=max
-          driver-opts: image=moby/buildkit:rootless
