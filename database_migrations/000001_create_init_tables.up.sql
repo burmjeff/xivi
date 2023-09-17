@@ -75,8 +75,15 @@ CREATE TABLE templatechannel (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR (255) UNIQUE NOT NULL,
     tvgid VARCHAR (255) UNIQUE NULL,
-    logo VARCHAR (255) NULL,
-    uuid VARCHAR (255) UNIQUE NOT NULL
+    logo_id INTEGER NULL,
+    uuid VARCHAR (255) UNIQUE NOT NULL,
+    FOREIGN KEY (logo) REFERENCES logo(id)
+);
+
+-- Create logo table
+CREATE TABLE logo (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    img VARCHAR (255) UNIQUE NOT NULL
 );
 
 -- Create template_group_item table
@@ -280,4 +287,11 @@ AFTER DELETE ON templatechannel
 FOR EACH ROW
 BEGIN
     DELETE FROM templatechannelvectors WHERE channel_id = old.id;
+END;
+
+CREATE TRIGGER delete_logo_cascade
+AFTER DELETE ON logo
+FOR EACH ROW
+BEGIN
+    UPDATE templatechannel SET logo_id = NULL WHERE logo_id = old.id;
 END;

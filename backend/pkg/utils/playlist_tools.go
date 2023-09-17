@@ -36,12 +36,12 @@ func (p *PlaylistTools) ConvertPlChannel(playlistChannel models.PlaylistChannel)
 		templateChannel.TvgID = playlistChannel.TvgID
 	}
 	if playlistChannel.Logo != "" {
-		templateChannel.Logo = playlistChannel.Logo
+		templateChannel.LogoId = CreateLogo(p.Db, playlistChannel.Logo)
 	}
 	templateChannel.Uuid = CreateUuid()
 
 	// Validate playlist fields.
-	if err := validate.Struct(playlistChannel); err != nil {
+	if err := validate.Struct(templateChannel); err != nil {
 		//Some fields are not valid.
 		log.Warnln(err)
 	} else {

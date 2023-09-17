@@ -3,9 +3,10 @@ Description here...
 ### ToDo
 - [ ] Fix all the things
 
-### Swagger
-1. Setup: npm run setup-all
-2. Rename `.env.example` to `.env` and fill it with your environment values.
-3. Build it: npm run build-all
-4. Run it: npm run serve-win
-5. Go to your API Docs page: [127.0.0.1:8080/swagger/index.html](http://127.0.0.1:8080/swagger/index.html)
+### INSTALL & RUN
+1. Install libvips (https://github.com/libvips/libvips)
+2. Setup: npm run setup-all
+3. Rename `.env.example` to `.env` and fill it with your environment values.
+4. Build it: npm run build-all
+5. Run it: npm run serve-win
+6. Go to your API Docs page: [127.0.0.1:8080/swagger/index.html](http://127.0.0.1:8080/swagger/index.html)

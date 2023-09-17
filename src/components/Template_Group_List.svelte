@@ -11,6 +11,7 @@
     import {cubicIn} from 'svelte/easing';
 
     let items: TemplateGroup[];
+    let shouldIgnoreDndEvents = false;
 
     const updateTemplateGroups = async () => {
         const response = await fetch('/api/template/groups/all');
@@ -61,21 +62,30 @@
         console.warn(`got consider ${JSON.stringify(e.detail, null, 2)}`);
         const {trigger, id} = e.detail.info;
         if (trigger === TRIGGERS.DRAG_STARTED) {
-            //console.warn(`copying ${id}`);
-            //const idx = items.findIndex(item => item.id === Number(id));
-            //const newId = `${id}_copy_${Math.round(Math.random()*100000)}`;
+            console.warn(`copying ${id}`);
+            const idx = $templateGroups.findIndex(item => item.id === Number(id));
+            const newId = `${id}_copy_${Math.round(Math.random()*100000)}`;
 			// the line below was added in order to be compatible with version svelte-dnd-action 0.7.4 and above 
 			e.detail.items = e.detail.items.filter(item => !item[SHADOW_ITEM_MARKER_PROPERTY_NAME]);
-            //e.detail.items.splice(idx, 0, {...items[idx], id: Number(newId)});
-            items = e.detail.items;
+            e.detail.items.splice(idx, 0, {...$templateGroups[idx], id: Number(newId)});
+            $templateGroups = e.detail.items;
+            shouldIgnoreDndEvents = true;
+        }
+        else if (!shouldIgnoreDndEvents) {
+            $templateGroups = e.detail.items;
         }
         else {
-            items = e.detail.items;
+            $templateGroups = [...$templateGroups];
         }
     }
     function handleDndFinalize(e: CustomEvent<DndEvent<TemplateGroup>>) {
         console.warn(`got finalize ${JSON.stringify(e.detail, null, 2)}`);
-        items = e.detail.items;
+        if (!shouldIgnoreDndEvents) {
+            $templateGroups = e.detail.items;
+        }
+        else {
+            $templateGroups = [...$templateGroups];
+        }
     }
 </script>
 
@@ -88,7 +98,7 @@
     {#if $templateGroups.length > 0}
                 <Accordion>
                     <section use:dndzone={{items, flipDurationMs}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
-                        {#each items as group(group.id)}
+                        {#each $templateGroups as group(group.id)}
                             <div id="div1" animate:flip={{duration: flipDurationMs}}>
                                 <AccordionItem key={group.id}>
                                     <svelte:fragment slot="summary"><h4>{group.name}</h4></svelte:fragment>

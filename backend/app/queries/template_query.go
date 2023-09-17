@@ -452,7 +452,7 @@ func (q *TemplateQueries) CreateTmplChannel(p *models.TemplateChannel) (int64, e
 	query := `INSERT INTO templatechannel VALUES (null, $1, $2, $3, $4)`
 
 	// Send query to database.
-	res, err := q.Exec(query, p.Name, utils.NewNullString(p.TvgID), utils.NewNullString(p.Logo), p.Uuid)
+	res, err := q.Exec(query, p.Name, utils.NewNullString(p.TvgID), p.LogoId, p.Uuid)
 	if err != nil {
 		// Return only error.
 		return 0, err
@@ -470,10 +470,10 @@ func (q *TemplateQueries) CreateTmplChannel(p *models.TemplateChannel) (int64, e
 // UpdateChannel method for updating a channel by given Channel object.
 func (q *TemplateQueries) UpdateTmplChannel(id int64, p *models.TemplateChannel) error {
 	// Define query string.
-	query := `UPDATE templatechannel SET name = $2, tvgid = $3, logo = $4 WHERE id = $1`
+	query := `UPDATE templatechannel SET name = $2, tvgid = $3, logo_id = $4 WHERE id = $1`
 
 	// Send query to database.
-	_, err := q.Exec(query, id, p.Name, p.TvgID, p.Logo)
+	_, err := q.Exec(query, id, p.Name, p.TvgID, p.LogoId)
 	if err != nil {
 		// Return only error.
 		return err
