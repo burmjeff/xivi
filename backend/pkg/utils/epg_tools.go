@@ -27,7 +27,7 @@ func (m *EpgTools) CreateEpgXML(template models.Template) {
 		return
 	}
 
-	file, err := os.Create(fmt.Sprintf("%s/%s.xml", os.Getenv("EPG_FILEPATH"), template.Name))
+	file, err := os.Create(fmt.Sprintf("%s/epg/%s.xml", os.Getenv("STREAM_PATH"), template.Name))
 	if err != nil {
 		log.Error("Error creating file: %v", err)
 		return

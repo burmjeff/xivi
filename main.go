@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os"
 
@@ -31,8 +32,10 @@ import (
 
 func main() {
 	CONFIG_PATH := os.Getenv("CONFIG_PATH")
-	M3U_FILEPATH := os.Getenv("M3U_FILEPATH")
-	EPG_FILEPATH := os.Getenv("EPG_FILEPATH")
+	STREAM_PATH := os.Getenv("STREAM_PATH")
+	M3U_FILEPATH := fmt.Sprintf("%s/m3u", STREAM_PATH)
+	EPG_FILEPATH := fmt.Sprintf("%s/epg", STREAM_PATH)
+	LOGO_FILEPATH := fmt.Sprintf("%s/logo", STREAM_PATH)
 	MODEL_PATH := os.Getenv("MODEL_PATH")
 
 	zerolog.SetGlobalLevel(zerolog.ErrorLevel)
@@ -40,6 +43,12 @@ func main() {
 	// Start server (with graceful shutdown).
 	if _, err := os.Stat(CONFIG_PATH); errors.Is(err, os.ErrNotExist) {
 		err := os.Mkdir(CONFIG_PATH, os.ModePerm)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+	if _, err := os.Stat(STREAM_PATH); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(STREAM_PATH, os.ModePerm)
 		if err != nil {
 			log.Println(err)
 		}
@@ -52,6 +61,12 @@ func main() {
 	}
 	if _, err := os.Stat(EPG_FILEPATH); errors.Is(err, os.ErrNotExist) {
 		err := os.Mkdir(EPG_FILEPATH, os.ModePerm)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+	if _, err := os.Stat(LOGO_FILEPATH); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(LOGO_FILEPATH, os.ModePerm)
 		if err != nil {
 			log.Println(err)
 		}
