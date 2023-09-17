@@ -38,6 +38,8 @@ RUN go install github.com/swaggo/swag/cmd/swag@latest \
 
 FROM alpine as deployment
 
+RUN apk add vips
+
 # environment variables
 ENV APP_NAME="Xivi" \
 APP_VERSION="1.0" \

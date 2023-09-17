@@ -19,6 +19,7 @@ type Queries struct {
 	*queries.TemplateQueries // load queries from Template model
 	*queries.EpgQueries      // load queries from Epg model
 	*queries.VectorQueries   // load queries from Vector model
+	*queries.LogoQueries     // load queries from Logo model
 }
 
 // OpenDBConnection func for opening database connection.
@@ -34,6 +35,7 @@ func OpenDBConnection() (*Queries, error) {
 		TemplateQueries: &queries.TemplateQueries{DB: db}, // from Template model
 		EpgQueries:      &queries.EpgQueries{DB: db},      // from Epg model
 		VectorQueries:   &queries.VectorQueries{DB: db},   // from Vector model
+		LogoQueries:     &queries.LogoQueries{DB: db},     // from Logo model
 	}, nil
 }
 
