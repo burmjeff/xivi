@@ -50,7 +50,7 @@ func (m *M3uTools) RemoveM3uItems(templateGroupItem *models.TemplateGroupItem) {
 		log.Error("Error finding Template: ", err)
 		return
 	}
-	file := fmt.Sprintf("%s/%s.m3u", os.Getenv("M3U_FILEPATH"), template.Name)
+	file := fmt.Sprintf("%s/m3u/%s.m3u", os.Getenv("STREAM_PATH"), template.Name)
 
 	// Read the content of the XML file into a byte array.
 	content, err := os.ReadFile(file)
