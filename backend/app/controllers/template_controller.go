@@ -560,11 +560,19 @@ func GetTemplateGroupChannels(c *fiber.Ctx) error {
 		})
 	}
 
+	channelLogos := []models.TemplateChannelLogo{}
+	for _, channel := range channels {
+		channelLogo := models.TemplateChannelLogo{}
+		channelLogo.TemplateChannel = channel
+		channelLogo.Logo = utils.GetChannelLogo(db, channel.LogoId)
+		channelLogos = append(channelLogos, channelLogo)
+	}
+
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
 		"error":            false,
 		"msg":              nil,
-		"templatechannels": channels,
+		"templatechannels": channelLogos,
 	})
 }
 

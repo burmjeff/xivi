@@ -9,6 +9,7 @@ import (
 	"errors"
 	"math"
 	"os"
+	"xivi/backend/app"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
 
@@ -44,12 +45,11 @@ func AddChannelVector(db *database.Queries, name string) {
 }
 
 func VectorizeString(text string) ([]float64, error) {
-	modelsDir := os.Getenv("MODEL_PATH")
 	//TODO: NEW MODELS
 	modelName := os.Getenv("MODEL_NAME")
 
 	m, err := tasks.Load[textencoding.Interface](&tasks.Config{
-		ModelsDir: modelsDir,
+		ModelsDir: app.MODEL_PATH,
 		ModelName: modelName,
 	})
 	if err != nil {
