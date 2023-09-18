@@ -14,3 +14,8 @@ type TemplateChannelItem struct {
 	PlaylistChannelId int64 `db:"playlist_channel_id" json:"playlist_channel_id" validate:"required"`
 	Order             int64 `db:"orderr" json:"orderr"`
 }
+
+type TemplateChannelLogo struct {
+	TemplateChannel
+	Logo string `db:"logo" json:"logo"`
+}

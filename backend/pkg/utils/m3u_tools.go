@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"xivi/backend/app"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
 
@@ -50,7 +51,7 @@ func (m *M3uTools) RemoveM3uItems(templateGroupItem *models.TemplateGroupItem) {
 		log.Error("Error finding Template: ", err)
 		return
 	}
-	file := fmt.Sprintf("%s/m3u/%s.m3u", os.Getenv("STREAM_PATH"), template.Name)
+	file := fmt.Sprintf("%s/%s.m3u", app.M3U_FILEPATH, template.Name)
 
 	// Read the content of the XML file into a byte array.
 	content, err := os.ReadFile(file)
@@ -131,7 +132,7 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 			log.Warnln(err)
 			continue
 		}
-		logo := getChannelLogo(channel.LogoId)
+		logo := GetChannelLogo(m.Db, channel.LogoId)
 
 		log.Println("M3U Creation: Adding Template Channel: ", channel.Name)
 		channelURL := fmt.Sprintf("http://%s:%d/stream/%s", m.host, m.port, channel.Uuid)

@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"xivi/backend/app"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
 
@@ -81,7 +83,7 @@ func normalizeImage(img []byte) (string, error) {
 	image1bytes, _, err := image1.Export(ep)
 
 	uuid := CreateUuid()
-	imgPath := fmt.Sprintf("%s/logo/%s.png", os.Getenv("STREAM_PATH"), uuid)
+	imgPath := fmt.Sprintf("%s/%s.png", app.LOGO_FILEPATH, uuid)
 
 	err = os.WriteFile(imgPath, image1bytes, 0644)
 	if err != nil {
@@ -92,7 +94,14 @@ func normalizeImage(img []byte) (string, error) {
 
 }
 
-func getChannelLogo(logoId int64) string {
+func GetChannelLogo(db *database.Queries, logoId int64) string {
+	logo, err := db.GetLogo(logoId)
+	if err != nil {
+		return ""
+	}
 
-	return ""
+	//TODO: images route
+	logoUrl := fmt.Sprintf("images/%s", filepath.Base(logo.Img))
+
+	return logoUrl
 }

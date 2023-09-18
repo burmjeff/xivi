@@ -42,6 +42,10 @@ func GetLogos(c *fiber.Ctx) error {
 		})
 	}
 
+	for _, logo := range logos {
+		logo.Img = utils.GetChannelLogo(db, logo.ID)
+	}
+
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
 		"error": false,
@@ -90,6 +94,8 @@ func GetLogo(c *fiber.Ctx) error {
 			"logo":  nil,
 		})
 	}
+
+	logo.Img = utils.GetChannelLogo(db, logo.ID)
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{

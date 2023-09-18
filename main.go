@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"os"
 
@@ -31,48 +30,42 @@ import (
 // @name Authorization
 
 func main() {
-	CONFIG_PATH := os.Getenv("CONFIG_PATH")
-	STREAM_PATH := os.Getenv("STREAM_PATH")
-	M3U_FILEPATH := fmt.Sprintf("%s/m3u", STREAM_PATH)
-	EPG_FILEPATH := fmt.Sprintf("%s/epg", STREAM_PATH)
-	LOGO_FILEPATH := fmt.Sprintf("%s/logo", STREAM_PATH)
-	MODEL_PATH := os.Getenv("MODEL_PATH")
 
 	zerolog.SetGlobalLevel(zerolog.ErrorLevel)
 
 	// Start server (with graceful shutdown).
-	if _, err := os.Stat(CONFIG_PATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(CONFIG_PATH, os.ModePerm)
+	if _, err := os.Stat(app.CONFIG_PATH); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(app.CONFIG_PATH, os.ModePerm)
 		if err != nil {
 			log.Println(err)
 		}
 	}
-	if _, err := os.Stat(STREAM_PATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(STREAM_PATH, os.ModePerm)
+	if _, err := os.Stat(app.STREAM_PATH); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(app.STREAM_PATH, os.ModePerm)
 		if err != nil {
 			log.Println(err)
 		}
 	}
-	if _, err := os.Stat(M3U_FILEPATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(M3U_FILEPATH, os.ModePerm)
+	if _, err := os.Stat(app.M3U_FILEPATH); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(app.M3U_FILEPATH, os.ModePerm)
 		if err != nil {
 			log.Println(err)
 		}
 	}
-	if _, err := os.Stat(EPG_FILEPATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(EPG_FILEPATH, os.ModePerm)
+	if _, err := os.Stat(app.EPG_FILEPATH); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(app.EPG_FILEPATH, os.ModePerm)
 		if err != nil {
 			log.Println(err)
 		}
 	}
-	if _, err := os.Stat(LOGO_FILEPATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(LOGO_FILEPATH, os.ModePerm)
+	if _, err := os.Stat(app.LOGO_FILEPATH); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(app.LOGO_FILEPATH, os.ModePerm)
 		if err != nil {
 			log.Println(err)
 		}
 	}
-	if _, err := os.Stat(MODEL_PATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(MODEL_PATH, os.ModePerm)
+	if _, err := os.Stat(app.MODEL_PATH); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(app.MODEL_PATH, os.ModePerm)
 		if err != nil {
 			log.Println(err)
 		}

@@ -4,15 +4,10 @@
     import Playlist from '@xivi/components/Playlist.svelte';
 </script>
 
-<div class="container h-full mx-auto flex justify-center items-start">
-	<div class="space-y-10 text-center">
-		<h2 class="font-bold">Welcome to Skeleton.</h2>
-        <div style="display: flex; max-w-fit">
-            <Template/>
-            <TemplateGroupList/>
-            <Playlist/>
-        </div>
-	</div>
+<div class="p-4 grid grid-cols-3 gap-4 place-items-stretch h-full text-center justify-center w-full">
+    <Template/>
+    <TemplateGroupList/>
+    <Playlist/>
 </div>
 
 <style lang="postcss">

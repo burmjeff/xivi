@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"os"
+	"xivi/backend/app"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
 
@@ -27,7 +28,7 @@ func (m *EpgTools) CreateEpgXML(template models.Template) {
 		return
 	}
 
-	file, err := os.Create(fmt.Sprintf("%s/epg/%s.xml", os.Getenv("STREAM_PATH"), template.Name))
+	file, err := os.Create(fmt.Sprintf("%s/%s.xml", app.EPG_FILEPATH, template.Name))
 	if err != nil {
 		log.Error("Error creating file: %v", err)
 		return
