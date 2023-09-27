@@ -9,6 +9,7 @@ import (
 	"xivi/backend/platform/database"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/log"
 )
 
 // GetTemplates func gets all templates.
@@ -375,63 +376,6 @@ func DeleteTemplate(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// DeleteTemplateGroupItem func to delete a template Group Item by given group id and templatet id.
-// @Description Delete template Group item by given ID.
-// @Summary delete template Group item by given ID
-// @Tags Template Group item
-// @Accept json
-// @Produce json
-// @Param template_id path string true "Template ID"
-// @Param group_id path string true "Group ID"
-// @Success 204 {string} status "ok"
-// @Router /template/{template_id}/group/{group_id}/item [delete]
-func DeleteTemplateGroupItem(c *fiber.Ctx) error {
-
-	// Catch template ID from URL.
-	template_id, err := strconv.ParseInt(c.Params("template_id"), 10, 64)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	// Catch group ID from URL.
-	group_id, err := strconv.ParseInt(c.Params("group_id"), 10, 64)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	// Delete template by given ID.
-	templateGroupItem := &models.TemplateGroupItem{TemplateId: template_id, GroupId: group_id}
-	if err := db.DeleteTmplGroupItem(templateGroupItem); err != nil {
-		// Return status 500 and error message.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	m3uTools := utils.M3uTools{Db: db}
-	go m3uTools.RemoveM3uItems(templateGroupItem)
-
-	// Return status 204 no content.
-	return c.SendStatus(fiber.StatusNoContent)
-}
-
 // GetTemplateGroups func gets template groups by given template ID or 404 error.
 // @Description Get template groups by given template ID
 // @Summary get template groups by given template ID
@@ -635,4 +579,127 @@ func CreateTemplateGroup(c *fiber.Ctx) error {
 		"msg":           nil,
 		"templategroup": templateGroup,
 	})
+}
+
+// CreateTemplateGroupItem func to create a template Group Item by given group id and template id.
+// @Description Create template Group item by given ID.
+// @Summary Create template Group item by given ID
+// @Tags Template Group item
+// @Accept json
+// @Produce json
+// @Param template_id path string true "Template ID"
+// @Param group_id path string true "Group ID"
+// @Success 200 {object} models.TemplateGroupItem
+// @Router /template/{template_id}/group/{group_id}/item [post]
+func CreateTemplateGroupItem(c *fiber.Ctx) error {
+
+	// Catch template ID from URL.
+	template_id, err := strconv.ParseInt(c.Params("template_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Catch group ID from URL.
+	group_id, err := strconv.ParseInt(c.Params("group_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Delete template by given ID.
+	templateGroupItem := &models.TemplateGroupItem{TemplateId: template_id, GroupId: group_id}
+	if err := db.CreateTmplGroupItem(templateGroupItem); err != nil {
+		// Return status 500 and error message.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	template, err := db.GetTemplate(template_id)
+	if err != nil {
+		log.Error("Failed to find template: %s", err)
+	} else {
+		m3uTools := utils.M3uTools{Db: db}
+		go m3uTools.CreateM3u(template)
+	}
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error":             false,
+		"msg":               nil,
+		"templategroupitem": templateGroupItem,
+	})
+}
+
+// DeleteTemplateGroupItem func to delete a template Group Item by given group id and template id.
+// @Description Delete template Group item by given ID.
+// @Summary delete template Group item by given ID
+// @Tags Template Group item
+// @Accept json
+// @Produce json
+// @Param template_id path string true "Template ID"
+// @Param group_id path string true "Group ID"
+// @Success 204 {string} status "ok"
+// @Router /template/{template_id}/group/{group_id}/item [delete]
+func DeleteTemplateGroupItem(c *fiber.Ctx) error {
+
+	// Catch template ID from URL.
+	template_id, err := strconv.ParseInt(c.Params("template_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Catch group ID from URL.
+	group_id, err := strconv.ParseInt(c.Params("group_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Delete template by given ID.
+	templateGroupItem := &models.TemplateGroupItem{TemplateId: template_id, GroupId: group_id}
+	if err := db.DeleteTmplGroupItem(templateGroupItem); err != nil {
+		// Return status 500 and error message.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	m3uTools := utils.M3uTools{Db: db}
+	go m3uTools.RemoveM3uItems(templateGroupItem)
+
+	// Return status 204 no content.
+	return c.SendStatus(fiber.StatusNoContent)
 }

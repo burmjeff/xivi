@@ -20,6 +20,7 @@ type Queries struct {
 	*queries.EpgQueries      // load queries from Epg model
 	*queries.VectorQueries   // load queries from Vector model
 	*queries.LogoQueries     // load queries from Logo model
+	*queries.StreamQueries   // load queries from Stream model
 }
 
 // OpenDBConnection func for opening database connection.
@@ -36,6 +37,7 @@ func OpenDBConnection() (*Queries, error) {
 		EpgQueries:      &queries.EpgQueries{DB: db},      // from Epg model
 		VectorQueries:   &queries.VectorQueries{DB: db},   // from Vector model
 		LogoQueries:     &queries.LogoQueries{DB: db},     // from Logo model
+		StreamQueries:   &queries.StreamQueries{DB: db},   // from Stream model
 	}, nil
 }
 

@@ -40,8 +40,8 @@ func main() {
 			log.Println(err)
 		}
 	}
-	if _, err := os.Stat(app.STREAM_PATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(app.STREAM_PATH, os.ModePerm)
+	if _, err := os.Stat(app.SERVE_PATH); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(app.SERVE_PATH, os.ModePerm)
 		if err != nil {
 			log.Println(err)
 		}
@@ -60,6 +60,12 @@ func main() {
 	}
 	if _, err := os.Stat(app.LOGO_FILEPATH); errors.Is(err, os.ErrNotExist) {
 		err := os.Mkdir(app.LOGO_FILEPATH, os.ModePerm)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+	if _, err := os.Stat(app.STREAM_FILEPATH); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(app.STREAM_FILEPATH, os.ModePerm)
 		if err != nil {
 			log.Println(err)
 		}

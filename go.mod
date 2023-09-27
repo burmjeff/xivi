@@ -30,6 +30,7 @@ require (
 	github.com/dlclark/regexp2 v1.10.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
+	github.com/go-gst/go-gst v0.0.0-20230920090316-11f27eb01e07 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/glog v1.1.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
@@ -40,6 +41,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
+	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/nlpodyssey/gopickle v0.2.0 // indirect
 	github.com/nlpodyssey/gotokenizers v0.2.0 // indirect
@@ -57,6 +59,7 @@ require (
 require (
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/andybalholm/brotli v1.0.5 // indirect
+	github.com/go-gst/go-glib v0.0.0-20230906175327-b2d34240bcb4
 	github.com/go-openapi/jsonpointer v0.20.0 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
 	github.com/go-openapi/spec v0.20.9 // indirect
