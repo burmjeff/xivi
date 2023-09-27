@@ -23,10 +23,10 @@ type M3uTools struct {
 }
 
 func (m *M3uTools) CreateM3u(template models.Template) {
-	m.host = os.Getenv("STREAMING_HOST")
-	port, err := strconv.Atoi(os.Getenv("STREAMING_PORT"))
+	m.host = os.Getenv("SERVER_HOST")
+	port, err := strconv.Atoi(os.Getenv("SERVER_PORT"))
 	if err != nil {
-		log.Error("Not a valid Streaming Port: ", os.Getenv("STREAMING_PORT"))
+		log.Error("Not a valid Streaming Port: ", os.Getenv("SERVER_PORT"))
 		return
 	}
 	m.port = port
