@@ -38,7 +38,7 @@ func (m *M3uTools) CreateM3u(template models.Template) {
 	}
 	b := reader.(*bytes.Buffer)
 
-	os.WriteFile(fmt.Sprintf("./configs/stream/%s.m3u", template.Name), b.Bytes(), os.ModePerm)
+	os.WriteFile(fmt.Sprintf("%s/%s.m3u", app.M3U_FILEPATH, template.Name), b.Bytes(), os.ModePerm)
 
 }
 
@@ -133,10 +133,11 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 			continue
 		}
 		logo := GetChannelLogo(m.Db, channel.LogoId)
+		logoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, logo)
 
 		log.Println("M3U Creation: Adding Template Channel: ", channel.Name)
 		channelURL := fmt.Sprintf("http://%s:%d/stream/%s", m.host, m.port, channel.Uuid)
-		_, err = writer.WriteString(fmt.Sprintf("#EXTINF:-1 tvg-chno=\"%d\" tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n%s\n", chNo, channel.Name, channel.TvgID, logo, group.Name, channel.Name, channelURL))
+		_, err = writer.WriteString(fmt.Sprintf("#EXTINF:-1 tvg-chno=\"%d\" tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n%s\n", chNo, channel.Name, channel.TvgID, logoURL, group.Name, channel.Name, channelURL))
 		if err != nil {
 			log.Error(err)
 			continue

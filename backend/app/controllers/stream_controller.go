@@ -35,14 +35,14 @@ func GetStream(c *fiber.Ctx) error {
 		})
 	}
 
-	// Get template by ID.
+	// Get channels by UUID.
 	channels, err := db.GetChannelsbyUuid(stream_id)
 	if err != nil {
-		// Return, if template not found.
+		// Return, if no channels found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error":    true,
 			"msg":      "Stream Error",
-			"template": nil,
+			"channels": nil,
 		})
 	}
 
