@@ -17,7 +17,7 @@ func (q *StreamQueries) GetChannelsbyUuid(uuid string) ([]models.ChannelUrl, err
 
 	// Define query string.
 	query := `SELECT channelurl.* FROM channelurl
-		JOIN templatechannelitem ON channel.playlist_channel_id = templatechannelitem.playlist_channel_id
+		JOIN templatechannelitem ON channelurl.playlist_channel_id = templatechannelitem.playlist_channel_id
 		JOIN templatechannel ON templatechannel.id = templatechannelitem.channel_id
 		WHERE templatechannel.uuid = ? 
 		ORDER BY channelurl.orderr ASC`

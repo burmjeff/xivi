@@ -62,7 +62,7 @@ gst-plugins-ugly=1.20.6-r0
 # environment variables
 ENV APP_NAME="Xivi" \
 APP_VERSION="1.0" \
-SERVER_HOST="0.0.0.0" \
+SERVER_HOST="127.0.0.1" \
 SERVER_PORT=8080 \
 CONFIG_PATH="/configs" \
 SERVE_PATH="/serve" \

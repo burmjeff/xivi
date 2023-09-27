@@ -47,7 +47,7 @@ func PublicRoutes(a *fiber.App) {
 	api.Delete("/logo/:logo_id", controllers.DeleteLogo) // delete one logo by ID
 
 	// Stream Routes
-	api.Get("/stream/:stream_id", controllers.GetStream)
+	router.Get("/stream/:stream_id", controllers.GetStream)
 
 	// App Routes
 	router.Use("/images", filesystem.New(filesystem.Config{
