@@ -1,11 +1,19 @@
 package controllers
 
 import (
+	"net/http"
+	"xivi/backend/app/models"
 	"xivi/backend/pkg/streaming"
 	"xivi/backend/platform/database"
 
 	"github.com/gofiber/fiber/v2"
 )
+
+type AppSettings struct {
+	Proxy      bool `json:"proxy,omitempty"`
+	Buffer     bool `json:"buffer,omitempty"`
+	BufferTime int  `json:"buffertime,omitempty"`
+}
 
 // GetStream func gets stream.
 // @Description Get stream by given UUID.
@@ -46,10 +54,30 @@ func GetStream(c *fiber.Ctx) error {
 		})
 	}
 
-	// Return status redirect.
-	loc, status := streaming.StartStream(stream_id, channels)
-	if loc == "" {
-		loc = c.OriginalURL()
+	appSettings := models.Settings{
+		Proxy:      true,
+		Buffer:     false,
+		BufferTime: 0,
 	}
-	return c.Redirect(loc, status)
+
+	switch appSettings.Proxy {
+
+	case false:
+		//TODO LOOP CHECK STREAM STATUS UNTIL 302
+		return c.Redirect(channels[0].Url, http.StatusTemporaryRedirect)
+
+	case true:
+		s := streaming.NewHTTPStreamer(c.Context())
+
+		//s.Close()
+
+		if err := s.StartStream(channels[0].Url, c); err != nil {
+			return err
+		}
+		//c.SendStream(s.piper)
+		//c.Context().Response.SetBodyStream(s.piper, -1)
+
+	}
+
+	return nil
 }

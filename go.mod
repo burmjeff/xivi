@@ -7,6 +7,7 @@ toolchain go1.21.0
 require (
 	github.com/arsmn/fiber-swagger/v2 v2.31.1
 	github.com/davidbyttow/govips/v2 v2.13.0
+	github.com/go-gst/go-gst v0.0.0-20230920090316-11f27eb01e07
 	github.com/go-playground/validator/v10 v10.15.3
 	github.com/gofiber/fiber/v2 v2.49.0
 	github.com/gofiber/jwt/v2 v2.2.7
@@ -30,7 +31,6 @@ require (
 	github.com/dlclark/regexp2 v1.10.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
-	github.com/go-gst/go-gst v0.0.0-20230920090316-11f27eb01e07 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/glog v1.1.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
@@ -59,7 +59,7 @@ require (
 require (
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/andybalholm/brotli v1.0.5 // indirect
-	github.com/go-gst/go-glib v0.0.0-20230906175327-b2d34240bcb4
+	github.com/go-gst/go-glib v0.0.0-20230906175327-b2d34240bcb4 // indirect
 	github.com/go-openapi/jsonpointer v0.20.0 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
 	github.com/go-openapi/spec v0.20.9 // indirect
@@ -76,7 +76,7 @@ require (
 	github.com/nlpodyssey/cybertron v0.1.2
 	github.com/swaggo/files v1.0.1 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/valyala/fasthttp v1.49.0 // indirect
+	github.com/valyala/fasthttp v1.49.0
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	golang.org/x/crypto v0.13.0 // indirect
 	golang.org/x/net v0.15.0 // indirect
