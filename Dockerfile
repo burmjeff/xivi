@@ -2,7 +2,7 @@
 # svelte-builder
 #
 
-FROM node:20.5.1-alpine3.17 as app-builder
+FROM node:20.7.0-alpine3.18 as app-builder
 
 WORKDIR /app
 COPY . /app
@@ -15,19 +15,19 @@ RUN npx vite build
 # server-builder
 #
 
-FROM golang:1.21.0-alpine3.17 as server-builder
+FROM golang:1.21.1-alpine3.18 as server-builder
 
 RUN echo "@main https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories
 RUN echo "@community https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
 
 RUN apk add build-base
-RUN apk add --no-cache vips-dev@community=8.13.3-r1 \
-glib-dev=2.74.7-r0 \
-gstreamer-dev=1.20.6-r0 \
-gst-plugins-base-dev=1.20.6-r0 \
-gst-plugins-good=1.20.6-r0 \
-gst-plugins-bad-dev=1.20.6-r0 \
-gst-plugins-ugly=1.20.6-r0 
+RUN apk add --no-cache vips-dev@community=8.14.3-r0 \
+glib-dev \
+gstreamer-dev \
+gst-plugins-base-dev \
+gst-plugins-good \
+gst-plugins-bad-dev \
+gst-plugins-ugly
 
 
 WORKDIR /build
@@ -47,17 +47,17 @@ RUN go build -ldflags="-s -w" -buildvcs=false -mod=readonly -v -o apiserver .
 # deploy
 #
 
-FROM alpine:3.17.5 as deployment
+FROM alpine:3.18.4 as deployment
 
 RUN echo "@community https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
 
-RUN apk add vips@community=8.13.3-r1 \
-glib=2.74.7-r0 \
-gstreamer=1.20.6-r0 \
-gst-plugins-base=1.20.6-r0 \
-gst-plugins-good=1.20.6-r0 \
-gst-plugins-bad=1.20.6-r0 \
-gst-plugins-ugly=1.20.6-r0 
+RUN apk add vips@community=8.14.3-r0 \
+glib \
+gstreamer \
+gst-plugins-base \
+gst-plugins-good \
+gst-plugins-bad \
+gst-plugins-ugly 
 
 # environment variables
 ENV APP_NAME="Xivi" \

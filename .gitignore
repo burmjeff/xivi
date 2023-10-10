@@ -4,6 +4,7 @@
 # IDEs
 .vscode/
 .idea/
+xivi.code-workspace
 
 # Dev build
 build/
