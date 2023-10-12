@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/go-gst/go-gst/gst"
@@ -44,8 +43,6 @@ type HTTPStreamer struct {
 	ctx      *fasthttp.RequestCtx
 	done     chan bool
 	writer   *bufio.Writer
-	pipew    *io.PipeWriter
-	piper    *io.PipeReader
 	pipeline *gst.Pipeline
 	// The settings for the element
 	settings *Settings
@@ -64,14 +61,38 @@ func NewHTTPStreamer(ctx *fasthttp.RequestCtx) *HTTPStreamer {
 // Close closes the stream
 func (s *HTTPStreamer) Close() {
 	if s.done != nil {
-		s.pipeline.SendEvent(gst.NewEOSEvent())
-		close(s.done)
+		if !s.pipeline.SendEvent(gst.NewEOSEvent()) {
+			fmt.Println("WARNING: Failed to send EOS to pipeline")
+		}
+		elements, _ := s.pipeline.GetElementsSorted()
+		go func() {
+			for _, element := range elements {
+				fmt.Println("Closing GST element:", element.GetName(), "state:", element.GetCurrentState())
+				pads, _ := element.GetSrcPads()
+				for _, pad := range pads {
+					pad.Clear()
+					pad.PauseTask()
+				}
+				if err := element.SetState(gst.StateNull); err != nil {
+					fmt.Println("WARNING: Failed to set", element.GetName(), "state to Null")
+				}
+				s.pipeline.Remove(element)
+			}
+			s.pipeline.Clear()
+			close(s.done)
+			fmt.Println("STREAM CLOSED")
+		}()
 	}
 }
 
 // Write writes bytes to streamer
 func (s *HTTPStreamer) Write(p []byte) (n int, err error) {
-	return s.writer.Write(p)
+	if s.writer != nil {
+		return s.writer.Write(p)
+	}
+
+	return 0, nil
+
 }
 
 // Flush flushes data to the client
@@ -112,7 +133,7 @@ func (s *HTTPStreamer) SetHeader(key string, value interface{}) error {
 	return nil
 }
 
-func (s *HTTPStreamer) CreatePipeline(c *fiber.Ctx) (*gst.Pipeline, error) {
+func (s *HTTPStreamer) CreatePipeline() (*gst.Pipeline, error) {
 	var pipeline *gst.Pipeline
 	var err error
 
@@ -171,7 +192,7 @@ func (s *HTTPStreamer) CreatePipeline(c *fiber.Ctx) (*gst.Pipeline, error) {
 				pad.Link(sink.GetStaticPad("sink"))
 			})
 			typefind.Link(demux)
-			demux.SetState(gst.StatePlaying)
+			//demux.SetState(gst.StatePlaying)
 
 		} else if strings.HasPrefix(caps.String(), "video/mpegts") {
 			self.Link(sink.Element)
@@ -179,8 +200,6 @@ func (s *HTTPStreamer) CreatePipeline(c *fiber.Ctx) (*gst.Pipeline, error) {
 
 	})
 
-	s.piper, s.pipew = io.Pipe()
-	i := 0
 	sink.SetCallbacks(&app.SinkCallbacks{
 		NewSampleFunc: func(appSink *app.Sink) gst.FlowReturn {
 			sample := appSink.PullSample()
@@ -193,20 +212,18 @@ func (s *HTTPStreamer) CreatePipeline(c *fiber.Ctx) (*gst.Pipeline, error) {
 				return gst.FlowOK
 			}
 			defer buffer.Unmap()
-			defer buffer.Unref()
 
-			i++
-			println(pipeline.GetCurrentState().String(), i)
-
-			//s.pipew.Write(buffer.Extract(0, buffer.GetSize()))
-			if s.writer != nil {
-				s.Write(buffer.Extract(0, buffer.GetSize()))
+			s.Write(buffer.Extract(0, buffer.GetSize()))
+			if err = s.Flush(); err != nil {
+				fmt.Println("STREAM FLUSH ERROR:", err)
+				s.Close()
+				return gst.FlowEOS
 			}
-			//s.CustomBuffer.bufWrite.Write(data) // Write the buffer data to the HTTP response.
 
 			return gst.FlowOK
 		},
 	})
+
 	return pipeline, nil
 }
 
@@ -214,7 +231,6 @@ func (s *HTTPStreamer) StartPipeline(pipeline *gst.Pipeline) error {
 	// Start the pipeline
 	pipeline.SetState(gst.StatePlaying)
 	var err error
-	s.settings.userAgent = "Xivi 1.0"
 
 	pipeline.GetPipelineBus().AddWatch(func(msg *gst.Message) bool {
 
@@ -263,7 +279,6 @@ func (s *HTTPStreamer) Stop(pipeline *gst.Pipeline) (bool, error) {
 }
 
 func (s *HTTPStreamer) StartStream(channel string, c *fiber.Ctx) error {
-	var pipeline *gst.Pipeline
 	var err error
 	//s.streamData = &bytes.Buffer{}
 	appSettings := AppSettings{
@@ -271,14 +286,7 @@ func (s *HTTPStreamer) StartStream(channel string, c *fiber.Ctx) error {
 		Buffer:     false,
 		BufferTime: 0,
 	}
-
-	go func() {
-		<-s.done
-		pipeline.SetState(gst.StateNull)
-		pipeline.Clear()
-		pipeline.Unref()
-		s.Close()
-	}()
+	s.settings.userAgent = "Xivi 1.0"
 
 	switch appSettings.Buffer {
 
@@ -290,10 +298,10 @@ func (s *HTTPStreamer) StartStream(channel string, c *fiber.Ctx) error {
 
 	s.settings.src = channel
 
-	if pipeline, err = s.CreatePipeline(c); err != nil {
+	if s.pipeline, err = s.CreatePipeline(); err != nil {
 		return err
 	}
-	if err = s.StartPipeline(pipeline); err != nil {
+	if err = s.StartPipeline(s.pipeline); err != nil {
 		return err
 	}
 
@@ -309,7 +317,6 @@ func (s *HTTPStreamer) StartStream(channel string, c *fiber.Ctx) error {
 		<-ready // Wait until writer is set
 	}
 
-	println("STREAMING")
 	return nil
 
 }
