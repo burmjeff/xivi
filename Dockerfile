@@ -71,7 +71,8 @@ MODEL_NAME="sentence-transformers/all-MiniLM-L6-v2" \
 SERVER_READ_TIMEOUT=60 \
 TZ="America/New_York" \
 JWT_SECRET_KEY="secret" \
-JWT_SECRET_KEY_EXPIRE_MINUTES_COUNT=15
+JWT_SECRET_KEY_EXPIRE_MINUTES_COUNT=15 \
+GST_DEBUG=2
 
 RUN mkdir -p /app
 RUN mkdir -p $CONFIG_PATH

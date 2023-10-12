@@ -20,7 +20,7 @@
 		"serve": "open-cli http://localhost:8080 && ./xivi",
 		"serve-win": "open-cli http://localhost:8080 && xivi",
 		"docker": "docker build . -t xivi -f Dockerfile",
-		"docker-run": "open-cli http://localhost:8080 && docker run -p 8080:8080 --rm xivi",
+		"docker-run": "open-cli http://localhost:8080 && docker run -p 8080:8080 -v serve:/serve -v configs:/configs -v models:/models --rm xivi",
 		"commit": "npm run format && go fmt ./... && git pull origin master && git add . && git commit -m \"Updating\" && git push origin master"
 	},
 	"devDependencies": {

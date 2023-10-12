@@ -78,6 +78,5 @@ func GetStream(c *fiber.Ctx) error {
 		//c.Context().Response.SetBodyStream(s.piper, -1)
 
 	}
-
 	return nil
 }
