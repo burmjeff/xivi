@@ -69,13 +69,9 @@ func GetStream(c *fiber.Ctx) error {
 	case true:
 		s := streaming.NewHTTPStreamer(c.Context())
 
-		//s.Close()
-
 		if err := s.StartStream(channels[0].Url, c); err != nil {
 			return err
 		}
-		//c.SendStream(s.piper)
-		//c.Context().Response.SetBodyStream(s.piper, -1)
 
 	}
 	return nil

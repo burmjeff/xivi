@@ -67,16 +67,18 @@ func (s *HTTPStreamer) Close() {
 		elements, _ := s.pipeline.GetElementsSorted()
 		go func() {
 			for _, element := range elements {
-				fmt.Println("Closing GST element:", element.GetName(), "state:", element.GetCurrentState())
+				fmt.Println("Disposing GST element:", element.GetName(), "state:", element.GetCurrentState())
 				pads, _ := element.GetSrcPads()
 				for _, pad := range pads {
-					pad.Clear()
+					//pad.Clear()
 					pad.PauseTask()
 				}
 				if err := element.SetState(gst.StateNull); err != nil {
 					fmt.Println("WARNING: Failed to set", element.GetName(), "state to Null")
 				}
-				s.pipeline.Remove(element)
+				if err := s.pipeline.Remove(element); err != nil {
+					fmt.Println("WARNING: Failed to remove element from pipeline:", element.GetName())
+				}
 			}
 			s.pipeline.Clear()
 			close(s.done)
@@ -192,7 +194,6 @@ func (s *HTTPStreamer) CreatePipeline() (*gst.Pipeline, error) {
 				pad.Link(sink.GetStaticPad("sink"))
 			})
 			typefind.Link(demux)
-			//demux.SetState(gst.StatePlaying)
 
 		} else if strings.HasPrefix(caps.String(), "video/mpegts") {
 			self.Link(sink.Element)
