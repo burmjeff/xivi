@@ -5,23 +5,25 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
+	"xivi/backend/app/models"
 
 	"github.com/go-gst/go-gst/gst"
-	"github.com/go-gst/go-gst/gst/app"
-	"github.com/gofiber/fiber/v2"
+	gstapp "github.com/go-gst/go-gst/gst/app"
 	"github.com/valyala/fasthttp"
 )
 
-type AppSettings struct {
-	Proxy      bool `json:"proxy,omitempty"`
-	Buffer     bool `json:"buffer,omitempty"`
-	BufferTime int  `json:"buffertime,omitempty"`
-}
+var Streams []*Stream
 
-// A private struct where we hold the parameter values set on our
-// element.
+type Stream struct {
+	pipeline *gst.Pipeline
+	// The settings for the element
+	Settings *Settings
+	// The current stream count
+	count int
+}
 type Settings struct {
-	src       string
+	Src       string
 	buffer    int
 	userAgent string
 }
@@ -38,59 +40,97 @@ type Streamer interface {
 	SetHeader(key string, value interface{}) error
 }
 
-// HTTPStreamer implement Streamer with fasthttp
-type HTTPStreamer struct {
-	ctx      *fasthttp.RequestCtx
-	done     chan bool
-	writer   *bufio.Writer
-	pipeline *gst.Pipeline
-	// The settings for the element
-	settings *Settings
-	// The current state of the element
-	state bool
+func NewStreamer() *Stream {
+	return &Stream{
+		Settings: &Settings{},
+	}
 }
 
-// NewHTTPStreamer returns a new HTTPStreamer
-func NewHTTPStreamer(ctx *fasthttp.RequestCtx) *HTTPStreamer {
-	return &HTTPStreamer{
-		ctx:      ctx,
-		settings: &Settings{},
+func AddStream(s *Stream) {
+	Streams = append(Streams, s)
+}
+
+func RemoveStream(s *Stream) {
+	for i, stream := range Streams {
+		if stream == s {
+			ret := make([]*Stream, 0)
+			ret = append(ret, Streams[:i]...)
+			Streams = append(ret, Streams[i+1:]...)
+			break
+		}
 	}
+	return
 }
 
 // Close closes the stream
-func (s *HTTPStreamer) Close() {
-	if s.done != nil {
-		if !s.pipeline.SendEvent(gst.NewEOSEvent()) {
-			fmt.Println("WARNING: Failed to send EOS to pipeline")
+func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
+	select {
+	case <-done:
+		return gst.FlowEOS
+	default:
+		s.count--
+		close(done)
+		if s.count == 0 {
+			go func() {
+				if !s.pipeline.SendEvent(gst.NewEOSEvent()) {
+					fmt.Println("WARNING: Failed to send EOS to pipeline")
+				}
+				elements, _ := s.pipeline.GetElementsSorted()
+
+				for _, element := range elements {
+					fmt.Println("Disposing GST element:", element.GetName(), "state:", element.GetCurrentState())
+					pads, _ := element.GetSrcPads()
+					for _, pad := range pads {
+						pad.PauseTask()
+					}
+					if err := element.SetState(gst.StateNull); err != nil {
+						fmt.Println("WARNING: Failed to set", element.GetName(), "state to Null")
+					}
+					if err := s.pipeline.Remove(element); err != nil {
+						fmt.Println("WARNING: Failed to remove element from pipeline:", element.GetName())
+					}
+				}
+				s.pipeline.Clear()
+				fmt.Println("PIPELINE DISPOSED")
+			}()
+			RemoveStream(s)
+			return gst.FlowEOS
 		}
-		elements, _ := s.pipeline.GetElementsSorted()
+
+		tee, _ := s.pipeline.GetElementByName("stream")
+		tee.Unlink(sinkBin.Element)
+		if err := s.pipeline.Remove(sinkBin.Element); err != nil {
+			fmt.Println("WARNING: Failed to remove stream bin from pipeline:", sinkBin.GetName())
+		}
 		go func() {
+			if !sinkBin.SendEvent(gst.NewEOSEvent()) {
+				fmt.Println("WARNING: Failed to send EOS to stream branch")
+			}
+			elements, _ := sinkBin.GetElementsSorted()
 			for _, element := range elements {
 				fmt.Println("Disposing GST element:", element.GetName(), "state:", element.GetCurrentState())
-				pads, _ := element.GetSrcPads()
+				pads, _ := element.GetPads()
 				for _, pad := range pads {
-					//pad.Clear()
 					pad.PauseTask()
 				}
-				if err := element.SetState(gst.StateNull); err != nil {
-					fmt.Println("WARNING: Failed to set", element.GetName(), "state to Null")
-				}
-				if err := s.pipeline.Remove(element); err != nil {
-					fmt.Println("WARNING: Failed to remove element from pipeline:", element.GetName())
-				}
 			}
-			s.pipeline.Clear()
-			close(s.done)
+			if err := sinkBin.SetState(gst.StateNull); err != nil {
+				fmt.Println("WARNING: Failed to set", sinkBin.GetName(), "state to Null")
+			}
+
+			sinkBin.Clear()
 			fmt.Println("STREAM CLOSED")
 		}()
 	}
+
+	return gst.FlowEOS
+
 }
 
 // Write writes bytes to streamer
-func (s *HTTPStreamer) Write(p []byte) (n int, err error) {
-	if s.writer != nil {
-		return s.writer.Write(p)
+func (s *Stream) Write(writer *bufio.Writer, p []byte) (n int, err error) {
+	if writer != nil {
+		return writer.Write(p)
 	}
 
 	return 0, nil
@@ -98,36 +138,36 @@ func (s *HTTPStreamer) Write(p []byte) (n int, err error) {
 }
 
 // Flush flushes data to the client
-func (s *HTTPStreamer) Flush() error {
-	if s.writer != nil {
-		return s.writer.Flush()
+func (s *Stream) Flush(writer *bufio.Writer) error {
+	if writer != nil {
+		return writer.Flush()
 	}
 
 	return nil
 }
 
 // SetStatusCode sets the status code. *Must* be called before Write and Flush
-func (s *HTTPStreamer) SetStatusCode(statusCode int) error {
-	if s.writer != nil {
+func (s *Stream) SetStatusCode(ctx *fasthttp.RequestCtx, writer *bufio.Writer, statusCode int) error {
+	if writer != nil {
 		return fmt.Errorf("Streaming started - can't set status")
 	}
 
-	s.ctx.SetStatusCode(statusCode)
+	ctx.SetStatusCode(statusCode)
 	return nil
 }
 
 // SetHeader sets a response header. *Must* be called before Write and Flush
 // value can be string or []byte
-func (s *HTTPStreamer) SetHeader(key string, value interface{}) error {
-	if s.writer != nil {
+func (s *Stream) SetHeader(ctx *fasthttp.RequestCtx, writer *bufio.Writer, key string, value interface{}) error {
+	if writer != nil {
 		return fmt.Errorf("Streaming started - can't set header")
 	}
 
 	switch v := value.(type) {
 	case string:
-		s.ctx.Response.Header.Set(key, v)
+		ctx.Response.Header.Set(key, v)
 	case []byte:
-		s.ctx.Response.Header.SetBytesV(key, v)
+		ctx.Response.Header.SetBytesV(key, v)
 	default:
 		return fmt.Errorf("Unsupported header value type - %T", value)
 	}
@@ -135,16 +175,107 @@ func (s *HTTPStreamer) SetHeader(key string, value interface{}) error {
 	return nil
 }
 
-func (s *HTTPStreamer) CreatePipeline() (*gst.Pipeline, error) {
+func (s *Stream) NewSink(ctx *fasthttp.RequestCtx) error {
+	var writer *bufio.Writer
+	var done chan bool
+	var bin *gst.Bin
+
+	if writer == nil {
+		done = make(chan bool)
+		ready := make(chan bool)
+		ctx.Response.SetBodyStreamWriter(func(w *bufio.Writer) {
+			writer = w
+			ready <- true // Signal that writer is set
+			<-done        // Wait for stream to be closed
+		})
+
+		<-ready // Wait until writer is set
+	}
+
+	queue, err := gst.NewElement("queue")
+	if err != nil {
+		return err
+	}
+	sink, err := gstapp.NewAppSink()
+	if err != nil {
+		return err
+	}
+
+	queue.Set("name", "sinkqueue")
+	sink.Set("max-time", 15000000000)
+	sink.Set("drop", true)
+	sink.SetProperty("emit-signals", true)
+	sink.SetProperty("sync", false)
+
+	for i := 0; i <= s.count; i++ {
+		if element, _ := s.pipeline.GetElementByName(fmt.Sprintf("sinkbin%d", i)); element == nil {
+			bin = gst.NewBin(fmt.Sprintf("sinkbin%d", i))
+			break
+		}
+	}
+
+	bin.Add(queue)
+	bin.Add(sink.Element)
+	queue.Link(sink.Element)
+
+	queuepad := gst.NewGhostPad("sink", queue.GetStaticPad("sink"))
+	queuepad.SetActive(true)
+	bin.AddPad(queuepad.Pad)
+
+	sink.SetCallbacks(&gstapp.SinkCallbacks{
+		NewSampleFunc: func(appSink *gstapp.Sink) gst.FlowReturn {
+
+			sample := appSink.TryPullSample(gst.ClockTime(30 * time.Second))
+			if sample == nil {
+				return s.Close(bin, done)
+			}
+
+			buffer := sample.GetBuffer()
+			if buffer == nil {
+				return gst.FlowOK
+			}
+			defer buffer.Unmap()
+
+			if _, err = s.Write(writer, buffer.Extract(0, buffer.GetSize())); err != nil {
+				fmt.Println("STREAM WRITE ERROR:", err)
+				return s.Close(bin, done)
+			}
+			if err = s.Flush(writer); err != nil {
+				fmt.Println("STREAM FLUSH ERROR:", err)
+				return s.Close(bin, done)
+			}
+
+			return gst.FlowOK
+		},
+	})
+
+	tee, err := s.pipeline.GetElementByName("stream")
+	if err != nil {
+		bin.SetState(gst.StateNull)
+		bin.Clear()
+		return err
+	}
+	bin.SetState(gst.StatePaused)
+	s.pipeline.Add(bin.Element)
+	if err := tee.Link(bin.Element); err != nil {
+		s.pipeline.Remove(bin.Element)
+		bin.SetState(gst.StateNull)
+		bin.Clear()
+		return err
+	}
+	//bin.SyncStateWithParent()
+	bin.SetState(gst.StatePlaying)
+
+	s.count++
+
+	return nil
+}
+
+func (s *Stream) CreatePipeline() (*gst.Pipeline, error) {
 	var pipeline *gst.Pipeline
 	var err error
 
-	if s.state {
-		err := errors.New("GoFileSink is already started")
-		return nil, err
-	}
-
-	if s.settings.src == "" {
+	if s.Settings.Src == "" {
 		err := errors.New("No src location configured on the httpsource")
 		return nil, err
 	}
@@ -164,22 +295,20 @@ func (s *HTTPStreamer) CreatePipeline() (*gst.Pipeline, error) {
 	if err != nil {
 		return nil, err
 	}
-	sink, err := app.NewAppSink()
+	tee, err := gst.NewElement("tee")
 	if err != nil {
 		return nil, err
 	}
 
-	src.Set("location", s.settings.src)
-	src.Set("user-agent", s.settings.userAgent)
+	src.Set("location", s.Settings.Src)
+	src.Set("user-agent", s.Settings.userAgent)
 	src.Set("is-live", true)
-	sink.Set("max-time", 15000000000)
-	sink.Set("drop", true)
-	sink.SetProperty("emit-signals", true)
-	sink.SetProperty("sync", false)
+	tee.Set("name", "stream")
 
 	pipeline.Add(src)
 	pipeline.Add(typefind)
-	pipeline.Add(sink.Element)
+	pipeline.Add(tee)
+
 	src.Link(typefind)
 
 	typefind.Connect("have-type", func(self *gst.Element, guint gst.TypeFindProbability, caps *gst.Caps) {
@@ -191,44 +320,20 @@ func (s *HTTPStreamer) CreatePipeline() (*gst.Pipeline, error) {
 			}
 			pipeline.Add(demux)
 			demux.Connect("pad-added", func(self *gst.Element, pad *gst.Pad) {
-				pad.Link(sink.GetStaticPad("sink"))
+				pad.Link(tee.GetStaticPad("sink"))
 			})
 			typefind.Link(demux)
 
 		} else if strings.HasPrefix(caps.String(), "video/mpegts") {
-			self.Link(sink.Element)
+			self.Link(tee)
 		}
 
-	})
-
-	sink.SetCallbacks(&app.SinkCallbacks{
-		NewSampleFunc: func(appSink *app.Sink) gst.FlowReturn {
-			sample := appSink.PullSample()
-			if sample == nil {
-				return gst.FlowEOS
-			}
-
-			buffer := sample.GetBuffer()
-			if buffer == nil {
-				return gst.FlowOK
-			}
-			defer buffer.Unmap()
-
-			s.Write(buffer.Extract(0, buffer.GetSize()))
-			if err = s.Flush(); err != nil {
-				fmt.Println("STREAM FLUSH ERROR:", err)
-				s.Close()
-				return gst.FlowEOS
-			}
-
-			return gst.FlowOK
-		},
 	})
 
 	return pipeline, nil
 }
 
-func (s *HTTPStreamer) StartPipeline(pipeline *gst.Pipeline) error {
+func (s *Stream) StartPipeline(pipeline *gst.Pipeline) error {
 	// Start the pipeline
 	pipeline.SetState(gst.StatePlaying)
 	var err error
@@ -251,6 +356,7 @@ func (s *HTTPStreamer) StartPipeline(pipeline *gst.Pipeline) error {
 		// If either condition triggered an error, log and quit
 		if err != nil {
 			fmt.Println("ERROR:", err.Error())
+			s.Close(nil, nil)
 			return false
 		}
 
@@ -260,44 +366,29 @@ func (s *HTTPStreamer) StartPipeline(pipeline *gst.Pipeline) error {
 		return err
 	}
 
-	s.state = true
 	fmt.Println(gst.LevelInfo, "Stream has started")
 	return nil
 }
 
-// Stop is called to stop the element. Set the internal state and close the file.
-func (s *HTTPStreamer) Stop(pipeline *gst.Pipeline) (bool, error) {
-	if !s.state {
-		err := errors.New("Stream is not started")
-		return false, err
-	}
-
-	pipeline.SendEvent(gst.NewEOSEvent())
-	s.state = false
-
-	fmt.Println("Stream has stopped")
-	return true, nil
-}
-
-func (s *HTTPStreamer) StartStream(channel string, c *fiber.Ctx) error {
+func (s *Stream) StartStream(channel string) error {
 	var err error
 	//s.streamData = &bytes.Buffer{}
-	appSettings := AppSettings{
+	appSettings := models.AppSettings{
 		Proxy:      true,
 		Buffer:     false,
 		BufferTime: 0,
 	}
-	s.settings.userAgent = "Xivi 1.0"
+	s.Settings.userAgent = "Xivi 1.0"
 
 	switch appSettings.Buffer {
 
 	case false:
-		s.settings.buffer = 0
+		s.Settings.buffer = 0
 	case true:
-		s.settings.buffer = appSettings.BufferTime
+		s.Settings.buffer = appSettings.BufferTime
 	}
 
-	s.settings.src = channel
+	s.Settings.Src = channel
 
 	if s.pipeline, err = s.CreatePipeline(); err != nil {
 		return err
@@ -305,18 +396,7 @@ func (s *HTTPStreamer) StartStream(channel string, c *fiber.Ctx) error {
 	if err = s.StartPipeline(s.pipeline); err != nil {
 		return err
 	}
-
-	if s.writer == nil {
-		s.done = make(chan bool)
-		ready := make(chan bool)
-		s.ctx.Response.SetBodyStreamWriter(func(w *bufio.Writer) {
-			s.writer = w
-			ready <- true // Signal that writer is set
-			<-s.done      // Wait for stream to be closed
-		})
-
-		<-ready // Wait until writer is set
-	}
+	s.count = 0
 
 	return nil
 
