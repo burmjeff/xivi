@@ -54,7 +54,7 @@ func GetStream(c *fiber.Ctx) error {
 		})
 	}
 
-	appSettings := models.Settings{
+	appSettings := models.AppSettings{
 		Proxy:      true,
 		Buffer:     false,
 		BufferTime: 0,
@@ -67,9 +67,23 @@ func GetStream(c *fiber.Ctx) error {
 		return c.Redirect(channels[0].Url, http.StatusTemporaryRedirect)
 
 	case true:
-		s := streaming.NewHTTPStreamer(c.Context())
+		for _, stream := range streaming.Streams {
+			if stream.Settings.Src == channels[0].Url {
+				if err := stream.NewSink(c.Context()); err != nil {
+					return err
+				}
+				return nil
+			}
 
-		if err := s.StartStream(channels[0].Url, c); err != nil {
+		}
+		s := streaming.NewStreamer()
+		streaming.AddStream(s)
+
+		if err := s.StartStream(channels[0].Url); err != nil {
+			return err
+		}
+		if err := s.NewSink(c.Context()); err != nil {
+
 			return err
 		}
 
