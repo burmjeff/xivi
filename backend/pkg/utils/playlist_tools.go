@@ -4,7 +4,7 @@ import (
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 type PlaylistTools struct {
@@ -18,7 +18,7 @@ func (p *PlaylistTools) ConvertPlGroup(templateGroup int64, playlistChannels []m
 		tmplGroupChannel := &models.TemplateGroupChannel{GroupId: templateGroup, ChannelId: channelID}
 		err := p.Db.CreateTmplGroupChannel(tmplGroupChannel)
 		if err != nil {
-			log.Warnln(err)
+			log.Warn().Msg(err.Error())
 		}
 	}
 }
@@ -43,11 +43,11 @@ func (p *PlaylistTools) ConvertPlChannel(playlistChannel models.PlaylistChannel)
 	// Validate playlist fields.
 	if err := validate.Struct(templateChannel); err != nil {
 		//Some fields are not valid.
-		log.Warnln(err)
+		log.Warn().Msg(err.Error())
 	} else {
 		channelID, err := p.Db.CreateTmplChannel(templateChannel)
 		if err != nil {
-			log.Warnln(err)
+			log.Warn().Msg(err.Error())
 		} else {
 			tmplChannelItem.ChannelId = channelID
 			tmplChannelItem.PlaylistChannelId = playlistChannel.ID
@@ -64,7 +64,7 @@ func MatchDomain(db *database.Queries, playlistId int64) int64 {
 	newPlaylist, err := db.GetPlaylist(playlistId)
 	if err != nil {
 		// Return empty object and error.
-		log.Error(err)
+		log.Err(err)
 		return 0
 	}
 
@@ -73,7 +73,7 @@ func MatchDomain(db *database.Queries, playlistId int64) int64 {
 	playlists, err := db.GetPlaylists()
 	if err != nil {
 		// Return empty object and error.
-		log.Error(err)
+		log.Err(err)
 		return 0
 	}
 

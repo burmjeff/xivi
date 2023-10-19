@@ -4,11 +4,11 @@ import (
 	"encoding/xml"
 	"fmt"
 	"os"
-	"xivi/backend/app"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
+	"xivi/backend/platform/settings"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 type EpgTools struct {
@@ -16,21 +16,21 @@ type EpgTools struct {
 }
 
 func (m *EpgTools) CreateEpgXML(template models.Template) {
-	log.Info("Create EPG XML: STARTED")
+	log.Info().Msg("Create EPG XML: STARTED")
 	epg := models.EpgItem{
-		GeneratorInfo:  os.Getenv("APP_NAME"),
-		SourceInfoName: fmt.Sprintf("%s - %s", os.Getenv("APP_NAME"), os.Getenv("APP_VERSION")),
+		GeneratorInfo:  settings.APP_SETTINGS.Application.AppName,
+		SourceInfoName: fmt.Sprintf("%s - %s", settings.APP_SETTINGS.Application.AppName, settings.APP_SETTINGS.Application.AppVersion),
 	}
 
 	channelIDs, err := m.Db.GetTmplTvgids(template.ID)
 	if err != nil {
-		log.Error("No tvgids found for template: ", template.ID)
+		log.Error().Msgf("No tvgids found for template: %s", template.ID)
 		return
 	}
 
-	file, err := os.Create(fmt.Sprintf("%s/%s.xml", app.EPG_FILEPATH, template.Name))
+	file, err := os.Create(fmt.Sprintf("%s/%s.xml", settings.EPG_FILEPATH, template.Name))
 	if err != nil {
-		log.Error("Error creating file: %v", err)
+		log.Error().Msgf("Error creating file: %v", err)
 		return
 	}
 	defer file.Close()
@@ -39,14 +39,14 @@ func (m *EpgTools) CreateEpgXML(template models.Template) {
 	encoder.Indent("", "  ")
 
 	if err := encoder.Encode(xml.Header); err != nil {
-		log.Error(err)
+		log.Err(err)
 		return
 	}
 
 	for _, channel := range channelIDs {
 		epgChannel, err := m.Db.GetEpgChannelByChannelId(channel)
 		if err != nil {
-			log.Warn("No channel found for tvgid: ", channel, err)
+			log.Warn().Msgf("No channel found for %s: %v", channel, err)
 			continue
 		}
 		epg.Channels = append(epg.Channels, epgChannel)
@@ -55,16 +55,16 @@ func (m *EpgTools) CreateEpgXML(template models.Template) {
 	for _, programme := range channelIDs {
 		epgProgrammes, err := m.Db.GetProgrammesByChannelId(programme)
 		if err != nil {
-			log.Warn("No programme found for tvgid: ", programme, err)
+			log.Warn().Msgf("No programme found for %s: %v", programme, err)
 			continue
 		}
 		epg.Programmes = append(epg.Programmes, *epgProgrammes...)
 	}
 
 	if err := encoder.Encode(epg); err != nil {
-		log.Error(err)
+		log.Err(err)
 		return
 	}
-	log.Info("Create EPG XML: FINISHED")
+	log.Info().Msg("Create EPG XML: FINISHED")
 
 }

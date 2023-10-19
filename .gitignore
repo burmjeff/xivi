@@ -9,7 +9,7 @@ xivi.code-workspace
 # Dev build
 build/
 tmp/
-/configs/
+/config/
 xivi.exe
 /models/
 /docs/

@@ -6,7 +6,7 @@ import (
 	utils "xivi/backend/pkg/dbutils"
 
 	"github.com/jmoiron/sqlx"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 // EpgQueries struct for queries from Epg model.
@@ -68,7 +68,7 @@ func (q *EpgQueries) CreateEpg(p *models.Epg) (int64, error) {
 
 	id, err := res.LastInsertId()
 	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
+		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 
@@ -177,7 +177,7 @@ func (q *EpgQueries) CreateEpgChannel(p *models.EpgChannel) (int64, error) {
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
+		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 
@@ -328,7 +328,7 @@ func (q *EpgQueries) CreateEpgProgramme(p *models.EpgProgramme) (int64, error) {
 
 	id, err := res.LastInsertId()
 	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
+		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 
@@ -523,7 +523,7 @@ func (q *EpgQueries) CreateEpgChannelItem(p *models.EpgChannelItem) (int64, erro
 
 	id, err := res.LastInsertId()
 	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
+		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 

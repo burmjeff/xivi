@@ -2,8 +2,8 @@ package routes
 
 import (
 	"net/http"
-	"xivi/backend/app"
 	"xivi/backend/app/controllers"
+	"xivi/backend/platform/settings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
@@ -51,19 +51,19 @@ func PublicRoutes(a *fiber.App) {
 
 	// App Routes
 	router.Use("/images", filesystem.New(filesystem.Config{
-		Root:   http.Dir(app.LOGO_FILEPATH),
+		Root:   http.Dir(settings.LOGO_FILEPATH),
 		Browse: false,
 	}))
 	router.Use("/m3u", filesystem.New(filesystem.Config{
-		Root:   http.Dir(app.M3U_FILEPATH),
+		Root:   http.Dir(settings.M3U_FILEPATH),
 		Browse: false,
 	}))
 	router.Use("/epg", filesystem.New(filesystem.Config{
-		Root:   http.Dir(app.EPG_FILEPATH),
+		Root:   http.Dir(settings.EPG_FILEPATH),
 		Browse: false,
 	}))
 	router.Use("/streamer", filesystem.New(filesystem.Config{
-		Root:   http.Dir(app.STREAM_FILEPATH),
+		Root:   http.Dir(settings.STREAM_FILEPATH),
 		Browse: false,
 	}))
 }

@@ -4,7 +4,7 @@ import (
 	"xivi/backend/app/models"
 
 	"github.com/jmoiron/sqlx"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 // LogoQueries struct for queries from Logo model.
@@ -61,7 +61,7 @@ func (q *LogoQueries) CreateLogo(p *models.Logo) (int64, error) {
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
+		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 

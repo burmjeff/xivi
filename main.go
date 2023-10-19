@@ -1,19 +1,17 @@
 package main
 
 import (
-	"errors"
-	"log"
-	"os"
-
 	"xivi/backend/app"
 	"xivi/backend/pkg/configs"
 	"xivi/backend/pkg/middleware"
 	"xivi/backend/pkg/routes"
+	"xivi/backend/platform/settings"
 	_ "xivi/docs" // load API Docs files (Swagger)
 
 	"github.com/gofiber/fiber/v2"
 	_ "github.com/joho/godotenv/autoload" // load .env file automatically
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 // @title API
@@ -32,49 +30,14 @@ import (
 func main() {
 
 	zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+	var err error
 
-	// Start server (with graceful shutdown).
-	if _, err := os.Stat(app.CONFIG_PATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(app.CONFIG_PATH, os.ModePerm)
-		if err != nil {
-			log.Println(err)
-		}
+	if err := settings.InitPaths(); err != nil {
+		log.Fatal().Msg(err.Error())
 	}
-	if _, err := os.Stat(app.SERVE_PATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(app.SERVE_PATH, os.ModePerm)
-		if err != nil {
-			log.Println(err)
-		}
-	}
-	if _, err := os.Stat(app.M3U_FILEPATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(app.M3U_FILEPATH, os.ModePerm)
-		if err != nil {
-			log.Println(err)
-		}
-	}
-	if _, err := os.Stat(app.EPG_FILEPATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(app.EPG_FILEPATH, os.ModePerm)
-		if err != nil {
-			log.Println(err)
-		}
-	}
-	if _, err := os.Stat(app.LOGO_FILEPATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(app.LOGO_FILEPATH, os.ModePerm)
-		if err != nil {
-			log.Println(err)
-		}
-	}
-	if _, err := os.Stat(app.STREAM_FILEPATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(app.STREAM_FILEPATH, os.ModePerm)
-		if err != nil {
-			log.Println(err)
-		}
-	}
-	if _, err := os.Stat(app.MODEL_PATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(app.MODEL_PATH, os.ModePerm)
-		if err != nil {
-			log.Println(err)
-		}
+
+	if settings.APP_SETTINGS, err = settings.InitSettings(); err != nil {
+		log.Fatal().Msg(err.Error())
 	}
 
 	// Define Fiber config.

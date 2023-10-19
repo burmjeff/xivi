@@ -11,7 +11,7 @@ import (
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 // M3uParser - A parser for m3u files.
@@ -27,12 +27,7 @@ type M3uParser struct {
 // ParseM3u - Parses the content of local file/URL.
 func (m *M3uParser) ParseM3u(playlistID int64, path string) {
 	m.playlistID = playlistID
-	// Output to stdout instead of the default stderr
-	log.SetOutput(os.Stdout)
-	log.SetFormatter(&log.TextFormatter{TimestampFormat: "2006-01-02 15:04:05", FullTimestamp: true})
-	// Only log the warning severity or above.
-	log.SetLevel(log.InfoLevel)
-	log.Infoln("Parser started")
+	log.Info().Msg("Parser started")
 
 	//Check if matching playlist exists
 	m.matchedPlaylist = MatchDomain(m.Db, playlistID)
@@ -47,23 +42,23 @@ func (m *M3uParser) ParseM3u(playlistID int64, path string) {
 	m.regexes["title"] = CompileRegex(`[,](.*?)$`)
 
 	if isValidURL(path) {
-		log.Infoln("Started parsing m3u URL...")
+		log.Info().Msg("Started parsing m3u URL...")
 		resp, err := http.Get(path)
 		if err != nil {
-			log.Error("Unable to get M3U FILE: ", err)
+			log.Error().Msgf("Unable to get M3U FILE: %v", err)
 			return
 		}
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			log.Error("Unable to get M3U FILE: ", err)
+			log.Error().Msgf("Unable to get M3U FILE: %v", err)
 			return
 		}
 		m.content = string(body)
 	} else {
-		log.Infoln("Started parsing m3u file...")
+		log.Info().Msg("Started parsing m3u file...")
 		body, err := os.ReadFile(path)
 		if err != nil {
-			log.Error("Unable to get M3U FILE: ", err)
+			log.Error().Msgf("Unable to get M3U FILE: %v", err)
 			return
 		}
 		m.content = string(body)
@@ -79,9 +74,9 @@ func (m *M3uParser) ParseM3u(playlistID int64, path string) {
 	if len(m.lines) > 0 {
 		m.parseLines()
 	} else {
-		log.Infoln("No content to parse!!!")
+		log.Info().Msg("No content to parse!!!")
 	}
-	log.Infoln("Parser finished")
+	log.Info().Msg("Parser finished")
 }
 
 func (m *M3uParser) parseLines() {
@@ -143,11 +138,11 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 			// Checking, if playlist with given ID is exists.
 			foundGroup, err := m.Db.GetPlGroupByName(group)
 			if err != nil {
-				log.Infoln("Group not found. Creating Group: ", group)
+				log.Info().Msgf("Group not found. Creating Group: %s", group)
 				playlistGroup.Name = group
 				groupId, err := m.Db.CreatePlGroup(playlistGroup)
 				if err != nil {
-					log.Warn("FAILED TO CREATE PLAYLIST GROUP: ", err)
+					log.Warn().Msgf("FAILED TO CREATE PLAYLIST GROUP: %v", err)
 				} else {
 					groupID = groupId
 				}
@@ -159,13 +154,13 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 		playlistGroupItem := &models.PlaylistGroupItem{PlaylistId: m.playlistID, GroupId: groupID}
 		_, err := m.Db.CreatePlGroupItem(playlistGroupItem)
 		if err != nil {
-			log.Debug("FAILED TO CREATE PLAYLIST_GROUP_ITEM: ", err)
+			log.Debug().Msgf("FAILED TO CREATE PLAYLIST_GROUP_ITEM: %v", err)
 		}
 
 		// Validate playlist fields.
 		if err := validate.Struct(playlistChannel); err != nil {
 			//Some fields are not valid.
-			log.Warnln(err)
+			log.Warn().Msg(err.Error())
 			return
 		}
 
@@ -176,14 +171,14 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 			for _, foundChannel := range foundChannels {
 				_, err := m.Db.ChannelUrlExists(m.matchedPlaylist, foundChannel.ID)
 				if err != nil {
-					log.Println(err)
+					log.Print(err)
 					continue
 				}
-				log.Infoln("Channel found. Adding url to Channel: ", playlistChannel.Name)
+				log.Info().Msgf("Channel found. Adding url to Channel: %s", playlistChannel.Name)
 				playlistChannel.UpdatedAt = time.Now()
 				err = m.Db.UpdatePlChannel(foundChannel.ID, playlistChannel)
 				if err != nil {
-					log.Warnln(err)
+					log.Warn().Msg(err.Error())
 					return
 				}
 
@@ -197,13 +192,13 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 				if err != nil {
 					err = m.Db.CreateChannelUrl(channelURL)
 					if err != nil {
-						log.Warnln(err)
+						log.Warn().Msg(err.Error())
 						return
 					}
 				} else {
 					err = m.Db.UpdateChannelUrl(channelID, channelURL)
 					if err != nil {
-						log.Warnln(err)
+						log.Warn().Msg(err.Error())
 						return
 					}
 				}
@@ -213,11 +208,11 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 				return
 			}
 		}
-		log.Infoln("Channel not found. Creating Channel: ", playlistChannel.Name)
+		log.Info().Msgf("Channel not found. Creating Channel: %s", playlistChannel.Name)
 		playlistChannel.CreatedAt = time.Now()
 		playlistChannelID, err := m.Db.CreatePlChannel(playlistChannel)
 		if err != nil {
-			log.Warnln(err)
+			log.Warn().Msg(err.Error())
 			return
 		}
 		playlistChannel.ID = playlistChannelID
@@ -230,7 +225,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 		channelURL.CreatedAt = time.Now()
 		err = m.Db.CreateChannelUrl(channelURL)
 		if err != nil {
-			log.Warnln(err)
+			log.Warn().Msg(err.Error())
 			return
 		}
 
@@ -245,7 +240,7 @@ func (m *M3uParser) createPlaylistGroupChannel(groupID int64, playlistChannel *m
 	playlistGroupChannel := &models.PlaylistGroupChannel{PlaylistId: m.playlistID, GroupId: groupID, ChannelId: playlistChannel.ID}
 	_, err := m.Db.CreatePlGroupChannel(playlistGroupChannel)
 	if err != nil {
-		log.Debug("FAILED TO CREATE PLAYLIST_GROUP_CHANNEL: ", err)
+		log.Debug().Msgf("FAILED TO CREATE PLAYLIST_GROUP_CHANNEL: %v", err)
 	}
 
 }

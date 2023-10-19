@@ -7,12 +7,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"xivi/backend/app"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
+	"xivi/backend/platform/settings"
 
 	"github.com/davidbyttow/govips/v2/vips"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 type ImageTools struct {
@@ -25,13 +25,13 @@ func CreateLogo(db *database.Queries, logoUrl string) (int64, error) {
 
 	img, err := downloadImage(logoUrl)
 	if err != nil {
-		log.Warnln("Failed Image Download: ", err)
+		log.Warn().Msgf("Failed Image Download: %v", err)
 		return 0, err
 	}
 
 	imgPath, err := normalizeImage(img)
 	if err != nil {
-		log.Warnln(err)
+		log.Warn().Msg(err.Error())
 		return 0, err
 	}
 	logo.Img = imgPath
@@ -39,11 +39,11 @@ func CreateLogo(db *database.Queries, logoUrl string) (int64, error) {
 	// Validate playlist fields.
 	if err := validate.Struct(logo); err != nil {
 		//Some fields are not valid.
-		log.Warnln(err)
+		log.Warn().Msg(err.Error())
 	} else {
 		logoID, err := db.CreateLogo(logo)
 		if err != nil {
-			log.Warnln(err)
+			log.Warn().Msg(err.Error())
 		} else {
 			return logoID, nil
 		}
@@ -83,7 +83,7 @@ func normalizeImage(img []byte) (string, error) {
 	image1bytes, _, err := image1.Export(ep)
 
 	uuid := CreateUuid()
-	imgPath := fmt.Sprintf("%s/%s.png", app.LOGO_FILEPATH, uuid)
+	imgPath := fmt.Sprintf("%s/%s.png", settings.LOGO_FILEPATH, uuid)
 
 	err = os.WriteFile(imgPath, image1bytes, 0644)
 	if err != nil {

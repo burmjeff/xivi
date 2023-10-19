@@ -5,7 +5,7 @@ import (
 	utils "xivi/backend/pkg/dbutils"
 
 	"github.com/jmoiron/sqlx"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 // PlaylistQueries struct for queries from Playlist model.
@@ -63,7 +63,7 @@ func (q *PlaylistQueries) CreatePlaylist(p *models.Playlist) (int64, error) {
 
 	id, err := res.LastInsertId()
 	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
+		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 
@@ -192,7 +192,7 @@ func (q *PlaylistQueries) CreatePlGroup(p *models.PlaylistGroup) (int64, error) 
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
+		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 
@@ -245,7 +245,7 @@ func (q *PlaylistQueries) CreatePlGroupItem(p *models.PlaylistGroupItem) (int64,
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
+		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 
@@ -288,7 +288,7 @@ func (q *PlaylistQueries) CreatePlGroupChannel(p *models.PlaylistGroupChannel) (
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
+		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 
@@ -331,7 +331,7 @@ func (q *PlaylistQueries) GetPlGroupChannels(plGroupItem models.PlaylistGroupIte
 	err := q.Select(&channels, query, plGroupItem.PlaylistId, plGroupItem.GroupId)
 	if err != nil {
 		// Return empty object and error.
-		log.Error(err)
+		log.Err(err)
 		return nil, err
 	}
 
@@ -410,7 +410,7 @@ func (q *PlaylistQueries) CreatePlChannel(p *models.PlaylistChannel) (int64, err
 
 	id, err := res.LastInsertId()
 	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
+		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 

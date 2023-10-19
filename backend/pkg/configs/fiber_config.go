@@ -1,9 +1,8 @@
 package configs
 
 import (
-	"os"
-	"strconv"
 	"time"
+	"xivi/backend/platform/settings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/template/html"
@@ -13,12 +12,11 @@ import (
 // See: https://docs.gofiber.io/api/fiber#config
 func FiberConfig() fiber.Config {
 	// Define server settings.
-	readTimeoutSecondsCount, _ := strconv.Atoi(os.Getenv("SERVER_READ_TIMEOUT"))
 	engine := html.New("./build", ".html")
 
 	// Return Fiber configuration.
 	return fiber.Config{
-		ReadTimeout: time.Second * time.Duration(readTimeoutSecondsCount),
+		ReadTimeout: time.Second * time.Duration(settings.APP_SETTINGS.Server.ReadTimeout),
 		Views:       engine, //set as render engine
 	}
 }
