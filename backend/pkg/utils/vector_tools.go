@@ -8,15 +8,14 @@ import (
 	"context"
 	"errors"
 	"math"
-	"os"
-	"xivi/backend/app"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
+	"xivi/backend/platform/settings"
 
 	"github.com/nlpodyssey/cybertron/pkg/models/bert"
 	"github.com/nlpodyssey/cybertron/pkg/tasks"
 	"github.com/nlpodyssey/cybertron/pkg/tasks/textencoding"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 func VectorQueue(in <-chan string, db *database.Queries) {
@@ -30,26 +29,26 @@ func AddChannelVector(db *database.Queries, name string) {
 	if err != nil {
 		vector, err := VectorizeString(name)
 		if err != nil {
-			log.Warn("VECTORIZE_STRING: ", err)
+			log.Warn().Msgf("VECTORIZE_STRING: %v", err)
 			return
 		}
 		channelVector := models.ChannelVector{Name: name, Vector: vector}
 		err = db.CreateChannelVector(channelVector)
 		if err != nil {
-			log.Warn("VECTORIZE_STRING: ", err)
+			log.Warn().Msgf("VECTORIZE_STRING: %v", err)
 			return
 		}
 
-		log.Info("VECTOR_TOOLS: ADDED VECTOR FOR ", name)
+		log.Info().Msgf("VECTOR_TOOLS: ADDED VECTOR FOR %s", name)
 	}
 }
 
 func VectorizeString(text string) ([]float64, error) {
 	//TODO: NEW MODELS
-	modelName := os.Getenv("MODEL_NAME")
+	modelName := settings.APP_SETTINGS.Application.Model
 
 	m, err := tasks.Load[textencoding.Interface](&tasks.Config{
-		ModelsDir: app.MODEL_PATH,
+		ModelsDir: settings.MODEL_PATH,
 		ModelName: modelName,
 	})
 	if err != nil {

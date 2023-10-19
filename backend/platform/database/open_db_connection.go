@@ -2,15 +2,15 @@ package database
 
 import (
 	"fmt"
-	"os"
 	"xivi/backend/app/queries"
+	"xivi/backend/platform/settings"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
 	"github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 // Queries struct for collect all app queries.
@@ -42,23 +42,26 @@ func OpenDBConnection() (*Queries, error) {
 }
 
 func getDB() (*sqlx.DB, error) {
-	return sqlx.Open("sqlite3", fmt.Sprintf("%s/xivi.db?parseTime=true", os.Getenv("CONFIG_PATH")))
+	return sqlx.Open("sqlite3", fmt.Sprintf("%s/xivi.db?parseTime=true", settings.CONFIG_PATH))
 }
 
 func InitDB() error {
 	db, err := getDB()
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		log.Fatal().Msgf("Failed to connect to database: %v", err)
 	}
 
 	driver, err := sqlite3.WithInstance(db.DB, &sqlite3.Config{})
 	if err != nil {
-		log.Fatalf("Failed to create database driver: %v", err)
+		log.Fatal().Msgf("Failed to create database driver: %v", err)
 	}
 
-	fsrc, err := (&file.File{}).Open("file://./database_migrations")
+	fsrc, err := (&file.File{}).Open("file://./backend/platform/database/migrations")
 	if err != nil {
-		return err
+		fsrc, err = (&file.File{}).Open("file://./database_migrations")
+		if err != nil {
+			return err
+		}
 	}
 
 	m, err := migrate.NewWithInstance(
@@ -67,14 +70,14 @@ func InitDB() error {
 		"xivi",
 		driver)
 	if err != nil {
-		log.Fatalf("Failed to create migration: %v", err)
+		log.Fatal().Msgf("Failed to create migration: %v", err)
 	}
 
 	err = m.Up()
 	if err != nil && err != migrate.ErrNoChange {
-		log.Fatalf("Failed to run migrations: %v", err)
+		log.Fatal().Msgf("Failed to run migrations: %v", err)
 	}
 
-	log.Println("Migrations ran successfully")
+	log.Print("Migrations ran successfully")
 	return nil
 }

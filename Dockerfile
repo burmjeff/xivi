@@ -41,7 +41,7 @@ ENV CGO_ENABLED=1 GOOS=linux GOARCH=amd64
 RUN go install github.com/swaggo/swag/cmd/swag@latest \
     && swag init
 RUN go mod tidy
-RUN go build -ldflags="-s -w" -buildvcs=false -mod=readonly -v -o apiserver .
+RUN go build -ldflags="-s -w" -buildvcs=false -mod=readonly -v -o xivi .
 
 #
 # deploy
@@ -62,31 +62,24 @@ gst-plugins-ugly
 # environment variables
 ENV APP_NAME="Xivi" \
 APP_VERSION="1.0" \
-SERVER_HOST="127.0.0.1" \
-SERVER_PORT=8080 \
-CONFIG_PATH="/configs" \
-SERVE_PATH="/serve" \
-MODEL_PATH="/models" \
-MODEL_NAME="sentence-transformers/all-MiniLM-L6-v2" \
-SERVER_READ_TIMEOUT=60 \
 TZ="America/New_York" \
+SERVER_HOST="0.0.0.0" \
+SERVER_PORT=8080 \
+SERVER_READ_TIMEOUT=60 \
+MODEL_NAME="sentence-transformers/all-MiniLM-L6-v2" \
 JWT_SECRET_KEY="secret" \
 JWT_SECRET_KEY_EXPIRE_MINUTES_COUNT=15 \
-GST_DEBUG=2
+GST_DEBUG=1
 
-RUN mkdir -p /app
-RUN mkdir -p $CONFIG_PATH
-RUN mkdir -p $SERVE_PATH
-RUN mkdir -p $MODEL_PATH
+RUN mkdir -p /xivi
+WORKDIR /xivi
 
-WORKDIR /app
+COPY --from=app-builder /app/build /xivi/build
+COPY --from=server-builder ["/build/xivi", "/xivi/"]
+COPY backend/platform/database/migrations/ /xivi/database_migrations
 
-COPY --from=app-builder /app/build /app/build
-COPY --from=server-builder ["/build/apiserver", "/app/"]
-COPY database_migrations/ /app/database_migrations
-
-VOLUME $CONFIG_PATH $SERVE_PATH $MODEL_PATH
+VOLUME /config /serve
 
 EXPOSE $SERVER_PORT
 
-ENTRYPOINT ["/app/apiserver"]
+ENTRYPOINT ["/xivi/xivi"]

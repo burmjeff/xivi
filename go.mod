@@ -17,8 +17,8 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-sqlite3 v1.14.17
 	github.com/rs/zerolog v1.30.0
-	github.com/sirupsen/logrus v1.9.3
 	github.com/swaggo/swag v1.16.2
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 require github.com/rogpeppe/go-internal v1.11.0 // indirect

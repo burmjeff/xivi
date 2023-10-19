@@ -4,11 +4,11 @@ import (
 	"database/sql/driver"
 	"encoding/xml"
 	"fmt"
-	"os"
 	"strings"
 	"time"
+	"xivi/backend/platform/settings"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 // Channel struct to describe Template Channel object.
@@ -97,9 +97,9 @@ func (t *Time) UnmarshalXMLAttr(attr xml.Attr) error {
 }
 
 func (t Time) Value() (driver.Value, error) {
-	localTime, err := time.LoadLocation(os.Getenv("TZ"))
+	localTime, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
 	if err != nil {
-		log.Error("No TZ provided", err)
+		log.Error().Msgf("No TZ provided: %v", err)
 		return nil, err
 	}
 	return t.In(localTime), nil

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"xivi/backend/app/models"
+	"xivi/backend/platform/settings"
 
 	"github.com/go-gst/go-gst/gst"
 	gstapp "github.com/go-gst/go-gst/gst/app"
@@ -68,9 +68,11 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 	case <-done:
 		return gst.FlowEOS
 	default:
-		s.count--
-		close(done)
-		if s.count == 0 {
+		if done != nil {
+			s.count--
+			close(done)
+		}
+		if s.count <= 0 {
 			go func() {
 				if !s.pipeline.SendEvent(gst.NewEOSEvent()) {
 					fmt.Println("WARNING: Failed to send EOS to pipeline")
@@ -372,21 +374,8 @@ func (s *Stream) StartPipeline(pipeline *gst.Pipeline) error {
 
 func (s *Stream) StartStream(channel string) error {
 	var err error
-	//s.streamData = &bytes.Buffer{}
-	appSettings := models.AppSettings{
-		Proxy:      true,
-		Buffer:     false,
-		BufferTime: 0,
-	}
 	s.Settings.userAgent = "Xivi 1.0"
-
-	switch appSettings.Buffer {
-
-	case false:
-		s.Settings.buffer = 0
-	case true:
-		s.Settings.buffer = appSettings.BufferTime
-	}
+	s.Settings.buffer = settings.APP_SETTINGS.Streaming.Buffer
 
 	s.Settings.Src = channel
 

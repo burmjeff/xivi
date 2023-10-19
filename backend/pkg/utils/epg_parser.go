@@ -8,7 +8,7 @@ import (
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 // EpgParser - A parser for epg xml files.
@@ -19,37 +19,32 @@ type EpgParser struct {
 func (m *EpgParser) ParseEpg(playlistID int64, path string) {
 	epg := models.EpgItem{}
 
-	// Output to stdout instead of the default stderr
-	log.SetOutput(os.Stdout)
-	log.SetFormatter(&log.TextFormatter{TimestampFormat: "2006-01-02 15:04:05", FullTimestamp: true})
-	// Only log the warning severity or above.
-	log.SetLevel(log.InfoLevel)
-	log.Infoln("EPG Parser started")
+	log.Info().Msg("EPG Parser started")
 
 	if isValidURL(path) {
-		log.Infoln("Started parsing xml URL...")
+		log.Info().Msg("Started parsing xml URL...")
 		resp, err := http.Get(path)
 		if err != nil {
-			log.Error("Unable to get epg.xml FILE: ", err)
+			log.Error().Msgf("Unable to get epg.xml FILE: %v", err)
 			return
 		}
 		epg, err = parseXML(resp.Body)
 		if err != nil {
-			log.Error("Unable to parse epg.xml FILE: ", err)
+			log.Error().Msgf("Unable to parse epg.xml FILE: %v", err)
 			return
 		}
 		defer resp.Body.Close()
 	} else {
-		log.Infoln("Started parsing xml file...")
+		log.Info().Msg("Started parsing xml file...")
 		// Open the XML file
 		file, err := os.Open(path)
 		if err != nil {
-			log.Error("Unable to get epg.xml FILE: ", err)
+			log.Error().Msgf("Unable to get epg.xml FILE: %v", err)
 			return
 		}
 		epg, err = parseXML(file)
 		if err != nil {
-			log.Error("Unable to parse epg.xml FILE: ", err)
+			log.Error().Msgf("Unable to parse epg.xml FILE: %v", err)
 			return
 		}
 		defer file.Close()
@@ -64,14 +59,14 @@ func (m *EpgParser) ParseEpg(playlistID int64, path string) {
 		if channel.ChannelId != "" {
 			_, err := m.Db.GetEpgChannelByChannelId(channel.ChannelId)
 			if err != nil {
-				log.Info("EPG XML PARSER: Creating new channel: ", channel.DisplayName)
+				log.Info().Msgf("EPG XML PARSER: Creating new channel: %s", channel.DisplayName)
 				_, err = m.Db.CreateEpgChannel(&channel)
 				if err != nil {
-					log.Error("EPG XML PARSER: Failed to create new EPG channel: ", err)
+					log.Error().Msgf("EPG XML PARSER: Failed to create new EPG channel: %v", err)
 					continue
 				}
 			} else {
-				log.Info("EPG XML PARSER: Channel already exists: ", channel.DisplayName)
+				log.Info().Msgf("EPG XML PARSER: Channel already exists: %s", channel.DisplayName)
 			}
 			vectorIn <- channel.ChannelId
 		}
@@ -87,27 +82,27 @@ func (m *EpgParser) ParseEpg(playlistID int64, path string) {
 			if programme.Channel != "" {
 				FoundProg, err := m.Db.GetEpgProgrammeByChannelandTime(programme.Channel, programme.Start)
 				if err != nil {
-					log.Info("EPG XML PARSER: Creating new Programme: ", programme.Title.Value)
+					log.Info().Msgf("EPG XML PARSER: Creating new Programme: %s", programme.Title.Value)
 					m.Db.CreateEpgProgramme(&programme)
 					if err != nil {
-						log.Warn("EPG XML PARSER: Failed to create new programme: ", err)
+						log.Warn().Msgf("EPG XML PARSER: Failed to create new programme: %v", err)
 						continue
 					}
 				} else {
-					log.Info("EPG XML PARSER: Updating Programme: ", programme.Title.Value)
+					log.Info().Msgf("EPG XML PARSER: Updating Programme: %s", programme.Title.Value)
 					m.Db.UpdateEpgProgramme(FoundProg.ID, &programme)
 					if err != nil {
-						log.Warn("EPG XML PARSER: Failed to update programme", err)
+						log.Warn().Msgf("EPG XML PARSER: Failed to update programme: %v", err)
 						continue
 					}
 				}
 			}
 		} else {
-			log.Error("EPG XML PARSER: NO PROGRAMMES FOUND")
+			log.Error().Msg("EPG XML PARSER: NO PROGRAMMES FOUND")
 		}
 
 	}
-	log.Infoln("EPG Parser Finished")
+	log.Info().Msg("EPG Parser Finished")
 
 }
 

@@ -2,9 +2,9 @@ package controllers
 
 import (
 	"net/http"
-	"xivi/backend/app/models"
 	"xivi/backend/pkg/streaming"
 	"xivi/backend/platform/database"
+	"xivi/backend/platform/settings"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -54,13 +54,7 @@ func GetStream(c *fiber.Ctx) error {
 		})
 	}
 
-	appSettings := models.AppSettings{
-		Proxy:      true,
-		Buffer:     false,
-		BufferTime: 0,
-	}
-
-	switch appSettings.Proxy {
+	switch settings.APP_SETTINGS.Streaming.Proxy {
 
 	case false:
 		//TODO LOOP CHECK STREAM STATUS UNTIL 302
@@ -76,14 +70,15 @@ func GetStream(c *fiber.Ctx) error {
 			}
 
 		}
-		s := streaming.NewStreamer()
-		streaming.AddStream(s)
 
+		s := streaming.NewStreamer()
 		if err := s.StartStream(channels[0].Url); err != nil {
 			return err
 		}
-		if err := s.NewSink(c.Context()); err != nil {
+		streaming.AddStream(s)
 
+		if err := s.NewSink(c.Context()); err != nil {
+			s.Close(nil, nil)
 			return err
 		}
 

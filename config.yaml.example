@@ -1,0 +1,16 @@
+application:
+  appname: Xivi
+  appversion: 1.0
+  tz: America/New_York
+  model: sentence-transformers/all-MiniLM-L6-v2
+  gstdebug: 1
+
+server:
+  host: 0.0.0.0
+  port: 3000
+  readtimeout: 60
+
+streaming:
+  proxy: true
+  buffer: 0
+  useragent: Xivi 1.0

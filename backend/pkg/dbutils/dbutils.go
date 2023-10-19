@@ -3,11 +3,11 @@ package dbutils
 import (
 	"database/sql"
 	"math"
-	"os"
 	"strings"
 	"time"
+	"xivi/backend/platform/settings"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 func NewNullString(s string) sql.NullString {
@@ -25,9 +25,9 @@ func CustomMapper(column string) string {
 }
 
 func ConvertTime(timeStr string) (time.Time, error) {
-	localTime, err := time.LoadLocation(os.Getenv("TZ"))
+	localTime, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
 	if err != nil {
-		log.Error("No TZ provided", err)
+		log.Error().Msgf("No TZ provided:, %v", err)
 		return time.Now(), err
 	}
 	t, err := time.Parse("20060102150405 -0700", timeStr)

@@ -5,7 +5,7 @@ import (
 	utils "xivi/backend/pkg/dbutils"
 
 	"github.com/jmoiron/sqlx"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 // TemplateQueries struct for queries from Template model.
@@ -62,7 +62,7 @@ func (q *TemplateQueries) CreateTemplate(p *models.Template) error {
 	}
 
 	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
+		log.Warn().Msgf("Error retrieving the ID: %v", err)
 	}
 
 	// This query returns nothing.
@@ -114,7 +114,7 @@ func (q *TemplateQueries) CreateTmplGroupItem(p *models.TemplateGroupItem) error
 	}
 
 	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
+		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return err
 	}
 
@@ -212,7 +212,7 @@ func (q *TemplateQueries) CreateTmplGroup(p *models.TemplateGroup) (int64, error
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
+		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 
@@ -265,7 +265,7 @@ func (q *TemplateQueries) CreateTmplGroupChannel(p *models.TemplateGroupChannel)
 	}
 
 	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
+		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return err
 	}
 
@@ -459,7 +459,7 @@ func (q *TemplateQueries) CreateTmplChannel(p *models.TemplateChannel) (int64, e
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
+		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 
@@ -567,7 +567,7 @@ func (q *TemplateQueries) CreateTmplChannelItem(p *models.TemplateChannelItem) (
 
 	id, err := res.LastInsertId()
 	if err != nil {
-		log.Warnln("Error retrieving the ID: %v", err)
+		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 
