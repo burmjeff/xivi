@@ -17,4 +17,7 @@ func SvelteRoutes(a *fiber.App) {
 	router.Get("/templates", func(c *fiber.Ctx) error {
 		return c.Render("index", nil)
 	})
+	router.Get("/settings", func(c *fiber.Ctx) error {
+		return c.Render("index", nil)
+	})
 }

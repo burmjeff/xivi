@@ -6,25 +6,26 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v2"
 )
 
-func InitSettings() (*AppSettings, error) {
+func InitSettings() error {
 	appSettings := &AppSettings{}
 	config := fmt.Sprintf("%s/config.yaml", CONFIG_PATH)
 
 	if err := ValidateConfigPath(config); err != nil {
 		if appSettings, err = SetDefaults(); err != nil {
-			return nil, err
+			return err
 		}
 		if err := WriteSettings(appSettings); err != nil {
-			return nil, err
+			return err
 		}
 	} else {
 		file, err := os.Open(config)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		defer file.Close()
 
@@ -33,7 +34,7 @@ func InitSettings() (*AppSettings, error) {
 
 		// Start YAML decoding from file
 		if err := d.Decode(appSettings); err != nil {
-			return nil, err
+			return err
 		}
 
 	}
@@ -70,12 +71,21 @@ func InitSettings() (*AppSettings, error) {
 		if env, exists := os.LookupEnv("MODEL_NAME"); exists {
 			appSettings.Application.Model = env
 		}
+		if env, exists := os.LookupEnv("LOG_LEVEL"); exists {
+			level, err := strconv.Atoi(env)
+			if err != nil {
+				log.Error().Msg(fmt.Sprintf("Not a log level: %s", env))
+			} else {
+				appSettings.Application.LogLevel = level
+				zerolog.SetGlobalLevel(zerolog.Level(level))
+			}
+		}
 		if err := WriteSettings(appSettings); err != nil {
 			log.Fatal().Msg(err.Error())
 		}
 	}
 
-	return appSettings, nil
+	return nil
 }
 
 func SetDefaults() (*AppSettings, error) {
@@ -86,7 +96,8 @@ func SetDefaults() (*AppSettings, error) {
 			TZ:         "America/New_York",
 			ServePath:  "./serve",
 			Model:      "sentence-transformers/all-MiniLM-L6-v2",
-			GST_DEBUG:  1,
+			LogLevel:   3,
+			UpdateCron: "0 0 * * *",
 		},
 		Server: Server{
 			Host:        "0.0.0.0",
@@ -114,6 +125,7 @@ func WriteSettings(settings *AppSettings) error {
 		return fmt.Errorf("unable to write data into the settings file: %v", err)
 	}
 
+	APP_SETTINGS = settings
 	return nil
 }
 

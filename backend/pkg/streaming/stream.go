@@ -385,6 +385,7 @@ func (s *Stream) StartStream(channel string) error {
 	if err = s.StartPipeline(s.pipeline); err != nil {
 		return err
 	}
+	//TODO GO CHAN TO CHECK FOR GST ERRORS AND RESTART/CLOSE ON ERR
 	s.count = 0
 
 	return nil

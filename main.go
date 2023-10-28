@@ -26,7 +26,6 @@ import (
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header
 // @name Authorization
-
 func main() {
 
 	zerolog.SetGlobalLevel(zerolog.ErrorLevel)
@@ -36,7 +35,7 @@ func main() {
 		log.Fatal().Msg(err.Error())
 	}
 
-	if settings.APP_SETTINGS, err = settings.InitSettings(); err != nil {
+	if err = settings.InitSettings(); err != nil {
 		log.Fatal().Msg(err.Error())
 	}
 

@@ -46,6 +46,10 @@ func PublicRoutes(a *fiber.App) {
 	api.Post("/logo", controllers.CreateLogo)            // create a new logo
 	api.Delete("/logo/:logo_id", controllers.DeleteLogo) // delete one logo by ID
 
+	// Settings Routes
+	api.Get("/settings", controllers.GetSettings)    // get settings
+	api.Put("/settings", controllers.UpdateSettings) // update settings
+
 	// Stream Routes
 	router.Get("/stream/:stream_id", controllers.GetStream)
 
@@ -60,10 +64,6 @@ func PublicRoutes(a *fiber.App) {
 	}))
 	router.Use("/epg", filesystem.New(filesystem.Config{
 		Root:   http.Dir(settings.EPG_FILEPATH),
-		Browse: false,
-	}))
-	router.Use("/streamer", filesystem.New(filesystem.Config{
-		Root:   http.Dir(settings.STREAM_FILEPATH),
 		Browse: false,
 	}))
 }
