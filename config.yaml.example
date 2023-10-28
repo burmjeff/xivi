@@ -3,7 +3,8 @@ application:
   appversion: 1.0
   tz: America/New_York
   model: sentence-transformers/all-MiniLM-L6-v2
-  gstdebug: 1
+  loglevel: 3
+  updatecron: "0 0 * * *"
 
 server:
   host: 0.0.0.0

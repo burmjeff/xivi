@@ -69,7 +69,7 @@ SERVER_READ_TIMEOUT=60 \
 MODEL_NAME="sentence-transformers/all-MiniLM-L6-v2" \
 JWT_SECRET_KEY="secret" \
 JWT_SECRET_KEY_EXPIRE_MINUTES_COUNT=15 \
-GST_DEBUG=1
+LOG_LEVEL=3
 
 RUN mkdir -p /xivi
 WORKDIR /xivi
