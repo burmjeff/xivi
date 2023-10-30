@@ -221,12 +221,12 @@ func (q *TemplateQueries) CreateTmplGroup(p *models.TemplateGroup) (int64, error
 }
 
 // UpdateGroup method for updating group by given Group object.
-func (q *TemplateQueries) UpdateTmplGroup(id int64, p *models.TemplateGroup) error {
+func (q *TemplateQueries) UpdateTmplGroup(t *models.TemplateGroup) error {
 	// Define query string.
-	query := `UPDATE templategroup SET name = $2 WHERE id = $1`
+	query := `UPDATE templategroup SET name = ? WHERE id = ?`
 
 	// Send query to database.
-	_, err := q.Exec(query, id, p.Name)
+	_, err := q.Exec(query, t.Name, t.ID)
 	if err != nil {
 		// Return only error.
 		return err
@@ -605,4 +605,22 @@ func (q *TemplateQueries) DeleteTmplChannelItem(id int64) error {
 
 	// This query returns nothing.
 	return nil
+}
+
+// GetTemplategroupitem method
+func (q *TemplateQueries) GetTmplGroupItem(id int64) ([]models.TemplateGroupItem, error) {
+	templategroupitems := []models.TemplateGroupItem{}
+
+	// Define query string.
+	query := `SELECT * FROM template_group_item WHERE group_id = $1`
+
+	// Send query to database.
+	err := q.Select(&templategroupitems, query, id)
+	if err != nil {
+		// Return empty object and error.
+		return templategroupitems, err
+	}
+
+	// Return query result.
+	return templategroupitems, nil
 }
