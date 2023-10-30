@@ -2,16 +2,19 @@
 <script lang="ts">
     import TemplateChannel from './TemplateChannel.svelte';
     import { onMount } from 'svelte';
-    import { Accordion, AccordionItem, popup, type PopupSettings } from '@skeletonlabs/skeleton';
+    import { Accordion, AccordionItem, popup, getModalStore, type PopupSettings, type ModalSettings } from '@skeletonlabs/skeleton';
     import {templateGroups} from '@xivi/stores/template_store';
     import {flip} from 'svelte/animate';
     import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
     import type { TemplateGroup } from '@xivi/data/template_entities';
     import {fade} from 'svelte/transition';
     import {cubicIn} from 'svelte/easing';
+    import IconParkOutlineEditTwo from '~icons/icon-park-outline/edit-two'
+    import {templates} from '@xivi/stores/template_store';
 
     let items: TemplateGroup[];
     let shouldIgnoreDndEvents = false;
+    const modalStore = getModalStore();
 
     const updateTemplateGroups = async () => {
         const response = await fetch('/api/template/groups/all');
@@ -87,6 +90,46 @@
             $templateGroups = [...$templateGroups];
         }
     }
+
+    function renamePrompt(groupId: number): void {
+		const prompt: ModalSettings = {
+			type: 'prompt',
+			title: 'Rename Group',
+			body: 'Enter new template group name in field below.',
+			value: 'Example Template',
+			valueAttr: { type: 'text', minlength: 1, maxlength: 20, required: true },
+			response: (templateName: string) => {
+				if (templateName) renameGroup(templateName, groupId);
+			},
+            buttonTextCancel: 'Cancel',
+		    buttonTextSubmit: 'Submit',
+		};
+		modalStore.trigger(prompt);
+	}
+
+    async function renameGroup(groupName: string, groupId: number) {
+        if (groupName !=='') {
+            const newGroup = {
+                id: groupId,
+                name: groupName
+            };
+            try {
+                const response = await fetch(`/api/template/group`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(newGroup)
+                });
+                const data = await response.json();
+                console.log('Updated template group:', data);
+                templates.set(data.templates);
+            } catch (error) {
+                console.log('Error updating template group:', error);
+                return [];
+            }
+        }
+    }
 </script>
 
 <div class="card card-hover p-2">
@@ -106,6 +149,7 @@
                                         <TemplateChannel groupId={group.id} />
                                     </svelte:fragment>
                                 </AccordionItem>
+                                <button class="btn-icon variant-filled-surface w-1" on:click={() => renamePrompt(group.id)}><i><IconParkOutlineEditTwo/></i></button>
                                 {#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
                                     <div in:fade={{duration:200, easing: cubicIn}} class='custom-shadow-item'>{group.name}</div>
                                 {/if}

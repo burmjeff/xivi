@@ -23,18 +23,22 @@ func PublicRoutes(a *fiber.App) {
 	api.Get("/playlist/:playlist_id/group/:group_id/channels", controllers.GetPlaylistGroupChannels) // get channels by playlist and group
 	api.Post("/playlist", controllers.CreatePlaylist)                                                // create a new playlist
 	api.Post("/playlist/:playlist_id/group/:group_id/convert", controllers.ConvertPlaylistGroup)     // convert playlistgroup
-	api.Post("/m3u/:id", controllers.CreateM3U)                                                      // create m3u from template id
 
 	// Template Routes
-	api.Get("/templates", controllers.GetTemplates)                                                // get list of all templates
+	api.Get("/templates", controllers.GetTemplates)                                                // get all templates
 	api.Get("/template/:template_id", controllers.GetTemplate)                                     // get one template by ID
 	api.Get("/template/:template_id/groups", controllers.GetTemplateGroups)                        // get groups by template_id
-	api.Get("/template/groups/all", controllers.GetAllTemplateGroups)                              // get groups by template_id
+	api.Get("/template/groups/all", controllers.GetGroups)                                         // get all template groups
 	api.Get("/template/group/:group_id/channels", controllers.GetTemplateGroupChannels)            // get channels by template and group
 	api.Post("/template", controllers.CreateTemplate)                                              // create a new template
-	api.Post("/template/group", controllers.CreateTemplateGroup)                                   // create a new template
-	api.Post("/template/:template_id/group/:group_id/item", controllers.CreateTemplateGroupItem)   // delete one template by ID
-	api.Delete("/template/:template_id/group/:group_id/item", controllers.DeleteTemplateGroupItem) // delete one template by ID
+	api.Post("/template/group", controllers.CreateTemplateGroup)                                   // create a new template group
+	api.Post("/template/:template_id/group/:group_id/item", controllers.CreateTemplateGroupItem)   // create one templategroupitem by ID
+	api.Put("/template/group", controllers.UpdateTemplateGroup)                                    // update one template group by ID
+	api.Delete("/template/:template_id/group/:group_id/item", controllers.DeleteTemplateGroupItem) // delete one templategroupitem by ID
+	api.Delete("/template/group/:group_id", controllers.DeleteTemplateGroup)                       // delete one template group by ID
+
+	//M3U Routes
+	api.Post("/m3u/:id", controllers.CreateM3U) // create m3u from template id
 
 	// EPG Routes
 	api.Post("/epg", controllers.AddEpg)               // Add a new Epg

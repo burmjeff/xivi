@@ -36,15 +36,10 @@ func (m *M3uTools) CreateM3u(template models.Template) {
 
 }
 
-func (m *M3uTools) RemoveM3uItems(templateGroupItem *models.TemplateGroupItem) {
+func (m *M3uTools) UpdateGroup(template *models.Template, group *models.TemplateGroup, oldGroup string) {
 	// Create a new string variable to hold the filtered content.
 	var filtered string
 
-	template, err := m.Db.GetTemplate(templateGroupItem.TemplateId)
-	if err != nil {
-		log.Error().Msgf("Error finding Template: %v", err)
-		return
-	}
 	file := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, template.Name)
 
 	// Read the content of the XML file into a byte array.
@@ -54,9 +49,36 @@ func (m *M3uTools) RemoveM3uItems(templateGroupItem *models.TemplateGroupItem) {
 		return
 	}
 
-	group, err := m.Db.GetTmplGroup(templateGroupItem.GroupId)
+	filter := fmt.Sprintf("group-title=\"%s\"", oldGroup)
+	newGroup := fmt.Sprintf("group-title=\"%s\"", group.Name)
+	lines := strings.Split(string(content), "\n")
+
+	// Loop through each line and check if it contains the group.
+	for _, line := range lines {
+		if strings.Contains(line, filter) {
+			strings.Replace(line, filter, newGroup, 0)
+		}
+		filtered += line + "\n"
+	}
+
+	// Write the filtered content back to the original file.
+	err = os.WriteFile(file, []byte(filtered), 0644)
 	if err != nil {
-		log.Error().Msgf("Error finding Group: %v", err)
+		fmt.Println("Error writing file:", err)
+		return
+	}
+}
+
+func (m *M3uTools) RemoveGroup(template *models.Template, group *models.TemplateGroup) {
+	// Create a new string variable to hold the filtered content.
+	var filtered string
+
+	file := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, template.Name)
+
+	// Read the content of the XML file into a byte array.
+	content, err := os.ReadFile(file)
+	if err != nil {
+		log.Error().Msgf("Error reading file: %v", err)
 		return
 	}
 
