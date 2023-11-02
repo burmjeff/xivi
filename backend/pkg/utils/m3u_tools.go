@@ -32,8 +32,21 @@ func (m *M3uTools) CreateM3u(template models.Template) {
 	}
 	b := reader.(*bytes.Buffer)
 
-	os.WriteFile(fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, template.Name), b.Bytes(), os.ModePerm)
+	if err := os.WriteFile(fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, template.Name), b.Bytes(), os.ModePerm); err != nil {
+		fmt.Println("Error writing file:", err)
+		return
+	}
 
+}
+
+func (m *M3uTools) UpdateTemplate(template *models.Template, oldTemplate string) {
+	oldfile := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, oldTemplate)
+	newfile := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, template.Name)
+
+	if err := os.Rename(oldfile, newfile); err != nil {
+		fmt.Println("Error renaming file:", err)
+		return
+	}
 }
 
 func (m *M3uTools) UpdateGroup(template *models.Template, group *models.TemplateGroup, oldGroup string) {
@@ -62,8 +75,7 @@ func (m *M3uTools) UpdateGroup(template *models.Template, group *models.Template
 	}
 
 	// Write the filtered content back to the original file.
-	err = os.WriteFile(file, []byte(filtered), 0644)
-	if err != nil {
+	if err = os.WriteFile(file, []byte(filtered), 0644); err != nil {
 		fmt.Println("Error writing file:", err)
 		return
 	}
@@ -102,8 +114,7 @@ func (m *M3uTools) RemoveGroup(template *models.Template, group *models.Template
 	}
 
 	// Write the filtered content back to the original file.
-	err = os.WriteFile(file, []byte(filtered), 0644)
-	if err != nil {
+	if err = os.WriteFile(file, []byte(filtered), 0644); err != nil {
 		fmt.Println("Error writing file:", err)
 		return
 	}

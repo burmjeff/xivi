@@ -70,12 +70,12 @@ func (q *TemplateQueries) CreateTemplate(p *models.Template) error {
 }
 
 // UpdateTemplate method for updating template by given Template object.
-func (q *TemplateQueries) UpdateTemplate(id int64, p *models.Template) error {
+func (q *TemplateQueries) UpdateTemplate(t *models.Template) error {
 	// Define query string.
-	query := `UPDATE template SET name = $2 WHERE id = $1`
+	query := `UPDATE template SET name = ? WHERE id = ?`
 
 	// Send query to database.
-	_, err := q.Exec(query, id, p.Name)
+	_, err := q.Exec(query, t.Name, t.ID)
 	if err != nil {
 		// Return only error.
 		return err

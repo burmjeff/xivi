@@ -2,19 +2,20 @@
 <script lang="ts">
     import TemplateGroup from './TemplateGroup.svelte';
     import { onMount } from 'svelte';
-    import { Accordion, AccordionItem, popup, type PopupSettings } from '@skeletonlabs/skeleton';
+    import { Accordion, AccordionItem, popup, getModalStore, type PopupSettings, type ModalSettings } from '@skeletonlabs/skeleton';
     import { templates } from '@xivi/stores/template_store';
+    import IconParkOutlineEditTwo from '~icons/icon-park-outline/edit-two'
+
+    const modalStore = getModalStore();
+
+    const updateTemplates = async () => {
+        const response = await fetch('/api/templates');
+        const data = await response.json();
+        return data.templates;
+    }
 
     onMount(async () => {
-        fetch('/api/templates')
-        .then(response => response.json())
-        .then(data => {
-            console.log('Fetched data:', data);
-            templates.set(data.templates);
-        }).catch(error => {
-            console.log('Error fetching data:', error);
-            return [];
-        });
+        templates.set(await updateTemplates());
         });
     
     let templateSettings: PopupSettings = {
@@ -44,6 +45,48 @@
             }
         }
     }
+
+    function renamePrompt(templateName: string, templateId: number): void {
+		const prompt: ModalSettings = {
+			type: 'prompt',
+			title: 'Rename Template',
+			body: 'Enter new template template name in field below.',
+			value: templateName,
+			valueAttr: { type: 'text', minlength: 1, maxlength: 20, required: true },
+			response: (newName: string) => {
+				if (newName) renameTemplate(newName, templateId);
+			},
+            buttonTextCancel: 'Cancel',
+		    buttonTextSubmit: 'Submit',
+		};
+		modalStore.trigger(prompt);
+	}
+
+    async function renameTemplate(templateName: string, templateId: number) {
+        if (templateName !=='') {
+            const newTemplate = {
+                id: templateId,
+                name: templateName
+            };
+            try {
+                const response = await fetch(`/api/template`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(newTemplate)
+                });
+                if (response.ok) {
+                    templates.set(await updateTemplates());
+                } else {
+                    console.error('Error:', response.status, response.statusText);
+                }
+            } catch (error) {
+                console.log('Error updating template:', error);
+                return [];
+            }
+        }
+    }
 </script>
 
 <div class="card card-hover p-2 px-2">
@@ -57,7 +100,12 @@
             {#each $templates as template}
                 <AccordionItem key={template.id}>
                     <svelte:fragment slot="lead">{template.id}</svelte:fragment>
-                    <svelte:fragment slot="summary"><h4>{template.name}</h4></svelte:fragment>
+                    <svelte:fragment slot="summary">
+                        <div class="flex flex-row">
+                            <h4>{template.name}</h4>
+                            <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => renamePrompt(template.name, template.id)}><i><IconParkOutlineEditTwo/></i></button>
+                        </div>
+                    </svelte:fragment>
                     <svelte:fragment slot="content">
                         <TemplateGroup templateId={template.id} />
                     </svelte:fragment>

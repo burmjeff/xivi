@@ -10,7 +10,6 @@
     import {fade} from 'svelte/transition';
     import {cubicIn} from 'svelte/easing';
     import IconParkOutlineEditTwo from '~icons/icon-park-outline/edit-two'
-    import {templates} from '@xivi/stores/template_store';
 
     let items: TemplateGroup[];
     let shouldIgnoreDndEvents = false;
@@ -23,8 +22,7 @@
     }
 
     onMount(async () => {
-        const fetchedData = await updateTemplateGroups();
-        templateGroups.set(fetchedData);
+        templateGroups.set(await updateTemplateGroups());
         items = $templateGroups
         });
 
@@ -47,8 +45,7 @@
                 body: JSON.stringify(inputName)
                 });
                 if (response.ok) {
-                    const fetchedData = await updateTemplateGroups();
-                    templateGroups.set(fetchedData);
+                    templateGroups.set(await updateTemplateGroups());
                     items = $templateGroups
                 } else {
                     console.error('Error:', response.status, response.statusText);
@@ -91,15 +88,15 @@
         }
     }
 
-    function renamePrompt(groupId: number): void {
+    function renamePrompt(groupName: string, groupId: number): void {
 		const prompt: ModalSettings = {
 			type: 'prompt',
 			title: 'Rename Group',
 			body: 'Enter new template group name in field below.',
-			value: 'Example Template',
+			value: groupName,
 			valueAttr: { type: 'text', minlength: 1, maxlength: 20, required: true },
-			response: (templateName: string) => {
-				if (templateName) renameGroup(templateName, groupId);
+			response: (newName: string) => {
+				if (newName) renameGroup(newName, groupId);
 			},
             buttonTextCancel: 'Cancel',
 		    buttonTextSubmit: 'Submit',
@@ -121,9 +118,12 @@
                 },
                 body: JSON.stringify(newGroup)
                 });
-                const data = await response.json();
-                console.log('Updated template group:', data);
-                templates.set(data.templates);
+                if (response.ok) {
+                    templateGroups.set(await updateTemplateGroups());
+                    items = $templateGroups
+                } else {
+                    console.error('Error:', response.status, response.statusText);
+                }
             } catch (error) {
                 console.log('Error updating template group:', error);
                 return [];
@@ -144,12 +144,17 @@
                         {#each $templateGroups as group(group.id)}
                             <div id="div1" animate:flip={{duration: flipDurationMs}}>
                                 <AccordionItem key={group.id}>
-                                    <svelte:fragment slot="summary"><h4>{group.name}</h4></svelte:fragment>
+                                    <svelte:fragment slot="summary">
+                                        <div class="flex flex-row">
+                                            <h4>{group.name}</h4>
+                                            <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => renamePrompt(group.name, group.id)}><i><IconParkOutlineEditTwo/></i></button>
+                                        </div>
+                                    </svelte:fragment>
                                     <svelte:fragment slot="content">
                                         <TemplateChannel groupId={group.id} />
                                     </svelte:fragment>
                                 </AccordionItem>
-                                <button class="btn-icon variant-filled-surface w-1" on:click={() => renamePrompt(group.id)}><i><IconParkOutlineEditTwo/></i></button>
+                                
                                 {#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
                                     <div in:fade={{duration:200, easing: cubicIn}} class='custom-shadow-item'>{group.name}</div>
                                 {/if}
