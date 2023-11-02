@@ -188,43 +188,16 @@ func CreateTemplate(c *fiber.Ctx) error {
 	})
 }
 
-// UpdateTemplate func for updates template by given ID.
+// UpdateTemplate func to update a template.
 // @Description Update template.
 // @Summary update template
 // @Tags Template
 // @Accept json
 // @Produce json
-// @Param id body string true "Template ID"
-// @Param name body string true "Name"
-// @Param url body string true "URL"
+// @Param template body models.Template true "Template"
 // @Success 201 {string} status "ok"
-// @Security ApiKeyAuth
 // @Router /template [put]
 func UpdateTemplate(c *fiber.Ctx) error {
-	// Get now time.
-	now := time.Now().Unix()
-
-	// Get claims from JWT.
-	claims, err := utils.ExtractTokenMetadata(c)
-	if err != nil {
-		// Return status 500 and JWT parse error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	// Set expiration time from JWT data of current template.
-	expires := claims.Expires
-
-	// Checking, if now time greather than expiration from JWT.
-	if now > expires {
-		// Return status 401 and unauthorized error message.
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": true,
-			"msg":   "unauthorized, check expiration time of your token",
-		})
-	}
 
 	// Create new Template struct
 	template := &models.Template{}
@@ -235,26 +208,6 @@ func UpdateTemplate(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
-		})
-	}
-
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	// Checking, if template with given ID is exists.
-	foundTemplate, err := db.GetTemplate(template.ID)
-	if err != nil {
-		// Return status 404 and template not found error.
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": true,
-			"msg":   "template with this ID not found",
 		})
 	}
 
@@ -270,8 +223,30 @@ func UpdateTemplate(c *fiber.Ctx) error {
 		})
 	}
 
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Checking, if template with given ID is exists.
+	oldTemplate, err := db.GetTemplate(template.ID)
+	if err != nil {
+		// Return status 404 and template not found error.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "template with this ID not found",
+		})
+	}
+	m3uTools := utils.M3uTools{Db: db}
+	go m3uTools.UpdateTemplate(template, oldTemplate.Name)
+
 	// Update template by given ID.
-	if err := db.UpdateTemplate(foundTemplate.ID, template); err != nil {
+	if err := db.UpdateTemplate(template); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -794,13 +769,13 @@ func DeleteTemplateGroup(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// UpdateTemplateGroup func to update a template Group.
+// UpdateTemplateGroup func to update a template group.
 // @Description Update template Group.
 // @Summary update template Group
 // @Tags Template Group
 // @Accept json
 // @Produce json
-// @Param templategroup body models.TemplateGroup true "Template Group"
+// @Param templategroup body models.TemplateGroup true "Template group"
 // @Success 201 {string} status "ok"
 // @Router /template/group [put]
 func UpdateTemplateGroup(c *fiber.Ctx) error {
@@ -813,6 +788,18 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
+		})
+	}
+
+	// Create a new validator for a Template model.
+	validate := utils.NewValidator()
+
+	// Validate template fields.
+	if err := validate.Struct(templateGroup); err != nil {
+		// Return, if some fields are not valid.
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   utils.ValidatorErrors(err),
 		})
 	}
 

@@ -4,6 +4,7 @@
     import { onMount } from 'svelte';
     import { settings } from '@xivi/stores/settings_store';
 	import type { AppSettings } from '@xivi/data/settings_entities';
+    import IconParkOutlineSaveOne from '~icons/icon-park-outline/save-one'
 
     const getSettings = async () => {
         const response = await fetch('/api/settings');
@@ -154,7 +155,7 @@
             </div>
             <hr class="!border-t-4" />
             <button type="button" class="btn variant-filled" on:click="{updateSettings}">
-                <span>(icon)</span>
+                <i><IconParkOutlineSaveOne/></i>
                 <span>Save Settings</span>
             </button>
         </div>
