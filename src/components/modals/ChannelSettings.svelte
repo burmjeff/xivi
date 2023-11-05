@@ -5,9 +5,12 @@
     import IconParkOutlineSaveOne from '~icons/icon-park-outline/save-one'
     import type { SvelteComponent } from 'svelte';
 	import { getModalStore, FileButton } from '@skeletonlabs/skeleton';
+	import { logos } from '@xivi/stores/logo_store';
+	import type { Logo, LogoUpload } from '@xivi/data/logo_entities';
 
 	export let parent: SvelteComponent;
 	const modalStore = getModalStore();
+    let files: FileList;
   
     const formData = {
 		name: $templateChannels[$modalStore[0].meta.channelId].name,
@@ -15,8 +18,50 @@
 		logo: $templateChannels[$modalStore[0].meta.channelId].logo
 	};
 
+    const toBase64 = (file: File) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+    });
+
+    async function uploadImage() {
+        if (files) {
+            const result = String(await toBase64(files[0]));
+            let logoUpload: LogoUpload;
+
+            if (result) {
+                logoUpload = {
+                    type: files[0].type,
+                    image: result,
+                };
+                window.console.log('Uploading Logo: ', logoUpload);
+
+                fetch('/api/logo', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(logoUpload)
+                })
+                .then((response) => response.json())
+                .then((data) => {
+                    console.log('Uploaded logo:', data);
+                    //logos.update(data.logo)
+                    formData.logo = data.logo.img
+                })
+                .catch((error) => {
+                    console.log('Error uploading logo:', error);
+                    return [];
+                });
+                
+            }
+        }
+	}
+
     function onUploadHandler(e: Event): void {
 	    console.log('file data:', e);
+        uploadImage();
     }
 
     function onFormSubmit(): void {
@@ -41,7 +86,7 @@
             <span>Channel Logo</span>
             <div class="grid grid-cols-2 p-2 gap-10 w-64 items-center">
                 <img class="w-fit" src={formData.logo} alt="Logo" />
-                <FileButton name="files" on:change={onUploadHandler}>Upload</FileButton>
+                <FileButton name="files" bind:files={files} accept=".png,.jpg,.webp,.svg" on:change={onUploadHandler}>Upload</FileButton>
             </div>
         </div>
     </form>

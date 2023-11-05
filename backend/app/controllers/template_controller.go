@@ -483,7 +483,8 @@ func GetTemplateGroupChannels(c *fiber.Ctx) error {
 	for _, channel := range channels {
 		channelLogo := models.TemplateChannelLogo{}
 		channelLogo.TemplateChannel = channel
-		channelLogo.Logo = utils.GetChannelLogo(db, channel.LogoId)
+		logo, _ := utils.GetChannelLogo(db, channel.LogoId)
+		channelLogo.Logo = logo.Img
 		channelLogos = append(channelLogos, channelLogo)
 	}
 
