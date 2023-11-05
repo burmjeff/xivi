@@ -16,7 +16,6 @@
   
     export let playlistId: number;
     const modalStore = getModalStore();
-    let items: PlaylistGroup[];
 
     const updatePlaylistGroups = async () => {
         const response = await fetch(`/api/playlist/${playlistId}/groups`);
@@ -27,7 +26,6 @@
     onMount(async () => {
         const fetchedData = await updatePlaylistGroups();
         playlistGroups.set(fetchedData);
-        items = $playlistGroups
         });
 
     function modalPrompt(groupId: number): void {
@@ -80,15 +78,15 @@
 			// the line below was added in order to be compatible with version svelte-dnd-action 0.7.4 and above 
 			e.detail.items = e.detail.items.filter(item => !item[SHADOW_ITEM_MARKER_PROPERTY_NAME]);
             //e.detail.items.splice(idx, 0, {...items[idx], id: Number(newId)});
-            items = e.detail.items;
+            $playlistGroups = e.detail.items;
         }
         else {
-            items = e.detail.items;
+            $playlistGroups = e.detail.items;
         }
     }
     function handleDndFinalize(e: CustomEvent<DndEvent<PlaylistGroup>>) {
         console.warn(`got finalize ${JSON.stringify(e.detail, null, 2)}`);
-        items = e.detail.items;
+        $playlistGroups = e.detail.items;
     }
   </script>
 

@@ -273,8 +273,24 @@ func (q *TemplateQueries) CreateTmplGroupChannel(p *models.TemplateGroupChannel)
 	return nil
 }
 
+// GetTemplateGroupChannel method by channel_id
+func (q *TemplateQueries) GetTmplGroupChannelsByChannel(channel_id int64) ([]models.TemplateGroupChannel, error) {
+	tmplGroupChannels := []models.TemplateGroupChannel{}
+
+	query := `SELECT * FROM template_group_channel WHERE channel_id = $1`
+
+	err := q.Select(&tmplGroupChannels, query, channel_id)
+	if err != nil {
+		// Return empty object and error.
+		return tmplGroupChannels, err
+	}
+
+	// Return query result.
+	return tmplGroupChannels, nil
+}
+
 // GetChannel method for getting one group by given Name.
-func (q *TemplateQueries) GetTmplGroupChannels(template_id int64) ([]models.TemplateGroupChannel, error) {
+func (q *TemplateQueries) GetTmplGroupChannelsByTmpl(template_id int64) ([]models.TemplateGroupChannel, error) {
 	// Define group variable.
 	tmplGroupChannels := []models.TemplateGroupChannel{}
 
@@ -467,13 +483,13 @@ func (q *TemplateQueries) CreateTmplChannel(p *models.TemplateChannel) (int64, e
 	return id, nil
 }
 
-// UpdateChannel method for updating a channel by given Channel object.
-func (q *TemplateQueries) UpdateTmplChannel(id int64, p *models.TemplateChannel) error {
+// UpdateChannel method for updating a channel by given object.
+func (q *TemplateQueries) UpdateTmplChannel(t *models.TemplateChannelLogo) error {
 	// Define query string.
-	query := `UPDATE templatechannel SET name = $2, tvgid = $3, logo_id = $4 WHERE id = $1`
+	query := `UPDATE templatechannel SET name = ?, tvgid = ?, logo_id = ? WHERE id = ?`
 
 	// Send query to database.
-	_, err := q.Exec(query, id, p.Name, p.TvgID, p.LogoId)
+	_, err := q.Exec(query, t.Name, t.TvgID, t.LogoId, t.ID)
 	if err != nil {
 		// Return only error.
 		return err
@@ -483,7 +499,7 @@ func (q *TemplateQueries) UpdateTmplChannel(id int64, p *models.TemplateChannel)
 	return nil
 }
 
-// DeleteChannel method for delete channel by given ID.
+// DeleteTemplateChannel method for deleting a channel by given ID.
 func (q *TemplateQueries) DeleteTmplChannel(id int64) error {
 	// Define query string.
 	query := `DELETE FROM templatechannel WHERE id = $1`
@@ -499,7 +515,7 @@ func (q *TemplateQueries) DeleteTmplChannel(id int64) error {
 	return nil
 }
 
-// GetTemplates method
+// GetTemplateChannelItems by channel_id method
 func (q *TemplateQueries) GetTmplChannelItemsByCh(id int64) ([]models.TemplateChannelItem, error) {
 	templatechannelitems := []models.TemplateChannelItem{}
 
@@ -517,7 +533,7 @@ func (q *TemplateQueries) GetTmplChannelItemsByCh(id int64) ([]models.TemplateCh
 	return templatechannelitems, nil
 }
 
-// GetTemplates method
+// GetTemplateChannelItems by playlist_channel_id method
 func (q *TemplateQueries) GetTmplChannelItemsByPl(id int64) ([]models.TemplateChannelItem, error) {
 	templatechannelitems := []models.TemplateChannelItem{}
 
@@ -535,25 +551,25 @@ func (q *TemplateQueries) GetTmplChannelItemsByPl(id int64) ([]models.TemplateCh
 	return templatechannelitems, nil
 }
 
-// GetTemplate method for getting one template by given ID.
-func (q *TemplateQueries) GetTmplChannelItem(id int64) (models.TemplateChannelItem, error) {
-	channelitem := models.TemplateChannelItem{}
+// GetTemplateChannelItems method for getting all items by given ID.
+func (q *TemplateQueries) GetTmplChannelItems(id int64) ([]models.TemplateChannelItem, error) {
+	channelitems := []models.TemplateChannelItem{}
 
 	// Define query string.
 	query := `SELECT * FROM templatechannelitem WHERE id = $1`
 
 	// Send query to database.
-	err := q.Get(&channelitem, query, id)
+	err := q.Select(&channelitems, query, id)
 	if err != nil {
 		// Return empty object and error.
-		return channelitem, err
+		return channelitems, err
 	}
 
 	// Return query result.
-	return channelitem, nil
+	return channelitems, nil
 }
 
-// CreateTemplate method for creating a template by given Template object.
+// CreateTemplateChannelItem method for creating an item by given object.
 func (q *TemplateQueries) CreateTmplChannelItem(p *models.TemplateChannelItem) (int64, error) {
 	// Define query string.
 	query := `INSERT INTO templatechannelitem VALUES (null, $1, $2, $3)`
@@ -575,7 +591,7 @@ func (q *TemplateQueries) CreateTmplChannelItem(p *models.TemplateChannelItem) (
 	return id, nil
 }
 
-// UpdateTemplate method for updating template by given Template object.
+// UpdateTemplateChannelItem method for updating item by given object.
 func (q *TemplateQueries) UpdateTmplChannelItem(id int64, p *models.TemplateChannelItem) error {
 	// Define query string.
 	query := `UPDATE templatechannelitem SET channel_id = $2, playlist_channel_id = $3, orderr = $4 WHERE id = $1`
@@ -591,7 +607,7 @@ func (q *TemplateQueries) UpdateTmplChannelItem(id int64, p *models.TemplateChan
 	return nil
 }
 
-// DeleteTemplate method for delete template by given ID.
+// DeleteTemplateChannelItem method for deleting an item by given ID.
 func (q *TemplateQueries) DeleteTmplChannelItem(id int64) error {
 	// Define query string.
 	query := `DELETE FROM templatechannelitem WHERE id = $1`
@@ -608,7 +624,7 @@ func (q *TemplateQueries) DeleteTmplChannelItem(id int64) error {
 }
 
 // GetTemplategroupitem method
-func (q *TemplateQueries) GetTmplGroupItem(id int64) ([]models.TemplateGroupItem, error) {
+func (q *TemplateQueries) GetTmplGroupItems(id int64) ([]models.TemplateGroupItem, error) {
 	templategroupitems := []models.TemplateGroupItem{}
 
 	// Define query string.

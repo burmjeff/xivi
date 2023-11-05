@@ -81,6 +81,42 @@ func (m *M3uTools) UpdateGroup(template *models.Template, group *models.Template
 	}
 }
 
+func (m *M3uTools) UpdateChannel(template *models.Template, channel *models.TemplateChannelLogo, oldChannel *models.TemplateChannel) {
+	// Create a new string variable to hold the filtered content.
+	var filtered string
+
+	file := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, template.Name)
+
+	// Read the content of the XML file into a byte array.
+	content, err := os.ReadFile(file)
+	if err != nil {
+		log.Error().Msgf("Error reading file: %v", err)
+		return
+	}
+
+	logo := GetChannelLogo(m.Db, oldChannel.LogoId)
+	oldLogoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, logo)
+
+	// TODO FIX CHANNEL NAME IN M3U
+	filter := fmt.Sprintf("tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\"", oldChannel.Name, oldChannel.TvgID, oldLogoURL)
+	newChannel := fmt.Sprintf("tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\"", channel.Name, channel.TvgID, channel.Logo)
+	lines := strings.Split(string(content), "\n")
+
+	// Loop through each line and check if it contains the group.
+	for _, line := range lines {
+		if strings.Contains(line, filter) {
+			strings.Replace(line, filter, newChannel, 0)
+		}
+		filtered += line + "\n"
+	}
+
+	// Write the filtered content back to the original file.
+	if err = os.WriteFile(file, []byte(filtered), 0644); err != nil {
+		fmt.Println("Error writing file:", err)
+		return
+	}
+}
+
 func (m *M3uTools) RemoveGroup(template *models.Template, group *models.TemplateGroup) {
 	// Create a new string variable to hold the filtered content.
 	var filtered string
@@ -141,7 +177,7 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 		return nil
 	}
 
-	tmplGroupChannels, err := m.Db.GetTmplGroupChannels(m.template.ID)
+	tmplGroupChannels, err := m.Db.GetTmplGroupChannelsByTmpl(m.template.ID)
 	if err != nil {
 		log.Warn().Msg(err.Error())
 		return err

@@ -730,7 +730,7 @@ func DeleteTemplateGroup(c *fiber.Ctx) error {
 		})
 	}
 
-	if templateGroupItems, err := db.GetTmplGroupItem(group_id); err == nil {
+	if templateGroupItems, err := db.GetTmplGroupItems(group_id); err == nil {
 		m3uTools := utils.M3uTools{Db: db}
 		for _, templateGroupItem := range templateGroupItems {
 			// Get template
@@ -813,7 +813,7 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 		})
 	}
 
-	if templateGroupItems, err := db.GetTmplGroupItem(templateGroup.ID); err == nil {
+	if templateGroupItems, err := db.GetTmplGroupItems(templateGroup.ID); err == nil {
 		oldGroup, err := db.GetTmplGroup(templateGroup.ID)
 		if err != nil {
 			// Return status 500 and error message.
@@ -823,22 +823,104 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 			})
 		}
 		m3uTools := utils.M3uTools{Db: db}
-		for _, templateGroupItem := range templateGroupItems {
-			// Get template
-			template, err := db.GetTemplate(templateGroupItem.TemplateId)
-			if err != nil {
-				// Return status 500 and error message.
-				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-					"error": true,
-					"msg":   err.Error(),
-				})
+		go func() {
+			for _, templateGroupItem := range templateGroupItems {
+				// Get template
+				template, err := db.GetTemplate(templateGroupItem.TemplateId)
+				if err != nil {
+					// Return status 500 and error message.
+					continue
+				}
+				go m3uTools.UpdateGroup(&template, templateGroup, oldGroup.Name)
 			}
-			go m3uTools.UpdateGroup(&template, templateGroup, oldGroup.Name)
-		}
+		}()
 	}
 
-	// Update template group by given ID.
+	// Update template group.
 	if err := db.UpdateTmplGroup(templateGroup); err != nil {
+		// Return status 500 and error message.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Return status 201.
+	return c.SendStatus(fiber.StatusCreated)
+}
+
+// UpdateTemplateChannel func to update a template channel.
+// @Description Update template channel.
+// @Summary update template channel
+// @Tags Template Channel
+// @Accept json
+// @Produce json
+// @Param templatechannel body models.TemplateChannel true "Template channel"
+// @Success 201 {string} status "ok"
+// @Router /template/channel [put]
+func UpdateTemplateChannel(c *fiber.Ctx) error {
+
+	templateChannelLogo := &models.TemplateChannelLogo{}
+
+	// Check, if received JSON data is valid.
+	if err := c.BodyParser(templateChannelLogo); err != nil {
+		// Return status 400 and error message.
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create a new validator for a Template model.
+	validate := utils.NewValidator()
+
+	// Validate template fields.
+	if err := validate.Struct(templateChannelLogo); err != nil {
+		// Return, if some fields are not valid.
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   utils.ValidatorErrors(err),
+		})
+	}
+
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	if templateGroupChannels, err := db.GetTmplGroupChannelsByChannel(templateChannelLogo.ID); err == nil {
+		oldChannel, err := db.GetTmplChannel(templateChannelLogo.ID)
+		if err != nil {
+			// Return status 500 and error message.
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": true,
+				"msg":   err.Error(),
+			})
+		}
+		go func() {
+			for _, item := range templateGroupChannels {
+				if templateGroupItems, err := db.GetTmplGroupItems(item.GroupId); err == nil {
+					m3uTools := utils.M3uTools{Db: db}
+					for _, templateGroupItem := range templateGroupItems {
+						// Get template
+						template, err := db.GetTemplate(templateGroupItem.TemplateId)
+						if err != nil {
+							continue
+						}
+						m3uTools.UpdateChannel(&template, templateChannelLogo, &oldChannel)
+					}
+				}
+			}
+		}()
+	}
+
+	// Update template channel.
+	if err := db.UpdateTmplChannel(templateChannelLogo); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,

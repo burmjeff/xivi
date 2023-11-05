@@ -21,9 +21,9 @@
     
   </script>
 
-  <Accordion>
+  <Accordion class="object-fit: contain overflow-auto">
     {#each $templateGroups as group}
-        <section class="flex items-start space-x-4 ">
+        <section class="items-start space-x-4 ">
             <AccordionItem>
                 <svelte:fragment slot="lead">{group.id}</svelte:fragment>
                 <svelte:fragment slot="summary"><h3>{group.name}</h3></svelte:fragment>

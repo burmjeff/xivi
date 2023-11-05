@@ -13,6 +13,7 @@ export interface TemplateChannel {
 	id: number;
 	name: string;
     tvgid: string;
-    logo: string;
+    logoid: number;
     uuid: string;
+	logo: string;
 }

@@ -4,10 +4,12 @@
     import Playlist from '@xivi/components/Playlist.svelte';
 </script>
 
-<div class="p-4 grid grid-cols-3 gap-4 place-items-stretch h-full text-center justify-center w-full">
-    <Template/>
-    <TemplateGroupList/>
-    <Playlist/>
+<div class="templateslot p-4 text-center justify-center items-center h-full w-full">
+    <section class="grid grid-cols-2 md:grid-cols-3 gap-4 h-full w-full">
+        <Template/>
+        <TemplateGroupList/>
+        <Playlist/>
+    </section>
 </div>
 
 <style lang="postcss">

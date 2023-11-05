@@ -1,12 +1,19 @@
-<script>
+<script lang="ts">
 	import '@xivi/app.postcss';
-	import { AppShell, AppBar, Modal } from '@skeletonlabs/skeleton';
+	import { AppShell, AppBar, Modal, type ModalComponent } from '@skeletonlabs/skeleton';
 	import { Avatar } from '@skeletonlabs/skeleton';
 	import { computePosition, autoUpdate, flip, shift, offset, arrow } from '@floating-ui/dom';
 	import { storePopup } from '@skeletonlabs/skeleton';
 	import { initializeStores } from '@skeletonlabs/skeleton';
+	import ChannelSettings from '@xivi/components/modals/ChannelSettings.svelte';
+	import xivi from '$lib/assets/xivi.png';
 
 	initializeStores();
+
+	const modalRegistry: Record<string, ModalComponent> = {
+	// Set a unique modal ID, then pass the component reference
+	modalChannelSettings: { ref: ChannelSettings },
+	};
 
 	storePopup.set({ computePosition, autoUpdate, flip, shift, offset, arrow });
 </script>
@@ -17,34 +24,17 @@
 		<!-- App Bar -->
 		<AppBar>
 			<svelte:fragment slot="lead">
-				<strong class="text-xl uppercase">Skeleton</strong>
+				<img class="h-12 w-auto" src={xivi}  alt=""/>
 			</svelte:fragment>
 			<svelte:fragment slot="trail">
 				<a
 					class="btn btn-sm variant-ghost-surface"
-					href="https://discord.gg/EXqV7W8MtY"
-					target="_blank"
-					rel="noreferrer"
-				>
-					Discord
-				</a>
-				<a
-					class="btn btn-sm variant-ghost-surface"
-					href="https://twitter.com/SkeletonUI"
-					target="_blank"
-					rel="noreferrer"
-				>
-					Twitter
-				</a>
-				<a
-					class="btn btn-sm variant-ghost-surface"
-					href="https://github.com/skeletonlabs/skeleton"
+					href="https://github.com/burmjeff/xivi"
 					target="_blank"
 					rel="noreferrer"
 				>
 					GitHub
 				</a>
-				<Avatar src="https://i.pravatar.cc/" />
 			</svelte:fragment>
 		</AppBar>
 	</svelte:fragment>
@@ -64,4 +54,4 @@
 	<!-- Page Route Content -->
 	<slot />
 </AppShell>
-<Modal />
+<Modal components={modalRegistry} />
