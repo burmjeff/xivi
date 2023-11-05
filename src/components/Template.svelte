@@ -89,33 +89,33 @@
     }
 </script>
 
-<div class="card card-hover p-2 px-2">
-    <section class="flex items-center space-x-4">
-        <h1>Templates</h1>
+<section class="templates card card-hover p-1">
+    <header class="templates-header flex justify-center items-center space-x-4">
+        <h3 class="h3 font-bold">Templates</h3>
         <button class="btn btn-sm variant-ringed-primary" use:popup={templateSettings}>+ add new</button>
-    </section>
-    
-    {#if $templates.length > 0}
-        <Accordion>
-            {#each $templates as template}
-                <AccordionItem key={template.id}>
-                    <svelte:fragment slot="lead">{template.id}</svelte:fragment>
-                    <svelte:fragment slot="summary">
-                        <div class="flex flex-row">
-                            <h4>{template.name}</h4>
-                            <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => renamePrompt(template.name, template.id)}><i><IconParkOutlineEditTwo/></i></button>
-                        </div>
-                    </svelte:fragment>
-                    <svelte:fragment slot="content">
-                        <TemplateGroup templateId={template.id} />
-                    </svelte:fragment>
-                </AccordionItem>
-            {/each}
-        </Accordion>
-    {:else}
-        <p>No templates found</p>
-    {/if}
-</div>
+    </header>
+    <div class="templates-viewport flex-none min-w-full overflow-hidden lg:overflow-auto max-h-[42rem]">
+        {#if $templates.length > 0}
+            <Accordion>
+                {#each $templates as template}
+                    <AccordionItem key={template.id}>
+                        <svelte:fragment slot="summary">
+                            <div class="flex flex-row">
+                                <h4>{template.name}</h4>
+                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => renamePrompt(template.name, template.id)}><i><IconParkOutlineEditTwo/></i></button>
+                            </div>
+                        </svelte:fragment>
+                        <svelte:fragment slot="content">
+                            <TemplateGroup templateId={template.id} />
+                        </svelte:fragment>
+                    </AccordionItem>
+                {/each}
+            </Accordion>
+        {:else}
+            <p>No templates found</p>
+        {/if}
+    </div>
+</section>
 <div class="card p-4 gap-4" data-popup="addTemplatePopup">
 	<h2>Add Template</h2>
     <div class="space-y-4">

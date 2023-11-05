@@ -35,6 +35,7 @@ func PublicRoutes(a *fiber.App) {
 	api.Post("/template/group", controllers.CreateTemplateGroup)                                   // create a new template group
 	api.Post("/template/:template_id/group/:group_id/item", controllers.CreateTemplateGroupItem)   // create one templategroupitem by ID
 	api.Put("/template/group", controllers.UpdateTemplateGroup)                                    // update one template group
+	api.Put("/template/channel", controllers.UpdateTemplateChannel)                                // update one template channel
 	api.Delete("/template/:template_id/group/:group_id/item", controllers.DeleteTemplateGroupItem) // delete one templategroupitem by ID
 	api.Delete("/template/group/:group_id", controllers.DeleteTemplateGroup)                       // delete one template group by ID
 
