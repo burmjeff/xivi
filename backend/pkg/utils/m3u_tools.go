@@ -94,8 +94,8 @@ func (m *M3uTools) UpdateChannel(template *models.Template, channel *models.Temp
 		return
 	}
 
-	logo := GetChannelLogo(m.Db, oldChannel.LogoId)
-	oldLogoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, logo)
+	logo, _ := (GetChannelLogo(m.Db, oldChannel.LogoId))
+	oldLogoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, logo.Img)
 
 	// TODO FIX CHANNEL NAME IN M3U
 	filter := fmt.Sprintf("tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\"", oldChannel.Name, oldChannel.TvgID, oldLogoURL)
@@ -195,8 +195,9 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 			log.Warn().Msg(err.Error())
 			continue
 		}
-		logo := GetChannelLogo(m.Db, channel.LogoId)
-		logoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, logo)
+		logo, _ := GetChannelLogo(m.Db, channel.LogoId)
+		fmt.Println("ASDASDASD", logo)
+		logoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, logo.Img)
 
 		log.Printf("M3U Creation: Adding Template Channel: %s", channel.Name)
 		channelURL := fmt.Sprintf("http://%s:%d/stream/%s", m.host, m.port, channel.Uuid)

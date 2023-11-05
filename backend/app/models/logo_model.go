@@ -6,6 +6,11 @@ type Logo struct {
 	Img string `db:"img" json:"img"`
 }
 
+type LogoUpload struct {
+	Type  string `json:"type"`
+	Image string `json:"image"`
+}
+
 type LogoCreateParam struct {
 	Img string `json:"img" validate:"required,lte=255"`
 }

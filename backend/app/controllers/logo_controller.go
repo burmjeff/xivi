@@ -43,7 +43,8 @@ func GetLogos(c *fiber.Ctx) error {
 	}
 
 	for _, logo := range logos {
-		logo.Img = utils.GetChannelLogo(db, logo.ID)
+		l, _ := utils.GetChannelLogo(db, logo.ID)
+		logo.Img = l.Img
 	}
 
 	// Return status 200 OK.
@@ -84,8 +85,7 @@ func GetLogo(c *fiber.Ctx) error {
 		})
 	}
 
-	// Get logo by ID.
-	logo, err := db.GetLogo(logo_id)
+	logo, err := utils.GetChannelLogo(db, logo_id)
 	if err != nil {
 		// Return, if logo not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -95,8 +95,6 @@ func GetLogo(c *fiber.Ctx) error {
 		})
 	}
 
-	logo.Img = utils.GetChannelLogo(db, logo.ID)
-
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
 		"error": false,
@@ -105,21 +103,21 @@ func GetLogo(c *fiber.Ctx) error {
 	})
 }
 
-// CreateLogo func for creating a new logo.
-// @Summary Create a new logo
-// @Description Create a new logo.
+// UploadLogo func for creating a new logo.
+// @Summary Upload a new logo
+// @Description Upload a new logo.
 // @Tags Logo
 // @Accept json
 // @Produce json
-// @Param logo body models.LogoCreateParam true "Logo"
+// @Param logo body models.LogoUpload true "Logo"
 // @Success 200 {object} models.Logo
 // @Router /logo [post]
-func CreateLogo(c *fiber.Ctx) error {
+func UploadLogo(c *fiber.Ctx) error {
 	// Create new Logo struct
-	logo := &models.Logo{}
+	logoUpload := &models.LogoUpload{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(logo); err != nil {
+	if err := c.BodyParser(logoUpload); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -141,7 +139,7 @@ func CreateLogo(c *fiber.Ctx) error {
 	validate := utils.NewValidator()
 
 	// Validate logo fields.
-	if err := validate.Struct(logo); err != nil {
+	if err := validate.Struct(logoUpload); err != nil {
 		// Return, if some fields are not valid.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -150,11 +148,23 @@ func CreateLogo(c *fiber.Ctx) error {
 	}
 
 	// Create logo.
-	if _, err := utils.CreateLogo(db, logo.Img); err != nil {
+	logoId, err := utils.UploadLogo(db, logoUpload)
+	if err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
+		})
+	}
+
+	// Get logo by ID.
+	logo, err := utils.GetChannelLogo(db, logoId)
+	if err != nil {
+		// Return, if logo not found.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "logo with the given ID is not found",
+			"logo":  nil,
 		})
 	}
 

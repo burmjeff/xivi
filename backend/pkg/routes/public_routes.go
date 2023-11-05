@@ -49,7 +49,7 @@ func PublicRoutes(a *fiber.App) {
 	// Logo Routes
 	api.Get("/logos", controllers.GetLogos)              // get list of all logos
 	api.Get("/logo/:logo_id", controllers.GetLogo)       // get one logo by ID
-	api.Post("/logo", controllers.CreateLogo)            // create a new logo
+	api.Post("/logo", controllers.UploadLogo)            // create a new logo
 	api.Delete("/logo/:logo_id", controllers.DeleteLogo) // delete one logo by ID
 
 	// Settings Routes

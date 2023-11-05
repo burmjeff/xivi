@@ -57,7 +57,10 @@
 			const modal: ModalSettings = {
 				type: 'component',
 				component: 'modalChannelSettings',
-				meta: { channelId: channelId }
+				meta: { channelId: channelId },
+				response: (r: boolean) => {
+					resolve(r);
+				}
 			};
 			modalStore.trigger(modal);
 		}).then((r: any) => {
