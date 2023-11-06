@@ -486,7 +486,7 @@ func (q *TemplateQueries) CreateTmplChannel(p *models.TemplateChannel) (int64, e
 // UpdateChannel method for updating a channel by given object.
 func (q *TemplateQueries) UpdateTmplChannel(t *models.TemplateChannelLogo) error {
 	// Define query string.
-	query := `UPDATE templatechannel SET name = ?, tvgid = ?, logo_id = ? WHERE id = ?`
+	query := `UPDATE templatechannel SET name = ?, tvgid = ?, logoid = ? WHERE id = ?`
 
 	// Send query to database.
 	_, err := q.Exec(query, t.Name, t.TvgID, t.LogoId, t.ID)

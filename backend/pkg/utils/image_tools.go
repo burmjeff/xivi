@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
@@ -21,10 +20,7 @@ type ImageTools struct {
 	Db *database.Queries
 }
 
-func UploadLogo(db *database.Queries, logoUpload *models.LogoUpload) (int64, error) {
-	validate := NewValidator()
-	logo := &models.Logo{}
-
+func UploadLogo(db *database.Queries, logoUpload *models.LogoPath) (int64, error) {
 	image, err := base64Decode(logoUpload.Image)
 
 	if err != nil {
@@ -32,28 +28,18 @@ func UploadLogo(db *database.Queries, logoUpload *models.LogoUpload) (int64, err
 		return 0, err
 	}
 
-	imgPath, err := normalizeImage(image)
+	uuid, err := saveImage(image)
 	if err != nil {
 		log.Warn().Msg(err.Error())
 		return 0, err
 	}
-	logo.Img = imgPath
 
-	// Validate playlist fields.
-	if err := validate.Struct(logo); err != nil {
-		//Some fields are not valid.
+	logoID, err := db.CreateLogo(uuid)
+	if err != nil {
 		log.Warn().Msg(err.Error())
-	} else {
-		logo_id, err := db.CreateLogo(logo)
-		if err != nil {
-			log.Warn().Msg(err.Error())
-		} else {
-
-			return logo_id, nil
-		}
-
+		return 0, err
 	}
-	return 0, err
+	return logoID, nil
 }
 
 func base64Decode(str string) ([]byte, error) {
@@ -69,36 +55,25 @@ func base64Decode(str string) ([]byte, error) {
 }
 
 func CreateLogo(db *database.Queries, logoUrl string) (int64, error) {
-	validate := NewValidator()
-	logo := &models.Logo{}
-
 	img, err := downloadImage(logoUrl)
 	if err != nil {
 		log.Warn().Msgf("Failed Image Download: %v", err)
 		return 0, err
 	}
 
-	imgPath, err := normalizeImage(img)
+	uuid, err := saveImage(img)
 	if err != nil {
 		log.Warn().Msg(err.Error())
 		return 0, err
 	}
-	logo.Img = imgPath
 
-	// Validate playlist fields.
-	if err := validate.Struct(logo); err != nil {
-		//Some fields are not valid.
+	logoID, err := db.CreateLogo(uuid)
+	if err != nil {
 		log.Warn().Msg(err.Error())
-	} else {
-		logoID, err := db.CreateLogo(logo)
-		if err != nil {
-			log.Warn().Msg(err.Error())
-		} else {
-			return logoID, nil
-		}
-
+		return 0, err
 	}
-	return 0, err
+
+	return logoID, nil
 }
 
 func downloadImage(URL string) ([]byte, error) {
@@ -120,38 +95,36 @@ func downloadImage(URL string) ([]byte, error) {
 	return imgBuf, nil
 }
 
-func normalizeImage(img []byte) (string, error) {
-	image1, err := vips.NewImageFromBuffer(img)
+func saveImage(img []byte) (string, error) {
+	image, err := vips.NewImageFromBuffer(img)
 	if err != nil {
 		return "", err
 	}
 
-	//imageScale := 256 / image1.Width()
-	//image1.ThumbnailWithSize((image1.Width() * imageScale), (image1.Height() * imageScale), vips.InterestingAll, vips.SizeForce)
-	image1.SmartCrop(256, 256, vips.InterestingAll)
+	//imageScale := float64(256 / image.Width())
+	//image.Resize(imageScale, vips.KernelAuto)
+	image.ThumbnailWithSize(256, 256, vips.InterestingNone, vips.SizeBoth)
 	ep := vips.NewDefaultPNGExportParams()
-	image1bytes, _, err := image1.Export(ep)
+	imageBytes, _, err := image.Export(ep)
 
 	uuid := CreateUuid()
-	imgPath := fmt.Sprintf("%s/%s.png", settings.LOGO_FILEPATH, uuid)
+	imgPath := GetLogoPath(uuid)
 
-	err = os.WriteFile(imgPath, image1bytes, 0644)
+	err = os.WriteFile(imgPath, imageBytes, 0644)
 	if err != nil {
 		return "", err
 	}
 
-	return imgPath, nil
-
+	return uuid, nil
 }
 
-func GetChannelLogo(db *database.Queries, logoId int64) (models.Logo, error) {
-	logo, err := db.GetLogo(logoId)
-	if err != nil {
-		return logo, err
-	}
-
+func GetLogoUrl(uuid string) string {
 	//TODO: images route
-	logo.Img = fmt.Sprintf("images/%s", filepath.Base(logo.Img))
+	return fmt.Sprintf("images/%s.png", uuid)
+}
 
-	return logo, nil
+func GetLogoPath(uuid string) string {
+	//TODO: images route
+	return fmt.Sprintf("%s/%s.png", settings.LOGO_FILEPATH, uuid)
+
 }

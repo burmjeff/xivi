@@ -5,16 +5,17 @@
     import IconParkOutlineSaveOne from '~icons/icon-park-outline/save-one'
     import type { SvelteComponent } from 'svelte';
 	import { getModalStore, FileButton } from '@skeletonlabs/skeleton';
-	import { logos } from '@xivi/stores/logo_store';
-	import type { Logo, LogoUpload } from '@xivi/data/logo_entities';
+	import type { Logo } from '@xivi/data/logo_entities';
 
 	export let parent: SvelteComponent;
 	const modalStore = getModalStore();
     let files: FileList;
   
     const formData = {
+        id: $templateChannels[$modalStore[0].meta.channelId].id,
 		name: $templateChannels[$modalStore[0].meta.channelId].name,
 		tvgid: $templateChannels[$modalStore[0].meta.channelId].tvgid,
+        logoid: $templateChannels[$modalStore[0].meta.channelId].logoid,
 		logo: $templateChannels[$modalStore[0].meta.channelId].logo
 	};
 
@@ -28,27 +29,28 @@
     async function uploadImage() {
         if (files) {
             const result = String(await toBase64(files[0]));
-            let logoUpload: LogoUpload;
+            let logo: Logo;
 
             if (result) {
-                logoUpload = {
-                    type: files[0].type,
+                logo = {
+                    id: formData.id,
                     image: result,
                 };
-                window.console.log('Uploading Logo: ', logoUpload);
+                window.console.log('Uploading Logo: ', logo);
 
                 fetch('/api/logo', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify(logoUpload)
+                    body: JSON.stringify(logo)
                 })
                 .then((response) => response.json())
                 .then((data) => {
                     console.log('Uploaded logo:', data);
                     //logos.update(data.logo)
-                    formData.logo = data.logo.img
+                    formData.logoid = data.logo.id
+                    formData.logo = data.logo.image
                 })
                 .catch((error) => {
                     console.log('Error uploading logo:', error);
