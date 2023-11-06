@@ -47,10 +47,10 @@ func PublicRoutes(a *fiber.App) {
 	api.Post("/epg/create/:id", controllers.CreateEPG) // Creat a new Epg xml
 
 	// Logo Routes
-	api.Get("/logos", controllers.GetLogos)              // get list of all logos
-	api.Get("/logo/:logo_id", controllers.GetLogo)       // get one logo by ID
-	api.Post("/logo", controllers.UploadLogo)            // create a new logo
-	api.Delete("/logo/:logo_id", controllers.DeleteLogo) // delete one logo by ID
+	api.Get("/logos", controllers.GetLogos)             // get list of all logos
+	api.Get("/logo/:logoid", controllers.GetLogo)       // get one logo by ID
+	api.Post("/logo", controllers.UploadLogo)           // create a new logo
+	api.Delete("/logo/:logoid", controllers.DeleteLogo) // delete one logo by ID
 
 	// Settings Routes
 	api.Get("/settings", controllers.GetSettings)    // get settings

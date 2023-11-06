@@ -29,7 +29,7 @@
 				id: $templateChannels[channelId].id,
 				name: formData.name,
 				tvgid: formData.tvgid,
-				logoid: $templateChannels[channelId].logoid,
+				logoid: formData.logoid,
 				uuid: $templateChannels[channelId].uuid,
 				logo: formData.logo
 			};
