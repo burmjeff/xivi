@@ -878,6 +878,20 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 		})
 	}
 
+	foundLogo, err := db.GetLogo(templateChannel.LogoId)
+	if err != nil {
+		// Return status 404 and logo not found error.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "logo with this ID not found",
+		})
+	}
+
+	templateChannelLogo := &models.TemplateChannelLogo{
+		TemplateChannel: *templateChannel,
+		Logo:            utils.GetLogoUrl(foundLogo.Uuid),
+	}
+
 	m3uTools := utils.M3uTools{Db: db}
 	go m3uTools.AddChannel(templateChannel, group_id)
 
@@ -885,7 +899,7 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"error":           false,
 		"msg":             nil,
-		"templatechannel": templateChannel,
+		"templatechannel": templateChannelLogo,
 	})
 }
 

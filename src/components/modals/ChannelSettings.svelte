@@ -8,6 +8,7 @@
 	import { getModalStore, FileButton } from '@skeletonlabs/skeleton';
 	import type { Logo } from '@xivi/data/logo_entities';
 	import xivi from '$lib/assets/xivi.png';
+	import type { promises } from 'dns';
 
 	export let parent: SvelteComponent;
 	const modalStore = getModalStore();
@@ -15,6 +16,7 @@
 	let groupIdx = $modalStore[0].meta.groupIdx
 	let channelIdx = $modalStore[0].meta.channelIdx
 	let isNew = $modalStore[0].meta.isNew
+	let newImg = false
 
 	let formData: {
 		id: number,
@@ -40,6 +42,7 @@
 			logoid: 0,
 			logo: xivi
 		}
+		newImg = true
 	}
 
 	const toBase64 = (file: File) =>
@@ -50,40 +53,36 @@
 			reader.onerror = reject;
 		});
 
-	async function uploadImage() {
-		fetch('/api/logo', {
+	const uploadImage = async () => {
+		const response = await fetch(`/api/logo`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json'
 			},
 			body: JSON.stringify({image: formData.logo})
-		})
-			.then((response) => response.json())
-			.then((data) => {
-				console.log('Uploaded logo:', data);
-				formData.logoid = data.logo.id;
-				formData.logo = data.logo.image;
-			})
-			.catch((error) => {
-				console.log('Error uploading logo:', error);
-			});
+		});
+		const data = await response.json();
+		return data.logo;
 	}
 
-	function onUploadHandler(e: Event): void {
+	async function onUploadHandler(e: Event) {
 		console.log('file data:', e);
 		if (files) {
-			const result = String(toBase64(files[0]));
+			const result = String(await toBase64(files[0]));
 			if (result) {
 				formData.logo = result
+				newImg = true
 			}
 		}
 	}
 
-	function onFormSubmit(): void {
-		if ($modalStore[0].response) {
-			uploadImage();
-			$modalStore[0].response(formData);
+	async function onFormSubmit(): Promise<void> {
+		if (newImg) {
+			const fetchedData = await uploadImage();
+			formData.logoid = fetchedData.id;
+			formData.logo = fetchedData.image;
 		}
+		if ($modalStore[0].response) $modalStore[0].response(formData);
 		modalStore.close();
 	}
 
