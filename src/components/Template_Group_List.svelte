@@ -10,6 +10,8 @@
     import {fade} from 'svelte/transition';
     import {cubicIn} from 'svelte/easing';
     import IconParkOutlineEditTwo from '~icons/icon-park-outline/edit-two'
+    import IconParkOutlineDelete from '~icons/icon-park-outline/delete';
+    import IconParkOutlineAdd from '~icons/icon-park-outline/add';
 
     let shouldIgnoreDndEvents = false;
     const modalStore = getModalStore();
@@ -42,19 +44,17 @@
                 },
                 body: JSON.stringify(inputName)
                 });
-                if (response.ok) {
-                    templateGroups.set(await updateTemplateGroups());
-                } else {
-                    console.error('Error:', response.status, response.statusText);
-                }
+                const data = await response.json();
+                console.log('Created template group', data);
+                $templateGroups.push(data.templategroup);
+                $templateGroups = $templateGroups;
             } catch (error) {
                 console.log('Error creating templateGroup:', error);
-                return [];
             }
         }
     }
 
-    function renamePrompt(groupName: string, groupId: number): void {
+    function renamePrompt(groupIdx: number, groupName: string, groupId: number): void {
 		const prompt: ModalSettings = {
 			type: 'prompt',
 			title: 'Rename Group',
@@ -62,7 +62,7 @@
 			value: groupName,
 			valueAttr: { type: 'text', minlength: 1, maxlength: 20, required: true },
 			response: (newName: string) => {
-				if (newName) renameGroup(newName, groupId);
+				if (newName) renameGroup(groupIdx, newName, groupId);
 			},
             buttonTextCancel: 'Cancel',
 		    buttonTextSubmit: 'Submit',
@@ -70,7 +70,7 @@
 		modalStore.trigger(prompt);
 	}
 
-    async function renameGroup(groupName: string, groupId: number) {
+    async function renameGroup(groupIdx: number, groupName: string, groupId: number) {
         if (groupName !=='') {
             const newGroup = {
                 id: groupId,
@@ -85,7 +85,7 @@
                 body: JSON.stringify(newGroup)
                 });
                 if (response.ok) {
-                    templateGroups.set(await updateTemplateGroups());
+                    $templateGroups[groupIdx].name = groupName
                 } else {
                     console.error('Error:', response.status, response.statusText);
                 }
@@ -95,6 +95,82 @@
             }
         }
     }
+
+    function deletePrompt(groupId: number): void {
+		const modal: ModalSettings = {
+			type: 'confirm',
+            title: 'Please Confirm',
+            body: 'Are you sure you wish to delete this group?',
+            // TRUE if confirm pressed, FALSE if cancel pressed
+            response: (r: boolean) => {
+				if (r) deleteGroup(groupId);
+			},
+		};
+		modalStore.trigger(modal);
+	}
+    
+    //TODO COLLAPSE ACCORDIION ITEM BEFORE DELETE
+    async function deleteGroup(groupId: number) {
+		try {
+			const response = await fetch(`/api/template/group/${groupId}`, {
+				method: 'DELETE'
+			});
+			const data = await response.status;
+			console.log('Deleted template group:', data);
+			$templateGroups = $templateGroups.filter(t => t.id != groupId)
+			modalStore.close();
+		} catch (error) {
+			console.log('Error deleting template group:', error);
+			return;
+		}
+	}
+
+    async function addChannel(formData: any, groupId: number, groupIdx: number) {
+		if (formData.name != '' && formData.tvgid != '' && formData.logo != '') {
+			let newChannel = {
+				name: formData.name,
+				tvgid: formData.tvgid,
+				logoid: formData.logoid
+			};
+
+			try {
+				const response = await fetch(`/api/template/group/${groupId}/channel`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify(newChannel)
+				});
+				const data = await response.json();
+				console.log('Added template channel:', data);
+				$templateGroups[groupIdx].channels.push(data.templatechannel)
+				$templateGroups[groupIdx].channels = $templateGroups[groupIdx].channels
+			} catch (error) {
+				console.log('Error updating template channel:', error);
+				return;
+			}
+		}
+	}
+
+	function modalAdd(groupId: number, groupIdx: number) {
+		new Promise<boolean>((resolve) => {
+			const modal: ModalSettings = {
+				type: 'component',
+				component: 'modalChannelSettings',
+				meta: { 
+					isNew: true,
+					channelIdx: null,
+					groupIdx: groupIdx
+				 },
+				response: (r: boolean) => {
+					resolve(r);
+				}
+			};
+			modalStore.trigger(modal);
+		}).then((r: any) => {
+			if (r) {addChannel(r, groupId, groupIdx)};
+		});
+	}
 
     const flipDurationMs = 300;
     function handleDndConsider(e: CustomEvent<DndEvent<TemplateGroup>>) {
@@ -138,17 +214,19 @@
         {#if $templateGroups.length > 0}
                     <Accordion>
                         <section use:dndzone={{items: $templateGroups, flipDurationMs}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
-                            {#each $templateGroups as group(group.id)}
+                            {#each $templateGroups as group, groupIdx (group.id)}
                                 <div id="div1" animate:flip={{duration: flipDurationMs}}>
                                     <AccordionItem key={group.id}>
                                         <svelte:fragment slot="summary">
                                             <div class="flex flex-row">
                                                 <h4>{group.name}</h4>
-                                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => renamePrompt(group.name, group.id)}><i><IconParkOutlineEditTwo/></i></button>
+                                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => renamePrompt(groupIdx, group.name, group.id)}><i><IconParkOutlineEditTwo/></i></button>
+                                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => deletePrompt(group.id)}><i><IconParkOutlineDelete/></i></button>
+                                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => modalAdd(group.id, groupIdx)}><i><IconParkOutlineAdd/></i></button>
                                             </div>
                                         </svelte:fragment>
                                         <svelte:fragment slot="content">
-                                            <TemplateChannel groupId={group.id} />
+                                            <TemplateChannel groupId={group.id} groupIdx={groupIdx} />
                                         </svelte:fragment>
                                     </AccordionItem>
                                     

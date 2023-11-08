@@ -217,33 +217,6 @@ func GetPlaylistGroupChannels(c *fiber.Ctx) error {
 // @Security ApiKeyAuth
 // @Router /playlist [post]
 func CreatePlaylist(c *fiber.Ctx) error {
-	// Get now time.
-	/*
-		now := time.Now().Unix()
-
-		// Get claims from JWT.
-		claims, err := utils.ExtractTokenMetadata(c)
-		if err != nil {
-			// Return status 500 and JWT parse error.
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": true,
-				"msg":   err.Error(),
-			})
-		}
-
-		// Set expiration time from JWT data of current playlist.
-		expires := claims.Expires
-
-		// Checking, if now time greather than expiration from JWT.
-		if now > expires {
-			// Return status 401 and unauthorized error message.
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": true,
-				"msg":   "unauthorized, check expiration time of your token",
-			})
-		}
-	*/
-
 	// Create new Playlist struct
 	playlist := &models.Playlist{}
 
@@ -291,6 +264,8 @@ func CreatePlaylist(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
+
+	playlist.ID = id
 
 	//TODO async Parse m3u and insert channels
 	m3uParser := utils.M3uParser{Db: db}
@@ -402,63 +377,20 @@ func UpdatePlaylist(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusCreated)
 }
 
-// DeletePlaylist func for deletes playlist by given ID.
+// DeletePlaylist func to delete a playlist by given ID.
 // @Description Delete playlist by given ID.
 // @Summary delete playlist by given ID
 // @Tags Playlist
-// @Accept json
-// @Produce json
 // @Param id body string true "Playlist ID"
 // @Success 204 {string} status "ok"
-// @Security ApiKeyAuth
-// @Router /playlist [delete]
+// @Router /playlist/{playlist_id} [delete]
 func DeletePlaylist(c *fiber.Ctx) error {
-	// Get now time.
-	now := time.Now().Unix()
-
-	// Get claims from JWT.
-	claims, err := utils.ExtractTokenMetadata(c)
+	// Catch playlist ID from URL.
+	playlist_id, err := strconv.ParseInt(c.Params("playlist_id"), 10, 64)
 	if err != nil {
-		// Return status 500 and JWT parse error.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
-		})
-	}
-
-	// Set expiration time from JWT data of current playlist.
-	expires := claims.Expires
-
-	// Checking, if now time greather than expiration from JWT.
-	if now > expires {
-		// Return status 401 and unauthorized error message.
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": true,
-			"msg":   "unauthorized, check expiration time of your token",
-		})
-	}
-
-	// Create new Playlist struct
-	playlist := &models.Playlist{}
-
-	// Check, if received JSON data is valid.
-	if err := c.BodyParser(playlist); err != nil {
-		// Return status 400 and error message.
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	// Create a new validator for a Playlist model.
-	validate := utils.NewValidator()
-
-	// Validate only one playlist field ID.
-	if err := validate.StructPartial(playlist, "id"); err != nil {
-		// Return, if some fields are not valid.
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": true,
-			"msg":   utils.ValidatorErrors(err),
 		})
 	}
 
@@ -473,7 +405,7 @@ func DeletePlaylist(c *fiber.Ctx) error {
 	}
 
 	// Checking, if playlist with given ID is exists.
-	foundedPlaylist, err := db.GetPlaylist(playlist.ID)
+	foundPlaylist, err := db.GetPlaylist(playlist_id)
 	if err != nil {
 		// Return status 404 and playlist not found error.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -483,7 +415,7 @@ func DeletePlaylist(c *fiber.Ctx) error {
 	}
 
 	// Delete playlist by given ID.
-	if err := db.DeletePlaylist(foundedPlaylist.ID); err != nil {
+	if err := db.DeletePlaylist(foundPlaylist.ID); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,

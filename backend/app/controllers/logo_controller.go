@@ -137,6 +137,8 @@ func UploadLogo(c *fiber.Ctx) error {
 		})
 	}
 
+	logoPath.ID = 0
+
 	// Create a new validator for a Logo model.
 	validate := utils.NewValidator()
 

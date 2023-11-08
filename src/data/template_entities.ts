@@ -7,6 +7,7 @@ export interface TemplateGroup {
 	id: number;
 	name: string;
 	isDndShadowItem: boolean;
+	channels: TemplateChannel[];
 }	
 
 export interface TemplateChannel {

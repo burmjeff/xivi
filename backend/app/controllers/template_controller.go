@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"strconv"
-	"time"
 
 	"xivi/backend/app/models"
 	"xivi/backend/pkg/utils"
@@ -110,33 +109,6 @@ func GetTemplate(c *fiber.Ctx) error {
 // @Success 200 {object} models.Template
 // @Router /template [post]
 func CreateTemplate(c *fiber.Ctx) error {
-	// Get now time.
-	/*
-		now := time.Now().Unix()
-
-		// Get claims from JWT.
-		claims, err := utils.ExtractTokenMetadata(c)
-		if err != nil {
-			// Return status 500 and JWT parse error.
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": true,
-				"msg":   err.Error(),
-			})
-		}
-
-		// Set expiration time from JWT data of current template.
-		expires := claims.Expires
-
-		// Checking, if now time greather than expiration from JWT.
-		if now > expires {
-			// Return status 401 and unauthorized error message.
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": true,
-				"msg":   "unauthorized, check expiration time of your token",
-			})
-		}
-	*/
-
 	// Create new Template struct
 	template := &models.Template{}
 
@@ -172,13 +144,16 @@ func CreateTemplate(c *fiber.Ctx) error {
 	}
 
 	// Create template.
-	if err := db.CreateTemplate(template); err != nil {
+	id, err := db.CreateTemplate(template)
+	if err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
 		})
 	}
+
+	template.ID = id
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
@@ -263,58 +238,17 @@ func UpdateTemplate(c *fiber.Ctx) error {
 // @Summary delete a template by given ID
 // @Tags Template
 // @Accept json
-// @Produce json
 // @Param id body string true "Template ID"
 // @Success 204 {string} status "ok"
-// @Security ApiKeyAuth
 // @Router /template [delete]
 func DeleteTemplate(c *fiber.Ctx) error {
-	// Get now time.
-	now := time.Now().Unix()
 
-	// Get claims from JWT.
-	claims, err := utils.ExtractTokenMetadata(c)
+	// Catch template ID from URL.
+	template_id, err := strconv.ParseInt(c.Params("template_id"), 10, 64)
 	if err != nil {
-		// Return status 500 and JWT parse error.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
-		})
-	}
-
-	// Set expiration time from JWT data of current template.
-	expires := claims.Expires
-
-	// Checking, if now time greather than expiration from JWT.
-	if now > expires {
-		// Return status 401 and unauthorized error message.
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": true,
-			"msg":   "unauthorized, check expiration time of your token",
-		})
-	}
-
-	// Create new Template struct
-	template := &models.Template{}
-
-	// Check, if received JSON data is valid.
-	if err := c.BodyParser(template); err != nil {
-		// Return status 400 and error message.
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	// Create a new validator for a Template model.
-	validate := utils.NewValidator()
-
-	// Validate only one template field ID.
-	if err := validate.StructPartial(template, "id"); err != nil {
-		// Return, if some fields are not valid.
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": true,
-			"msg":   utils.ValidatorErrors(err),
 		})
 	}
 
@@ -328,18 +262,22 @@ func DeleteTemplate(c *fiber.Ctx) error {
 		})
 	}
 
-	// Checking, if template with given ID is exists.
-	foundedTemplate, err := db.GetTemplate(template.ID)
+	m3uTools := utils.M3uTools{Db: db}
+
+	// Get template
+	template, err := db.GetTemplate(template_id)
 	if err != nil {
-		// Return status 404 and template not found error.
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+		// Return status 500 and error message.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
-			"msg":   "template with this ID not found",
+			"msg":   err.Error(),
 		})
 	}
 
+	go m3uTools.RemoveTemplate(&template)
+
 	// Delete template by given ID.
-	if err := db.DeleteTemplate(foundedTemplate.ID); err != nil {
+	if err := db.DeleteTemplate(template_id); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -545,13 +483,16 @@ func CreateTemplateGroup(c *fiber.Ctx) error {
 	}
 
 	// Create template.
-	if _, err := db.CreateTmplGroup(templateGroup); err != nil {
+	id, err := db.CreateTmplGroup(templateGroup)
+	if err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
 		})
 	}
+
+	templateGroup.ID = id
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
@@ -854,6 +795,100 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusCreated)
 }
 
+// CreateTemplateChannel func to create a template channel.
+// @Description Create a template channel.
+// @Summary create template channel
+// @Tags Template Channel
+// @Accept json
+// @Produce json
+// @Param templatechannel body models.TemplateChannel true "Template channel"
+// @Param group_id path string true "Group ID"
+// @Success 200 {object} models.TemplateChannel
+// @Router /template/group/{group_id}/channel [post]
+func CreateTemplateChannel(c *fiber.Ctx) error {
+
+	// Catch group ID from URL.
+	group_id, err := strconv.ParseInt(c.Params("group_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	//templateChannelCreate := &models.TemplateChannelCreateParam{}
+	templateChannel := &models.TemplateChannel{}
+
+	// Check, if received JSON data is valid.
+	if err := c.BodyParser(templateChannel); err != nil {
+		// Return status 400 and error message.
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	templateChannel.ID = 0
+	templateChannel.Uuid = utils.CreateUuid()
+
+	// Create a new validator.
+	validate := utils.NewValidator()
+
+	// Validate fields.
+	if err := validate.Struct(templateChannel); err != nil {
+		// Return, if some fields are not valid.
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   utils.ValidatorErrors(err),
+		})
+	}
+
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create template channel.
+	id, err := db.CreateTmplChannel(templateChannel)
+	if err != nil {
+		// Return status 500 and error message.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	templateChannel.ID = id
+	templategroupchannel := &models.TemplateGroupChannel{
+		GroupId:   group_id,
+		ChannelId: templateChannel.ID,
+	}
+
+	// Create template channelgroup.
+	if err := db.CreateTmplGroupChannel(templategroupchannel); err != nil {
+		// Return status 500 and error message.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	m3uTools := utils.M3uTools{Db: db}
+	go m3uTools.AddChannel(templateChannel, group_id)
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error":           false,
+		"msg":             nil,
+		"templatechannel": templateChannel,
+	})
+}
+
 // UpdateTemplateChannel func to update a template channel.
 // @Description Update template channel.
 // @Summary update template channel
@@ -935,4 +970,76 @@ func UpdateTemplateChannel(c *fiber.Ctx) error {
 
 	// Return status 201.
 	return c.SendStatus(fiber.StatusCreated)
+}
+
+// DeleteTemplateChannel func to delete a template Channel by given Channel id.
+// @Description Delete template Channel by given ID.
+// @Summary delete template Channel by given ID
+// @Tags Template Channel
+// @Param channel_id path string true "Channel ID"
+// @Success 204 {string} status "ok"
+// @Router /template/channel/{channel_id} [delete]
+func DeleteTemplateChannel(c *fiber.Ctx) error {
+
+	// Catch channel ID from URL.
+	channel_id, err := strconv.ParseInt(c.Params("channel_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	if templateGroupChannels, err := db.GetTmplGroupChannelsByChannel(channel_id); err == nil {
+		channel, err := db.GetTmplChannel(channel_id)
+		if err != nil {
+			// Return status 500 and error message.
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": true,
+				"msg":   err.Error(),
+			})
+		}
+
+		go func() {
+			for _, item := range templateGroupChannels {
+				if templateGroupItems, err := db.GetTmplGroupItems(item.GroupId); err == nil {
+					group, err := db.GetTmplGroup(item.GroupId)
+					if err != nil {
+						continue
+					}
+					m3uTools := utils.M3uTools{Db: db}
+					for _, templateGroupItem := range templateGroupItems {
+						// Get template
+						template, err := db.GetTemplate(templateGroupItem.TemplateId)
+						if err != nil {
+							continue
+						}
+						m3uTools.RemoveChannel(&template, &group, &channel)
+					}
+				}
+			}
+		}()
+	}
+
+	// Delete template group by given ID.
+	if err := db.DeleteTmplChannel(channel_id); err != nil {
+		// Return status 500 and error message.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Return status 204 no content.
+	return c.SendStatus(fiber.StatusNoContent)
 }

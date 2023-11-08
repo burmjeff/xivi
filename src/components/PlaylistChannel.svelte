@@ -1,42 +1,50 @@
 <!-- PlaylistChannel.svelte -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { playlistChannels } from '@xivi/stores/playlist_store';
+	import { playlists } from '@xivi/stores/playlist_store';
+	import type { PlaylistChannel } from '@xivi/data/playlist_entities';
 
 	export let playlistId: number;
+	export let playlistIdx: number;
 	export let groupId: number;
+	export let groupIdx: number;
 
-	let channels: typeof playlistChannels;
+	const updatePlaylistChannels = async () => {
+		const response = await fetch(`/api/playlist/${playlistId}/group/${groupId}/channels`);
+		const data = await response.json();
+		return data.playlistchannels;
+	};
 
 	onMount(async () => {
-		fetch(`/api/playlist/${playlistId}/group/${groupId}/channels`)
-			.then((response) => response.json())
-			.then((data) => {
-				console.log(data);
-				playlistChannels.set(data.playlistchannels);
-			})
-			.catch((error) => {
-				console.log(error);
-				return [];
-			});
+		$playlists[playlistIdx].playlistGroups[groupIdx].playlistChannels = [];
+		const fetchedData = await updatePlaylistChannels();
+        fetchedData.forEach(function (channel: PlaylistChannel) {
+			$playlists[playlistIdx].playlistGroups[groupIdx].playlistChannels.push(channel);
+            $playlists[playlistIdx].playlistGroups[groupIdx].playlistChannels = $playlists[playlistIdx].playlistGroups[groupIdx].playlistChannels
+		});
 	});
 </script>
 
-<table class="playlistChannel table">
-	<thead>
-		<tr>
-			<th>Logo</th>
-			<th>Name</th>
-			<th>tvg-id</th>
-		</tr>
-	</thead>
-	<tbody>
-		{#each $playlistChannels as channel, i}
+
+{#if $playlists[playlistIdx].playlistGroups[groupIdx].playlistChannels != null}
+	<table class="playlistChannel table">
+		<thead>
 			<tr>
-				<td><img class="w-14" src={channel.tvg_logo} alt="Logo" /></td>
-				<td>{channel.name}</td>
-				<td>{channel.tvgid}</td>
+				<th>Logo</th>
+				<th>Name</th>
+				<th>tvg-id</th>
 			</tr>
-		{/each}
-	</tbody>
-</table>
+		</thead>
+		<tbody>
+			{#each $playlists[playlistIdx].playlistGroups[groupIdx].playlistChannels as channel, i}
+				<tr>
+					<td><img class="w-14" src={channel.tvg_logo} alt="Logo" /></td>
+					<td>{channel.name}</td>
+					<td>{channel.tvgid}</td>
+				</tr>
+			{/each}
+		</tbody>
+	</table>
+{:else}
+    <p>No playlist channels found</p>
+{/if}
