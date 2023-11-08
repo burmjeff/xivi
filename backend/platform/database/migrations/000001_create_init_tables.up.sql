@@ -282,11 +282,11 @@ BEGIN
     DELETE FROM epgchannel WHERE id NOT IN (SELECT epg_channel_id FROM epgchannelitem);
 END;
 
-CREATE TRIGGER delete_template_channel_cascade
-AFTER DELETE ON templatechannel
+CREATE TRIGGER delete_template_cascade
+AFTER DELETE ON template
 FOR EACH ROW
 BEGIN
-    DELETE FROM templatechannelvectors WHERE channel_id = old.id;
+    DELETE FROM template_group_item WHERE template_id = old.id;
 END;
 
 CREATE TRIGGER delete_template_group_cascade
@@ -294,6 +294,13 @@ AFTER DELETE ON templategroup
 FOR EACH ROW
 BEGIN
     DELETE FROM template_group_item WHERE group_id = old.id;
+END;
+
+CREATE TRIGGER delete_template_channel_cascade
+AFTER DELETE ON templatechannel
+FOR EACH ROW
+BEGIN
+    DELETE FROM templatechannelvectors WHERE channel_id = old.id;
 END;
 
 CREATE TRIGGER delete_logo_cascade

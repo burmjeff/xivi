@@ -36,7 +36,6 @@ func (m *M3uTools) CreateM3u(template models.Template) {
 		fmt.Println("Error writing file:", err)
 		return
 	}
-
 }
 
 func (m *M3uTools) UpdateTemplate(template *models.Template, oldTemplate string) {
@@ -45,6 +44,14 @@ func (m *M3uTools) UpdateTemplate(template *models.Template, oldTemplate string)
 
 	if err := os.Rename(oldfile, newfile); err != nil {
 		fmt.Println("Error renaming file:", err)
+		return
+	}
+}
+
+func (m *M3uTools) RemoveTemplate(template *models.Template) {
+	file := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, template.Name)
+	if err := os.Remove(file); err != nil {
+		fmt.Println("Error removing file:", err)
 		return
 	}
 }
@@ -81,6 +88,10 @@ func (m *M3uTools) UpdateGroup(template *models.Template, group *models.Template
 	}
 }
 
+func (m *M3uTools) AddChannel(templateChannel *models.TemplateChannel, groupId int64) {
+	//TODO ADD CHANNEL
+}
+
 func (m *M3uTools) UpdateChannel(template *models.Template, channel *models.TemplateChannelLogo, oldChannel *models.TemplateChannel) {
 	// Create a new string variable to hold the filtered content.
 	var filtered string
@@ -100,10 +111,11 @@ func (m *M3uTools) UpdateChannel(template *models.Template, channel *models.Temp
 		return
 	}
 	oldLogoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, GetLogoUrl(logo.Uuid))
+	logoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, channel.Logo)
 
 	// TODO FIX CHANNEL NAME IN M3U
 	filter := fmt.Sprintf("tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\"", oldChannel.Name, oldChannel.TvgID, oldLogoURL)
-	newChannel := fmt.Sprintf("tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\"", channel.Name, channel.TvgID, channel.Logo)
+	newChannel := fmt.Sprintf("tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\"", channel.Name, channel.TvgID, logoURL)
 	lines := strings.Split(string(content), "\n")
 
 	// Loop through each line and check if it contains the group.
@@ -150,6 +162,46 @@ func (m *M3uTools) RemoveGroup(template *models.Template, group *models.Template
 			continue
 		}
 		// If the line does not contain group , append it to the filtered content.
+		filtered += line + "\n"
+	}
+
+	// Write the filtered content back to the original file.
+	if err = os.WriteFile(file, []byte(filtered), 0644); err != nil {
+		fmt.Println("Error writing file:", err)
+		return
+	}
+}
+
+func (m *M3uTools) RemoveChannel(template *models.Template, group *models.TemplateGroup, channel *models.TemplateChannel) {
+	// Create a new string variable to hold the filtered content.
+	var filtered string
+
+	file := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, template.Name)
+
+	// Read the content of the XML file into a byte array.
+	content, err := os.ReadFile(file)
+	if err != nil {
+		log.Error().Msgf("Error reading file: %v", err)
+		return
+	}
+
+	filterGroup := fmt.Sprintf("group-title=\"%s\"", group.Name)
+	filterChannel := fmt.Sprintf("tvg-name=\"%s\"", channel.Name)
+	lines := strings.Split(string(content), "\n")
+
+	// Loop through each line and check if it contains the group & channel.
+	var skipUrl bool
+	for _, line := range lines {
+		if skipUrl {
+			// If the flag is set, skip the next line, the url
+			skipUrl = false
+			continue
+		} else if strings.Contains(line, filterGroup) && strings.Contains(line, filterChannel) {
+			// If the line contains the group, set the flag to skip the next two lines.
+			skipUrl = true
+			continue
+		}
+		// If the line does not contain group & channel , append it to the filtered content.
 		filtered += line + "\n"
 	}
 

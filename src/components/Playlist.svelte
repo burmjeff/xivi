@@ -3,15 +3,17 @@
 <script lang="ts">
     import PlaylistGroup from './PlaylistGroup.svelte';
     import { onMount } from 'svelte';
-    import { Accordion, AccordionItem, popup, type PopupSettings } from '@skeletonlabs/skeleton';
+    import { Accordion, AccordionItem, popup, getModalStore, type ModalSettings, type PopupSettings } from '@skeletonlabs/skeleton';
     import { playlists } from '@xivi/stores/playlist_store';
     import {flip} from 'svelte/animate';
     import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
     import type { Playlist } from '@xivi/data/playlist_entities';
     import {fade} from 'svelte/transition';
     import {cubicIn} from 'svelte/easing';
+    import IconParkOutlineDelete from '~icons/icon-park-outline/delete';
 
     let shouldIgnoreDndEvents = false;
+    const modalStore = getModalStore();
 
     const updatePlaylists = async () => {
         const response = await fetch('/api/playlists');
@@ -20,9 +22,8 @@
     }
   
     onMount(async () => {
-        const fetchedData = await updatePlaylists();
-        playlists.set(fetchedData);
-        });
+        playlists.set(await updatePlaylists());
+    });
 
     let playlistSettings: PopupSettings = {
         // Set the event as: click | hover | hover-click
@@ -51,15 +52,43 @@
                 });
                 const data = await response.json();
                 console.log('Created playlist:', data);
-                playlists.set(data.playlists);
+                $playlists.push(data.playlists);
             } catch (error) {
                 console.log('Error creating playlist:', error);
-                return [];
             }
         }
     }
 
+    function deletePrompt(playlistId: number): void {
+		const modal: ModalSettings = {
+			type: 'confirm',
+            title: 'Please Confirm',
+            body: 'Are you sure you wish to delete this playlist?',
+            // TRUE if confirm pressed, FALSE if cancel pressed
+            response: (r: boolean) => {
+				if (r) deletePlaylist(playlistId);
+			},
+		};
+		modalStore.trigger(modal);
+	}
+    
+    async function deletePlaylist(playlistId: number) {
+		try {
+			const response = await fetch(`/api/playlist/${playlistId}`, {
+				method: 'DELETE'
+			});
+			const data = await response.status;
+			console.log('Deleted template playlist:', data);
+			$playlists = $playlists.filter(t => t.id != playlistId)
+			modalStore.close();
+		} catch (error) {
+			console.log('Error deleting template playlist:', error);
+			return;
+		}
+	}
+
     const flipDurationMs = 300;
+    const dropFromOthersDisabled = true;
     function handleDndConsider(e: CustomEvent<DndEvent<Playlist>>) {
         console.warn(`got consider ${JSON.stringify(e.detail, null, 2)}`);
         const {trigger, id} = e.detail.info;
@@ -97,16 +126,21 @@
         <h3 class="h3 font-bold">Playlists</h3>
         <button class="btn btn-sm variant-ringed-primary" use:popup={playlistSettings}>+ add new</button>
     </header>
-    <div class="playlists-viewport flex-none min-w-full overflow-hidden lg:overflow-auto max-h-[42rem]">
+    <div class="playlists-viewport flex-none min-w-full overflow-auto max-h-[42rem]">
         {#if $playlists.length > 0}
             <Accordion>
-                <section use:dndzone={{items: $playlists, flipDurationMs}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
-                    {#each $playlists as playlist(playlist.id)}
+                <section use:dndzone={{items: $playlists, flipDurationMs, dropFromOthersDisabled}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
+                    {#each $playlists as playlist, index (playlist.id)}
                         <div id="div1" animate:flip={{duration: flipDurationMs}}>
                             <AccordionItem key={playlist.id}>
-                                <svelte:fragment slot="summary"><h4>{playlist.name}</h4></svelte:fragment>
+                                <svelte:fragment slot="summary">
+                                    <div class="flex flex-row">
+                                        <h4>{playlist.name}</h4>
+                                        <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => deletePrompt(playlist.id)}><i><IconParkOutlineDelete/></i></button>
+                                    </div>
+                                </svelte:fragment>
                                 <svelte:fragment slot="content">
-                                    <PlaylistGroup playlistId={playlist.id} />
+                                    <PlaylistGroup playlistId={playlist.id} playlistIdx={index} />
                                 </svelte:fragment>
                             </AccordionItem>
                             {#if playlist[SHADOW_ITEM_MARKER_PROPERTY_NAME]}

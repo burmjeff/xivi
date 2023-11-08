@@ -15,29 +15,37 @@ func PublicRoutes(a *fiber.App) {
 	api := a.Group("/api")
 	router := a.Group("/")
 
-	// Playlist Routes:
+	// Playlist Routes
 	api.Get("/token/new", controllers.GetNewAccessToken)                                             // create a new access tokens
 	api.Get("/playlists", controllers.GetPlaylists)                                                  // get list of all playlists
-	api.Get("/playlist/:id", controllers.GetPlaylist)                                                // get one playlist by ID
+	api.Get("/playlist/:id", controllers.GetPlaylist)                                                // get a playlist by ID
 	api.Get("/playlist/:id/groups", controllers.GetPlaylistGroups)                                   // get groups by playlist_id
 	api.Get("/playlist/:playlist_id/group/:group_id/channels", controllers.GetPlaylistGroupChannels) // get channels by playlist and group
 	api.Post("/playlist", controllers.CreatePlaylist)                                                // create a new playlist
 	api.Post("/playlist/:playlist_id/group/:group_id/convert", controllers.ConvertPlaylistGroup)     // convert playlistgroup
+	api.Delete("/playlist/:playlist_id", controllers.DeletePlaylist)                                 // delete playlist by ID
 
 	// Template Routes
-	api.Get("/templates", controllers.GetTemplates)                                                // get all templates
-	api.Get("/template/:template_id", controllers.GetTemplate)                                     // get one template by ID
+	api.Get("/templates", controllers.GetTemplates)                  // get all templates
+	api.Get("/template/:template_id", controllers.GetTemplate)       // get a template by ID
+	api.Post("/template", controllers.CreateTemplate)                // create a new template
+	api.Put("/template", controllers.UpdateTemplate)                 // update a template
+	api.Delete("/template/:template_id", controllers.DeleteTemplate) // delete a template by ID
+
+	// Template Group Routes
 	api.Get("/template/:template_id/groups", controllers.GetTemplateGroups)                        // get groups by template_id
 	api.Get("/template/groups/all", controllers.GetGroups)                                         // get all template groups
 	api.Get("/template/group/:group_id/channels", controllers.GetTemplateGroupChannels)            // get channels by template and group
-	api.Post("/template", controllers.CreateTemplate)                                              // create a new template
-	api.Put("/template", controllers.UpdateTemplate)                                               // update one template
 	api.Post("/template/group", controllers.CreateTemplateGroup)                                   // create a new template group
-	api.Post("/template/:template_id/group/:group_id/item", controllers.CreateTemplateGroupItem)   // create one templategroupitem by ID
-	api.Put("/template/group", controllers.UpdateTemplateGroup)                                    // update one template group
-	api.Put("/template/channel", controllers.UpdateTemplateChannel)                                // update one template channel
-	api.Delete("/template/:template_id/group/:group_id/item", controllers.DeleteTemplateGroupItem) // delete one templategroupitem by ID
-	api.Delete("/template/group/:group_id", controllers.DeleteTemplateGroup)                       // delete one template group by ID
+	api.Post("/template/:template_id/group/:group_id/item", controllers.CreateTemplateGroupItem)   // create a templategroupitem by ID
+	api.Put("/template/group", controllers.UpdateTemplateGroup)                                    // update a template group
+	api.Delete("/template/:template_id/group/:group_id/item", controllers.DeleteTemplateGroupItem) // delete a templategroupitem by ID
+	api.Delete("/template/group/:group_id", controllers.DeleteTemplateGroup)                       // delete a template group by ID
+
+	// Template Channel Routes
+	api.Post("/template/group/:group_id/channel", controllers.CreateTemplateChannel) // Create a template channel
+	api.Put("/template/channel", controllers.UpdateTemplateChannel)                  // update a template channel
+	api.Delete("/template/channel/:channel_id", controllers.DeleteTemplateChannel)   // Delete a template channel
 
 	//M3U Routes
 	api.Post("/m3u/:id", controllers.CreateM3U) // create m3u from template id
@@ -48,9 +56,9 @@ func PublicRoutes(a *fiber.App) {
 
 	// Logo Routes
 	api.Get("/logos", controllers.GetLogos)             // get list of all logos
-	api.Get("/logo/:logoid", controllers.GetLogo)       // get one logo by ID
+	api.Get("/logo/:logoid", controllers.GetLogo)       // get a logo by ID
 	api.Post("/logo", controllers.UploadLogo)           // create a new logo
-	api.Delete("/logo/:logoid", controllers.DeleteLogo) // delete one logo by ID
+	api.Delete("/logo/:logoid", controllers.DeleteLogo) // delete a logo by ID
 
 	// Settings Routes
 	api.Get("/settings", controllers.GetSettings)    // get settings

@@ -22,13 +22,13 @@
   </script>
 
   <Accordion class="object-fit: contain overflow-auto">
-    {#each $templateGroups as group}
+    {#each $templateGroups as group, groupIdx (group.id)}
         <section class="items-start space-x-4 ">
             <AccordionItem>
                 <svelte:fragment slot="lead">{group.id}</svelte:fragment>
                 <svelte:fragment slot="summary"><h3>{group.name}</h3></svelte:fragment>
                 <svelte:fragment slot="content">
-                <TemplateChannel groupId={group.id} />
+                <TemplateChannel groupId={group.id} groupIdx={groupIdx} />
                 </svelte:fragment>
             </AccordionItem>
         </section>

@@ -50,23 +50,25 @@ func (q *TemplateQueries) GetTemplate(id int64) (models.Template, error) {
 }
 
 // CreateTemplate method for creating a template by given Template object.
-func (q *TemplateQueries) CreateTemplate(p *models.Template) error {
+func (q *TemplateQueries) CreateTemplate(p *models.Template) (int64, error) {
 	// Define query string.
 	query := `INSERT INTO template VALUES (null, $1)`
 
 	// Send query to database.
-	_, err := q.Exec(query, p.Name)
+	res, err := q.Exec(query, p.Name)
 	if err != nil {
 		// Return only error.
-		return err
+		return 0, err
 	}
 
+	id, err := res.LastInsertId()
 	if err != nil {
 		log.Warn().Msgf("Error retrieving the ID: %v", err)
+		return 0, err
 	}
 
 	// This query returns nothing.
-	return nil
+	return id, nil
 }
 
 // UpdateTemplate method for updating template by given Template object.

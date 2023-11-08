@@ -5,6 +5,7 @@
     import { Accordion, AccordionItem, popup, getModalStore, type PopupSettings, type ModalSettings } from '@skeletonlabs/skeleton';
     import { templates } from '@xivi/stores/template_store';
     import IconParkOutlineEditTwo from '~icons/icon-park-outline/edit-two'
+    import IconParkOutlineDelete from '~icons/icon-park-outline/delete';
 
     const modalStore = getModalStore();
 
@@ -38,10 +39,10 @@
                 });
                 const data = await response.json();
                 console.log('Created template', data);
-                templates.set(data.templates);
+                $templates.push(data.template);
+                $templates = $templates;
             } catch (error) {
                 console.log('Error creating template:', error);
-                return [];
             }
         }
     }
@@ -83,10 +84,38 @@
                 }
             } catch (error) {
                 console.log('Error updating template:', error);
-                return [];
             }
         }
     }
+
+    function deletePrompt(templateId: number) {
+		const modal: ModalSettings = {
+			type: 'confirm',
+            title: 'Please Confirm',
+            body: 'Are you sure you wish to delete this template?',
+            // TRUE if confirm pressed, FALSE if cancel pressed
+            response: (r: boolean) => {
+				if (r) deleteTemplate(templateId);
+			},
+		};
+		modalStore.trigger(modal);
+	}
+    
+    //TODO COLLAPSE ACCORDIION ITEM BEFORE DELETE
+    async function deleteTemplate(templateId: number) {
+		try {
+			const response = await fetch(`/api/template/${templateId}`, {
+				method: 'DELETE'
+			});
+			const data = await response.status;
+			console.log('Deleted template:', data);
+			$templates = $templates.filter(t => t.id != templateId)
+			modalStore.close();
+		} catch (error) {
+			console.log('Error deleting template:', error);
+			return;
+		}
+	}
 </script>
 
 <section class="templates card card-hover p-1">
@@ -103,6 +132,7 @@
                             <div class="flex flex-row">
                                 <h4>{template.name}</h4>
                                 <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => renamePrompt(template.name, template.id)}><i><IconParkOutlineEditTwo/></i></button>
+                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => deletePrompt(template.id)}><i><IconParkOutlineDelete/></i></button>
                             </div>
                         </svelte:fragment>
                         <svelte:fragment slot="content">
