@@ -74,7 +74,7 @@ CREATE TABLE templategroup (
 CREATE TABLE templatechannel (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR (255) UNIQUE NOT NULL,
-    tvgid VARCHAR (255) UNIQUE NULL,
+    tvgid VARCHAR (255) NULL,
     logoid INTEGER NULL,
     uuid VARCHAR (255) UNIQUE NOT NULL,
     FOREIGN KEY (logoid) REFERENCES logo(id)

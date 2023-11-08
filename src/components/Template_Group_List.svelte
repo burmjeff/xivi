@@ -91,7 +91,6 @@
                 }
             } catch (error) {
                 console.log('Error updating template group:', error);
-                return [];
             }
         }
     }
