@@ -13,7 +13,13 @@
     import IconParkOutlineDelete from '~icons/icon-park-outline/delete';
     import IconParkOutlineAdd from '~icons/icon-park-outline/add';
 
+    let dndTypePlaylist = "playlist";
+    let dndTypeTemplate = "template";
     let shouldIgnoreDndEvents = false;
+    const flipDurationMs = 150;
+    let dndItem: TemplateGroup;
+	let dndIdx: number
+
     const modalStore = getModalStore();
 
     const updateTemplateGroups = async () => {
@@ -96,6 +102,7 @@
     }
 
     function deletePrompt(groupId: number): void {
+        $templateGroups = [...$templateGroups]
 		const modal: ModalSettings = {
 			type: 'confirm',
             title: 'Please Confirm',
@@ -171,71 +178,125 @@
 		});
 	}
 
-    const flipDurationMs = 300;
+    function convertPrompt(groupId: number): void {
+		const prompt: ModalSettings = {
+			type: 'prompt',
+			title: 'Convert Playlist Group to Template Group',
+			body: 'Enter new template group name in field below.',
+			value: 'Example Template',
+			valueAttr: { type: 'text', minlength: 1, maxlength: 20, required: true },
+			response: (groupName: string) => {
+				if (groupName) convertGroup(groupName, groupId);
+			},
+			buttonTextCancel: 'Cancel',
+			buttonTextSubmit: 'Submit'
+		};
+		modalStore.trigger(prompt);
+	}
+
+	async function convertGroup(groupName: string, groupId: number) {
+		if (groupName !== '') {
+			const newGroup = {
+				name: groupName
+			};
+			try {
+				const response = await fetch(`/api/playlist/group/${groupId}/convert`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify(newGroup)
+				});
+				const data = await response.json();
+				console.log('Created template group:', data);
+				$templateGroups.push(data.templategroup)
+                $templateGroups = [...$templateGroups]
+			} catch (error) {
+				console.log('Error creating template group:', error);
+			}
+		}
+	}
+
     function handleDndConsider(e: CustomEvent<DndEvent<TemplateGroup>>) {
-        console.warn(`got consider ${JSON.stringify(e.detail, null, 2)}`);
-        const {trigger, id} = e.detail.info;
-        if (trigger === TRIGGERS.DRAG_STARTED) {
-            console.warn(`copying ${id}`);
-            const idx = $templateGroups.findIndex(item => item.id === Number(id));
-            const newId = `${id}_copy_${Math.round(Math.random()*100000)}`;
-						// the line below was added in order to be compatible with version svelte-dnd-action 0.7.4 and above 
-					  e.detail.items = e.detail.items.filter(item => !item[SHADOW_ITEM_MARKER_PROPERTY_NAME]);
-            e.detail.items.splice(idx, 0, {...$templateGroups[idx], id: Number(newId)});
-            $templateGroups = e.detail.items;
-            shouldIgnoreDndEvents = true;
+		const {trigger, id} = e.detail.info;
+		e.detail.items.sort((itemA, itemB) => itemA.id - itemB.id);
+		
+		if (trigger === TRIGGERS.DRAG_STARTED) {
+			dndIdx = $templateGroups.findIndex(item => item.id === Number(id));
+			dndItem =  $templateGroups[dndIdx];
+			$templateGroups = e.detail.items
+			shouldIgnoreDndEvents = true;
+		}
+        else if (trigger === TRIGGERS.DRAGGED_LEFT && !shouldIgnoreDndEvents) {
+            $templateGroups = $templateGroups.filter(item => !item[SHADOW_ITEM_MARKER_PROPERTY_NAME]);
+            $templateGroups.pop
+            $templateGroups = [...$templateGroups]
+        }
+		else if (trigger === TRIGGERS.DRAGGED_ENTERED && !shouldIgnoreDndEvents) {
+            
+            dndIdx = e.detail.items.findIndex(item => item.id === Number(id));
+            $templateGroups.push(e.detail.items[dndIdx])
+            $templateGroups = [...$templateGroups]
+        }
+        else if (!shouldIgnoreDndEvents){
+            //$templateGroups = [...$templateGroups]
+        }
+        else {
+            $templateGroups = [...$templateGroups]
+        }
+	}
+	function handleDndFinalize(e: CustomEvent<DndEvent<TemplateGroup>>) {
+		const {trigger, id} = e.detail.info;
+        if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreDndEvents) {
+            convertPrompt(Number(id))
+            //$templateGroups = e.detail.items
+            shouldIgnoreDndEvents = false;
         }
         else if (!shouldIgnoreDndEvents) {
-            $templateGroups = e.detail.items;
+            $templateGroups = e.detail.items
         }
-        else {
-            $templateGroups = [...$templateGroups];
-        }
-    }
-    function handleDndFinalize(e: CustomEvent<DndEvent<TemplateGroup>>) {
-        console.warn(`got finalize ${JSON.stringify(e.detail, null, 2)}`);
-        if (!shouldIgnoreDndEvents) {
-            $templateGroups = e.detail.items;
-        }
-        else {
-            $templateGroups = [...$templateGroups];
+        else if (trigger === TRIGGERS.DROPPED_INTO_ANOTHER){
+			e.detail.items = e.detail.items.filter(item => !item[SHADOW_ITEM_MARKER_PROPERTY_NAME]);
+			e.detail.items.splice(dndIdx,0, dndItem)
+            $templateGroups = e.detail.items
+            shouldIgnoreDndEvents = false;
+        } else {
+            $templateGroups = e.detail.items
             shouldIgnoreDndEvents = false;
         }
     }
 </script>
 
-<section class="tmplgroups card card-hover p-1">
+<section class="tmplgroups flex-none card card-hover p-1 h-screen" >
     <header class="tmplgroups-header flex justify-center items-center space-x-4">
         <h3 class="h3 font-bold">Groups</h3>
         <button class="btn btn-sm variant-ringed-primary" use:popup={templateGroupSettings}>+ add new</button>
     </header>
-    <div class="tmplgroups-viewport flex-none min-w-full overflow-hidden lg:overflow-auto max-h-[42rem]">
+    <div class="tmplgroups-viewport flex-none min-w-full overflow-hidden lg:overflow-auto max-h-[42rem]" use:dndzone={{items: $templateGroups, flipDurationMs, type: dndTypePlaylist}} use:dndzone={{items: $templateGroups, flipDurationMs, type: dndTypeTemplate}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
         {#if $templateGroups.length > 0}
-                    <Accordion>
-                        <section use:dndzone={{items: $templateGroups, flipDurationMs}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
-                            {#each $templateGroups as group, groupIdx (group.id)}
-                                <div id="div1" animate:flip={{duration: flipDurationMs}}>
-                                    <AccordionItem key={group.id}>
-                                        <svelte:fragment slot="summary">
-                                            <div class="flex flex-row">
-                                                <h4>{group.name}</h4>
-                                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => renamePrompt(groupIdx, group.name, group.id)}><i><IconParkOutlineEditTwo/></i></button>
-                                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => deletePrompt(group.id)}><i><IconParkOutlineDelete/></i></button>
-                                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => modalAdd(group.id, groupIdx)}><i><IconParkOutlineAdd/></i></button>
-                                            </div>
-                                        </svelte:fragment>
-                                        <svelte:fragment slot="content">
-                                            <TemplateChannel groupId={group.id} groupIdx={groupIdx} />
-                                        </svelte:fragment>
-                                    </AccordionItem>
-                                    
-                                    {#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-                                        <div in:fade={{duration:200, easing: cubicIn}} class='custom-shadow-item'>{group.name}</div>
-                                    {/if}
+            <Accordion>
+                {#each $templateGroups as group, groupIdx (groupIdx)}
+                    <div id="div1" animate:flip={{duration: flipDurationMs}}>
+                        <AccordionItem class="aitem" key={groupIdx} bind:open={group.itemOpen}>
+                            <svelte:fragment slot="summary">
+                                <div class="flex flex-row">
+                                    <h4>{group.name}</h4>
+                                    <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => {group.itemOpen = true, renamePrompt(groupIdx, group.name, group.id)}}><i><IconParkOutlineEditTwo/></i></button>
+                                    <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => {group.itemOpen = true, deletePrompt(group.id)}}><i><IconParkOutlineDelete/></i></button>
+                                    <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => modalAdd(group.id, groupIdx)}><i><IconParkOutlineAdd/></i></button>
                                 </div>
-                            {/each}
-                        </section>
-                    </Accordion>
+                            </svelte:fragment>
+                            <svelte:fragment slot="content">
+                                <TemplateChannel groupId={group.id} groupIdx={groupIdx} />
+                            </svelte:fragment>
+                        </AccordionItem>
+                        
+                        {#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+                            <div in:fade={{duration:200, easing: cubicIn}} class='custom-shadow-item'>{group.name}</div>
+                        {/if}
+                    </div>
+                {/each}
+            </Accordion>
         {:else}
             <p>No groups found</p>
         {/if}

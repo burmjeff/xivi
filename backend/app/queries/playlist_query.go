@@ -122,7 +122,7 @@ func (q *PlaylistQueries) ChannelUrlExists(playlistID int64, plChannelID int64) 
 }
 
 // Get Playlist Groups method
-func (q *PlaylistQueries) GetPlGroups(item *models.PlaylistGroupItem) ([]models.PlaylistGroup, error) {
+func (q *PlaylistQueries) GetPlGroups(playlistId int64) ([]models.PlaylistGroup, error) {
 	playlistgroup := []models.PlaylistGroup{}
 
 	// Define query string.
@@ -131,7 +131,7 @@ func (q *PlaylistQueries) GetPlGroups(item *models.PlaylistGroupItem) ([]models.
 	WHERE playlist_group_item.playlist_id = ?;`
 
 	// Send query to database.
-	err := q.Select(&playlistgroup, query, item.PlaylistId)
+	err := q.Select(&playlistgroup, query, playlistId)
 	if err != nil {
 		// Return empty object and error.
 		return playlistgroup, err
@@ -233,12 +233,12 @@ func (q *PlaylistQueries) DeletePlGroup(id int64) error {
 }
 
 // Create Playlist Group method for creating group by given Playlist Group object.
-func (q *PlaylistQueries) CreatePlGroupItem(p *models.PlaylistGroupItem) (int64, error) {
+func (q *PlaylistQueries) CreatePlGroupItem(playlistId int64, groupId int64) (int64, error) {
 	// Define query string.
 	query := `INSERT INTO playlist_group_item VALUES (?, ?)`
 
 	// Send query to database.
-	res, err := q.Exec(query, p.PlaylistId, p.GroupId)
+	res, err := q.Exec(query, playlistId, groupId)
 	if err != nil {
 		// Return only error.
 		return 0, err
@@ -254,7 +254,7 @@ func (q *PlaylistQueries) CreatePlGroupItem(p *models.PlaylistGroupItem) (int64,
 }
 
 // Get Playlist Group Items method for getting Playlist Group Items.
-func (q *PlaylistQueries) GetPlChannels(item *models.PlaylistGroupChannel) ([]models.PlaylistChannel, error) {
+func (q *PlaylistQueries) GetPlChannels(playlistId int64) ([]models.PlaylistChannel, error) {
 	// Define playlist variable.
 	channels := []models.PlaylistChannel{}
 
@@ -262,10 +262,12 @@ func (q *PlaylistQueries) GetPlChannels(item *models.PlaylistGroupChannel) ([]mo
 	query := `SELECT playlistchannel.*
 	FROM playlistchannel
 	JOIN playlist_group_channel ON playlistchannel.id = playlist_group_channel.channel_id
-	WHERE playlist_group_channel.playlist_id = ? AND playlist_group_channel.group_id = ?;`
+	AND playlist_group_channel.group_id = playlist_group_item.group_id
+	JOIN playlist_group_item ON playlist_group_channel.group_id = playlist_group_item.group_id
+	WHERE playlist_group_item.playlist_id = ?;`
 
 	// Send query to database.
-	err := q.Select(&channels, query, item.PlaylistId, item.GroupId)
+	err := q.Select(&channels, query, playlistId)
 	if err != nil {
 		// Return empty object and error.
 		return channels, err
@@ -276,12 +278,12 @@ func (q *PlaylistQueries) GetPlChannels(item *models.PlaylistGroupChannel) ([]mo
 }
 
 // Create Playlist Group method for creating group by given Playlist Group object.
-func (q *PlaylistQueries) CreatePlGroupChannel(p *models.PlaylistGroupChannel) (int64, error) {
+func (q *PlaylistQueries) CreatePlGroupChannel(groupId int64, channelId int64) (int64, error) {
 	// Define query string.
-	query := `INSERT INTO playlist_group_channel VALUES (?, ?, ?)`
+	query := `INSERT INTO playlist_group_channel VALUES (?, ?)`
 
 	// Send query to database.
-	res, err := q.Exec(query, p.PlaylistId, p.GroupId, p.ChannelId)
+	res, err := q.Exec(query, groupId, channelId)
 	if err != nil {
 		// Return only error.
 		return 0, err
@@ -319,16 +321,16 @@ func (q *PlaylistQueries) GetChannelsByPl(id int64) ([]models.PlaylistChannel, e
 }
 
 // GetChannels method for getting all channels by Playlist Group.
-func (q *PlaylistQueries) GetPlGroupChannels(plGroupItem models.PlaylistGroupItem) ([]models.PlaylistChannel, error) {
+func (q *PlaylistQueries) GetPlGroupChannels(groupId int64) ([]models.PlaylistChannel, error) {
 	channels := []models.PlaylistChannel{}
 
 	// Define query string.
 	query := `SELECT playlistchannel.* FROM playlistchannel
 	JOIN playlist_group_channel ON playlistchannel.id = playlist_group_channel.channel_id
-	WHERE playlist_group_channel.playlist_id = ? AND playlist_group_channel.group_id = ?;`
+	WHERE playlist_group_channel.group_id = ?;`
 
 	// Send query to database.
-	err := q.Select(&channels, query, plGroupItem.PlaylistId, plGroupItem.GroupId)
+	err := q.Select(&channels, query, groupId)
 	if err != nil {
 		// Return empty object and error.
 		log.Err(err)

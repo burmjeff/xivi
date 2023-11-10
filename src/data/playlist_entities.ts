@@ -2,6 +2,7 @@ export interface Playlist {
 	id: number;
 	name: string;
 	isDndShadowItem: boolean;
+	itemOpen: boolean;
 	playlistGroups: PlaylistGroup[];
 }
 

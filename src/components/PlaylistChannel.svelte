@@ -4,13 +4,12 @@
 	import { playlists } from '@xivi/stores/playlist_store';
 	import type { PlaylistChannel } from '@xivi/data/playlist_entities';
 
-	export let playlistId: number;
 	export let playlistIdx: number;
 	export let groupId: number;
 	export let groupIdx: number;
 
 	const updatePlaylistChannels = async () => {
-		const response = await fetch(`/api/playlist/${playlistId}/group/${groupId}/channels`);
+		const response = await fetch(`/api/playlist/group/${groupId}/channels`);
 		const data = await response.json();
 		return data.playlistchannels;
 	};
