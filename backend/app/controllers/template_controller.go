@@ -319,8 +319,7 @@ func GetTemplateGroups(c *fiber.Ctx) error {
 	}
 
 	// Get Template groups by Template.
-	templateGroupItem := &models.TemplateGroupItem{TemplateId: template_id}
-	groups, err := db.GetTmplGroups(templateGroupItem)
+	groups, err := db.GetTmplGroups(template_id)
 	if err != nil {
 		// Return, if template not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -380,7 +379,6 @@ func GetGroups(c *fiber.Ctx) error {
 // @Description Get template channels by given group ID
 // @Summary get template channels by given group ID
 // @Tags Template Group
-// @Accept json
 // @Produce json
 // @Param group_id path string true "Group ID"
 // @Success 200 {array} models.TemplateChannel
@@ -406,8 +404,7 @@ func GetTemplateGroupChannels(c *fiber.Ctx) error {
 	}
 
 	// Get Template channels by group.
-	templateGroupChannel := &models.TemplateGroupChannel{GroupId: group_id}
-	channels, err := db.GetTmplChannelsByGroup(templateGroupChannel)
+	channels, err := db.GetTmplChannelsByGroup(group_id)
 	if err != nil {
 		// Return, if template not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{

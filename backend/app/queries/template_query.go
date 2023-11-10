@@ -142,8 +142,8 @@ func (q *TemplateQueries) GetAllTmplGroups() ([]models.TemplateGroup, error) {
 	return templategroup, nil
 }
 
-// GetGroups method
-func (q *TemplateQueries) GetTmplGroups(item *models.TemplateGroupItem) ([]models.TemplateGroup, error) {
+// GetTemplateGroups by template id
+func (q *TemplateQueries) GetTmplGroups(templateId int64) ([]models.TemplateGroup, error) {
 	templategroup := []models.TemplateGroup{}
 
 	// Define query string.
@@ -153,7 +153,7 @@ func (q *TemplateQueries) GetTmplGroups(item *models.TemplateGroupItem) ([]model
 	ORDER BY template_group_item.orderr ASC`
 
 	// Send query to database.
-	err := q.Select(&templategroup, query, item.TemplateId)
+	err := q.Select(&templategroup, query, templateId)
 	if err != nil {
 		// Return empty object and error.
 		return templategroup, err
@@ -314,7 +314,7 @@ func (q *TemplateQueries) GetTmplGroupChannelsByTmpl(template_id int64) ([]model
 }
 
 // GetChannel method for getting one group by given Name.
-func (q *TemplateQueries) GetTmplChannelsByGroup(item *models.TemplateGroupChannel) ([]models.TemplateChannel, error) {
+func (q *TemplateQueries) GetTmplChannelsByGroup(groupId int64) ([]models.TemplateChannel, error) {
 	// Define group variable.
 	tmplChannels := []models.TemplateChannel{}
 
@@ -325,7 +325,7 @@ func (q *TemplateQueries) GetTmplChannelsByGroup(item *models.TemplateGroupChann
 		ORDER BY template_group_channel.orderr ASC`
 
 	// Send query to database.
-	err := q.Select(&tmplChannels, query, item.GroupId)
+	err := q.Select(&tmplChannels, query, groupId)
 	if err != nil {
 		// Return empty object and error.
 		return tmplChannels, err

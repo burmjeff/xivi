@@ -50,11 +50,10 @@ CREATE TABLE playlist_group_item (
 
 -- Create playlist_group_channel table
 CREATE TABLE playlist_group_channel (
-    playlist_id INTEGER NOT NULL,
     group_id INTEGER NULL,
     channel_id INTEGER NOT NULL,
-    PRIMARY KEY (playlist_id, group_id, channel_id),
-    FOREIGN KEY (playlist_id, group_id) REFERENCES playlist_group_item(playlist_id, group_id) ON DELETE CASCADE,
+    PRIMARY KEY (group_id, channel_id),
+    FOREIGN KEY (group_id) REFERENCES playlistgroup(id) ON DELETE CASCADE,
     FOREIGN KEY (channel_id) REFERENCES playlistchannel(id) ON DELETE CASCADE
 );
 
@@ -73,7 +72,7 @@ CREATE TABLE templategroup (
 -- Create templatechannel table
 CREATE TABLE templatechannel (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR (255) UNIQUE NOT NULL,
+    name VARCHAR (255) NOT NULL,
     tvgid VARCHAR (255) NULL,
     logoid INTEGER NULL,
     uuid VARCHAR (255) UNIQUE NOT NULL,
@@ -294,6 +293,8 @@ AFTER DELETE ON templategroup
 FOR EACH ROW
 BEGIN
     DELETE FROM template_group_item WHERE group_id = old.id;
+    DELETE FROM template_group_channel WHERE group_id = old.id;
+    DELETE FROM templatechannel WHERE id NOT IN (SELECT channel_id FROM template_group_channel);
 END;
 
 CREATE TRIGGER delete_template_channel_cascade
@@ -301,6 +302,8 @@ AFTER DELETE ON templatechannel
 FOR EACH ROW
 BEGIN
     DELETE FROM templatechannelvectors WHERE channel_id = old.id;
+    DELETE FROM template_group_channel WHERE channel_id = old.id;
+    DELETE FROM templatechannelitem WHERE channel_id = old.id;
 END;
 
 CREATE TRIGGER delete_logo_cascade

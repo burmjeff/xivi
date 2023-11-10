@@ -21,7 +21,7 @@
     
   </script>
 
-  <Accordion class="object-fit: contain overflow-auto">
+<Accordion class="object-fit: contain overflow-auto" type='asd'>
     {#each $templateGroups as group, groupIdx (group.id)}
         <section class="items-start space-x-4 ">
             <AccordionItem>

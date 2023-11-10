@@ -6,9 +6,7 @@
 	import IconParkOutlineDelete from '~icons/icon-park-outline/delete';
 	import type { SvelteComponent } from 'svelte';
 	import { getModalStore, FileButton } from '@skeletonlabs/skeleton';
-	import type { Logo } from '@xivi/data/logo_entities';
 	import xivi from '$lib/assets/xivi.png';
-	import type { promises } from 'dns';
 
 	export let parent: SvelteComponent;
 	const modalStore = getModalStore();

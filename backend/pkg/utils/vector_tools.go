@@ -54,7 +54,6 @@ func VectorizeString(text string) ([]float64, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer tasks.Finalize(m)
 
 	fn, err := m.Encode(context.Background(), text, int(bert.MeanPooling))
 	if err != nil {
