@@ -5,10 +5,19 @@
 	import type { TemplateChannel } from '@xivi/data/template_entities';
 	import type { ModalSettings } from '@skeletonlabs/skeleton';
 	import { getModalStore } from '@skeletonlabs/skeleton';
+	import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME, DRAGGED_ELEMENT_ID } from 'svelte-dnd-action';
+	import { flip } from 'svelte/animate';
+	import { fade } from 'svelte/transition';
+	import { cubicIn } from 'svelte/easing';
 
-	export let groupId: number;
+	export let groupId: string;
 	export let groupIdx: number;
 	const modalStore = getModalStore();
+	let dndTypeTemplateChannel = "templateChannel";
+	let dndItem: TemplateChannel;
+	let dndIdx: number
+	let shouldIgnoreDndEvents = false;
+	const flipDurationMs = 100;
 
 	const updateTemplateChannels = async () => {
 		const response = await fetch(`/api/template/group/${groupId}/channels`);
@@ -19,10 +28,12 @@
 	onMount(async () => {
 		$templateGroups[groupIdx].channels = [];
 		const fetchedData = await updateTemplateChannels();
-        fetchedData.forEach(function (channel: TemplateChannel) {
-			$templateGroups[groupIdx].channels.push(channel);
-            $templateGroups[groupIdx].channels = $templateGroups[groupIdx].channels
-		});
+		if (fetchedData.hasOwnProperty(0)) {
+			fetchedData.forEach(function (channel: TemplateChannel) {
+				$templateGroups[groupIdx].channels.push(channel);
+				$templateGroups[groupIdx].channels = $templateGroups[groupIdx].channels
+			});
+		}
 	});
 
 	async function updateSettings(channelIdx: number, formData: any) {
@@ -34,7 +45,9 @@
 				tvgid: formData.tvgid,
 				logoid: formData.logoid,
 				uuid: $templateGroups[groupIdx].channels[channelIdx].uuid,
-				logo: formData.logo
+				logo: formData.logo,
+				isDndShadowItem: false,
+				isDragged: false
 			};
 			window.console.log('TemplateChannel: ', newSettings);
 
@@ -76,11 +89,53 @@
 			if (r) {updateSettings(channelIdx, r)};
 		});
 	}
+
+	function handleDndConsider(e: CustomEvent<DndEvent<TemplateChannel>>) {
+		const {trigger, id} = e.detail.info;
+		//e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
+
+		if (trigger === TRIGGERS.DRAG_STARTED) {
+			dndIdx = $templateGroups[groupIdx].channels.findIndex(item => item.id === id);
+			dndItem =  $templateGroups[groupIdx].channels[dndIdx];
+			$templateGroups[groupIdx].channels = e.detail.items
+			shouldIgnoreDndEvents = true;
+		}
+        else if (!shouldIgnoreDndEvents) {
+            $templateGroups[groupIdx].channels = e.detail.items;
+        }
+        else {
+            $templateGroups[groupIdx].channels = e.detail.items;
+        }
+	}
+	function handleDndFinalize(e: CustomEvent<DndEvent<TemplateChannel>>) {
+		const {trigger, id} = e.detail.info;
+        if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreDndEvents) {
+            console.log(e.detail.items)
+            e.detail.items = e.detail.items.filter(item => !item.isDragged);
+            $templateGroups[groupIdx].channels = e.detail.items
+            //convertPrompt(id)
+            shouldIgnoreDndEvents = false;
+        }
+        else if (!shouldIgnoreDndEvents) {
+            $templateGroups[groupIdx].channels = e.detail.items
+        }
+        else if (trigger === TRIGGERS.DROPPED_INTO_ANOTHER){
+			e.detail.items = e.detail.items.filter(item => !item[SHADOW_ITEM_MARKER_PROPERTY_NAME]);
+			e.detail.items.splice(dndIdx,0, dndItem)
+            $templateGroups[groupIdx].channels = e.detail.items
+            shouldIgnoreDndEvents = false;
+        } else {
+            $templateGroups[groupIdx].channels = e.detail.items
+            shouldIgnoreDndEvents = false;
+        }
+    }
+    function transformDraggedElement(draggedEl: HTMLElement | undefined, data: Item | undefined, index: number | undefined) {
+        if (!shouldIgnoreDndEvents) data!.isDragged = true
+	}
 </script>
 
 {#if $templateGroups[groupIdx].channels != null}
-	<div class="table-container">
-		<table class="table table-hover text-center justify-center items-center h-full w-full">
+		<table class="templateChannel table table-hover">
 			<thead>
 				<tr>
 					<th>Logo</th>
@@ -88,17 +143,39 @@
 					<th>tvg-id</th>
 				</tr>
 			</thead>
-			<tbody>
-				{#each $templateGroups[groupIdx].channels as channel, channelIdx}
-					<tr on:click={() => modalSettings(channelIdx)}>
-						<td><img class="w-14" src={channel.logo} alt="Logo" /></td>
-						<td>{channel.name}</td>
-						<td>{channel.tvgid}</td>
-					</tr>
-				{/each}
-			</tbody>
+				<tbody use:dndzone={{items: $templateGroups[groupIdx].channels, flipDurationMs, type: dndTypeTemplateChannel, transformDraggedElement}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
+					{#each $templateGroups[groupIdx].channels as channel, channelIdx (channelIdx)}
+						<tr id="animate" animate:flip={{duration:flipDurationMs}} on:click={() => modalSettings(channelIdx)}>
+							<td><img class="w-14" src={channel.logo} alt="Logo" /></td>
+							<td>{channel.name}</td>
+							<td>{channel.tvgid}</td>
+
+							{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+								<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.name}</div>
+							{/if}
+						</tr>
+					{/each}
+				</tbody>
 		</table>
-	</div>
 {:else}
-    <p>No template channels found</p>
+	<p>No template channels found</p>
 {/if}
+
+<style>
+    #animate {
+		position: relative;
+		text-align: center;
+	}
+	.custom-shadow-item {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		visibility: visible;
+		border: 3px dashed grey;
+		background: lightblue;
+		opacity: 0.6;
+		margin: 0;
+	}
+</style>

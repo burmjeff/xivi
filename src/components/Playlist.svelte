@@ -88,11 +88,11 @@
         <h3 class="h3 font-bold">Playlists</h3>
         <button class="btn btn-sm variant-ringed-primary" use:popup={playlistSettings}>+ add new</button>
     </header>
-    <div class="playlists-viewport flex-none min-w-full overflow-auto max-h-[42rem]">
+    <div id="accord" class="playlists-viewport min-w-full overflow-auto">
         {#if $playlists.length > 0}
             <Accordion>
                     {#each $playlists as playlist, index (playlist.id)}
-                            <AccordionItem key={playlist.id} bind:open={playlist.itemOpen}>
+                            <AccordionItem class="card" key={playlist.id} bind:open={playlist.itemOpen}>
                                 <svelte:fragment slot="summary">
                                     <div class="flex flex-row">
                                         <h4>{playlist.name}</h4>
@@ -127,3 +127,10 @@
         </label>
     </div>
 </div>
+
+<style>
+    #accord {
+        max-height: 82vh;
+        height: 82vh;
+    }
+</style>

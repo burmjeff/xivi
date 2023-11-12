@@ -5,7 +5,7 @@
     import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
     import {templateGroups} from '@xivi/stores/template_store';
     
-    export let templateId: number;
+    export let templateId: string;
   
     onMount(async () => {
         fetch(`/api/template/${templateId}/groups`)
@@ -28,7 +28,7 @@
                 <svelte:fragment slot="lead">{group.id}</svelte:fragment>
                 <svelte:fragment slot="summary"><h3>{group.name}</h3></svelte:fragment>
                 <svelte:fragment slot="content">
-                <TemplateChannel groupId={group.id} groupIdx={groupIdx} />
+                <TemplateChannel groupId={group.id} groupIdx={groupIdx}/>
                 </svelte:fragment>
             </AccordionItem>
         </section>

@@ -7,9 +7,9 @@
 	import { getModalStore } from '@skeletonlabs/skeleton';
 	import type { ModalSettings } from '@skeletonlabs/skeleton';
 	import IconParkOutlineTransferData from '~icons/icon-park-outline/transfer-data';
-	import { flip } from 'svelte/animate';
-	import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME, DRAGGED_ELEMENT_ID } from 'svelte-dnd-action';
 	import type { PlaylistGroup } from '@xivi/data/playlist_entities';
+	import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME, DRAGGED_ELEMENT_ID } from 'svelte-dnd-action';
+	import { flip } from 'svelte/animate';
 	import { fade } from 'svelte/transition';
 	import { cubicIn } from 'svelte/easing';
 
@@ -17,7 +17,7 @@
 	export let playlistIdx: number;
 	const modalStore = getModalStore();
 	let shouldIgnoreDndEvents = false;
-	const flipDurationMs = 300;
+	const flipDurationMs = 150;
 	const dropFromOthersDisabled = true;
 	let dndTypePlaylist = "playlist";
 	let dndItem: PlaylistGroup;
@@ -38,7 +38,7 @@
 		});
 	});
 
-	function convertPrompt(groupId: number): void {
+	function convertPrompt(groupId: string): void {
 		const prompt: ModalSettings = {
 			type: 'prompt',
 			title: 'Convert Playlist Group to Template Group',
@@ -54,7 +54,7 @@
 		modalStore.trigger(prompt);
 	}
 
-	async function convertGroup(groupName: string, groupId: number) {
+	async function convertGroup(groupName: string, groupId: string) {
 		if (groupName !== '') {
 			const newGroup = {
 				name: groupName
@@ -79,10 +79,10 @@
 
 	function handleDndConsider(e: CustomEvent<DndEvent<PlaylistGroup>>) {
 		const {trigger, id} = e.detail.info;
-		e.detail.items.sort((itemA, itemB) => itemA.id - itemB.id);
+		e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
 		
 		if (trigger === TRIGGERS.DRAG_STARTED) {
-			dndIdx = $playlists[playlistIdx].playlistGroups.findIndex(item => item.id === Number(id));
+			dndIdx = $playlists[playlistIdx].playlistGroups.findIndex(item => item.id === id);
 			dndItem =  $playlists[playlistIdx].playlistGroups[dndIdx];
 			$playlists[playlistIdx].playlistGroups = e.detail.items
 			shouldIgnoreDndEvents = true;
@@ -114,32 +114,24 @@
 
 {#if $playlists[playlistIdx].playlistGroups != null}
 	<Accordion>
-		<section
-			use:dndzone={{
-				items: $playlists[playlistIdx].playlistGroups,
-				flipDurationMs,
-				dropFromOthersDisabled,
-				type: dndTypePlaylist
+		<section use:dndzone={{
+			items: $playlists[playlistIdx].playlistGroups,
+			flipDurationMs,
+			dropFromOthersDisabled,
+			type: dndTypePlaylist
 			}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
 			{#each $playlists[playlistIdx].playlistGroups as group, groupIdx (group.id)}
-				<div id="div1" animate:flip={{ duration: flipDurationMs }} class="flex items-start space-x-4">
-					<AccordionItem key={group.id}>
-						<svelte:fragment slot="summary"><h4>{group.name}</h4></svelte:fragment>
-						<svelte:fragment slot="content">
-							<PlaylistChannel {playlistIdx} groupId={group.id} {groupIdx} />
-						</svelte:fragment>
-					</AccordionItem>
-					<button
-						class="btn-icon variant-filled-surface w-1"
-						on:click={() => convertPrompt(group.id)}>
-						<i><IconParkOutlineTransferData /></i>
-					</button>
-					{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-						<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
-							{group.name}
-						</div>
-					{/if}
-				</div>
+			<div id="animate" animate:flip={{ duration: flipDurationMs }}>
+				<AccordionItem class="card mb-1" key={group.id}>
+					<svelte:fragment slot="summary"><h4>{group.name}</h4></svelte:fragment>
+					<svelte:fragment slot="content">
+						<PlaylistChannel {playlistIdx} groupId={group.id} {groupIdx} />
+					</svelte:fragment>
+				</AccordionItem>
+				{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+					<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{group.name}</div>
+				{/if}
+			</div>
 			{/each}
 		</section>
 	</Accordion>
@@ -148,11 +140,9 @@
 {/if}
 
 <style>
-	#div1 {
+	#animate {
 		position: relative;
 		text-align: center;
-		margin: 0.2em;
-		padding: 0.3em;
 	}
 	.custom-shadow-item {
 		position: absolute;

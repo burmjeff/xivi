@@ -5,7 +5,7 @@
 	import type { PlaylistChannel } from '@xivi/data/playlist_entities';
 
 	export let playlistIdx: number;
-	export let groupId: number;
+	export let groupId: string;
 	export let groupIdx: number;
 
 	const updatePlaylistChannels = async () => {
