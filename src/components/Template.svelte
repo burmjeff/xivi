@@ -47,7 +47,7 @@
         }
     }
 
-    function renamePrompt(templateName: string, templateId: number): void {
+    function renamePrompt(templateName: string, templateId: string): void {
 		const prompt: ModalSettings = {
 			type: 'prompt',
 			title: 'Rename Template',
@@ -63,7 +63,7 @@
 		modalStore.trigger(prompt);
 	}
 
-    async function renameTemplate(templateName: string, templateId: number) {
+    async function renameTemplate(templateName: string, templateId: string) {
         if (templateName !=='') {
             const newTemplate = {
                 id: templateId,
@@ -88,7 +88,7 @@
         }
     }
 
-    function deletePrompt(templateId: number) {
+    function deletePrompt(templateId: string) {
 		const modal: ModalSettings = {
 			type: 'confirm',
             title: 'Please Confirm',
@@ -102,7 +102,7 @@
 	}
     
     //TODO COLLAPSE ACCORDIION ITEM BEFORE DELETE
-    async function deleteTemplate(templateId: number) {
+    async function deleteTemplate(templateId: string) {
 		try {
 			const response = await fetch(`/api/template/${templateId}`, {
 				method: 'DELETE'
@@ -123,7 +123,7 @@
         <h3 class="h3 font-bold">Templates</h3>
         <button class="btn btn-sm variant-ringed-primary" use:popup={templateSettings}>+ add new</button>
     </header>
-    <div class="templates-viewport flex-none min-w-full overflow-hidden lg:overflow-auto max-h-[42rem]">
+    <div id="accord" class="templates-viewport min-w-full overflow-auto">
         {#if $templates.length > 0}
             <Accordion>
                 {#each $templates as template}
@@ -158,3 +158,9 @@
         </label>
     </div>
 </div>
+
+<style>
+    #accord {
+        max-height: 82vh
+    }
+</style>

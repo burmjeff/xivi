@@ -14,12 +14,11 @@
     import IconParkOutlineAdd from '~icons/icon-park-outline/add';
 
     let dndTypePlaylist = "playlist";
-    let dndTypeTemplate = "template";
+    let dndTypeTemplateGroup = "templateGroup";
     let shouldIgnoreDndEvents = false;
     const flipDurationMs = 150;
     let dndItem: TemplateGroup;
 	let dndIdx: number
-
     const modalStore = getModalStore();
 
     const updateTemplateGroups = async () => {
@@ -30,7 +29,7 @@
 
     onMount(async () => {
         templateGroups.set(await updateTemplateGroups());
-        });
+    });
 
     let templateGroupSettings: PopupSettings = {
         // Set the event as: click | hover | hover-click
@@ -60,7 +59,7 @@
         }
     }
 
-    function renamePrompt(groupIdx: number, groupName: string, groupId: number): void {
+    function renamePrompt(groupIdx: number, groupName: string, groupId: string): void {
 		const prompt: ModalSettings = {
 			type: 'prompt',
 			title: 'Rename Group',
@@ -76,7 +75,7 @@
 		modalStore.trigger(prompt);
 	}
 
-    async function renameGroup(groupIdx: number, groupName: string, groupId: number) {
+    async function renameGroup(groupIdx: number, groupName: string, groupId: string) {
         if (groupName !=='') {
             const newGroup = {
                 id: groupId,
@@ -101,7 +100,7 @@
         }
     }
 
-    function deletePrompt(groupId: number): void {
+    function deletePrompt(groupId: string): void {
         $templateGroups = [...$templateGroups]
 		const modal: ModalSettings = {
 			type: 'confirm',
@@ -116,7 +115,7 @@
 	}
     
     //TODO COLLAPSE ACCORDIION ITEM BEFORE DELETE
-    async function deleteGroup(groupId: number) {
+    async function deleteGroup(groupId: string) {
 		try {
 			const response = await fetch(`/api/template/group/${groupId}`, {
 				method: 'DELETE'
@@ -131,7 +130,7 @@
 		}
 	}
 
-    async function addChannel(formData: any, groupId: number, groupIdx: number) {
+    async function addChannel(formData: any, groupId: string, groupIdx: number) {
 		if (formData.name != '' && formData.tvgid != '' && formData.logo != '') {
 			let newChannel = {
 				name: formData.name,
@@ -158,7 +157,7 @@
 		}
 	}
 
-	function modalAdd(groupId: number, groupIdx: number) {
+	function modalAdd(groupId: string, groupIdx: number) {
 		new Promise<boolean>((resolve) => {
 			const modal: ModalSettings = {
 				type: 'component',
@@ -178,7 +177,7 @@
 		});
 	}
 
-    function convertPrompt(groupId: number): void {
+    function convertPrompt(groupId: string): void {
 		const prompt: ModalSettings = {
 			type: 'prompt',
 			title: 'Convert Playlist Group to Template Group',
@@ -194,7 +193,7 @@
 		modalStore.trigger(prompt);
 	}
 
-	async function convertGroup(groupName: string, groupId: number) {
+	async function convertGroup(groupName: string, groupId: string) {
 		if (groupName !== '') {
 			const newGroup = {
 				name: groupName
@@ -219,27 +218,18 @@
 
     function handleDndConsider(e: CustomEvent<DndEvent<TemplateGroup>>) {
 		const {trigger, id} = e.detail.info;
-		e.detail.items.sort((itemA, itemB) => itemA.id - itemB.id);
-		
+		e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
+
 		if (trigger === TRIGGERS.DRAG_STARTED) {
-			dndIdx = $templateGroups.findIndex(item => item.id === Number(id));
+			dndIdx = $templateGroups.findIndex(item => item.id === id);
 			dndItem =  $templateGroups[dndIdx];
+            e.detail.items[dndIdx].itemOpen = false;
+            $templateGroups[dndIdx].itemOpen = false;
 			$templateGroups = e.detail.items
 			shouldIgnoreDndEvents = true;
 		}
-        else if (trigger === TRIGGERS.DRAGGED_LEFT && !shouldIgnoreDndEvents) {
-            $templateGroups = $templateGroups.filter(item => !item[SHADOW_ITEM_MARKER_PROPERTY_NAME]);
-            $templateGroups.pop
-            $templateGroups = [...$templateGroups]
-        }
-		else if (trigger === TRIGGERS.DRAGGED_ENTERED && !shouldIgnoreDndEvents) {
-            
-            dndIdx = e.detail.items.findIndex(item => item.id === Number(id));
-            $templateGroups.push(e.detail.items[dndIdx])
-            $templateGroups = [...$templateGroups]
-        }
-        else if (!shouldIgnoreDndEvents){
-            //$templateGroups = [...$templateGroups]
+        else if (!shouldIgnoreDndEvents) {
+            $templateGroups = e.detail.items;
         }
         else {
             $templateGroups = [...$templateGroups]
@@ -248,8 +238,10 @@
 	function handleDndFinalize(e: CustomEvent<DndEvent<TemplateGroup>>) {
 		const {trigger, id} = e.detail.info;
         if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreDndEvents) {
-            convertPrompt(Number(id))
-            //$templateGroups = e.detail.items
+            console.log(e.detail.items)
+            e.detail.items = e.detail.items.filter(item => !item.isDragged);
+            $templateGroups = e.detail.items
+            convertPrompt(id)
             shouldIgnoreDndEvents = false;
         }
         else if (!shouldIgnoreDndEvents) {
@@ -265,43 +257,48 @@
             shouldIgnoreDndEvents = false;
         }
     }
+    function transformDraggedElement(draggedEl: HTMLElement | undefined, data: Item | undefined, index: number | undefined) {
+        if (!shouldIgnoreDndEvents) data!.isDragged = true
+	}
 </script>
 
-<section class="tmplgroups flex-none card card-hover p-1 h-screen" >
+<section class="tmplgroups card card-hover p-1" >
     <header class="tmplgroups-header flex justify-center items-center space-x-4">
         <h3 class="h3 font-bold">Groups</h3>
         <button class="btn btn-sm variant-ringed-primary" use:popup={templateGroupSettings}>+ add new</button>
     </header>
-    <div class="tmplgroups-viewport flex-none min-w-full overflow-hidden lg:overflow-auto max-h-[42rem]" use:dndzone={{items: $templateGroups, flipDurationMs, type: dndTypePlaylist}} use:dndzone={{items: $templateGroups, flipDurationMs, type: dndTypeTemplate}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
+    
+    <Accordion>
         {#if $templateGroups.length > 0}
-            <Accordion>
-                {#each $templateGroups as group, groupIdx (groupIdx)}
-                    <div id="div1" animate:flip={{duration: flipDurationMs}}>
-                        <AccordionItem class="aitem" key={groupIdx} bind:open={group.itemOpen}>
-                            <svelte:fragment slot="summary">
-                                <div class="flex flex-row">
-                                    <h4>{group.name}</h4>
-                                    <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => {group.itemOpen = true, renamePrompt(groupIdx, group.name, group.id)}}><i><IconParkOutlineEditTwo/></i></button>
-                                    <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => {group.itemOpen = true, deletePrompt(group.id)}}><i><IconParkOutlineDelete/></i></button>
-                                    <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => modalAdd(group.id, groupIdx)}><i><IconParkOutlineAdd/></i></button>
-                                </div>
-                            </svelte:fragment>
-                            <svelte:fragment slot="content">
-                                <TemplateChannel groupId={group.id} groupIdx={groupIdx} />
-                            </svelte:fragment>
-                        </AccordionItem>
-                        
-                        {#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-                            <div in:fade={{duration:200, easing: cubicIn}} class='custom-shadow-item'>{group.name}</div>
-                        {/if}
-                    </div>
-                {/each}
-            </Accordion>
+        <section id="accord" class="templates-viewport min-w-full overflow-auto" use:dndzone={{items: $templateGroups, flipDurationMs, type: dndTypePlaylist, transformDraggedElement}} use:dndzone={{items: $templateGroups, flipDurationMs, type: dndTypeTemplateGroup, transformDraggedElement}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
+            {#each $templateGroups as group, groupIdx (group.id)}
+                <div id="animate" animate:flip={{duration: flipDurationMs}}>
+                    <AccordionItem class="card mb-1" key={groupIdx} bind:open={group.itemOpen}>
+                        <svelte:fragment slot="summary">
+                            <div class="flex flex-row">
+                                <h4>{group.name}</h4>
+                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => {group.itemOpen = true, renamePrompt(groupIdx, group.name, group.id)}}><i><IconParkOutlineEditTwo/></i></button>
+                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => {group.itemOpen = true, deletePrompt(group.id)}}><i><IconParkOutlineDelete/></i></button>
+                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => modalAdd(group.id, groupIdx)}><i><IconParkOutlineAdd/></i></button>
+                            </div>
+                        </svelte:fragment>
+                        <svelte:fragment slot="content">
+                            <TemplateChannel groupId={group.id} groupIdx={groupIdx}/>
+                        </svelte:fragment>
+                    </AccordionItem>
+
+                    {#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+                        <div in:fade={{duration:200, easing: cubicIn}} class='custom-shadow-item'>{group.name}</div>
+                    {/if}
+                </div>
+            {/each}
+        </section>
         {:else}
             <p>No groups found</p>
         {/if}
-    </div>
+    </Accordion>
 </section>
+
 <div class="card p-4 gap-4" data-popup="addTemplateGroupPopup">
 	<h2>Add Template Group</h2>
     <div class="space-y-4">
@@ -316,12 +313,10 @@
 </div>
 
 <style>
-    #div1 {
-		position: relative;
-		text-align: center;
-		margin: 0.2em;
-		padding: 0.3em;
-	}
+    #accord {
+        max-height: 82vh;
+        height: 82vh;
+    }
     .custom-shadow-item {
 		position: absolute;
 		top: 0; left:0; right: 0; bottom: 0;
@@ -330,5 +325,9 @@
 		background: lightblue;
 		opacity: 0.6;
 		margin: 0;
+	}
+    #animate {
+		position: relative;
+		text-align: center;
 	}
 </style>

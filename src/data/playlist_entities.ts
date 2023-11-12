@@ -1,15 +1,15 @@
 export interface Playlist {
 	id: number;
 	name: string;
-	isDndShadowItem: boolean;
 	itemOpen: boolean;
 	playlistGroups: PlaylistGroup[];
 }
 
 export interface PlaylistGroup {
-	id: number;
+	id: string;
 	name: string;
 	isDndShadowItem: boolean;
+	isDragged: boolean;
 	playlistChannels: PlaylistChannel[];
 }
 
@@ -19,5 +19,4 @@ export interface PlaylistChannel {
     tvgid: string;
     tvg_logo: string;
     enabled: boolean;
-	isDndShadowItem: boolean;
 }
