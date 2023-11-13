@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"compress/gzip"
 	"encoding/xml"
 	"io"
 	"net/http"
@@ -28,11 +29,23 @@ func (m *EpgParser) ParseEpg(playlistID int64, path string) {
 			log.Error().Msgf("Unable to get epg.xml FILE: %v", err)
 			return
 		}
-		epg, err = parseXML(resp.Body)
+
+		gzipReader, err := gzip.NewReader(resp.Body)
+		defer gzipReader.Close()
 		if err != nil {
-			log.Error().Msgf("Unable to parse epg.xml FILE: %v", err)
-			return
+			epg, err = parseXML(resp.Body)
+			if err != nil {
+				log.Error().Msgf("Unable to parse epg.xml FILE: %v", err)
+				return
+			}
+		} else {
+			epg, err = parseXML(gzipReader)
+			if err != nil {
+				log.Error().Msgf("Unable to parse epg.xml FILE: %v", err)
+				return
+			}
 		}
+
 		defer resp.Body.Close()
 	} else {
 		log.Info().Msg("Started parsing xml file...")
