@@ -95,7 +95,7 @@ func (q *EpgQueries) UpdateEpg(id int64, p *models.Epg) error {
 // DeleteEpg method for delete epg by given ID.
 func (q *EpgQueries) DeleteEpg(id int64) error {
 	// Define query string.
-	query := `DELETE FROM epg WHERE id = ?`
+	query := `DELETE FROM epg WHERE id = $1`
 
 	// Send query to database.
 	_, err := q.Exec(query, id)

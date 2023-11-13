@@ -1,4 +1,7 @@
-<!-- YOU CAN DELETE EVERYTHING IN THIS PAGE -->
+<script>
+    import TemplateStatus from '@xivi/components/TemplateStatus.svelte';
+</script>
+
 <div class="container h-full mx-auto flex justify-center items-center">
 	<div class="space-y-10 text-center">
 		<h2 class="font-bold">Welcome to Skeleton.</h2>
@@ -28,19 +31,8 @@
 			</a>
 		</div>
 
-		<div class="container mx-auto p-8 space-y-8">
-			<h1>Hello Skeleton</h1>
-			<section>
-				<a class="btn variant-filled-primary" href="https://kit.svelte.dev/" target="_blank" rel="noreferrer">SvelteKit</a>
-				<a class="btn variant-filled-secondary" href="https://tailwindcss.com/" target="_blank" rel="noreferrer">Tailwind</a>
-				<a class="btn variant-filled-tertiary" href="https://github.com/" target="_blank" rel="noreferrer">GitHub</a>
-			</section>
-		</div>
-		
-		<div class="space-y-2">
-			<p>Try editing the following:</p>
-			<p><code>/src/routes/+layout.svelte</code></p>
-			<p><code>/src/routes/+page.svelte</code></p>
+		<div class="status p-4 text-center justify-center items-center h-full w-full">
+				<TemplateStatus/>
 		</div>
 	</div>
 </div>

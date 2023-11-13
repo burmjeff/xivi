@@ -36,16 +36,49 @@ func (m *M3uTools) CreateM3u(template models.Template) {
 		fmt.Println("Error writing file:", err)
 		return
 	}
+
+	go CreateEpgXML(m.Db, template)
 }
 
 func (m *M3uTools) UpdateTemplate(template *models.Template, oldTemplate string) {
+	var filtered string
 	oldfile := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, oldTemplate)
 	newfile := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, template.Name)
 
-	if err := os.Rename(oldfile, newfile); err != nil {
-		fmt.Println("Error renaming file:", err)
+	// Read the content of the XML file into a byte array.
+	content, err := os.ReadFile(oldfile)
+	if err != nil {
+		log.Error().Msgf("Error reading file: %v", err)
 		return
 	}
+
+	oldxmltvURL := fmt.Sprintf("http://%s:%d/xmltv/%s.xml", m.host, m.port, oldTemplate)
+	xmltvURL := fmt.Sprintf("http://%s:%d/xmltv/%s.xml", m.host, m.port, template.Name)
+
+	filter := fmt.Sprintf("#EXTM3U url-tvg=\"%s\" x-tvg-url=\"%s\"\n", xmltvURL, oldxmltvURL)
+	newxml := fmt.Sprintf("#EXTM3U url-tvg=\"%s\" x-tvg-url=\"%s\"\n", xmltvURL, xmltvURL)
+	lines := strings.Split(string(content), "\n")
+
+	// Loop through each line and check if it contains the group.
+	for _, line := range lines {
+		if strings.Contains(line, filter) {
+			strings.Replace(line, filter, newxml, 0)
+		}
+		filtered += line + "\n"
+	}
+
+	// Write the filtered content back to the original file.
+	if err = os.WriteFile(newfile, []byte(filtered), 0644); err != nil {
+		fmt.Println("Error writing file:", err)
+		return
+	}
+
+	if err := os.Remove(oldfile); err != nil {
+		fmt.Println("Error removing file:", err)
+		return
+	}
+
+	go CreateEpgXML(m.Db, *template)
 }
 
 func (m *M3uTools) RemoveTemplate(template *models.Template) {
@@ -131,6 +164,8 @@ func (m *M3uTools) UpdateChannel(template *models.Template, channel *models.Temp
 		fmt.Println("Error writing file:", err)
 		return
 	}
+
+	go CreateEpgXML(m.Db, *template)
 }
 
 func (m *M3uTools) RemoveGroup(template *models.Template, group *models.TemplateGroup) {

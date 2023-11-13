@@ -32,10 +32,12 @@
 	onMount(async () => {
 		$playlists[playlistIdx].playlistGroups = [];
 		const fetchedData = await updatePlaylistGroups();
-		fetchedData.forEach(function (group: PlaylistGroup) {
-			$playlists[playlistIdx].playlistGroups.push(group);
-			$playlists[playlistIdx].playlistGroups = $playlists[playlistIdx].playlistGroups;
-		});
+		if (typeof fetchedData !== 'undefined') {
+			fetchedData.forEach(function (group: PlaylistGroup) {
+				$playlists[playlistIdx].playlistGroups.push(group);
+				$playlists[playlistIdx].playlistGroups = $playlists[playlistIdx].playlistGroups;
+			});
+		}
 	});
 
 	function convertPrompt(groupId: string): void {
@@ -112,7 +114,7 @@
     }
 </script>
 
-{#if $playlists[playlistIdx].playlistGroups != null}
+{#if $playlists[playlistIdx].playlistGroups != null && $playlists[playlistIdx].playlistGroups.length > 0}
 	<Accordion>
 		<section use:dndzone={{
 			items: $playlists[playlistIdx].playlistGroups,

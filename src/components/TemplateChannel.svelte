@@ -17,7 +17,7 @@
 	let dndItem: TemplateChannel;
 	let dndIdx: number
 	let shouldIgnoreDndEvents = false;
-	const flipDurationMs = 100;
+	const flipDurationMs = 150;
 
 	const updateTemplateChannels = async () => {
 		const response = await fetch(`/api/template/group/${groupId}/channels`);
@@ -28,7 +28,7 @@
 	onMount(async () => {
 		$templateGroups[groupIdx].channels = [];
 		const fetchedData = await updateTemplateChannels();
-		if (fetchedData.hasOwnProperty(0)) {
+		if (typeof fetchedData !== 'undefined') {
 			fetchedData.forEach(function (channel: TemplateChannel) {
 				$templateGroups[groupIdx].channels.push(channel);
 				$templateGroups[groupIdx].channels = $templateGroups[groupIdx].channels
@@ -110,10 +110,8 @@
 	function handleDndFinalize(e: CustomEvent<DndEvent<TemplateChannel>>) {
 		const {trigger, id} = e.detail.info;
         if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreDndEvents) {
-            console.log(e.detail.items)
             e.detail.items = e.detail.items.filter(item => !item.isDragged);
             $templateGroups[groupIdx].channels = e.detail.items
-            //convertPrompt(id)
             shouldIgnoreDndEvents = false;
         }
         else if (!shouldIgnoreDndEvents) {
@@ -134,7 +132,7 @@
 	}
 </script>
 
-{#if $templateGroups[groupIdx].channels != null}
+{#if $templateGroups[groupIdx].channels != null && $templateGroups[groupIdx].channels.length > 0}
 		<table class="templateChannel table table-hover">
 			<thead>
 				<tr>
@@ -158,7 +156,7 @@
 				</tbody>
 		</table>
 {:else}
-	<p>No template channels found</p>
+	<p>No channels found</p>
 {/if}
 
 <style>
@@ -168,10 +166,7 @@
 	}
 	.custom-shadow-item {
 		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
+		top: 0; left: 0; right: 0; bottom: 0;
 		visibility: visible;
 		border: 3px dashed grey;
 		background: lightblue;

@@ -1,7 +1,8 @@
 export interface Template {
-	id: string;
+	id: number;
 	name: string;
 	itemOpen: boolean;
+	groups: TemplateGroup[];
 }
 
 export interface TemplateGroup {

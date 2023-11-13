@@ -1,6 +1,7 @@
 export interface Playlist {
 	id: number;
 	name: string;
+	url: string;
 	itemOpen: boolean;
 	playlistGroups: PlaylistGroup[];
 }

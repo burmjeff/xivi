@@ -63,7 +63,7 @@ gst-plugins-ugly
 ENV APP_NAME="Xivi" \
 APP_VERSION="1.0" \
 TZ="America/New_York" \
-SERVER_HOST="0.0.0.0" \
+SERVER_HOST="127.0.0.1" \
 SERVER_PORT=8080 \
 SERVER_READ_TIMEOUT=60 \
 MODEL_NAME="sentence-transformers/all-MiniLM-L6-v2" \

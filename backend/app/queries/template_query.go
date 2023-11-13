@@ -144,23 +144,23 @@ func (q *TemplateQueries) GetAllTmplGroups() ([]models.TemplateGroup, error) {
 
 // GetTemplateGroups by template id
 func (q *TemplateQueries) GetTmplGroups(templateId int64) ([]models.TemplateGroup, error) {
-	templategroup := []models.TemplateGroup{}
+	templategroups := []models.TemplateGroup{}
 
 	// Define query string.
 	query := `SELECT templategroup.* FROM templategroup
 	JOIN template_group_item ON templategroup.id = template_group_item.group_id
-	WHERE template_group_item.template_id = ?
+	WHERE template_group_item.template_id = $1
 	ORDER BY template_group_item.orderr ASC`
 
 	// Send query to database.
-	err := q.Select(&templategroup, query, templateId)
+	err := q.Select(&templategroups, query, templateId)
 	if err != nil {
 		// Return empty object and error.
-		return templategroup, err
+		return templategroups, err
 	}
 
 	// Return query result.
-	return templategroup, nil
+	return templategroups, nil
 }
 
 // GetGroup method for getting one group by given ID.
