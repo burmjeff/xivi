@@ -27,8 +27,11 @@ func CustomMapper(column string) string {
 func ConvertTime(timeStr string) (time.Time, error) {
 	localTime, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
 	if err != nil {
-		log.Error().Msgf("No TZ provided:, %v", err)
-		return time.Now(), err
+		localTime, err = time.LoadLocation("Etc/UTC")
+		if err != nil {
+			log.Error().Msgf("No TZ provided: %v", err)
+			return time.Now(), err
+		}
 	}
 	t, err := time.Parse("20060102150405 -0700", timeStr)
 	if err != nil {
