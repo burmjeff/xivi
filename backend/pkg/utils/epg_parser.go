@@ -104,6 +104,16 @@ func (m *EpgParser) ParseEpg(playlistID int64, path string) {
 	}
 	log.Info().Msg("EPG Parser Finished")
 
+	// Get all templates.
+	templates, err := m.Db.GetTemplates()
+	if err != nil {
+		log.Error().Msg("EPG XML PARSER: NO TEMPLATE FOUND")
+	} else {
+		for _, template := range templates {
+			go CreateEpgXML(m.Db, template)
+		}
+	}
+
 }
 
 func parseXML(xmlData io.Reader) (models.EpgItem, error) {

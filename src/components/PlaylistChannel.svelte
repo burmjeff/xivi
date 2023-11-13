@@ -25,7 +25,7 @@
 </script>
 
 
-{#if $playlists[playlistIdx].playlistGroups[groupIdx].playlistChannels != null}
+{#if $playlists[playlistIdx].playlistGroups[groupIdx].playlistChannels != null && $playlists[playlistIdx].playlistGroups[groupIdx].playlistChannels.length > 0}
 	<table class="playlistChannel table">
 		<thead>
 			<tr>

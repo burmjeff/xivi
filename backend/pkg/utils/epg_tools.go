@@ -11,20 +11,16 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type EpgTools struct {
-	Db *database.Queries
-}
-
-func (m *EpgTools) CreateEpgXML(template models.Template) {
+func CreateEpgXML(db *database.Queries, template models.Template) {
 	log.Info().Msg("Create EPG XML: STARTED")
 	epg := models.EpgItem{
 		GeneratorInfo:  settings.APP_SETTINGS.Application.AppName,
 		SourceInfoName: fmt.Sprintf("%s - %s", settings.APP_SETTINGS.Application.AppName, settings.APP_SETTINGS.Application.AppVersion),
 	}
 
-	channelIDs, err := m.Db.GetTmplTvgids(template.ID)
+	channelIDs, err := db.GetTmplTvgids(template.ID)
 	if err != nil {
-		log.Error().Msgf("No tvgids found for template: %s", template.ID)
+		log.Error().Msgf("No tvgids found for template: %v", template.ID)
 		return
 	}
 
@@ -44,7 +40,7 @@ func (m *EpgTools) CreateEpgXML(template models.Template) {
 	}
 
 	for _, channel := range channelIDs {
-		epgChannel, err := m.Db.GetEpgChannelByChannelId(channel)
+		epgChannel, err := db.GetEpgChannelByChannelId(channel)
 		if err != nil {
 			log.Warn().Msgf("No channel found for %s: %v", channel, err)
 			continue
@@ -53,7 +49,7 @@ func (m *EpgTools) CreateEpgXML(template models.Template) {
 	}
 
 	for _, programme := range channelIDs {
-		epgProgrammes, err := m.Db.GetProgrammesByChannelId(programme)
+		epgProgrammes, err := db.GetProgrammesByChannelId(programme)
 		if err != nil {
 			log.Warn().Msgf("No programme found for %s: %v", programme, err)
 			continue
@@ -67,4 +63,12 @@ func (m *EpgTools) CreateEpgXML(template models.Template) {
 	}
 	log.Info().Msg("Create EPG XML: FINISHED")
 
+}
+
+func RemoveEpg(epg *models.Epg) {
+	file := fmt.Sprintf("%s/%s.m3u", settings.EPG_FILEPATH, epg.Name)
+	if err := os.Remove(file); err != nil {
+		fmt.Println("Error removing file:", err)
+		return
+	}
 }

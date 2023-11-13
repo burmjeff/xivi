@@ -1,14 +1,10 @@
 <script>
-    import Template from '@xivi/components/Template.svelte';
-    import TemplateGroupList from '@xivi/components/Template_Group_List.svelte';
-    import Playlist from '@xivi/components/Playlist.svelte';
+    import Epg from '@xivi/components/Epg.svelte';
 </script>
 
-<div class="templates p-4 text-center justify-center items-center h-full w-full">
-    <section class="grid grid-cols-2 md:grid-cols-3 gap-4 h-full w-full">
-        <Template/>
-        <TemplateGroupList/>
-        <Playlist/>
+<div class="epg p-4 text-center justify-center items-center h-full w-full">
+    <section class="grid grid-cols-1 gap-4 h-full w-full">
+        <Epg/>
     </section>
 </div>
 

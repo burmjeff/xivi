@@ -4,9 +4,9 @@
     import { onMount } from 'svelte';
     import { Accordion, AccordionItem, popup, getModalStore, type PopupSettings, type ModalSettings } from '@skeletonlabs/skeleton';
     import {templateGroups} from '@xivi/stores/template_store';
-    import {flip} from 'svelte/animate';
-    import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
     import type { TemplateGroup } from '@xivi/data/template_entities';
+    import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
+    import {flip} from 'svelte/animate';
     import {fade} from 'svelte/transition';
     import {cubicIn} from 'svelte/easing';
     import IconParkOutlineEditTwo from '~icons/icon-park-outline/edit-two'
@@ -238,7 +238,6 @@
 	function handleDndFinalize(e: CustomEvent<DndEvent<TemplateGroup>>) {
 		const {trigger, id} = e.detail.info;
         if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreDndEvents) {
-            console.log(e.detail.items)
             e.detail.items = e.detail.items.filter(item => !item.isDragged);
             $templateGroups = e.detail.items
             convertPrompt(id)
@@ -267,36 +266,50 @@
         <h3 class="h3 font-bold">Groups</h3>
         <button class="btn btn-sm variant-ringed-primary" use:popup={templateGroupSettings}>+ add new</button>
     </header>
-    
-    <Accordion>
-        {#if $templateGroups.length > 0}
-        <section id="accord" class="templates-viewport min-w-full overflow-auto" use:dndzone={{items: $templateGroups, flipDurationMs, type: dndTypePlaylist, transformDraggedElement}} use:dndzone={{items: $templateGroups, flipDurationMs, type: dndTypeTemplateGroup, transformDraggedElement}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
-            {#each $templateGroups as group, groupIdx (group.id)}
-                <div id="animate" animate:flip={{duration: flipDurationMs}}>
-                    <AccordionItem class="card mb-1" key={groupIdx} bind:open={group.itemOpen}>
-                        <svelte:fragment slot="summary">
-                            <div class="flex flex-row">
-                                <h4>{group.name}</h4>
-                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => {group.itemOpen = true, renamePrompt(groupIdx, group.name, group.id)}}><i><IconParkOutlineEditTwo/></i></button>
-                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => {group.itemOpen = true, deletePrompt(group.id)}}><i><IconParkOutlineDelete/></i></button>
-                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => modalAdd(group.id, groupIdx)}><i><IconParkOutlineAdd/></i></button>
-                            </div>
-                        </svelte:fragment>
-                        <svelte:fragment slot="content">
-                            <TemplateChannel groupId={group.id} groupIdx={groupIdx}/>
-                        </svelte:fragment>
-                    </AccordionItem>
+    {#if $templateGroups != null}
+        <Accordion>
+            <section id="accord" class="templategroups-viewport min-w-full overflow-auto" 
+            use:dndzone={{items: $templateGroups, flipDurationMs, type: dndTypePlaylist, transformDraggedElement}} 
+            use:dndzone={{items: $templateGroups, flipDurationMs, type: dndTypeTemplateGroup, transformDraggedElement}} 
+            on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
+                {#if $templateGroups.length > 0}
+                    {#each $templateGroups as group, groupIdx (group.id)}
+                        <div id="animate" animate:flip={{duration: flipDurationMs}}>
+                            <AccordionItem class="card mb-1" key={groupIdx} bind:open={group.itemOpen}>
+                                <svelte:fragment slot="summary">
+                                    <div class="flex flex-row">
+                                        <h4>{group.name}</h4>
+                                        <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" 
+                                            on:click={() => {group.itemOpen = true, renamePrompt(groupIdx, group.name, group.id)}}>
+                                            <i><IconParkOutlineEditTwo/></i>
+                                        </button>
+                                        <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" 
+                                            on:click={() => {group.itemOpen = true, deletePrompt(group.id)}}>
+                                            <i><IconParkOutlineDelete/></i>
+                                        </button>
+                                        <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" 
+                                            on:click={() => modalAdd(group.id, groupIdx)}>
+                                            <i><IconParkOutlineAdd/></i>
+                                        </button>
+                                    </div>
+                                </svelte:fragment>
+                                <svelte:fragment slot="content">
+                                    <TemplateChannel groupId={group.id} groupIdx={groupIdx}/>
+                                </svelte:fragment>
+                            </AccordionItem>
 
-                    {#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-                        <div in:fade={{duration:200, easing: cubicIn}} class='custom-shadow-item'>{group.name}</div>
-                    {/if}
-                </div>
-            {/each}
-        </section>
-        {:else}
-            <p>No groups found</p>
-        {/if}
-    </Accordion>
+                            {#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+                                <div in:fade={{duration:200, easing: cubicIn}} class='custom-shadow-item'>{group.name}</div>
+                            {/if}
+                        </div>
+                    {/each}
+                
+                {:else}
+                    <p>No groups found</p>
+                {/if}
+            </section>
+        </Accordion>
+    {/if}
 </section>
 
 <div class="card p-4 gap-4" data-popup="addTemplateGroupPopup">

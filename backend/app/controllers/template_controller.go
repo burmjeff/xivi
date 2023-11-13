@@ -293,7 +293,6 @@ func DeleteTemplate(c *fiber.Ctx) error {
 // @Description Get template groups by given template ID
 // @Summary get template groups by given template ID
 // @Tags Template
-// @Accept json
 // @Produce json
 // @Param template_id path string true "Template ID"
 // @Success 200 {array} models.TemplateGroup
@@ -539,7 +538,7 @@ func CreateTemplateGroupItem(c *fiber.Ctx) error {
 		})
 	}
 
-	// Delete template by given ID.
+	// Create TemplateGroupItem
 	templateGroupItem := &models.TemplateGroupItem{TemplateId: template_id, GroupId: group_id}
 	if err := db.CreateTmplGroupItem(templateGroupItem); err != nil {
 		// Return status 500 and error message.
@@ -557,12 +556,8 @@ func CreateTemplateGroupItem(c *fiber.Ctx) error {
 		go m3uTools.CreateM3u(template)
 	}
 
-	// Return status 200 OK.
-	return c.JSON(fiber.Map{
-		"error":             false,
-		"msg":               nil,
-		"templategroupitem": templateGroupItem,
-	})
+	// Return status 201 OK.
+	return c.SendStatus(fiber.StatusCreated)
 }
 
 // DeleteTemplateGroupItem func to delete a template Group Item by given group id and template id.

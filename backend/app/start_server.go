@@ -24,7 +24,7 @@ func StartServer(app *fiber.App) {
 
 	// Run server.
 	log.Printf("Server starting at http://%s ...\n", settings.SERVER_PATH)
-	if err := app.Listen(settings.SERVER_PATH); err != nil {
+	if err := app.Listen(fmt.Sprintf("0.0.0.0:%d", *port)); err != nil {
 		log.Printf("Oops... Server is not running! Reason: %v", err)
 	}
 }

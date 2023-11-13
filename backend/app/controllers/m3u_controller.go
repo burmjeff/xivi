@@ -13,13 +13,12 @@ import (
 // @Summary CreateM3U func generates new m3u file from template.
 // @Tags M3U
 // @Accept json
-// @Produce json
-// @Param id path string true "Template ID"
+// @Param template_id path string true "Template ID"
 // @Success 200 {object} models.Template
-// @Router /m3u/{id} [post]
+// @Router /m3u/{template_id} [post]
 func CreateM3U(c *fiber.Ctx) error {
 	// Catch template ID from URL.
-	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	template_id, err := strconv.ParseInt(c.Params("template_id"), 10, 64)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -38,7 +37,7 @@ func CreateM3U(c *fiber.Ctx) error {
 	}
 
 	// Checking, if template with given ID is exists.
-	template, err := db.GetTemplate(id)
+	template, err := db.GetTemplate(template_id)
 	if err != nil {
 		// Return status 404 and template not found error.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{

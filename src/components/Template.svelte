@@ -47,7 +47,7 @@
         }
     }
 
-    function renamePrompt(templateName: string, templateId: string): void {
+    function renamePrompt(templateName: string, templateId: number): void {
 		const prompt: ModalSettings = {
 			type: 'prompt',
 			title: 'Rename Template',
@@ -63,7 +63,7 @@
 		modalStore.trigger(prompt);
 	}
 
-    async function renameTemplate(templateName: string, templateId: string) {
+    async function renameTemplate(templateName: string, templateId: number) {
         if (templateName !=='') {
             const newTemplate = {
                 id: templateId,
@@ -88,7 +88,7 @@
         }
     }
 
-    function deletePrompt(templateId: string) {
+    function deletePrompt(templateId: number) {
 		const modal: ModalSettings = {
 			type: 'confirm',
             title: 'Please Confirm',
@@ -101,8 +101,7 @@
 		modalStore.trigger(modal);
 	}
     
-    //TODO COLLAPSE ACCORDIION ITEM BEFORE DELETE
-    async function deleteTemplate(templateId: string) {
+    async function deleteTemplate(templateId: number) {
 		try {
 			const response = await fetch(`/api/template/${templateId}`, {
 				method: 'DELETE'
@@ -126,17 +125,17 @@
     <div id="accord" class="templates-viewport min-w-full overflow-auto">
         {#if $templates.length > 0}
             <Accordion>
-                {#each $templates as template}
-                    <AccordionItem key={template.id}>
+                {#each $templates as template, templateIdx (template.id)}
+                    <AccordionItem class="card mb-1" key={template.id} bind:open={template.itemOpen}>
                         <svelte:fragment slot="summary">
                             <div class="flex flex-row">
                                 <h4>{template.name}</h4>
                                 <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => renamePrompt(template.name, template.id)}><i><IconParkOutlineEditTwo/></i></button>
-                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => deletePrompt(template.id)}><i><IconParkOutlineDelete/></i></button>
+                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => {template.itemOpen = true, deletePrompt(template.id)}}><i><IconParkOutlineDelete/></i></button>
                             </div>
                         </svelte:fragment>
                         <svelte:fragment slot="content">
-                            <TemplateGroup templateId={template.id} />
+                            <TemplateGroup templateId={template.id} templateIdx={templateIdx}/>
                         </svelte:fragment>
                     </AccordionItem>
                 {/each}
@@ -161,6 +160,7 @@
 
 <style>
     #accord {
-        max-height: 82vh
+        max-height: 82vh;
+        height: 82vh;
     }
 </style>
