@@ -394,7 +394,8 @@ func (q *TemplateQueries) GetTmplTvgids(id int64) ([]string, error) {
 	// Define query string.
 	query := `SELECT templatechannel.tvgid FROM templatechannel
 		JOIN template_group_channel ON templatechannel.id = template_group_channel.channel_id
-		WHERE template_group_channel.template_id = ? AND templatechannel.tvgid IS NOT NULL`
+		JOIN template_group_item ON template_group_item.group_id = template_group_channel.group_id
+		WHERE template_group_item.template_id = ? AND templatechannel.tvgid IS NOT NULL`
 
 	// Send query to database.
 	err := q.Select(&channels, query, id)
