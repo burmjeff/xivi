@@ -51,7 +51,8 @@ FROM alpine:3.18.4 as deployment
 
 RUN echo "@community https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
 
-RUN apk add vips@community=8.14.3-r0 \
+RUN apk add tzdata \
+vips@community=8.14.3-r0 \
 glib \
 gstreamer \
 gst-plugins-base \
