@@ -257,7 +257,7 @@ func CreatePlaylist(c *fiber.Ctx) error {
 
 	//TODO async Parse m3u and insert channels
 	m3uParser := utils.M3uParser{Db: db}
-	go m3uParser.ParseM3u(id, playlist.URL)
+	go m3uParser.ParseM3u(playlist)
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{

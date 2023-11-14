@@ -7,6 +7,7 @@ toolchain go1.21.0
 require (
 	github.com/arsmn/fiber-swagger/v2 v2.31.1
 	github.com/davidbyttow/govips/v2 v2.13.0
+	github.com/go-co-op/gocron v1.36.0
 	github.com/go-gst/go-gst v0.0.0-20231025155306-bebb75b005a0
 	github.com/go-playground/validator/v10 v10.16.0
 	github.com/gofiber/fiber/v2 v2.50.0
@@ -21,21 +22,9 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 )
 
-require github.com/rogpeppe/go-internal v1.11.0 // indirect
-
 require (
-	github.com/cespare/xxhash v1.1.0 // indirect
-	github.com/cespare/xxhash/v2 v2.2.0 // indirect
-	github.com/dgraph-io/badger/v3 v3.2103.5 // indirect
-	github.com/dgraph-io/ristretto v0.1.1 // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
-	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
-	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/glog v1.1.2 // indirect
-	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
-	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/flatbuffers v23.5.26+incompatible // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
@@ -46,10 +35,8 @@ require (
 	github.com/nlpodyssey/gopickle v0.2.0 // indirect
 	github.com/nlpodyssey/gotokenizers v0.2.0 // indirect
 	github.com/nlpodyssey/spago v1.1.0 // indirect
-	github.com/nlpodyssey/spago/embeddings/store/diskstore v0.0.0-20230429163006-8f170651529c // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
-	go.opencensus.io v0.24.0 // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/image v0.14.0 // indirect
 	golang.org/x/sync v0.5.0 // indirect

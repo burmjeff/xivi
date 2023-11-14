@@ -17,14 +17,14 @@ type EpgParser struct {
 	Db *database.Queries
 }
 
-func (m *EpgParser) ParseEpg(playlistID int64, path string) {
-	epg := models.EpgItem{}
+func (m *EpgParser) ParseEpg(epg *models.Epg) {
+	epgItem := models.EpgItem{}
 
 	log.Info().Msg("EPG Parser started")
 
-	if isValidURL(path) {
+	if isValidURL(epg.URL) {
 		log.Info().Msg("Started parsing xml URL...")
-		resp, err := http.Get(path)
+		resp, err := http.Get(epg.URL)
 		if err != nil {
 			log.Error().Msgf("Unable to get epg.xml FILE: %v", err)
 			return
@@ -33,13 +33,13 @@ func (m *EpgParser) ParseEpg(playlistID int64, path string) {
 		gzipReader, err := gzip.NewReader(resp.Body)
 		defer gzipReader.Close()
 		if err != nil {
-			epg, err = parseXML(resp.Body)
+			epgItem, err = parseXML(resp.Body)
 			if err != nil {
 				log.Error().Msgf("Unable to parse epg.xml FILE: %v", err)
 				return
 			}
 		} else {
-			epg, err = parseXML(gzipReader)
+			epgItem, err = parseXML(gzipReader)
 			if err != nil {
 				log.Error().Msgf("Unable to parse epg.xml FILE: %v", err)
 				return
@@ -50,12 +50,12 @@ func (m *EpgParser) ParseEpg(playlistID int64, path string) {
 	} else {
 		log.Info().Msg("Started parsing xml file...")
 		// Open the XML file
-		file, err := os.Open(path)
+		file, err := os.Open(epg.URL)
 		if err != nil {
 			log.Error().Msgf("Unable to get epg.xml FILE: %v", err)
 			return
 		}
-		epg, err = parseXML(file)
+		epgItem, err = parseXML(file)
 		if err != nil {
 			log.Error().Msgf("Unable to parse epg.xml FILE: %v", err)
 			return
@@ -68,7 +68,7 @@ func (m *EpgParser) ParseEpg(playlistID int64, path string) {
 	go VectorQueue(vectorIn, m.Db)
 
 	// Print out the parsed data
-	for _, channel := range epg.Channels {
+	for _, channel := range epgItem.Channels {
 		if channel.ChannelId != "" {
 			_, err := m.Db.GetEpgChannelByChannelId(channel.ChannelId)
 			if err != nil {
@@ -88,7 +88,7 @@ func (m *EpgParser) ParseEpg(playlistID int64, path string) {
 
 	close(vectorIn)
 
-	for _, programme := range epg.Programmes {
+	for _, programme := range epgItem.Programmes {
 		//Convert times
 		if !programme.Start.IsZero() {
 

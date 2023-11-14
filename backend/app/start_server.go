@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 
+	"xivi/backend/platform/cron"
 	"xivi/backend/platform/database"
 	"xivi/backend/platform/settings"
 
@@ -21,6 +22,9 @@ func StartServer(app *fiber.App) {
 	host := flag.String("host", settings.APP_SETTINGS.Host, "Server Host")
 	port := flag.Int("port", settings.APP_SETTINGS.Port, "Server Port")
 	settings.SERVER_PATH = fmt.Sprintf("%s:%d", *host, *port)
+
+	//Start Cronjobs
+	cron.RunCronJobs()
 
 	// Run server.
 	log.Printf("Server starting at http://%s ...\n", settings.SERVER_PATH)

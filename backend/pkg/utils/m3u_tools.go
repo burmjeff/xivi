@@ -40,7 +40,7 @@ func (m *M3uTools) CreateM3u(template models.Template) {
 	go CreateEpgXML(m.Db, template)
 }
 
-func (m *M3uTools) UpdateTemplate(template *models.Template, oldTemplate string) {
+func (m *M3uTools) RenameTemplate(template *models.Template, oldTemplate string) {
 	var filtered string
 	oldfile := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, oldTemplate)
 	newfile := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, template.Name)
