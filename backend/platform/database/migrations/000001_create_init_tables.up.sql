@@ -18,9 +18,10 @@ CREATE TABLE playlistgroup (
 -- Create playlistchannel table
 CREATE TABLE playlistchannel (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tvgid VARCHAR (255) NULL,
-    name VARCHAR (255) NOT NULL,
+    tvg_id VARCHAR (255) NULL,
+    tvg_name VARCHAR (255) NULL,
     tvg_logo VARCHAR (255) NULL,
+    title VARCHAR (255) NOT NULL,
     enabled BOOLEAN NOT NULL,
     created_at DATETIME DEFAULT (datetime('now','localtime')),
     updated_at DATETIME DEFAULT (datetime('now','localtime'))
@@ -189,7 +190,7 @@ CREATE TABLE channelfilters (
 );
 
 -- Add indexes
-CREATE INDEX idx_playlist_channel ON playlistchannel (name);
+CREATE INDEX idx_playlist_channel ON playlistchannel (title);
 CREATE INDEX idx_epg_epgprogramme ON epgprogramme (channel);
 CREATE INDEX idx_template_tvgid ON templatechannel (tvgid);
 CREATE INDEX idx_template_vector ON templatechannelvectors (name);

@@ -7,9 +7,10 @@ import (
 // Channel struct to describe Playlist Channel object.
 type PlaylistChannel struct {
 	ID        int64     `db:"id" json:"id"`
-	TvgID     string    `db:"tvgid" json:"tvgid" validate:"lte=255"`
-	Name      string    `db:"name"  json:"name" validate:"required,lte=255"`
+	TvgID     string    `db:"tvg_id" json:"tvg_id" validate:"lte=255"`
+	TvgName   string    `db:"tvg_name"  json:"tvg_name" validate:"required,lte=255"`
 	Logo      string    `db:"tvg_logo" json:"tvg_logo" validate:"lte=255"`
+	Title     string    `db:"title" json:"title" validate:"lte=255"`
 	Enabled   bool      `db:"enabled" json:"enabled"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`

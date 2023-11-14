@@ -119,7 +119,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 		tvgName := GetByRegex(m.regexes["tvgName"], lineInfo)
 		tvgLogo := GetByRegex(m.regexes["tvgLogo"], lineInfo)
 		group := GetByRegex(m.regexes["group"], lineInfo)
-		//title := getByRegex(m.regexes["title"], lineInfo)
+		title := GetByRegex(m.regexes["title"], lineInfo)
 
 		if tvgID != "" {
 			playlistChannel.TvgID = tvgID
@@ -127,10 +127,13 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 			vectorIn <- tvgID
 		}
 		if tvgName != "" {
-			playlistChannel.Name = tvgName
+			playlistChannel.TvgName = tvgName
 		}
 		if tvgLogo != "" {
 			playlistChannel.Logo = tvgLogo
+		}
+		if title != "" {
+			playlistChannel.Title = title
 		}
 
 		var groupID int64 = 0
@@ -173,7 +176,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 					log.Print(err)
 					continue
 				}
-				log.Info().Msgf("Channel found. Adding url to Channel: %s", playlistChannel.Name)
+				log.Info().Msgf("Channel found. Adding url to Channel: %s", playlistChannel.Title)
 				playlistChannel.UpdatedAt = time.Now()
 				err = m.Db.UpdatePlChannel(foundChannel.ID, playlistChannel)
 				if err != nil {
@@ -207,7 +210,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 				return
 			}
 		}
-		log.Info().Msgf("Channel not found. Creating Channel: %s", playlistChannel.Name)
+		log.Info().Msgf("Channel not found. Creating Channel: %s", playlistChannel.Title)
 		playlistChannel.CreatedAt = time.Now()
 		playlistChannelID, err := m.Db.CreatePlChannel(playlistChannel)
 		if err != nil {

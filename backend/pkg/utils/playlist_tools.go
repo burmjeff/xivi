@@ -29,8 +29,8 @@ func (p *PlaylistTools) ConvertPlChannel(playlistChannel models.PlaylistChannel)
 	templateChannel := &models.TemplateChannel{}
 	tmplChannelItem := &models.TemplateChannelItem{}
 
-	if playlistChannel.Name != "" {
-		templateChannel.Name = playlistChannel.Name
+	if playlistChannel.Title != "" {
+		templateChannel.Name = playlistChannel.Title
 	}
 	if playlistChannel.TvgID != "" {
 		templateChannel.TvgID = playlistChannel.TvgID
