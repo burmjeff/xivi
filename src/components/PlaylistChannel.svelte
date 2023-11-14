@@ -38,8 +38,8 @@
 			{#each $playlists[playlistIdx].playlistGroups[groupIdx].playlistChannels as channel, i}
 				<tr>
 					<td><img class="w-14" src={channel.tvg_logo} alt="Logo" /></td>
-					<td>{channel.name}</td>
-					<td>{channel.tvgid}</td>
+					<td>{channel.title}</td>
+					<td>{channel.tvg_id}</td>
 				</tr>
 			{/each}
 		</tbody>

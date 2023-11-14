@@ -147,8 +147,8 @@ func (m *M3uTools) UpdateChannel(template *models.Template, channel *models.Temp
 	logoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, channel.Logo)
 
 	// TODO FIX CHANNEL NAME IN M3U
-	filter := fmt.Sprintf("tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\"", oldChannel.Name, oldChannel.TvgID, oldLogoURL)
-	newChannel := fmt.Sprintf("tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\"", channel.Name, channel.TvgID, logoURL)
+	filter := fmt.Sprintf("tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\"", oldChannel.TvgID, oldChannel.TvgID, oldLogoURL)
+	newChannel := fmt.Sprintf("tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\"", channel.TvgID, channel.TvgID, logoURL)
 	lines := strings.Split(string(content), "\n")
 
 	// Loop through each line and check if it contains the group.
@@ -295,7 +295,7 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 
 		log.Printf("M3U Creation: Adding Template Channel: %s", channel.Name)
 		channelURL := fmt.Sprintf("http://%s:%d/stream/%s", m.host, m.port, channel.Uuid)
-		_, err = writer.WriteString(fmt.Sprintf("#EXTINF:-1 tvg-chno=\"%d\" tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n%s\n", chNo, channel.Name, channel.TvgID, logoURL, group.Name, channel.Name, channelURL))
+		_, err = writer.WriteString(fmt.Sprintf("#EXTINF:-1 tvg-chno=\"%d\" tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n%s\n", chNo, channel.TvgID, channel.TvgID, logoURL, group.Name, channel.Name, channelURL))
 		if err != nil {
 			log.Err(err)
 			continue

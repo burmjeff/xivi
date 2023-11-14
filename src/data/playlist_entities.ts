@@ -16,8 +16,8 @@ export interface PlaylistGroup {
 
 export interface PlaylistChannel {
 	id: number;
-	name: string;
-    tvgid: string;
+	title: string;
+    tvg_id: string;
     tvg_logo: string;
     enabled: boolean;
 }

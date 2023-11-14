@@ -385,7 +385,7 @@ func (q *PlaylistQueries) GetPlChannelsByTvgID(tvgid string) ([]models.PlaylistC
 	channels := []models.PlaylistChannel{}
 
 	// Define query string.
-	query := `SELECT * FROM playlistchannel WHERE tvgid LIKE $1`
+	query := `SELECT * FROM playlistchannel WHERE tvg_id LIKE $1`
 
 	// Send query to database.
 	err := q.Select(&channels, query, tvgid)
@@ -401,10 +401,10 @@ func (q *PlaylistQueries) GetPlChannelsByTvgID(tvgid string) ([]models.PlaylistC
 // CreateChannel method for creating a Channel by given Channel object.
 func (q *PlaylistQueries) CreatePlChannel(p *models.PlaylistChannel) (int64, error) {
 	// Define query string.
-	query := `INSERT INTO playlistchannel VALUES (null, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO playlistchannel VALUES (null, ?, ?, ?, ?, ?, ?, ?)`
 
 	// Send query to database.
-	res, err := q.Exec(query, utils.NewNullString(p.TvgID), p.Name, utils.NewNullString(p.Logo), p.Enabled, p.CreatedAt, p.UpdatedAt)
+	res, err := q.Exec(query, utils.NewNullString(p.TvgID), p.TvgName, utils.NewNullString(p.Logo), p.Title, p.Enabled, p.CreatedAt, p.UpdatedAt)
 	if err != nil {
 		// Return only error.
 		return 0, err
@@ -423,10 +423,10 @@ func (q *PlaylistQueries) CreatePlChannel(p *models.PlaylistChannel) (int64, err
 // UpdatePlaylist method for updating a channel by given Channel object.
 func (q *PlaylistQueries) UpdatePlChannel(id int64, p *models.PlaylistChannel) error {
 	// Define query string.
-	query := `UPDATE playlistchannel SET tvgid = ?, name = ?, tvg_logo = ?, enabled = ?, updated_at = ? WHERE id = ?`
+	query := `UPDATE playlistchannel SET tvg_id = ?, tvg_name = ?, tvg_logo = ?, title = ?, enabled = ?, updated_at = ? WHERE id = ?`
 
 	// Send query to database.
-	_, err := q.Exec(query, p.TvgID, p.Name, p.Logo, p.Enabled, p.UpdatedAt, id)
+	_, err := q.Exec(query, p.TvgID, p.TvgName, p.Logo, p.Title, p.Enabled, p.UpdatedAt, id)
 	if err != nil {
 		// Return only error.
 		return err
