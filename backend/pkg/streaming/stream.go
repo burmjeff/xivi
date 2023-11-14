@@ -314,17 +314,18 @@ func (s *Stream) CreatePipeline() (*gst.Pipeline, error) {
 	src.Link(typefind)
 
 	typefind.Connect("have-type", func(self *gst.Element, guint gst.TypeFindProbability, caps *gst.Caps) {
-		fmt.Println("GST CAPS: %s", caps)
+		//fmt.Println("GST CAPS: %s", caps)
 		if strings.HasPrefix(caps.String(), "application/x-hls") {
 			demux, err := gst.NewElement("hlsdemux")
 			if err != nil {
 				fmt.Println(err) //TODO RETURN ERROR
 			}
 			pipeline.Add(demux)
-			demux.Connect("pad-added", func(self *gst.Element, pad *gst.Pad) {
-				pad.Link(tee.GetStaticPad("sink"))
-			})
 			typefind.Link(demux)
+			demux.Connect("pad-added", func(self *gst.Element, pad *gst.Pad) {
+				self.Link(tee)
+			})
+			demux.SetState(gst.StatePlaying)
 
 		} else if strings.HasPrefix(caps.String(), "video/mpegts") {
 			self.Link(tee)

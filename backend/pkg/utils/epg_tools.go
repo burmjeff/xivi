@@ -34,8 +34,9 @@ func CreateEpgXML(db *database.Queries, template models.Template) {
 	encoder := xml.NewEncoder(file)
 	encoder.Indent("", "  ")
 
-	if err := encoder.Encode(xml.Header); err != nil {
-		log.Err(err)
+	_, err = file.Write([]byte(xml.Header))
+	if err != nil {
+		fmt.Println("Error writing to XML file:", err)
 		return
 	}
 
