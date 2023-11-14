@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 	"xivi/backend/platform/settings"
-
-	"github.com/rs/zerolog/log"
 )
 
 // Channel struct to describe Template Channel object.
@@ -100,11 +98,7 @@ func (t Time) Value() (driver.Value, error) {
 	var localTime *time.Location
 	localTime, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
 	if err != nil {
-		localTime, err = time.LoadLocation("Etc/UTC")
-		if err != nil {
-			log.Error().Msgf("No TZ provided: %v", err)
-			return nil, err
-		}
+		localTime = time.UTC
 	}
 	return t.In(localTime), nil
 }

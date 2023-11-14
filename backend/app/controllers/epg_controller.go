@@ -155,7 +155,7 @@ func AddEpg(c *fiber.Ctx) error {
 
 	//TODO async Parse m3u and insert channels
 	epgParser := utils.EpgParser{Db: db}
-	go epgParser.ParseEpg(id, epg.URL)
+	go epgParser.ParseEpg(epg)
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{

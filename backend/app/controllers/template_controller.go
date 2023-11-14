@@ -218,7 +218,7 @@ func UpdateTemplate(c *fiber.Ctx) error {
 		})
 	}
 	m3uTools := utils.M3uTools{Db: db}
-	go m3uTools.UpdateTemplate(template, oldTemplate.Name)
+	go m3uTools.RenameTemplate(template, oldTemplate.Name)
 
 	// Update template by given ID.
 	if err := db.UpdateTemplate(template); err != nil {

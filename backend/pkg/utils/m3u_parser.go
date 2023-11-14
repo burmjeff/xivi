@@ -25,12 +25,12 @@ type M3uParser struct {
 }
 
 // ParseM3u - Parses the content of local file/URL.
-func (m *M3uParser) ParseM3u(playlistID int64, path string) {
-	m.playlistID = playlistID
+func (m *M3uParser) ParseM3u(playlist *models.Playlist) {
+	m.playlistID = playlist.ID
 	log.Info().Msg("Parser started")
 
 	//Check if matching playlist exists
-	m.matchedPlaylist = MatchDomain(m.Db, playlistID)
+	m.matchedPlaylist = MatchDomain(m.Db, playlist.ID)
 
 	m.regexes = make(map[string]*regexp.Regexp)
 	m.regexes["file"] = CompileRegex(`(?m)^[a-zA-Z]:\\((?:.*?\\)*).*.[\d\w]{3,5}$|^(/[^/]*)+/?.[\d\w]{3,5}$`)
@@ -41,9 +41,9 @@ func (m *M3uParser) ParseM3u(playlistID int64, path string) {
 	m.regexes["group"] = CompileRegex(`group-title="(.*?)"`)
 	m.regexes["title"] = CompileRegex(`[,](.*?)$`)
 
-	if isValidURL(path) {
+	if isValidURL(playlist.URL) {
 		log.Info().Msg("Started parsing m3u URL...")
-		resp, err := http.Get(path)
+		resp, err := http.Get(playlist.URL)
 		if err != nil {
 			log.Error().Msgf("Unable to get M3U FILE: %v", err)
 			return
@@ -56,7 +56,7 @@ func (m *M3uParser) ParseM3u(playlistID int64, path string) {
 		m.content = string(body)
 	} else {
 		log.Info().Msg("Started parsing m3u file...")
-		body, err := os.ReadFile(path)
+		body, err := os.ReadFile(playlist.URL)
 		if err != nil {
 			log.Error().Msgf("Unable to get M3U FILE: %v", err)
 			return
