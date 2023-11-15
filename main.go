@@ -39,6 +39,9 @@ func main() {
 		log.Fatal().Msg(err.Error())
 	}
 
+	//TODO LET USER SET DEFAULT CHANNEL LOGO
+	settings.CopyDefaultLogo()
+
 	// Define Fiber config.
 	config := configs.FiberConfig()
 
