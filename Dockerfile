@@ -2,7 +2,7 @@
 # svelte-builder
 #
 
-FROM node:20.7.0-alpine3.18 as app-builder
+FROM node:20.9.0-alpine3.18 as app-builder
 
 WORKDIR /app
 COPY . /app
@@ -15,7 +15,7 @@ RUN npx vite build
 # server-builder
 #
 
-FROM golang:1.21.1-alpine3.18 as server-builder
+FROM golang:1.21.4-alpine3.18 as server-builder
 
 RUN echo "@main https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories
 RUN echo "@community https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories

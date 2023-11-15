@@ -124,7 +124,6 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 		if tvgID != "" {
 			playlistChannel.TvgID = tvgID
 			//Add new channel vectors
-			vectorIn <- tvgID
 		}
 		if tvgName != "" {
 			playlistChannel.TvgName = tvgName
@@ -134,6 +133,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 		}
 		if title != "" {
 			playlistChannel.Title = title
+			vectorIn <- title
 		}
 
 		var groupID int64 = 0
