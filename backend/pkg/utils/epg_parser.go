@@ -81,7 +81,7 @@ func (m *EpgParser) ParseEpg(epg *models.Epg) {
 			} else {
 				log.Info().Msgf("EPG XML PARSER: Channel already exists: %s", channel.DisplayName)
 			}
-			vectorIn <- channel.ChannelId
+			vectorIn <- channel.DisplayName
 		}
 
 	}

@@ -10,7 +10,7 @@ require (
 	github.com/go-co-op/gocron v1.36.0
 	github.com/go-gst/go-gst v0.0.0-20231025155306-bebb75b005a0
 	github.com/go-playground/validator/v10 v10.16.0
-	github.com/gofiber/fiber/v2 v2.50.0
+	github.com/gofiber/fiber/v2 v2.51.0
 	github.com/gofiber/jwt/v2 v2.2.7
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/google/uuid v1.4.0
@@ -63,7 +63,7 @@ require (
 	github.com/nlpodyssey/cybertron v0.2.1
 	github.com/swaggo/files v1.0.1 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/valyala/fasthttp v1.50.0
+	github.com/valyala/fasthttp v1.51.0
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	golang.org/x/crypto v0.15.0 // indirect
 	golang.org/x/net v0.18.0 // indirect
