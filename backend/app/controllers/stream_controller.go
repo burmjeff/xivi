@@ -54,34 +54,43 @@ func GetStream(c *fiber.Ctx) error {
 		})
 	}
 
-	switch settings.APP_SETTINGS.Streaming.Proxy {
+	if len(channels) > 0 {
+		switch settings.APP_SETTINGS.Streaming.Proxy {
 
-	case false:
-		//TODO LOOP CHECK STREAM STATUS UNTIL 302
-		return c.Redirect(channels[0].Url, http.StatusTemporaryRedirect)
+		case false:
+			//TODO LOOP CHECK STREAM STATUS UNTIL 302
+			return c.Redirect(channels[0].Url, http.StatusTemporaryRedirect)
 
-	case true:
-		for _, stream := range streaming.Streams {
-			if stream.Settings.Src == channels[0].Url {
-				if err := stream.NewSink(c.Context()); err != nil {
-					return err
+		case true:
+			for _, stream := range streaming.Streams {
+				if stream.Settings.Src == channels[0].Url {
+					if err := stream.NewSink(c.Context()); err != nil {
+						return err
+					}
+					return nil
 				}
-				return nil
+
+			}
+
+			s := streaming.NewStreamer()
+			if err := s.StartStream(channels[0].Url); err != nil {
+				return err
+			}
+			streaming.AddStream(s)
+
+			if err := s.NewSink(c.Context()); err != nil {
+				s.Close(nil, nil)
+				return err
 			}
 
 		}
-
-		s := streaming.NewStreamer()
-		if err := s.StartStream(channels[0].Url); err != nil {
-			return err
-		}
-		streaming.AddStream(s)
-
-		if err := s.NewSink(c.Context()); err != nil {
-			s.Close(nil, nil)
-			return err
-		}
-
+	} else {
+		// Return, if no channels found.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":    true,
+			"msg":      "Stream Error",
+			"channels": nil,
+		})
 	}
 	return nil
 }
