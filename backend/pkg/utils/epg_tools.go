@@ -46,6 +46,14 @@ func CreateEpgXML(db *database.Queries, template models.Template) {
 			log.Warn().Msgf("No channel found for %s: %v", channel, err)
 			continue
 		}
+
+		if templateChannel, err := db.GetTmplChannelBytvgid(channel); err != nil {
+			//TODO LET USER SET DEFAULT CHANNEL LOGO
+			epgChannel.Icon.Src = fmt.Sprintf("http://%s:%d/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, GetLogoUrl("xivi_channel"))
+		} else {
+			epgChannel.Icon.Src = fmt.Sprintf("http://%s:%d/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, GetLogoUrl(templateChannel.Uuid))
+		}
+
 		epg.Channels = append(epg.Channels, epgChannel)
 	}
 

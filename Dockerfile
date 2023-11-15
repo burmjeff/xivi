@@ -78,6 +78,7 @@ WORKDIR /xivi
 COPY --from=app-builder /app/build /xivi/build
 COPY --from=server-builder ["/build/xivi", "/xivi/"]
 COPY backend/platform/database/migrations/ /xivi/database_migrations
+COPY xivi_channel.png /xivi/xivi_channel.png
 
 VOLUME /config /serve
 

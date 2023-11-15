@@ -3,6 +3,7 @@ package settings
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 
@@ -183,6 +184,27 @@ func InitPaths() error {
 		}
 	}
 	return nil
+}
+
+func CopyDefaultLogo() {
+	source, err := os.Open("/xivi/xivi_channel.png") //open the source file
+	if err != nil {
+		log.Err(err)
+		return
+	}
+	defer source.Close()
+
+	destination, err := os.Create(fmt.Sprintf("%s/xivi_channel.png", LOGO_FILEPATH)) //create the destination file
+	if err != nil {
+		log.Err(err)
+		return
+	}
+	defer destination.Close()
+	_, err = io.Copy(destination, source) //copy the contents of source to destination file
+	if err != nil {
+		log.Err(err)
+		return
+	}
 }
 
 func ValidateConfigPath(path string) error {
