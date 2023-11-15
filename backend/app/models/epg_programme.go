@@ -14,19 +14,19 @@ type EpgProgramme struct {
 	ID            int64         `db:"id" json:"id,omitempty" xml:"-"`
 	Start         *Time         `db:"start" json:"stop,omitempty" xml:"start,attr,omitempty" validate:"required"`
 	Stop          *Time         `db:"stop" json:"start,omitempty" xml:"stop,attr,omitempty" validate:"required"`
-	Channel       string        `db:"channel" json:"channel,omitempty" xml:"channel,attr,omitempty" validate:"required,lte=20"`
-	Title         Title         `db:"title" json:"title,omitempty" xml:"title,omitempty"`
+	Channel       string        `db:"channel" json:"channel,omitempty" xml:"channel,attr,omitempty" validate:"required,lte=50"`
+	Title         Title         `db:"title" json:"title,omitempty" xml:"title,omitempty" validate:"required"`
 	Subtitle      string        `db:"subtitle" json:"subtitle,omitempty" xml:"sub-title,omitempty" validate:"lte=255"`
 	Desc          string        `db:"desc" json:"desc,omitempty" xml:"desc,omitempty" validate:"lte=1000"`
-	Categories    StringArray   `db:"categories" json:"categories,omitempty" xml:"category,omitempty"`
-	Icon          Icon          `db:"icon" json:"icon,omitempty" xml:"icon,omitempty"`
-	Directors     StringArray   `db:"directors" json:"directors,omitempty" xml:"credits>director,omitempty"`
-	Presenters    StringArray   `db:"presenters" json:"presenters,omitempty" xml:"credits>presenter,omitempty"`
-	Producers     StringArray   `db:"producers" json:"producers,omitempty" xml:"credits>producer,omitempty"`
-	Actors        StringArray   `db:"actors" json:"actors,omitempty" xml:"credits>actor,omitempty"`
-	EpisodeNumber EpisodeNumber `db:"episodenumber" json:"episodenumber,omitempty" xml:"episode-num,omitempty"`
-	Rating        Rating        `db:"rating" json:"rating,omitempty" xml:"rating,omitempty"`
-	Video         Video         `db:"video" json:"video,omitempty" xml:"video,omitempty"`
+	Categories    StringArray   `db:"categories" json:"categories,omitempty" xml:"category,omitempty" validate:"lte=255"`
+	Icon          Icon          `db:"icon" json:"icon,omitempty" xml:"icon,omitempty" validate:"lte=255"`
+	Directors     StringArray   `db:"directors" json:"directors,omitempty" xml:"credits>director,omitempty" validate:"lte=255"`
+	Presenters    StringArray   `db:"presenters" json:"presenters,omitempty" xml:"credits>presenter,omitempty" validate:"lte=255"`
+	Producers     StringArray   `db:"producers" json:"producers,omitempty" xml:"credits>producer,omitempty" validate:"lte=255"`
+	Actors        StringArray   `db:"actors" json:"actors,omitempty" xml:"credits>actor,omitempty" validate:"lte=255"`
+	EpisodeNumber EpisodeNumber `db:"episodenumber" json:"episodenumber,omitempty" xml:"episode-num,omitempty" validate:"lte=255"`
+	Rating        Rating        `db:"rating" json:"rating,omitempty" xml:"rating,omitempty" validate:"lte=255"`
+	Video         Video         `db:"video" json:"video,omitempty" xml:"video,omitempty" validate:"lte=255"`
 	Date          string        `db:"date" json:"date,omitempty" xml:"date,omitempty" validate:"lte=4"`
 }
 
