@@ -15,7 +15,7 @@
     const modalStore = getModalStore();
     export let templateId: number;
     export let templateIdx: number
-    let dndTypeTemplateGroup = "templateGroup";
+    let dndTypeGroups = "groups";
     let shouldIgnoreDndEvents = false;
     const flipDurationMs = 150;
     let dndItem: TemplateGroup;
@@ -132,7 +132,7 @@
 
 {#if $templates[templateIdx].groups != null}
     <Accordion>
-        <section use:dndzone={{items: $templates[templateIdx].groups, flipDurationMs, type: dndTypeTemplateGroup, transformDraggedElement}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
+        <section use:dndzone={{items: $templates[templateIdx].groups, flipDurationMs, type: dndTypeGroups, transformDraggedElement}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
             {#if $templates[templateIdx].groups.length > 0}
                     {#each $templates[templateIdx].groups as group, groupIdx (group.id)}
                         <div id="animate" animate:flip={{duration: flipDurationMs}}>

@@ -19,7 +19,7 @@
 	let shouldIgnoreDndEvents = false;
 	const flipDurationMs = 150;
 	const dropFromOthersDisabled = true;
-	let dndTypePlaylist = "playlist";
+	let dndTypeGroups = "groups";
 	let dndItem: PlaylistGroup;
 	let dndIdx: number
 
@@ -30,12 +30,12 @@
 	};
 
 	onMount(async () => {
-		$playlists[playlistIdx].playlistGroups = [];
+		$playlists[playlistIdx].groups = [];
 		const fetchedData = await updatePlaylistGroups();
 		if (typeof fetchedData !== 'undefined') {
 			fetchedData.forEach(function (group: PlaylistGroup) {
-				$playlists[playlistIdx].playlistGroups.push(group);
-				$playlists[playlistIdx].playlistGroups = $playlists[playlistIdx].playlistGroups;
+				$playlists[playlistIdx].groups.push(group);
+				$playlists[playlistIdx].groups = $playlists[playlistIdx].groups;
 			});
 		}
 	});
@@ -84,45 +84,45 @@
 		e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
 		
 		if (trigger === TRIGGERS.DRAG_STARTED) {
-			dndIdx = $playlists[playlistIdx].playlistGroups.findIndex(item => item.id === id);
-			dndItem =  $playlists[playlistIdx].playlistGroups[dndIdx];
-			$playlists[playlistIdx].playlistGroups = e.detail.items
+			dndIdx = $playlists[playlistIdx].groups.findIndex(item => item.id === id);
+			dndItem =  $playlists[playlistIdx].groups[dndIdx];
+			$playlists[playlistIdx].groups = e.detail.items
 			shouldIgnoreDndEvents = true;
 		}
 		else if (!shouldIgnoreDndEvents) {
-            $playlists[playlistIdx].playlistGroups = e.detail.items;
+            $playlists[playlistIdx].groups = e.detail.items;
         }
         else {
-            $playlists[playlistIdx].playlistGroups = [...$playlists[playlistIdx].playlistGroups]
+            $playlists[playlistIdx].groups = [...$playlists[playlistIdx].groups]
         }
 	}
 	function handleDndFinalize(e: CustomEvent<DndEvent<PlaylistGroup>>) {
 		const {trigger, id} = e.detail.info;
         if (!shouldIgnoreDndEvents) {
-            $playlists[playlistIdx].playlistGroups = e.detail.items
+            $playlists[playlistIdx].groups = e.detail.items
         }
         else if (trigger === TRIGGERS.DROPPED_INTO_ANOTHER){
 			e.detail.items = e.detail.items.filter(item => !item[SHADOW_ITEM_MARKER_PROPERTY_NAME]);
 			e.detail.items.splice(dndIdx,0, dndItem)
-            $playlists[playlistIdx].playlistGroups = e.detail.items
+            $playlists[playlistIdx].groups = e.detail.items
             shouldIgnoreDndEvents = false;
         }
 		else {
-            $playlists[playlistIdx].playlistGroups = e.detail.items
+            $playlists[playlistIdx].groups = e.detail.items
             shouldIgnoreDndEvents = false;
         }
     }
 </script>
 
-{#if $playlists[playlistIdx].playlistGroups != null && $playlists[playlistIdx].playlistGroups.length > 0}
+{#if $playlists[playlistIdx].groups != null && $playlists[playlistIdx].groups.length > 0}
 	<Accordion>
 		<section use:dndzone={{
-			items: $playlists[playlistIdx].playlistGroups,
+			items: $playlists[playlistIdx].groups,
 			flipDurationMs,
 			dropFromOthersDisabled,
-			type: dndTypePlaylist
+			type: dndTypeGroups
 			}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
-			{#each $playlists[playlistIdx].playlistGroups as group, groupIdx (group.id)}
+			{#each $playlists[playlistIdx].groups as group, groupIdx (group.id)}
 			<div id="animate" animate:flip={{ duration: flipDurationMs }}>
 				<AccordionItem class="card mb-1" key={group.id}>
 					<svelte:fragment slot="summary"><h4>{group.name}</h4></svelte:fragment>

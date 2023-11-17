@@ -313,3 +313,6 @@ FOR EACH ROW
 BEGIN
     UPDATE templatechannel SET logoid = NULL WHERE logoid = old.id;
 END;
+
+-- Initial Values
+INSERT INTO logo VALUES (0, "xivi_channel")

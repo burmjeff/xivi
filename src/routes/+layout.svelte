@@ -44,7 +44,8 @@
 		<nav class="list-nav">
 			<ul>
 				<li><a href="/">Home</a></li>
-				<li><a href="/templates">Templates</a></li>
+				<li><a href="/templates">Template Management</a></li>
+				<li><a href="/channels">Channel Management</a></li>
 				<li><a href="/epg">Epg</a></li>
 				<li><a href="/settings">Settings</a></li>
 			</ul>
