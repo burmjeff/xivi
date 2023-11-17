@@ -14,7 +14,7 @@
     import IconParkOutlineAdd from '~icons/icon-park-outline/add';
 
     let dndTypePlaylist = "playlist";
-    let dndTypeTemplateGroup = "templateGroup";
+    let dndTypeGroups = "groups";
     let shouldIgnoreDndEvents = false;
     const flipDurationMs = 150;
     let dndItem: TemplateGroup;
@@ -269,8 +269,7 @@
     {#if $templateGroups != null}
         <Accordion>
             <section id="accord" class="templategroups-viewport min-w-full overflow-auto" 
-            use:dndzone={{items: $templateGroups, flipDurationMs, type: dndTypePlaylist, transformDraggedElement}} 
-            use:dndzone={{items: $templateGroups, flipDurationMs, type: dndTypeTemplateGroup, transformDraggedElement}} 
+            use:dndzone={{items: $templateGroups, flipDurationMs, type: dndTypeGroups, transformDraggedElement}} 
             on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
                 {#if $templateGroups.length > 0}
                     {#each $templateGroups as group, groupIdx (group.id)}

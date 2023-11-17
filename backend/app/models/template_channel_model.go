@@ -6,7 +6,7 @@ type TemplateChannel struct {
 	Name   string `db:"name" json:"name" validate:"required,lte=255"`
 	TvgID  string `db:"tvgid" json:"tvgid" validate:"lte=255"`
 	LogoId int64  `db:"logoid" json:"logoid"`
-	Uuid   string `db:"uuid" json:"uuid"`
+	Uuid   string `db:"uuid" json:"uuid" validate:"required"`
 }
 
 type TemplateChannelItem struct {

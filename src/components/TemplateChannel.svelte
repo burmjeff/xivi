@@ -13,7 +13,7 @@
 	export let groupId: string;
 	export let groupIdx: number;
 	const modalStore = getModalStore();
-	let dndTypeTemplateChannel = "templateChannel";
+	let dndTypeChannels = "channels";
 	let dndItem: TemplateChannel;
 	let dndIdx: number
 	let shouldIgnoreDndEvents = false;
@@ -28,6 +28,7 @@
 	onMount(async () => {
 		$templateGroups[groupIdx].channels = [];
 		const fetchedData = await updateTemplateChannels();
+		console.log(fetchedData)
 		if (typeof fetchedData !== 'undefined') {
 			fetchedData.forEach(function (channel: TemplateChannel) {
 				$templateGroups[groupIdx].channels.push(channel);
@@ -90,6 +91,32 @@
 		});
 	}
 
+	/*
+	async function addChannel(groupId: string, groupIdx: number) {
+		let newChannel = {
+			name: $templateGroups[groupIdx].channels[groupIdx],
+			tvgid: formData.tvgid,
+			logoid: formData.logoid
+		}
+
+		try {
+			const response = await fetch(`/api/template/group/${groupId}/channel`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(newChannel)
+			});
+			const data = await response.json();
+			console.log('Added template channel:', data);
+			$templateGroups[groupIdx].channels.push(data.templatechannel)
+			$templateGroups[groupIdx].channels = $templateGroups[groupIdx].channels
+		} catch (error) {
+			console.log('Error updating template channel:', error);
+			return;
+		}
+	}*/
+
 	function handleDndConsider(e: CustomEvent<DndEvent<TemplateChannel>>) {
 		const {trigger, id} = e.detail.info;
 		//e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
@@ -111,6 +138,7 @@
 		const {trigger, id} = e.detail.info;
         if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreDndEvents) {
             e.detail.items = e.detail.items.filter(item => !item.isDragged);
+			//addChannel(id)
             $templateGroups[groupIdx].channels = e.detail.items
             shouldIgnoreDndEvents = false;
         }
@@ -141,8 +169,8 @@
 					<th>tvg-id</th>
 				</tr>
 			</thead>
-				<tbody use:dndzone={{items: $templateGroups[groupIdx].channels, flipDurationMs, type: dndTypeTemplateChannel, transformDraggedElement}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
-					{#each $templateGroups[groupIdx].channels as channel, channelIdx (channelIdx)}
+				<tbody use:dndzone={{items: $templateGroups[groupIdx].channels, flipDurationMs, type: dndTypeChannels, transformDraggedElement}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
+					{#each $templateGroups[groupIdx].channels as channel, channelIdx (channel.id)}
 						<tr id="animate" animate:flip={{duration:flipDurationMs}} on:click={() => modalSettings(channelIdx)}>
 							<td><img class="w-14" src={channel.logo} alt="Logo" /></td>
 							<td>{channel.name}</td>

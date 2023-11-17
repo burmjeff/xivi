@@ -3,7 +3,7 @@ export interface Playlist {
 	name: string;
 	url: string;
 	itemOpen: boolean;
-	playlistGroups: PlaylistGroup[];
+	groups: PlaylistGroup[];
 }
 
 export interface PlaylistGroup {
@@ -11,13 +11,15 @@ export interface PlaylistGroup {
 	name: string;
 	isDndShadowItem: boolean;
 	isDragged: boolean;
-	playlistChannels: PlaylistChannel[];
+	channels: PlaylistChannel[];
 }
 
 export interface PlaylistChannel {
-	id: number;
+	id: string;
 	title: string;
     tvg_id: string;
     tvg_logo: string;
     enabled: boolean;
+	isDndShadowItem: boolean;
+	isDragged: boolean;
 }
