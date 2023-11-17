@@ -315,4 +315,4 @@ BEGIN
 END;
 
 -- Initial Values
-INSERT INTO logo VALUES (0, "xivi_channel")
+INSERT INTO logo VALUES (0, "xivi_channel");
