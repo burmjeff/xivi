@@ -218,6 +218,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan *models.PlaylistChan
 			return
 		}
 		playlistChannel.ID = playlistChannelID
+		vectorIn <- playlistChannel
 		m.createPlaylistGroupChannel(groupID, playlistChannel)
 
 		//Set channel URL model
@@ -230,10 +231,6 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan *models.PlaylistChan
 			log.Warn().Msg(err.Error())
 			return
 		}
-
-		//try to match template channel only if auto-match=true
-		go MatchChannel(m.Db, playlistChannel)
-
 	}
 }
 

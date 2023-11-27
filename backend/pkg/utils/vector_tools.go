@@ -21,6 +21,9 @@ import (
 func PlaylistVectorQueue(in <-chan *models.PlaylistChannel, db *database.Queries) {
 	for playlistCh := range in {
 		_ = UpdatePlaylistVector(db, playlistCh)
+
+		//try to match template channel only if auto-match=true
+		go MatchChannel(db, playlistCh)
 	}
 }
 
