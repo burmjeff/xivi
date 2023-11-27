@@ -11,6 +11,11 @@ server:
   port: 8080
   readtimeout: 60
 
+playlist:
+  tvgid_match: true
+  name_match: true
+  name_score: 0.9
+
 streaming:
   proxy: true
   buffer: 0

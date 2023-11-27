@@ -105,6 +105,11 @@ func SetDefaults() (*AppSettings, error) {
 			Port:        3000,
 			ReadTimeout: 60,
 		},
+		Playlist: Playlist{
+			Tvgid_match: true,
+			Name_match:  true,
+			Name_score:  0.9,
+		},
 		Streaming: Streaming{
 			Proxy:     true,
 			Buffer:    0,

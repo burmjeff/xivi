@@ -18,32 +18,83 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func VectorQueue(in <-chan string, db *database.Queries) {
-	for name := range in {
-		AddChannelVector(db, name)
+func PlaylistVectorQueue(in <-chan *models.PlaylistChannel, db *database.Queries) {
+	for playlistCh := range in {
+		_ = UpdatePlaylistVector(db, playlistCh)
 	}
 }
 
-func AddChannelVector(db *database.Queries, name string) {
-	_, err := db.GetChannelVector(name)
-	if err != nil {
-		vector, err := VectorizeString(name)
-		if err != nil {
-			log.Warn().Msgf("VECTORIZE_STRING: %v", err)
-			return
+// returns vector id
+func UpdatePlaylistVector(db *database.Queries, playlistCh *models.PlaylistChannel) int64 {
+	if vectorId, err := addChannelVector(db, playlistCh.Title); err != nil {
+		log.Warn().Msgf("VECTORIZE_STRING: %v", err)
+	} else {
+		if channelVector, err := db.GetPlaylistChannelVector(playlistCh.ID); err != nil {
+			log.Debug().Msgf("matchChannels:, %v", err)
+			channelVector = &models.PlaylistChannelVector{
+				ChannelId: playlistCh.ID,
+				VectorId:  vectorId,
+			}
+			if _, err := db.CreatePlaylistChannelVector(channelVector); err != nil {
+				log.Debug().Msgf("matchChannels:, %v", err)
+				return channelVector.VectorId
+			}
+		} else {
+			channelVector.VectorId = vectorId
+			if err := db.UpdatePlaylistChannelVector(channelVector); err != nil {
+				log.Debug().Msgf("matchChannels:, %v", err)
+				return channelVector.VectorId
+			}
 		}
-		channelVector := models.ChannelVector{Name: name, Vector: vector}
-		err = db.CreateChannelVector(channelVector)
-		if err != nil {
-			log.Warn().Msgf("VECTORIZE_STRING: %v", err)
-			return
-		}
+	}
+	return 0
+}
 
+func UpdateTemplateVector(db *database.Queries, templateCh *models.TemplateChannel) {
+	if vectorId, err := addChannelVector(db, templateCh.Name); err != nil {
+		log.Warn().Msgf("VECTORIZE_STRING: %v", err)
+	} else {
+		if channelVector, err := db.GetTemplateChannelVector(templateCh.ID); err != nil {
+			log.Debug().Msgf("matchChannels:, %v", err)
+			channelVector = &models.TemplateChannelVector{
+				ChannelId: templateCh.ID,
+				VectorId:  vectorId,
+			}
+			if _, err := db.CreateTemplateChannelVector(channelVector); err != nil {
+				log.Debug().Msgf("matchChannels:, %v", err)
+				return
+			}
+		} else {
+			channelVector.VectorId = vectorId
+			if err := db.UpdateTemplateChannelVector(channelVector); err != nil {
+				log.Debug().Msgf("matchChannels:, %v", err)
+				return
+			}
+		}
+	}
+}
+
+func addChannelVector(db *database.Queries, name string) (int64, error) {
+	var channelVector models.ChannelVector
+	var err error
+
+	channelVector, err = db.GetChannelVectorByName(name)
+	if err != nil {
+		vector, err := vectorizeString(name)
+		if err != nil {
+			return 0, err
+		}
+		channelVector = models.ChannelVector{Name: name, Vector: vector}
+		channelVector.ID, err = db.CreateChannelVector(channelVector)
+		if err != nil {
+			return 0, err
+		}
 		log.Info().Msgf("VECTOR_TOOLS: ADDED VECTOR FOR %s", name)
 	}
+	return channelVector.ID, nil
 }
 
-func VectorizeString(text string) ([]float64, error) {
+func vectorizeString(text string) ([]float64, error) {
 	//TODO: NEW MODELS
 	modelName := settings.APP_SETTINGS.Application.Model
 
@@ -65,7 +116,7 @@ func VectorizeString(text string) ([]float64, error) {
 	//fmt.Println(Cosine(r1.Vector.Data().F64(), r2.Vector.Data().F64()))
 }
 
-func Cosine(a []float64, b []float64) (cosine float64, err error) {
+func CosineMatch(a []float64, b []float64) (cosine float64, err error) {
 	count := 0
 	length_a := len(a)
 	length_b := len(b)

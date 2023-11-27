@@ -28,7 +28,6 @@
 	onMount(async () => {
 		$templateGroups[groupIdx].channels = [];
 		const fetchedData = await updateTemplateChannels();
-		console.log(fetchedData)
 		if (typeof fetchedData !== 'undefined') {
 			fetchedData.forEach(function (channel: TemplateChannel) {
 				$templateGroups[groupIdx].channels.push(channel);
@@ -163,25 +162,25 @@
 {#if $templateGroups[groupIdx].channels != null && $templateGroups[groupIdx].channels.length > 0}
 		<table class="templateChannel table table-hover">
 			<thead>
-				<tr>
+				<tr id="thead">
 					<th>Logo</th>
 					<th>Name</th>
 					<th>tvg-id</th>
 				</tr>
 			</thead>
-				<tbody use:dndzone={{items: $templateGroups[groupIdx].channels, flipDurationMs, type: dndTypeChannels, transformDraggedElement}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
-					{#each $templateGroups[groupIdx].channels as channel, channelIdx (channel.id)}
-						<tr id="animate" animate:flip={{duration:flipDurationMs}} on:click={() => modalSettings(channelIdx)}>
-							<td><img class="w-14" src={channel.logo} alt="Logo" /></td>
-							<td>{channel.name}</td>
-							<td>{channel.tvgid}</td>
+			<tbody use:dndzone={{items: $templateGroups[groupIdx].channels, flipDurationMs, type: dndTypeChannels, transformDraggedElement}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
+				{#each $templateGroups[groupIdx].channels as channel, channelIdx (channel.id)}
+					<tr id="animate" animate:flip={{duration:flipDurationMs}} on:click={() => modalSettings(channelIdx)}>
+						<td><img class="w-14" src={channel.logo} alt="Logo" /></td>
+						<td>{channel.name}</td>
+						<td>{channel.tvgid}</td>
 
-							{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-								<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.name}</div>
-							{/if}
-						</tr>
-					{/each}
-				</tbody>
+						{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+							<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.name}</div>
+						{/if}
+					</tr>
+				{/each}
+			</tbody>
 		</table>
 {:else}
 	<p>No channels found</p>
@@ -189,6 +188,10 @@
 
 <style>
     #animate {
+		position: relative;
+		text-align: center;
+	}
+	#thead {
 		position: relative;
 		text-align: center;
 	}

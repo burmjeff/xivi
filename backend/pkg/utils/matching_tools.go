@@ -3,55 +3,91 @@ package utils
 import (
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
+	"xivi/backend/platform/settings"
+
+	"github.com/rs/zerolog/log"
 )
 
-// Search for filter match
-func SearchFilter(db *database.Queries, id string) (string, error) {
-	match, err := db.GetFilter(id)
-	if err != nil {
-		return "", err
+type MatchingTools struct {
+	Db *database.Queries
+}
+
+func MatchChannel(db *database.Queries, playlistCh *models.PlaylistChannel) {
+	if settings.APP_SETTINGS.Playlist.Tvgid_match {
+		if err := matchChannelTvgid(db, playlistCh); err == nil {
+			return
+		}
 	}
-	return match.NewName, nil
+
+	if settings.APP_SETTINGS.Playlist.Name_match {
+		if err := matchPlaylistChannelName(db, playlistCh); err == nil {
+			return
+		}
+	}
+
 }
 
 // Search if tvgid matches for playlist channel and add to template if match
-func MatchChanneltoTemplate(db *database.Queries, channel *models.PlaylistChannel) error {
-	tmplChannelItem := &models.TemplateChannelItem{}
-	channelMatch := &models.TemplateChannel{}
-	tmplChannelItem.PlaylistChannelId = channel.ID
-
-	filterMatch, err := SearchFilter(db, channel.TvgID)
+func matchChannelTvgid(db *database.Queries, playlistCh *models.PlaylistChannel) error {
+	channel, err := db.GetTmplChannelBytvgid(playlistCh.TvgID)
 	if err != nil {
-		*channelMatch, err = db.GetTmplChannelBytvgid(channel.TvgID)
-		if err != nil {
-			return err
-		}
-	} else {
-		*channelMatch, err = db.GetTmplChannelBytvgid(filterMatch)
-		if err != nil {
-			return err
-		}
-	}
-
-	tmplChannelItem.ChannelId = channelMatch.ID
-
-	_, err = db.CreateTmplChannelItem(tmplChannelItem)
-	if err != nil {
+		log.Debug().Msgf("matchChannels:, %v", err)
 		return err
 	}
-
+	channelItem := models.TemplateChannelItem{
+		ChannelId:         channel.ID,
+		PlaylistChannelId: playlistCh.ID,
+	}
+	if _, err := db.CreateTmplChannelItem(&channelItem); err != nil {
+		log.Debug().Msgf("matchChannels:, %v", err)
+		return err
+	}
 	return nil
 }
 
-// Create filter, dont create if template channel exists with same tvgid
-func CreateFilter(db *database.Queries, oldName string, newName string) error {
-	channelFilter := &models.ChannelFilter{OldName: oldName, NewName: newName}
-	_, err := db.GetTmplChannelBytvgid(oldName)
+func matchPlaylistChannelName(db *database.Queries, playlistCh *models.PlaylistChannel) error {
+	//var channelVector models.ChannelVector
+	var err error
+	var chMatch int64
+	var score float64
+
+	channelVector, err := db.GetChannelVectorByName(playlistCh.Title)
 	if err != nil {
-		err := db.CreateFilter(*channelFilter)
-		if err != nil {
+		log.Debug().Msgf("matchChannelName:, %v", err)
+		vectorId := UpdatePlaylistVector(db, playlistCh)
+		if channelVector, err = db.GetChannelVector(vectorId); err != nil {
+			log.Debug().Msgf("matchChannelName:, %v", err)
 			return err
 		}
 	}
+
+	templateVectors, err := db.GetTemplateChannelVectors()
+	if err != nil {
+		log.Debug().Msgf("matchChannelName:, %v", err)
+		return err
+	}
+	for _, templateVector := range *templateVectors {
+		vector, err := db.GetChannelVector(templateVector.VectorId)
+		if err != nil {
+			continue
+		}
+		if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
+			if cosine >= settings.APP_SETTINGS.Playlist.Name_score && cosine > score {
+				score = cosine
+				chMatch = templateVector.ChannelId
+			}
+		}
+	}
+	if chMatch != 0 {
+		channelItem := models.TemplateChannelItem{
+			ChannelId:         chMatch,
+			PlaylistChannelId: playlistCh.ID,
+		}
+		if _, err := db.CreateTmplChannelItem(&channelItem); err != nil {
+			log.Debug().Msgf("matchChannels:, %v", err)
+			return err
+		}
+	}
+
 	return nil
 }

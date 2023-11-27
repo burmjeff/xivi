@@ -28,6 +28,9 @@
         (document.querySelector('.settings_proxy select') as HTMLInputElement).value = $settings.streaming.proxy.toString();
         (document.querySelector('.settings_buffer input') as HTMLInputElement).value = $settings.streaming.buffer.toString();
         (document.querySelector('.settings_useragent input') as HTMLInputElement).value = $settings.streaming.useragent;
+        (document.querySelector('.settings_tvgmatch select') as HTMLInputElement).value = $settings.playlist.tvgid_match.toString();
+        (document.querySelector('.settings_namematch select') as HTMLInputElement).value = $settings.playlist.name_match.toString();
+        (document.querySelector('.settings_namescore input') as HTMLInputElement).value = $settings.playlist.name_score.toString();
     });
 
     async function updateSettings() {
@@ -44,10 +47,14 @@
         const inputProxy = (document.querySelector('.settings_proxy select') as HTMLInputElement).value;
         const inputBuffer = (document.querySelector('.settings_buffer input') as HTMLInputElement).value;
         const inputUserAgent = (document.querySelector('.settings_useragent input') as HTMLInputElement).value;
+        const inputTvgMatch = (document.querySelector('.settings_tvgmatch select') as HTMLInputElement).value;
+        const inputNameMatch = (document.querySelector('.settings_namematch select') as HTMLInputElement).value;
+        const inputNameScore = (document.querySelector('.settings_namescore input') as HTMLInputElement).value;
         if (inputAppName !='' &&  inputAppVersion !='' &&  inputTZ !='' &&  inputServePath !=''
         &&  inputModel !='' &&  inputLogLevel !='' &&  inputUpdateCron !='' &&  inputHost !=''
         &&  inputPort !='' &&  inputReadTimeout !='' &&  inputProxy !='' &&  inputBuffer !=''
         &&  inputUserAgent !='') {
+            console.log("asdasdas")
             let newSettings: AppSettings;
             newSettings = {
                 application: {
@@ -63,6 +70,11 @@
                     host: inputHost,
                     port: Number(inputPort),
                     readtimeout: Number(inputReadTimeout),
+                },
+                playlist: {
+                    tvgid_match: (inputTvgMatch === "true"),
+                    name_match: (inputNameMatch === "true"),
+                    name_score: Number(inputNameScore),
                 },
                 streaming: {
                     proxy: (inputProxy === "true"),
@@ -134,6 +146,28 @@
                 <label class="settings_readtimeout">
                     <span>Server Read Timeout</span>
                     <input class="input variant-form-material" type="number" placeholder="60" />
+                </label>
+                <div class="w-full space-y-4">
+                    <label class="settings_tvgmatch">
+                        <span>Auto-Match by Tvg-Id</span>
+                        <select class="select">
+                            <option value="true">True</option>
+                            <option value="false">False</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="w-full space-y-4">
+                    <label class="settings_namematch">
+                        <span>Auto-Match by Channel Name/Title</span>
+                        <select class="select">
+                            <option value="true">True</option>
+                            <option value="false">False</option>
+                        </select>
+                    </label>
+                </div>
+                <label class="settings_namescore">
+                    <span>Score to match Channel Name</span>
+                    <input class="input variant-form-material" type="number" step=0.01 placeholder="0" />
                 </label>
                 <div class="w-full space-y-4">
                     <label class="settings_proxy">

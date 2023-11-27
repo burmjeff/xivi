@@ -7,6 +7,7 @@ import (
 var APP_SETTINGS = &AppSettings{
 	Application: Application{},
 	Server:      Server{},
+	Playlist:    Playlist{},
 	Streaming:   Streaming{},
 }
 var SERVER_PATH = ""
@@ -21,6 +22,7 @@ var MODEL_PATH = fmt.Sprintf("%s/models", CONFIG_PATH)
 type AppSettings struct {
 	Application `yaml:"application" json:"application"`
 	Server      `yaml:"server" json:"server"`
+	Playlist    `yaml:"playlist" json:"playlist"`
 	Streaming   `yaml:"streaming" json:"streaming"`
 }
 
@@ -38,6 +40,12 @@ type Server struct {
 	Host        string `yaml:"host" json:"host"`
 	Port        int    `yaml:"port" json:"port"`
 	ReadTimeout int    `yaml:"readtimeout" json:"readtimeout"`
+}
+
+type Playlist struct {
+	Tvgid_match bool    `yaml:"tvgid_match" json:"tvgid_match"`
+	Name_match  bool    `yaml:"name_match" json:"name_match"`
+	Name_score  float64 `yaml:"name_score" json:"name_score"`
 }
 
 type Streaming struct {

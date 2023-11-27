@@ -6,11 +6,16 @@ import (
 	utils "xivi/backend/pkg/dbutils"
 )
 
-// Channel struct to describe Template object.
 type TemplateChannelVector struct {
-	ID        int64  `db:"id" json:"id"`
-	Name      string `db:"name" json:"name" validate:"required,lte=255"`
-	ChannelId int64  `db:"channel_id" json:"channel_id" validate:"required"`
+	ID        int64 `db:"id" json:"id"`
+	ChannelId int64 `db:"channel_id" json:"channel_id" validate:"required"`
+	VectorId  int64 `db:"vector_id" json:"vector_id" validate:"required"`
+}
+
+type PlaylistChannelVector struct {
+	ID        int64 `db:"id" json:"id"`
+	ChannelId int64 `db:"channel_id" json:"channel_id" validate:"required"`
+	VectorId  int64 `db:"vector_id" json:"vector_id" validate:"required"`
 }
 
 type ChannelVector struct {

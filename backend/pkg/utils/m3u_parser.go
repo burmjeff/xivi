@@ -80,9 +80,8 @@ func (m *M3uParser) ParseM3u(playlist *models.Playlist) {
 }
 
 func (m *M3uParser) parseLines() {
-	vectorIn := make(chan string)
-	//vectorOut := make(chan interface{})
-	go VectorQueue(vectorIn, m.Db)
+	vectorIn := make(chan *models.PlaylistChannel)
+	go PlaylistVectorQueue(vectorIn, m.Db)
 
 	re := CompileRegex("#EXTINF")
 
@@ -94,7 +93,7 @@ func (m *M3uParser) parseLines() {
 	close(vectorIn)
 }
 
-func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
+func (m *M3uParser) parseLine(lineNumber int, vectorIn chan *models.PlaylistChannel) {
 	validate := NewValidator()
 	playlistGroup := &models.PlaylistGroup{}
 	playlistChannel := &models.PlaylistChannel{}
@@ -133,7 +132,6 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 		}
 		if title != "" {
 			playlistChannel.Title = title
-			vectorIn <- title
 		}
 
 		var groupID int64 = 0
@@ -183,6 +181,8 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 					log.Warn().Msg(err.Error())
 					return
 				}
+				playlistChannel.ID = foundChannel.ID
+				vectorIn <- playlistChannel
 
 				//Set channel URL model
 				channelURL.Url = streamLink
@@ -231,8 +231,8 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan string) {
 			return
 		}
 
-		//TODO: try to match tvgid to template only if auto-match=true
-		MatchChanneltoTemplate(m.Db, playlistChannel)
+		//try to match template channel only if auto-match=true
+		go MatchChannel(m.Db, playlistChannel)
 
 	}
 }

@@ -347,11 +347,10 @@ func (q *PlaylistQueries) GetPlChannel(id int64) (models.PlaylistChannel, error)
 	channel := models.PlaylistChannel{}
 
 	// Define query string.
-	query := `SELECT * FROM playlistchannel WHERE id = $1`
+	query := `SELECT * FROM playlistchannel WHERE id = ?`
 
 	// Send query to database.
-	err := q.Select(&channel, query, id)
-	if err != nil {
+	if err := q.Get(&channel, query, id); err != nil {
 		// Return empty object and error.
 		return channel, err
 	}
@@ -366,7 +365,7 @@ func (q *PlaylistQueries) GetPlChannelsByName(name string) ([]models.PlaylistCha
 	channels := []models.PlaylistChannel{}
 
 	// Define query string.
-	query := `SELECT * FROM playlistchannel WHERE name LIKE $1`
+	query := `SELECT * FROM playlistchannel WHERE name LIKE ?`
 
 	// Send query to database.
 	err := q.Select(&channels, query, name)
@@ -385,7 +384,7 @@ func (q *PlaylistQueries) GetPlChannelsByTvgID(tvgid string) ([]models.PlaylistC
 	channels := []models.PlaylistChannel{}
 
 	// Define query string.
-	query := `SELECT * FROM playlistchannel WHERE tvg_id LIKE $1`
+	query := `SELECT * FROM playlistchannel WHERE tvg_id LIKE ?`
 
 	// Send query to database.
 	err := q.Select(&channels, query, tvgid)
