@@ -518,43 +518,41 @@ func (q *TemplateQueries) DeleteTmplChannel(id int64) error {
 	return nil
 }
 
-// GetTemplateChannelItems by channel_id method
+// GetTemplateChannelItems by channel_id
 func (q *TemplateQueries) GetTmplChannelItemsByCh(id int64) ([]models.TemplateChannelItem, error) {
 	templatechannelitems := []models.TemplateChannelItem{}
 
 	// Define query string.
-	query := `SELECT * FROM templatechannelitem WHERE channel_id = $1`
+	query := `SELECT * FROM templatechannelitem WHERE channel_id = ?`
 
 	// Send query to database.
-	err := q.Select(&templatechannelitems, query, id)
-	if err != nil {
+	if err := q.Select(&templatechannelitems, query, id); err != nil {
 		// Return empty object and error.
-		return templatechannelitems, err
+		return nil, err
 	}
 
 	// Return query result.
 	return templatechannelitems, nil
 }
 
-// GetTemplateChannelItems by playlist_channel_id method
+// GetTemplateChannelItems by playlist_channel_id
 func (q *TemplateQueries) GetTmplChannelItemsByPl(id int64) ([]models.TemplateChannelItem, error) {
 	templatechannelitems := []models.TemplateChannelItem{}
 
 	// Define query string.
-	query := `SELECT * FROM templatechannelitem WHERE playlist_channel_id = $1`
+	query := `SELECT * FROM templatechannelitem WHERE playlist_channel_id = ?`
 
 	// Send query to database.
-	err := q.Select(&templatechannelitems, query, id)
-	if err != nil {
+	if err := q.Select(&templatechannelitems, query, id); err != nil {
 		// Return empty object and error.
-		return templatechannelitems, err
+		return nil, err
 	}
 
 	// Return query result.
 	return templatechannelitems, nil
 }
 
-// GetTemplateChannelItems method for getting all items by given ID.
+// GetTemplateChannelItems method for getting all items by ID.
 func (q *TemplateQueries) GetTmplChannelItems(id int64) ([]models.TemplateChannelItem, error) {
 	channelitems := []models.TemplateChannelItem{}
 
@@ -562,10 +560,9 @@ func (q *TemplateQueries) GetTmplChannelItems(id int64) ([]models.TemplateChanne
 	query := `SELECT * FROM templatechannelitem WHERE id = $1`
 
 	// Send query to database.
-	err := q.Select(&channelitems, query, id)
-	if err != nil {
+	if err := q.Select(&channelitems, query, id); err != nil {
 		// Return empty object and error.
-		return channelitems, err
+		return nil, err
 	}
 
 	// Return query result.
@@ -611,12 +608,14 @@ func (q *TemplateQueries) UpdateTmplChannelItem(id int64, p *models.TemplateChan
 }
 
 // DeleteTemplateChannelItem method for deleting an item by given ID.
-func (q *TemplateQueries) DeleteTmplChannelItem(id int64) error {
+func (q *TemplateQueries) DeleteTmplChannelItem(templateItem *models.TemplateChannelItem) error {
 	// Define query string.
-	query := `DELETE FROM templatechannelitem WHERE id = $1`
+	query := `DELETE FROM templatechannelitem 
+	WHERE channel_id = ?
+	AND playlist_channel_id = ?`
 
 	// Send query to database.
-	_, err := q.Exec(query, id)
+	_, err := q.Exec(query, templateItem.ChannelId, templateItem.PlaylistChannelId)
 	if err != nil {
 		// Return only error.
 		return err

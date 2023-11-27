@@ -71,7 +71,7 @@
 {#if $playlists[playlistIdx].groups[groupIdx].channels != null && $playlists[playlistIdx].groups[groupIdx].channels.length > 0}
 	<table class="playlistChannel table">
 		<thead>
-			<tr>
+			<tr id ="thead">
 				<th>Logo</th>
 				<th>Name</th>
 				<th>tvg-id</th>
@@ -108,5 +108,9 @@
 		background: lightblue;
 		opacity: 0.6;
 		margin: 0;
+	}
+	#thead {
+		position: relative;
+		text-align: center;
 	}
 </style>

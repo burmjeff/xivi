@@ -52,7 +52,9 @@ func updatePlaylists() {
 
 	m3uParser := utils.M3uParser{Db: db}
 	for _, playlist := range playlists {
+		log.Log().Msgf("Updating Playlist: %s", playlist.Name)
 		m3uParser.ParseM3u(&playlist)
+		log.Log().Msgf("Finished Updating Playlist: %s", playlist.Name)
 	}
 
 	m3uTools := utils.M3uTools{Db: db}
@@ -86,6 +88,7 @@ func updateEpgs() {
 
 	epgParser := utils.EpgParser{Db: db}
 	for _, epg := range epgs {
+		log.Log().Msgf("Updating EPG: %s", epg.Name)
 		epgParser.ParseEpg(&epg)
 	}
 

@@ -63,10 +63,6 @@ func (m *EpgParser) ParseEpg(epg *models.Epg) {
 		defer file.Close()
 	}
 
-	vectorIn := make(chan string)
-	//vectorOut := make(chan interface{})
-	go VectorQueue(vectorIn, m.Db)
-
 	// Print out the parsed data
 	for _, channel := range epgItem.Channels {
 		if channel.ChannelId != "" {
@@ -81,12 +77,9 @@ func (m *EpgParser) ParseEpg(epg *models.Epg) {
 			} else {
 				log.Info().Msgf("EPG XML PARSER: Channel already exists: %s", channel.DisplayName)
 			}
-			vectorIn <- channel.DisplayName
 		}
 
 	}
-
-	close(vectorIn)
 
 	for _, programme := range epgItem.Programmes {
 		//Convert times

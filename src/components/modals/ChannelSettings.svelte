@@ -1,12 +1,14 @@
 <!-- Settings.svelte -->
 
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { templateGroups } from '@xivi/stores/template_store';
 	import IconParkOutlineSaveOne from '~icons/icon-park-outline/save-one';
 	import IconParkOutlineDelete from '~icons/icon-park-outline/delete';
 	import type { SvelteComponent } from 'svelte';
 	import { getModalStore, FileButton } from '@skeletonlabs/skeleton';
 	import xivi from '$lib/assets/xivi.png';
+	import type { PlaylistChannel } from '@xivi/data/playlist_entities';
 
 	export let parent: SvelteComponent;
 	const modalStore = getModalStore();
@@ -15,6 +17,8 @@
 	let channelIdx = $modalStore[0].meta.channelIdx
 	let isNew = $modalStore[0].meta.isNew
 	let newImg = false
+
+	let playlist_ch_matches: PlaylistChannel[]
 
 	let formData: {
 		id: number,
@@ -26,7 +30,7 @@
 
 	if (!isNew) {
 		formData = {
-				id: $templateGroups[groupIdx].channels[channelIdx].id,
+				id: Number($templateGroups[groupIdx].channels[channelIdx].id),
 				name: $templateGroups[groupIdx].channels[channelIdx].name,
 				tvgid: $templateGroups[groupIdx].channels[channelIdx].tvgid,
 				logoid: $templateGroups[groupIdx].channels[channelIdx].logoid,
@@ -42,6 +46,20 @@
 		}
 		newImg = true
 	}
+
+	const updateChannelItems = async () => {
+		const response = await fetch(`/api/template/channel/${$templateGroups[groupIdx].channels[channelIdx].id}/items`);
+		const data = await response.json();
+		console.log(data)
+		return data.playlistchannels;
+	};
+
+	onMount(async () => {
+		const fetchedData = await updateChannelItems();
+		if (typeof fetchedData !== 'undefined') {
+			playlist_ch_matches = fetchedData;
+		}
+	});
 
 	const toBase64 = (file: File) =>
 		new Promise((resolve, reject) => {
@@ -91,10 +109,34 @@
 			});
 			const data = await response.status;
 			console.log('Deleted template channel:', data);
-			$templateGroups[groupIdx].channels = $templateGroups[groupIdx].channels.filter(t => t.id != formData.id)
+			$templateGroups[groupIdx].channels = $templateGroups[groupIdx].channels.filter(t => Number(t.id) != formData.id)
 			modalStore.close();
 		} catch (error) {
 			console.log('Error deleting template channel:', error);
+			return;
+		}
+	}
+
+	async function removeChannelItem(playlistId: string) {
+			let channelItem = {
+				channel_id: $templateGroups[groupIdx].channels[channelIdx].id,
+				playlist_channel_id: playlistId
+			};
+		try {
+			const response = await fetch(`/api/template/channel/item`, {
+				method: 'DELETE',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify(channelItem)
+				});
+			const data = await response.status;
+			if (response.ok) {
+				console.log('Removed template channel item:', data);
+				playlist_ch_matches = playlist_ch_matches.filter(t => t.id != playlistId)
+			}
+		} catch (error) {
+			console.log('Error removing template channel item:', error);
 			return;
 		}
 	}
@@ -102,7 +144,7 @@
 </script>
 
 {#if $modalStore[0]}
-	<div class="modal-channel-settings card p-4 w-modal shadow-xl space-y-4">
+	<div class="modal-channel-settings card p-4 w-fit shadow-xl space-y-4">
 		{#if isNew}
 			<header class="text-2xl font-bold text-center justify-center">Add Channel</header>
 		{:else}
@@ -129,15 +171,60 @@
 			</label>
 			<div class="channel_logo">
 				<span>Channel Logo</span>
-				<div class="grid grid-cols-2 p-2 gap-10 w-64 items-center">
+				<div class="grid grid-cols-2 p-1 w-64 items-center space-x-10">
 					<img class="w-fit" src={formData.logo} alt="Logo" />
 					<FileButton
 						name="files"
 						bind:files
 						accept=".png,.jpg,.webp,.svg"
-						on:change={onUploadHandler}>Upload</FileButton
-					>
+						on:change={onUploadHandler}>Upload</FileButton>
 				</div>
+			</div>
+			<div class="playlist_ch_matches grid grid-cols-2 space-x-2">
+				<table class="table table-hover text-center justify-center shadow-md">
+					<thead>
+						<tr class="place-self-center text-center">
+							<th>Title</th>
+							<th>tvg-id</th>
+							<th>Remove</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#if playlist_ch_matches != null && playlist_ch_matches.length > 0}
+							{#each playlist_ch_matches as channel, channelIdx (channel.id)}
+								<tr class="">
+									<td>{channel.title}</td>
+									<td>{channel.tvg_id}</td>
+									<td class="hover:bg-red-900" on:click={removeChannelItem(channel.id)}>
+										<i><IconParkOutlineDelete/></i>
+									</td>
+								</tr>
+							{/each}
+						{:else}
+							<p>No channels found</p>
+						{/if}
+					</tbody>
+				</table>
+				<table id="table" class="table table-hover shadow-md">
+					<thead>
+						<tr class="center">
+							<th>Title</th>
+							<th>tvg-id</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#if playlist_ch_matches != null && playlist_ch_matches.length > 0}
+							{#each playlist_ch_matches as channel, channelIdx (channel.id)}
+								<tr class="center">
+									<td>{channel.title}</td>
+									<td>{channel.tvg_id}</td>
+								</tr>
+							{/each}
+						{:else}
+							<p>No channels found</p>
+						{/if}
+					</tbody>
+				</table>
 			</div>
 		</form>
 		<footer class="modal-footer {parent.regionFooter}">
@@ -157,3 +244,29 @@
 		</footer>
 	</div>
 {/if}
+
+<style>
+    #animate {
+		position: relative;
+		text-align: center;
+	}
+	.custom-shadow-item {
+		position: absolute;
+		top: 0; left: 0; right: 0; bottom: 0;
+		visibility: visible;
+		border: 3px dashed grey;
+		background: lightblue;
+		opacity: 0.6;
+		margin: 0;
+	}
+	#thead {
+		position: relative;
+		text-align: center;
+	}
+	.center { 
+		text-align: center; 
+		justify-content: center;
+		align-items: center;
+		width: 100%; 
+	} 
+</style>

@@ -46,6 +46,8 @@ func PublicRoutes(a *fiber.App) {
 	api.Post("/template/group/:group_id/channel", controllers.CreateTemplateChannel)    // Create a template channel
 	api.Put("/template/channel", controllers.UpdateTemplateChannel)                     // update a template channel
 	api.Delete("/template/channel/:channel_id", controllers.DeleteTemplateChannel)      // Delete a template channel
+	api.Get("/template/channel/:channel_id/items", controllers.GetTemplateChannelItems) // get channel items
+	api.Delete("/api/template/channel/item", controllers.DeleteTemplateChannelItem)     // Delete channel item
 
 	//M3U Routes
 	api.Post("/m3u/:template_id", controllers.CreateM3U) // create m3u from template id
