@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"sort"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
 	"xivi/backend/platform/settings"
@@ -90,4 +91,56 @@ func matchPlaylistChannelName(db *database.Queries, playlistCh *models.PlaylistC
 	}
 
 	return nil
+}
+
+func TemplateChannelMatches(db *database.Queries, templateCh *models.TemplateChannel) ([]models.VectorMatch, error) {
+	//var channelVector models.ChannelVector
+	var err error
+	var vectorMatches []models.VectorMatch
+
+	channelVector, err := db.GetChannelVectorByName(templateCh.Name)
+	if err != nil {
+		log.Debug().Msgf("matchChannelName:, %v", err)
+		vectorId := UpdateTemplateVector(db, templateCh)
+		if channelVector, err = db.GetChannelVector(vectorId); err != nil {
+			log.Debug().Msgf("matchChannelName:, %v", err)
+			return nil, err
+		}
+	}
+
+	playlistVectors, err := db.GetPlaylistChannelVectors()
+	if err != nil {
+		log.Debug().Msgf("matchChannelName:, %v", err)
+		return nil, err
+	}
+	for _, playlistVector := range playlistVectors {
+		vector, err := db.GetChannelVector(playlistVector.VectorId)
+		if err != nil {
+			continue
+		}
+		if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
+			vectorMatch := models.VectorMatch{ChannelId: playlistVector.ChannelId, Score: cosine}
+			if len(vectorMatches) < 5 {
+				vectorMatches = append(vectorMatches, vectorMatch)
+			} else {
+				lowestIdx := 0
+				lowestValue := vectorMatches[0].Score
+
+				for i := 1; i < len(vectorMatches); i++ {
+					if vectorMatches[i].Score < lowestValue {
+						lowestIdx = i
+						lowestValue = vectorMatches[i].Score
+					}
+				}
+				vectorMatches[lowestIdx] = vectorMatch
+			}
+
+			sort.Slice(vectorMatches, func(i, j int) bool {
+				return vectorMatches[i].Score > vectorMatches[j].Score
+			})
+
+		}
+	}
+
+	return vectorMatches, nil
 }

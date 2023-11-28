@@ -18,7 +18,13 @@
 	let isNew = $modalStore[0].meta.isNew
 	let newImg = false
 
-	let playlist_ch_matches: PlaylistChannel[]
+	let playlist_ch_items: PlaylistChannel[]
+	let playlist_ch_matches: {
+		channelname: string,
+		channeltvgid: string,
+		channelid: number,
+		score: number
+	}[]
 
 	let formData: {
 		id: number,
@@ -44,7 +50,7 @@
 			logoid: 0,
 			logo: xivi
 		}
-		newImg = true
+		//newImg = true
 	}
 
 	const updateChannelItems = async () => {
@@ -54,10 +60,24 @@
 		return data.playlistchannels;
 	};
 
+	const updateChannelMatches = async () => {
+		const response = await fetch(`/api/template/channel/${$templateGroups[groupIdx].channels[channelIdx].id}/matches`);
+		const data = await response.json();
+		console.log(data)
+		return data.vectormatches;
+	};
+
 	onMount(async () => {
-		const fetchedData = await updateChannelItems();
-		if (typeof fetchedData !== 'undefined') {
-			playlist_ch_matches = fetchedData;
+		if (!isNew) {
+			const fetchedItems = await updateChannelItems();
+			if (typeof fetchedItems !== 'undefined') {
+				playlist_ch_items = fetchedItems;
+			}
+
+			const fetchedMatches = await updateChannelMatches();
+			if (typeof fetchedMatches !== 'undefined') {
+				playlist_ch_matches = fetchedMatches;
+			}
 		}
 	});
 
@@ -133,7 +153,7 @@
 			const data = await response.status;
 			if (response.ok) {
 				console.log('Removed template channel item:', data);
-				playlist_ch_matches = playlist_ch_matches.filter(t => t.id != playlistId)
+				playlist_ch_items = playlist_ch_items.filter(t => t.id != playlistId)
 			}
 		} catch (error) {
 			console.log('Error removing template channel item:', error);
@@ -180,7 +200,7 @@
 						on:change={onUploadHandler}>Upload</FileButton>
 				</div>
 			</div>
-			<div class="playlist_ch_matches grid grid-cols-2 space-x-2">
+			<div class="playlist_ch_items grid grid-cols-2 space-x-2">
 				<table class="table table-hover text-center justify-center shadow-md">
 					<thead>
 						<tr class="place-self-center text-center">
@@ -190,8 +210,8 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#if playlist_ch_matches != null && playlist_ch_matches.length > 0}
-							{#each playlist_ch_matches as channel, channelIdx (channel.id)}
+						{#if playlist_ch_items != null && playlist_ch_items.length > 0}
+							{#each playlist_ch_items as channel, channelIdx (channel.id)}
 								<tr class="">
 									<td>{channel.title}</td>
 									<td>{channel.tvg_id}</td>
@@ -205,19 +225,21 @@
 						{/if}
 					</tbody>
 				</table>
-				<table id="table" class="table table-hover shadow-md">
+				<table class="table table-hover text-center justify-center shadow-md">
 					<thead>
 						<tr class="center">
 							<th>Title</th>
 							<th>tvg-id</th>
+							<th>Score</th>
 						</tr>
 					</thead>
 					<tbody>
 						{#if playlist_ch_matches != null && playlist_ch_matches.length > 0}
-							{#each playlist_ch_matches as channel, channelIdx (channel.id)}
+							{#each playlist_ch_matches as channel, channelIdx (channel.channelid)}
 								<tr class="center">
-									<td>{channel.title}</td>
-									<td>{channel.tvg_id}</td>
+									<td>{channel.channelname}</td>
+									<td>{channel.channeltvgid}</td>
+									<td>{channel.score}</td>
 								</tr>
 							{/each}
 						{:else}

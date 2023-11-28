@@ -108,7 +108,7 @@ func SetDefaults() (*AppSettings, error) {
 		Playlist: Playlist{
 			Tvgid_match: true,
 			Name_match:  true,
-			Name_score:  0.9,
+			Name_score:  0.81,
 		},
 		Streaming: Streaming{
 			Proxy:     true,

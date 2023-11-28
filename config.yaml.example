@@ -14,7 +14,7 @@ server:
 playlist:
   tvgid_match: true
   name_match: true
-  name_score: 0.9
+  name_score: 0.81
 
 streaming:
   proxy: true
