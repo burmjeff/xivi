@@ -81,6 +81,22 @@ func (q *VectorQueries) UpdateTemplateChannelVector(channelVector *models.Templa
 	return nil
 }
 
+func (q *VectorQueries) GetPlaylistChannelVectors() ([]models.PlaylistChannelVector, error) {
+	vectorChannels := []models.PlaylistChannelVector{}
+
+	// Define query string.
+	query := `SELECT * FROM playlistchannelvectors`
+
+	// Send query to database.
+	if err := q.Select(&vectorChannels, query); err != nil {
+		// Return empty object and error.
+		return nil, err
+	}
+
+	// Return query result.
+	return vectorChannels, nil
+}
+
 func (q *VectorQueries) GetPlaylistChannelVector(channel_id int64) (*models.PlaylistChannelVector, error) {
 	vectorChannel := &models.PlaylistChannelVector{}
 

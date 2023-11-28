@@ -29,7 +29,7 @@ func PlaylistVectorQueue(in <-chan *models.PlaylistChannel, db *database.Queries
 
 // returns vector id
 func UpdatePlaylistVector(db *database.Queries, playlistCh *models.PlaylistChannel) int64 {
-	if vectorId, err := addChannelVector(db, playlistCh.Title); err != nil {
+	if vectorId, err := getChannelVector(db, playlistCh.Title); err != nil {
 		log.Warn().Msgf("VECTORIZE_STRING: %v", err)
 	} else {
 		if channelVector, err := db.GetPlaylistChannelVector(playlistCh.ID); err != nil {
@@ -53,8 +53,9 @@ func UpdatePlaylistVector(db *database.Queries, playlistCh *models.PlaylistChann
 	return 0
 }
 
-func UpdateTemplateVector(db *database.Queries, templateCh *models.TemplateChannel) {
-	if vectorId, err := addChannelVector(db, templateCh.Name); err != nil {
+// returns vector id
+func UpdateTemplateVector(db *database.Queries, templateCh *models.TemplateChannel) int64 {
+	if vectorId, err := getChannelVector(db, templateCh.Name); err != nil {
 		log.Warn().Msgf("VECTORIZE_STRING: %v", err)
 	} else {
 		if channelVector, err := db.GetTemplateChannelVector(templateCh.ID); err != nil {
@@ -65,19 +66,20 @@ func UpdateTemplateVector(db *database.Queries, templateCh *models.TemplateChann
 			}
 			if _, err := db.CreateTemplateChannelVector(channelVector); err != nil {
 				log.Debug().Msgf("matchChannels:, %v", err)
-				return
+				return channelVector.VectorId
 			}
 		} else {
 			channelVector.VectorId = vectorId
 			if err := db.UpdateTemplateChannelVector(channelVector); err != nil {
 				log.Debug().Msgf("matchChannels:, %v", err)
-				return
+				return channelVector.VectorId
 			}
 		}
 	}
+	return 0
 }
 
-func addChannelVector(db *database.Queries, name string) (int64, error) {
+func getChannelVector(db *database.Queries, name string) (int64, error) {
 	var channelVector models.ChannelVector
 	var err error
 
@@ -147,5 +149,5 @@ func CosineMatch(a []float64, b []float64) (cosine float64, err error) {
 	if s1 == 0 || s2 == 0 {
 		return 0.0, errors.New("vectors should not be null (all zeros)")
 	}
-	return sumA / (math.Sqrt(s1) * math.Sqrt(s2)), nil
+	return math.Round((sumA/(math.Sqrt(s1)*math.Sqrt(s2)))*100) / 100, nil
 }

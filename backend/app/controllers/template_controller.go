@@ -1159,3 +1159,74 @@ func DeleteTemplateChannelItem(c *fiber.Ctx) error {
 	// Return status 204 no content.
 	return c.SendStatus(fiber.StatusNoContent)
 }
+
+// GetTemplateChannelMatches func gets playlist channel matches by template channel ID.
+// @Description Get top 5 playlist channel matches by template channel ID.
+// @Summary Get top 5 playlist channel matches by template channel ID.
+// @Tags Template Channel
+// @Produce json
+// @Param channel_id path string true "Channel ID"
+// @Success 200 {array} models.VectorMatch
+// @Router /template/channel/{channel_id}/matches [get]
+func GetTemplateChannelMatches(c *fiber.Ctx) error {
+	// Catch group ID from URL.
+	channel_id, err := strconv.ParseInt(c.Params("channel_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	channel, err := db.GetTmplChannel(channel_id)
+	if err != nil {
+		log.Err(err)
+		// Return, if template not found.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "No template channel found",
+		})
+	}
+
+	vectorMatches, err := utils.TemplateChannelMatches(db, &channel)
+	if err != nil {
+		log.Err(err)
+		// Return, if template not found.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Failed to find channel matches",
+		})
+	}
+
+	for idx, vectorMatch := range vectorMatches {
+		if channel, err := db.GetPlChannel(vectorMatch.ChannelId); err != nil {
+			log.Err(err)
+			// Return, if template not found.
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": true,
+				"msg":   "Failed to find channel matches",
+			})
+		} else {
+			vectorMatches[idx].ChannelName = channel.Title
+			vectorMatches[idx].Channeltvgid = channel.TvgID
+		}
+
+	}
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error":         false,
+		"msg":           nil,
+		"vectormatches": vectorMatches,
+	})
+}
