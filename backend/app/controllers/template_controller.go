@@ -886,7 +886,10 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 	m3uTools := utils.M3uTools{Db: db}
 	go m3uTools.AddChannel(templateChannel, group_id)
 
-	go utils.UpdateTemplateVector(db, templateChannel)
+	go func() {
+		utils.UpdateTemplateVector(db, templateChannel)
+		utils.MatchTemplateChannel(db, templateChannel)
+	}()
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
@@ -1209,7 +1212,7 @@ func GetTemplateChannelMatches(c *fiber.Ctx) error {
 	}
 
 	for idx, vectorMatch := range vectorMatches {
-		if channel, err := db.GetPlChannel(vectorMatch.ChannelId); err != nil {
+		if channel, err := db.GetPlChannel(vectorMatch.Id); err != nil {
 			log.Err(err)
 			// Return, if template not found.
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -1217,8 +1220,8 @@ func GetTemplateChannelMatches(c *fiber.Ctx) error {
 				"msg":   "Failed to find channel matches",
 			})
 		} else {
-			vectorMatches[idx].ChannelName = channel.Title
-			vectorMatches[idx].Channeltvgid = channel.TvgID
+			vectorMatches[idx].Name = channel.Title
+			vectorMatches[idx].Tvgid = channel.TvgID
 		}
 
 	}

@@ -29,8 +29,8 @@ func (q *VectorQueries) GetTemplateChannelVector(channel_id int64) (*models.Temp
 	return vectorChannel, nil
 }
 
-func (q *VectorQueries) GetTemplateChannelVectors() (*[]models.TemplateChannelVector, error) {
-	vectorChannels := &[]models.TemplateChannelVector{}
+func (q *VectorQueries) GetTemplateChannelVectors() ([]models.TemplateChannelVector, error) {
+	vectorChannels := []models.TemplateChannelVector{}
 
 	// Define query string.
 	query := `SELECT * FROM templatechannelvectors`

@@ -23,3 +23,12 @@ export interface PlaylistChannel {
 	isDndShadowItem: boolean;
 	isDragged: boolean;
 }
+
+export interface Match {
+	id: number;
+	name: string;
+	tvgid: string;
+	score: number;
+	isDndShadowItem: boolean;
+	isDragged: boolean;
+}

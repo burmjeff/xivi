@@ -25,10 +25,10 @@ type ChannelVector struct {
 }
 
 type VectorMatch struct {
-	ChannelName  string  `json:"channelname"`
-	Channeltvgid string  `json:"channeltvgid"`
-	ChannelId    int64   `json:"channelid"`
-	Score        float64 `json:"score"`
+	Id    int64   `json:"id"`
+	Name  string  `json:"name"`
+	Tvgid string  `json:"tvgid"`
+	Score float64 `json:"score"`
 }
 
 type VectorFloat []float64
