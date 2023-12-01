@@ -18,7 +18,7 @@
     let shouldIgnoreDndEvents = false;
     const flipDurationMs = 150;
     let dndItem: TemplateGroup;
-	let dndIdx: number
+	let dndIdx: number;
     const modalStore = getModalStore();
 
     const updateTemplateGroups = async () => {

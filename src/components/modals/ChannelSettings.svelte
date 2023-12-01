@@ -1,16 +1,24 @@
 <!-- Settings.svelte -->
 
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, type SvelteComponent } from 'svelte';
 	import { templateGroups } from '@xivi/stores/template_store';
 	import IconParkOutlineSaveOne from '~icons/icon-park-outline/save-one';
 	import IconParkOutlineDelete from '~icons/icon-park-outline/delete';
-	import type { SvelteComponent } from 'svelte';
+	import { writable } from 'svelte/store';
 	import { getModalStore, FileButton } from '@skeletonlabs/skeleton';
 	import xivi from '$lib/assets/xivi.png';
-	import type { PlaylistChannel } from '@xivi/data/playlist_entities';
+	import type { Match, PlaylistChannel } from '@xivi/data/playlist_entities';
+	import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
+    import {flip} from 'svelte/animate';
+    import {fade} from 'svelte/transition';
+    import {cubicIn} from 'svelte/easing';
+	import { playlistmatches } from '@xivi/stores/playlist_store';
 
 	export let parent: SvelteComponent;
+
+	const playlist_ch_items = writable<PlaylistChannel[]>([]);
+
 	const modalStore = getModalStore();
 	let files: FileList;
 	let groupIdx = $modalStore[0].meta.groupIdx
@@ -18,13 +26,12 @@
 	let isNew = $modalStore[0].meta.isNew
 	let newImg = false
 
-	let playlist_ch_items: PlaylistChannel[]
-	let playlist_ch_matches: {
-		channelname: string,
-		channeltvgid: string,
-		channelid: number,
-		score: number
-	}[]
+	let dndTypeChannels = "channelSettings";
+	let shouldIgnoreDndEvents = false;
+	const dropFromOthersDisabled = true;
+    const flipDurationMs = 150;
+    let dndItem: any;
+	let dndIdx: number;
 
 	let formData: {
 		id: number,
@@ -68,17 +75,17 @@
 	};
 
 	onMount(async () => {
-		if (!isNew) {
+		//if (!isNew) {
 			const fetchedItems = await updateChannelItems();
 			if (typeof fetchedItems !== 'undefined') {
-				playlist_ch_items = fetchedItems;
+				playlist_ch_items.set(fetchedItems);
 			}
 
 			const fetchedMatches = await updateChannelMatches();
 			if (typeof fetchedMatches !== 'undefined') {
-				playlist_ch_matches = fetchedMatches;
+				playlistmatches.set(fetchedMatches);
 			}
-		}
+		//}
 	});
 
 	const toBase64 = (file: File) =>
@@ -153,14 +160,82 @@
 			const data = await response.status;
 			if (response.ok) {
 				console.log('Removed template channel item:', data);
-				playlist_ch_items = playlist_ch_items.filter(t => t.id != playlistId)
+				$playlist_ch_items = $playlist_ch_items.filter(t => t.id != playlistId)
 			}
 		} catch (error) {
 			console.log('Error removing template channel item:', error);
 			return;
 		}
 	}
-	
+
+	function handleDndConsiderMatch(e: CustomEvent<DndEvent<Match>>) {
+		const {trigger, id} = e.detail.info;
+		e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
+
+		if (trigger === TRIGGERS.DRAG_STARTED) {
+			dndIdx = $playlistmatches.findIndex(item => item.id === Number(id));
+			dndItem =  $playlistmatches[dndIdx];
+			$playlistmatches = e.detail.items
+			shouldIgnoreDndEvents = true;
+		}
+        else if (!shouldIgnoreDndEvents) {
+            $playlistmatches = e.detail.items;
+        }
+        else {
+            $playlistmatches = [...$playlistmatches]
+        }
+	}
+	function handleDndConsiderItem(e: CustomEvent<DndEvent<PlaylistChannel>>) {
+		const {trigger, id} = e.detail.info;
+		//e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
+
+		if (trigger === TRIGGERS.DRAG_STARTED) {
+			dndIdx = $playlist_ch_items.findIndex(item => item.id === id);
+			dndItem =  $playlist_ch_items[dndIdx];
+			$playlist_ch_items = e.detail.items
+			shouldIgnoreDndEvents = true;
+		}
+        else if (!shouldIgnoreDndEvents) {
+            $playlist_ch_items = e.detail.items;
+        }
+        else {
+			$playlist_ch_items = e.detail.items;
+        }
+	}
+	function handleDndFinalizeMatch(e: CustomEvent<DndEvent<Match>>) {
+		const {trigger, id} = e.detail.info;
+        if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreDndEvents) {
+            //e.detail.items = e.detail.items.filter(item => !item.isDragged);
+            $playlistmatches = e.detail.items
+            shouldIgnoreDndEvents = false;
+        }
+        else if (!shouldIgnoreDndEvents) {
+            $playlistmatches = e.detail.items
+        }
+        else if (trigger === TRIGGERS.DROPPED_INTO_ANOTHER){
+			e.detail.items = e.detail.items.filter(item => !item[SHADOW_ITEM_MARKER_PROPERTY_NAME]);
+			e.detail.items.splice(dndIdx,0, dndItem)
+            $playlistmatches = e.detail.items
+            shouldIgnoreDndEvents = false;
+        } else {
+            $playlistmatches = e.detail.items
+            shouldIgnoreDndEvents = false;
+        }
+    }
+	function handleDndFinalizeItem(e: CustomEvent<DndEvent<PlaylistChannel>>) {
+		const {trigger, id} = e.detail.info;
+        if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreDndEvents) {
+            e.detail.items = e.detail.items.filter(item => !item.isDragged);
+            $playlist_ch_items = e.detail.items
+            shouldIgnoreDndEvents = false;
+        }
+        else if (!shouldIgnoreDndEvents) {
+            $playlist_ch_items = e.detail.items
+        } else {
+            $playlist_ch_items = e.detail.items
+            shouldIgnoreDndEvents = false;
+        }
+    }
 </script>
 
 {#if $modalStore[0]}
@@ -201,23 +276,27 @@
 				</div>
 			</div>
 			<div class="playlist_ch_items grid grid-cols-2 space-x-2">
-				<table class="table table-hover text-center justify-center shadow-md">
+				<table class="table table-hover text-center justify-center shadow-md" use:dndzone={{items: $playlist_ch_items, flipDurationMs, type: dndTypeChannels}} on:consider={handleDndConsiderItem} on:finalize={handleDndFinalizeItem}>
 					<thead>
-						<tr class="place-self-center text-center">
+						<tr id ="thead">
 							<th>Title</th>
 							<th>tvg-id</th>
 							<th>Remove</th>
 						</tr>
 					</thead>
-					<tbody>
-						{#if playlist_ch_items != null && playlist_ch_items.length > 0}
-							{#each playlist_ch_items as channel, channelIdx (channel.id)}
-								<tr class="">
+					<tbody >
+						{#if $playlist_ch_items != null && $playlist_ch_items.length > 0}
+							{#each $playlist_ch_items as channel, channelIdx (channel.id)}
+								<tr id="animate" animate:flip={{duration:flipDurationMs}}>
 									<td>{channel.title}</td>
 									<td>{channel.tvg_id}</td>
 									<td class="hover:bg-red-900" on:click={removeChannelItem(channel.id)}>
 										<i><IconParkOutlineDelete/></i>
 									</td>
+
+									{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+										<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.title}</div>
+									{/if}
 								</tr>
 							{/each}
 						{:else}
@@ -227,19 +306,23 @@
 				</table>
 				<table class="table table-hover text-center justify-center shadow-md">
 					<thead>
-						<tr class="center">
+						<tr id ="thead">
 							<th>Title</th>
 							<th>tvg-id</th>
 							<th>Score</th>
 						</tr>
 					</thead>
-					<tbody>
-						{#if playlist_ch_matches != null && playlist_ch_matches.length > 0}
-							{#each playlist_ch_matches as channel, channelIdx (channel.channelid)}
-								<tr class="center">
-									<td>{channel.channelname}</td>
-									<td>{channel.channeltvgid}</td>
+					<tbody use:dndzone={{items: $playlistmatches, flipDurationMs, type: dndTypeChannels, dropFromOthersDisabled}} on:consider={handleDndConsiderMatch} on:finalize={handleDndFinalizeMatch}>
+						{#if $playlistmatches != null && $playlistmatches.length > 0}
+							{#each $playlistmatches as channel, channelIdx (channel.id)}
+								<tr id="animate" animate:flip={{duration:flipDurationMs}}>
+									<td>{channel.name}</td>
+									<td>{channel.tvgid}</td>
 									<td>{channel.score}</td>
+
+									{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+										<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.name}</div>
+									{/if}
 								</tr>
 							{/each}
 						{:else}
