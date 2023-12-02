@@ -275,7 +275,7 @@
 						on:change={onUploadHandler}>Upload</FileButton>
 				</div>
 			</div>
-			<div class="playlist_ch_items grid grid-cols-2 space-x-2">
+			<div class="playlist_ch_items grid grid-cols-2 space-x-2 max-h-16">
 				<table class="table table-hover text-center justify-center shadow-md" use:dndzone={{items: $playlist_ch_items, flipDurationMs, type: dndTypeChannels}} on:consider={handleDndConsiderItem} on:finalize={handleDndFinalizeItem}>
 					<thead>
 						<tr id ="thead">

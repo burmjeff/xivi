@@ -147,14 +147,12 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan *models.PlaylistChan
 				} else {
 					groupID = groupId
 				}
+				if _, err := m.Db.CreatePlGroupItem(m.playlistID, groupID); err != nil {
+					log.Debug().Msgf("FAILED TO CREATE PLAYLIST_GROUP_ITEM: %v", err)
+				}
 			} else {
 				groupID = foundGroup.ID
 			}
-		}
-
-		_, err := m.Db.CreatePlGroupItem(m.playlistID, groupID)
-		if err != nil {
-			log.Debug().Msgf("FAILED TO CREATE PLAYLIST_GROUP_ITEM: %v", err)
 		}
 
 		// Validate playlist fields.
@@ -165,15 +163,34 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan *models.PlaylistChan
 		}
 
 		//match playlist channels
+		foundChannels, err := m.Db.GetM3UParseByTvgID(tvgID, groupID, m.playlistID)
+		if err != nil {
+			log.Error().Err(err)
+		}
+		if len(foundChannels) == 0 {
+			log.Info().Msgf("Channel not found. Creating Channel: %s", playlistChannel.Title)
+			playlistChannel.CreatedAt = time.Now()
+			playlistChannelID, err := m.Db.CreatePlChannel(playlistChannel)
+			if err != nil {
+				log.Warn().Msg(err.Error())
+				return
+			}
+			playlistChannel.ID = playlistChannelID
+			m.createPlaylistGroupChannel(groupID, playlistChannel)
+			vectorIn <- playlistChannel
 
-		foundChannels, err := m.Db.GetPlChannelsByTvgID(tvgID)
-		if err == nil {
+			//Set channel URL model
+			channelURL.Url = streamLink
+			channelURL.PlaylistID = m.playlistID
+			channelURL.PlaylistChannelId = playlistChannel.ID
+			channelURL.CreatedAt = time.Now()
+			err = m.Db.CreateChannelUrl(channelURL)
+			if err != nil {
+				log.Warn().Msg(err.Error())
+				return
+			}
+		} else {
 			for _, foundChannel := range foundChannels {
-				_, err := m.Db.ChannelUrlExists(m.matchedPlaylist, foundChannel.ID)
-				if err != nil {
-					log.Print(err)
-					continue
-				}
 				log.Info().Msgf("Channel found. Adding url to Channel: %s", playlistChannel.Title)
 				playlistChannel.UpdatedAt = time.Now()
 				err = m.Db.UpdatePlChannel(foundChannel.ID, playlistChannel)
@@ -188,48 +205,24 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan *models.PlaylistChan
 				channelURL.Url = streamLink
 				channelURL.PlaylistID = m.playlistID
 				channelURL.PlaylistChannelId = foundChannel.ID
-				channelURL.CreatedAt = time.Now()
 
 				channelID, err := m.Db.ChannelUrlExists(m.playlistID, foundChannel.ID)
 				if err != nil {
+					channelURL.CreatedAt = time.Now()
 					err = m.Db.CreateChannelUrl(channelURL)
 					if err != nil {
 						log.Warn().Msg(err.Error())
-						return
+						continue
 					}
 				} else {
+					channelURL.UpdatedAt = time.Now()
 					err = m.Db.UpdateChannelUrl(channelID, channelURL)
 					if err != nil {
 						log.Warn().Msg(err.Error())
-						return
+						continue
 					}
 				}
-				playlistChannel.ID = channelID
-				m.createPlaylistGroupChannel(groupID, playlistChannel)
-
-				return
 			}
-		}
-		log.Info().Msgf("Channel not found. Creating Channel: %s", playlistChannel.Title)
-		playlistChannel.CreatedAt = time.Now()
-		playlistChannelID, err := m.Db.CreatePlChannel(playlistChannel)
-		if err != nil {
-			log.Warn().Msg(err.Error())
-			return
-		}
-		playlistChannel.ID = playlistChannelID
-		vectorIn <- playlistChannel
-		m.createPlaylistGroupChannel(groupID, playlistChannel)
-
-		//Set channel URL model
-		channelURL.Url = streamLink
-		channelURL.PlaylistID = m.playlistID
-		channelURL.PlaylistChannelId = playlistChannel.ID
-		channelURL.CreatedAt = time.Now()
-		err = m.Db.CreateChannelUrl(channelURL)
-		if err != nil {
-			log.Warn().Msg(err.Error())
-			return
 		}
 	}
 }

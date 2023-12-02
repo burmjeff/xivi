@@ -18,7 +18,7 @@ func CreateEpgXML(db *database.Queries, template models.Template) {
 		SourceInfoName: fmt.Sprintf("%s - %s", settings.APP_SETTINGS.Application.AppName, settings.APP_SETTINGS.Application.AppVersion),
 	}
 
-	channelIDs, err := db.GetTmplTvgids(template.ID)
+	channels, err := db.GetTmplChannelsByGroup(template.ID)
 	if err != nil {
 		log.Error().Msgf("No tvgids found for template: %v", template.ID)
 		return
@@ -40,27 +40,20 @@ func CreateEpgXML(db *database.Queries, template models.Template) {
 		return
 	}
 
-	for _, channel := range channelIDs {
-		epgChannel, err := db.GetEpgChannelByChannelId(channel)
+	for _, channel := range channels {
+		epgChannel, err := db.GetEpgChannelByChannelId(channel.TvgID)
 		if err != nil {
 			log.Warn().Msgf("No channel found for %s: %v", channel, err)
 			continue
 		}
-
-		if templateChannel, err := db.GetTmplChannelBytvgid(channel); err != nil {
-			//TODO LET USER SET DEFAULT CHANNEL LOGO
-			epgChannel.Icon.Src = fmt.Sprintf("http://%s:%d/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, GetLogoUrl("xivi_channel"))
-		} else {
-			epgChannel.Icon.Src = fmt.Sprintf("http://%s:%d/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, GetLogoUrl(templateChannel.Uuid))
-		}
-
+		epgChannel.Icon.Src = fmt.Sprintf("http://%s:%d/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, GetLogoUrl(channel.Uuid))
 		epg.Channels = append(epg.Channels, epgChannel)
 	}
 
-	for _, programme := range channelIDs {
-		epgProgrammes, err := db.GetProgrammesByChannelId(programme)
+	for _, channel := range channels {
+		epgProgrammes, err := db.GetProgrammesByChannelId(channel.TvgID)
 		if err != nil {
-			log.Warn().Msgf("No programme found for %s: %v", programme, err)
+			log.Warn().Msgf("No programme found for %s: %v", channel.TvgID, err)
 			continue
 		}
 		epg.Programmes = append(epg.Programmes, *epgProgrammes...)
