@@ -261,12 +261,28 @@ BEGIN
     WHERE id = new.id;
 END;
 
+CREATE TRIGGER delete_playlist_cascade
+AFTER DELETE ON playlist
+FOR EACH ROW
+BEGIN
+    DELETE FROM playlistgroup WHERE id NOT IN (SELECT group_id FROM playlist_group_item);
+END;
+
+CREATE TRIGGER delete_playlistgroup_cascade
+AFTER DELETE ON playlistgroup
+FOR EACH ROW
+BEGIN
+    DELETE FROM playlist_group_item WHERE group_id = old.id;
+    DELETE FROM playlistchannel WHERE id NOT IN (SELECT channel_id FROM playlist_group_channel);
+END;
+
 CREATE TRIGGER delete_playlistchannel_cascade
 AFTER DELETE ON playlistchannel
 FOR EACH ROW
 BEGIN
-    DELETE FROM playlist_group_item WHERE group_id NOT IN (SELECT group_id FROM playlist_group_channel);
+    DELETE FROM playlist_group_channel WHERE channel_id = old.id;
     DELETE FROM playlistgroup WHERE id NOT IN (SELECT group_id FROM playlist_group_item);
+    DELETE FROM channelurl WHERE playlist_channel_id = old.id;
     DELETE FROM playlistchannelvectors WHERE channel_id = old.id;
 END;
 
@@ -274,16 +290,6 @@ CREATE TRIGGER delete_channelurl_cascade
 AFTER DELETE ON channelurl
 FOR EACH ROW
 BEGIN
-    DELETE FROM playlistchannel WHERE id NOT IN (SELECT playlist_channel_id FROM channelurl);
-    DELETE FROM playlist_group_item WHERE group_id NOT IN (SELECT group_id FROM playlist_group_channel);
-    DELETE FROM playlistgroup WHERE id NOT IN (SELECT group_id FROM playlist_group_item);
-END;
-
-CREATE TRIGGER delete_playlist_cascade
-AFTER DELETE ON playlist
-FOR EACH ROW
-BEGIN
-    DELETE FROM channelurl WHERE playlist_id = old.id;
     DELETE FROM playlistchannel WHERE id NOT IN (SELECT playlist_channel_id FROM channelurl);
 END;
 

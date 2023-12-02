@@ -49,18 +49,20 @@ func MatchTemplateChannel(db *database.Queries, templateCh *models.TemplateChann
 
 // Search if tvgid matches for playlist channel and add to template if match
 func matchPlaylistTvgid(db *database.Queries, playlistCh *models.PlaylistChannel) error {
-	channel, err := db.GetTmplChannelBytvgid(playlistCh.TvgID)
+	channels, err := db.GetTmplChannelsBytvgid(playlistCh.TvgID)
 	if err != nil {
 		log.Debug().Msgf("matchChannels:, %v", err)
 		return err
 	}
-	channelItem := models.TemplateChannelItem{
-		ChannelId:         channel.ID,
-		PlaylistChannelId: playlistCh.ID,
-	}
-	if _, err := db.CreateTmplChannelItem(&channelItem); err != nil {
-		log.Debug().Msgf("matchChannels:, %v", err)
-		return err
+	for _, channel := range channels {
+		channelItem := models.TemplateChannelItem{
+			ChannelId:         channel.ID,
+			PlaylistChannelId: playlistCh.ID,
+		}
+		if _, err := db.CreateTmplChannelItem(&channelItem); err != nil {
+			log.Debug().Msgf("matchChannels:, %v", err)
+			return err
+		}
 	}
 	return nil
 }

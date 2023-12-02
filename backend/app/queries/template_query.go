@@ -447,22 +447,22 @@ func (q *TemplateQueries) GetTmplChannelByName(name string) (models.TemplateChan
 }
 
 // GetChannel method for getting one channel by given tvgid.
-func (q *TemplateQueries) GetTmplChannelBytvgid(tvgid string) (models.TemplateChannel, error) {
+func (q *TemplateQueries) GetTmplChannelsBytvgid(tvgid string) ([]models.TemplateChannel, error) {
 	// Define channel variable.
-	channel := models.TemplateChannel{}
+	channels := []models.TemplateChannel{}
 
 	// Define query string.
 	query := `SELECT * FROM templatechannel WHERE tvgid = ?`
 
 	// Send query to database.
-	err := q.Get(&channel, query, tvgid)
+	err := q.Select(&channels, query, tvgid)
 	if err != nil {
 		// Return empty object and error.
-		return channel, err
+		return channels, err
 	}
 
 	// Return query result.
-	return channel, nil
+	return channels, nil
 }
 
 // CreateChannel method for creating a Channel by given Channel object.
