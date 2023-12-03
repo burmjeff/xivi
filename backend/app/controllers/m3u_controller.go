@@ -48,6 +48,7 @@ func CreateM3U(c *fiber.Ctx) error {
 
 	m3uTools := utils.M3uTools{Db: db}
 	go m3uTools.CreateM3u(template)
+	go utils.CreateEpgXML(db, template)
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{

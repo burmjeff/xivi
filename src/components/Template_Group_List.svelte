@@ -31,34 +31,6 @@
         templateGroups.set(await updateTemplateGroups());
     });
 
-    let templateGroupSettings: PopupSettings = {
-        // Set the event as: click | hover | hover-click
-        event: 'click',
-        // Provide a matching 'data-popup' value.
-        target: 'addTemplateGroupPopup'
-    };
-
-    async function addTemplateGroup() {
-        const inputName = {name: (document.querySelector('.template_group_name input') as HTMLInputElement).value};
-        if (inputName !== null) {
-            try {
-                const response = await fetch('/api/template/group', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(inputName)
-                });
-                const data = await response.json();
-                console.log('Created template group', data);
-                $templateGroups.push(data.templategroup);
-                $templateGroups = $templateGroups;
-            } catch (error) {
-                console.log('Error creating templateGroup:', error);
-            }
-        }
-    }
-
     function renamePrompt(groupIdx: number, groupName: string, groupId: string): void {
 		const prompt: ModalSettings = {
 			type: 'prompt',
@@ -157,7 +129,43 @@
 		}
 	}
 
-	function modalAdd(groupId: string, groupIdx: number) {
+    async function addTemplateGroup(formData: any) {
+
+        if (formData.name !== null) {
+            try {
+                const response = await fetch('/api/template/group', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(formData)
+                });
+                const data = await response.json();
+                console.log('Created template group', data);
+                $templateGroups.push(data.templategroup);
+                $templateGroups = $templateGroups;
+            } catch (error) {
+                console.log('Error creating templateGroup:', error);
+            }
+        }
+    }
+
+    function modalAddTemplateGroup() {
+		new Promise<boolean>((resolve) => {
+			const modal: ModalSettings = {
+				type: 'component',
+				component: 'modalAddGroup',
+				response: (r: boolean) => {
+					resolve(r);
+				}
+			};
+			modalStore.trigger(modal);
+		}).then((r: any) => {
+			if (r) {addTemplateGroup(r)};
+		});
+	}
+
+	function modalAddChannel(groupId: string, groupIdx: number) {
 		new Promise<boolean>((resolve) => {
 			const modal: ModalSettings = {
 				type: 'component',
@@ -264,7 +272,7 @@
 <section class="tmplgroups card card-hover p-1" >
     <header class="tmplgroups-header flex justify-center items-center space-x-4">
         <h3 class="h3 font-bold">Groups</h3>
-        <button class="btn btn-sm variant-ringed-primary" use:popup={templateGroupSettings}>+ add new</button>
+        <button class="btn btn-sm variant-ringed-primary" on:click={() => modalAddTemplateGroup()}>+ add new</button>
     </header>
     {#if $templateGroups != null}
         <Accordion>
@@ -287,7 +295,7 @@
                                             <i><IconParkOutlineDelete/></i>
                                         </button>
                                         <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" 
-                                            on:click={() => modalAdd(group.id, groupIdx)}>
+                                            on:click={() => modalAddChannel(group.id, groupIdx)}>
                                             <i><IconParkOutlineAdd/></i>
                                         </button>
                                     </div>
@@ -310,19 +318,6 @@
         </Accordion>
     {/if}
 </section>
-
-<div class="card p-4 gap-4" data-popup="addTemplateGroupPopup">
-	<h2>Add Template Group</h2>
-    <div class="space-y-4">
-        <label class="template_group_name">
-            <span>Template Group Name</span>
-            <input class="input" type="text" placeholder="Template Group Name" />
-        </label>
-        <label class="submit_button">
-            <button class="btn bg-primary-500" on:click={addTemplateGroup}>Add Template Group</button>
-        </label>
-    </div>
-</div>
 
 <style>
     #accord {

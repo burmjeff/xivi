@@ -8,6 +8,8 @@ export interface Template {
 export interface TemplateGroup {
 	id: string;
 	name: string;
+	dynamic: boolean;
+	playlistgroup: number;
 	isDndShadowItem: boolean;
 	itemOpen: boolean;
 	isDragged: boolean;

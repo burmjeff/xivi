@@ -45,13 +45,6 @@ func UpdatePlaylists() {
 		return
 	}
 
-	// get templates.
-	templates, err := db.GetTemplates()
-	if err != nil {
-		log.Err(err)
-		return
-	}
-
 	m3uParser := utils.M3uParser{Db: db}
 	for _, playlist := range playlists {
 		log.Log().Msgf("Updating Playlist: %s", playlist.Name)
@@ -69,11 +62,25 @@ func UpdatePlaylists() {
 		log.Log().Msgf("Finished Updating Playlist: %s", playlist.Name)
 	}
 
-	m3uTools := utils.M3uTools{Db: db}
-	for _, template := range templates {
-		go m3uTools.CreateM3u(template)
+	if groups, err := db.GetAllTmplGroups(); err != nil {
+		log.Err(err)
+	} else {
+		for _, group := range groups {
+			if group.Dynamic {
+				utils.UpdateDynamicGroup(db, group)
+			}
+		}
 	}
 
+	// get templates.
+	if templates, err := db.GetTemplates(); err != nil {
+		log.Debug().Err(err)
+	} else {
+		m3uTools := utils.M3uTools{Db: db}
+		for _, template := range templates {
+			go m3uTools.CreateM3u(template)
+		}
+	}
 }
 
 func UpdateEpgs() {

@@ -90,32 +90,6 @@
 		});
 	}
 
-	/*
-	async function addChannel(groupId: string, groupIdx: number) {
-		let newChannel = {
-			name: $templateGroups[groupIdx].channels[groupIdx],
-			tvgid: formData.tvgid,
-			logoid: formData.logoid
-		}
-
-		try {
-			const response = await fetch(`/api/template/group/${groupId}/channel`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify(newChannel)
-			});
-			const data = await response.json();
-			console.log('Added template channel:', data);
-			$templateGroups[groupIdx].channels.push(data.templatechannel)
-			$templateGroups[groupIdx].channels = $templateGroups[groupIdx].channels
-		} catch (error) {
-			console.log('Error updating template channel:', error);
-			return;
-		}
-	}*/
-
 	function handleDndConsider(e: CustomEvent<DndEvent<TemplateChannel>>) {
 		const {trigger, id} = e.detail.info;
 		//e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));

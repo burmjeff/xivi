@@ -202,12 +202,12 @@ func (q *TemplateQueries) GetTmplGroupByName(name string) (models.TemplateGroup,
 }
 
 // CreateGroup method for creating group by given Group object.
-func (q *TemplateQueries) CreateTmplGroup(p *models.TemplateGroup) (int64, error) {
+func (q *TemplateQueries) CreateTmplGroup(t *models.TemplateGroup) (int64, error) {
 	// Define query string.
-	query := `INSERT INTO templategroup VALUES (null, $1)`
+	query := `INSERT INTO templategroup VALUES (null, ?, ?, ?)`
 
 	// Send query to database.
-	res, err := q.Exec(query, p.Name)
+	res, err := q.Exec(query, t.Name, t.Dynamic, t.PlaylistGroup)
 	if err != nil {
 		// Return only error.
 		return 0, err
@@ -225,7 +225,7 @@ func (q *TemplateQueries) CreateTmplGroup(p *models.TemplateGroup) (int64, error
 // UpdateGroup method for updating group by given Group object.
 func (q *TemplateQueries) UpdateTmplGroup(t *models.TemplateGroup) error {
 	// Define query string.
-	query := `UPDATE templategroup SET name = ? WHERE id = ?`
+	query := `UPDATE templategroup SET name = ?, dynamic = ?, playlistgroup = ? WHERE id = ?`
 
 	// Send query to database.
 	_, err := q.Exec(query, t.Name, t.ID)
@@ -487,7 +487,7 @@ func (q *TemplateQueries) CreateTmplChannel(p *models.TemplateChannel) (int64, e
 }
 
 // UpdateChannel method for updating a channel by given object.
-func (q *TemplateQueries) UpdateTmplChannel(t *models.TemplateChannelLogo) error {
+func (q *TemplateQueries) UpdateTmplChannel(t *models.TemplateChannel) error {
 	// Define query string.
 	query := `UPDATE templatechannel SET name = ?, tvgid = ?, logoid = ? WHERE id = ?`
 
@@ -627,6 +627,23 @@ func (q *TemplateQueries) DeleteTmplChannelItem(templateItem *models.TemplateCha
 
 // GetTemplategroupitem method
 func (q *TemplateQueries) GetTmplGroupItems(id int64) ([]models.TemplateGroupItem, error) {
+	templategroupitems := []models.TemplateGroupItem{}
+
+	// Define query string.
+	query := `SELECT * FROM template_group_item WHERE template_id = $1`
+
+	// Send query to database.
+	err := q.Select(&templategroupitems, query, id)
+	if err != nil {
+		// Return empty object and error.
+		return templategroupitems, err
+	}
+
+	// Return query result.
+	return templategroupitems, nil
+}
+
+func (q *TemplateQueries) GetTmplGroupItemsByGroup(id int64) ([]models.TemplateGroupItem, error) {
 	templategroupitems := []models.TemplateGroupItem{}
 
 	// Define query string.

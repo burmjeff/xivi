@@ -2,8 +2,10 @@ package models
 
 // Channel struct to describe Template Group object.
 type TemplateGroup struct {
-	ID   int64  `db:"id" json:"id"`
-	Name string `db:"name" json:"name" validate:"required,lte=255"`
+	ID            int64  `db:"id" json:"id"`
+	Name          string `db:"name" json:"name" validate:"required,lte=255"`
+	Dynamic       bool   `db:"dynamic" json:"dynamic" validate:"required"`
+	PlaylistGroup int64  `db:"playlistgroup" json:"playlistgroup"`
 }
 
 type TemplateGroupItem struct {
