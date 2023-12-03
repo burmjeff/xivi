@@ -6,6 +6,7 @@
 	import { storePopup } from '@skeletonlabs/skeleton';
 	import { initializeStores } from '@skeletonlabs/skeleton';
 	import ChannelSettings from '@xivi/components/modals/ChannelSettings.svelte';
+	import AddGroup from '@xivi/components/modals/AddGroup.svelte';
 	import xivi from '$lib/assets/xivi.png';
 
 	initializeStores();
@@ -13,6 +14,7 @@
 	const modalRegistry: Record<string, ModalComponent> = {
 	// Set a unique modal ID, then pass the component reference
 	modalChannelSettings: { ref: ChannelSettings },
+	modalAddGroup: { ref: AddGroup },
 	};
 
 	storePopup.set({ computePosition, autoUpdate, flip, shift, offset, arrow });

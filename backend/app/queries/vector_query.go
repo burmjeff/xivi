@@ -19,10 +19,10 @@ func (q *VectorQueries) GetTemplateChannelVector(channel_id int64) (*models.Temp
 	query := `SELECT * FROM templatechannelvectors WHERE channel_id = ?`
 
 	// Send query to database.
-	err := q.Select(&vectorChannel, query, channel_id)
+	err := q.Get(&vectorChannel, query, channel_id)
 	if err != nil {
 		// Return empty object and error.
-		return vectorChannel, err
+		return nil, err
 	}
 
 	// Return query result.
@@ -201,36 +201,4 @@ func (q *VectorQueries) CreateChannelVector(channelVector models.ChannelVector) 
 
 	// This query returns nothing.
 	return id, nil
-}
-
-func (q *VectorQueries) GetFilter(oldName string) (models.ChannelFilter, error) {
-	filter := models.ChannelFilter{}
-
-	// Define query string.
-	query := `SELECT * FROM channelfilters WHERE oldname = ?`
-
-	// Send query to database.
-	err := q.Get(&filter, query, oldName)
-	if err != nil {
-		// Return empty object and error.
-		return filter, err
-	}
-
-	// Return query result.
-	return filter, nil
-}
-
-func (q *VectorQueries) CreateFilter(channelFilter models.ChannelFilter) error {
-
-	// Define query string.
-	query := `INSERT INTO channelfilters VALUES (null, ?, ?)`
-	// Send query to database.
-	_, err := q.Exec(query, channelFilter.OldName, channelFilter.NewName)
-	if err != nil {
-		// Return empty object and error.
-		return err
-	}
-
-	// Return query result.
-	return nil
 }

@@ -490,6 +490,10 @@ func CreateTemplateGroup(c *fiber.Ctx) error {
 
 	templateGroup.ID = id
 
+	if templateGroup.Dynamic {
+		utils.UpdateDynamicGroup(db, *templateGroup)
+	}
+
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
 		"error":         false,
@@ -554,6 +558,7 @@ func CreateTemplateGroupItem(c *fiber.Ctx) error {
 	} else {
 		m3uTools := utils.M3uTools{Db: db}
 		go m3uTools.CreateM3u(template)
+		go utils.CreateEpgXML(db, template)
 	}
 
 	// Return status 201 OK.
@@ -668,7 +673,7 @@ func DeleteTemplateGroup(c *fiber.Ctx) error {
 		})
 	}
 
-	if templateGroupItems, err := db.GetTmplGroupItems(group_id); err == nil {
+	if templateGroupItems, err := db.GetTmplGroupItemsByGroup(group_id); err == nil {
 		m3uTools := utils.M3uTools{Db: db}
 		for _, templateGroupItem := range templateGroupItems {
 			// Get template
@@ -750,27 +755,13 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 		})
 	}
 
-	if templateGroupItems, err := db.GetTmplGroupItems(templateGroup.ID); err == nil {
-		oldGroup, err := db.GetTmplGroup(templateGroup.ID)
-		if err != nil {
-			// Return status 500 and error message.
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": true,
-				"msg":   err.Error(),
-			})
-		}
-		m3uTools := utils.M3uTools{Db: db}
-		go func() {
-			for _, templateGroupItem := range templateGroupItems {
-				// Get template
-				template, err := db.GetTemplate(templateGroupItem.TemplateId)
-				if err != nil {
-					// Return status 500 and error message.
-					continue
-				}
-				go m3uTools.UpdateGroup(&template, templateGroup, oldGroup.Name)
-			}
-		}()
+	oldGroup, err := db.GetTmplGroup(templateGroup.ID)
+	if err != nil {
+		// Return status 500 and error message.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
 	}
 
 	// Update template group.
@@ -780,6 +771,28 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 			"error": true,
 			"msg":   err.Error(),
 		})
+	}
+
+	m3uTools := utils.M3uTools{Db: db}
+	if templateGroupItems, err := db.GetTmplGroupItemsByGroup(templateGroup.ID); err == nil {
+		go func() {
+			for _, templateGroupItem := range templateGroupItems {
+				// Get template
+				template, err := db.GetTemplate(templateGroupItem.TemplateId)
+				if err != nil {
+					continue
+				}
+				if templateGroup.Dynamic == oldGroup.Dynamic {
+					go m3uTools.UpdateGroup(&template, templateGroup, oldGroup)
+				} else {
+					if templateGroup.Dynamic {
+						utils.UpdateDynamicGroup(db, *templateGroup)
+					}
+					go m3uTools.CreateM3u(template)
+					go utils.CreateEpgXML(db, template)
+				}
+			}
+		}()
 	}
 
 	// Return status 201.
@@ -954,7 +967,7 @@ func UpdateTemplateChannel(c *fiber.Ctx) error {
 		}
 		go func() {
 			for _, item := range templateGroupChannels {
-				if templateGroupItems, err := db.GetTmplGroupItems(item.GroupId); err == nil {
+				if templateGroupItems, err := db.GetTmplGroupItemsByGroup(item.GroupId); err == nil {
 					m3uTools := utils.M3uTools{Db: db}
 					for _, templateGroupItem := range templateGroupItems {
 						// Get template
@@ -970,7 +983,7 @@ func UpdateTemplateChannel(c *fiber.Ctx) error {
 	}
 
 	// Update template channel.
-	if err := db.UpdateTmplChannel(templateChannelLogo); err != nil {
+	if err := db.UpdateTmplChannel(&templateChannelLogo.TemplateChannel); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -1024,7 +1037,7 @@ func DeleteTemplateChannel(c *fiber.Ctx) error {
 
 		go func() {
 			for _, item := range templateGroupChannels {
-				if templateGroupItems, err := db.GetTmplGroupItems(item.GroupId); err == nil {
+				if templateGroupItems, err := db.GetTmplGroupItemsByGroup(item.GroupId); err == nil {
 					group, err := db.GetTmplGroup(item.GroupId)
 					if err != nil {
 						continue

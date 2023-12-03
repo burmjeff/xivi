@@ -20,6 +20,7 @@ func PublicRoutes(a *fiber.App) {
 	api.Get("/playlists", controllers.GetPlaylists)                                     // get list of all playlists
 	api.Get("/playlist/:id", controllers.GetPlaylist)                                   // get a playlist by ID
 	api.Get("/playlist/:id/groups", controllers.GetPlaylistGroups)                      // get groups by playlist_id
+	api.Get("/playlist/groups/all", controllers.GetAllPlaylistGroups)                   // get playlist groups
 	api.Get("/playlist/group/:group_id/channels", controllers.GetPlaylistGroupChannels) // get channels by playlist group
 	api.Post("/playlist", controllers.CreatePlaylist)                                   // create a new playlist
 	api.Post("/playlist/group/:group_id/convert", controllers.ConvertPlaylistGroup)     // convert playlistgroup

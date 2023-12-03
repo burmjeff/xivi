@@ -36,8 +36,6 @@ func (m *M3uTools) CreateM3u(template models.Template) {
 		fmt.Println("Error writing file:", err)
 		return
 	}
-
-	go CreateEpgXML(m.Db, template)
 }
 
 func (m *M3uTools) RenameTemplate(template *models.Template, oldTemplate string) {
@@ -89,7 +87,7 @@ func (m *M3uTools) RemoveTemplate(template *models.Template) {
 	}
 }
 
-func (m *M3uTools) UpdateGroup(template *models.Template, group *models.TemplateGroup, oldGroup string) {
+func (m *M3uTools) UpdateGroup(template *models.Template, group *models.TemplateGroup, oldGroup models.TemplateGroup) {
 	// Create a new string variable to hold the filtered content.
 	var filtered string
 
@@ -102,7 +100,7 @@ func (m *M3uTools) UpdateGroup(template *models.Template, group *models.Template
 		return
 	}
 
-	filter := fmt.Sprintf("group-title=\"%s\"", oldGroup)
+	filter := fmt.Sprintf("group-title=\"%s\"", oldGroup.Name)
 	newGroup := fmt.Sprintf("group-title=\"%s\"", group.Name)
 	lines := strings.Split(string(content), "\n")
 
@@ -268,39 +266,37 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 		return nil
 	}
 
-	tmplGroupChannels, err := m.Db.GetTmplGroupChannelsByTmpl(m.template.ID)
+	groups, err := m.Db.GetTmplGroups(m.template.ID)
 	if err != nil {
 		log.Warn().Msg(err.Error())
 		return err
 	}
 
-	for _, item := range tmplGroupChannels {
-		group, err := m.Db.GetTmplGroup(item.GroupId)
+	for _, group := range groups {
+		log.Info().Msgf("M3U Creation: Found Template Group: %s", group.Name)
+		channels, err := m.Db.GetTmplChannelsByGroup(group.ID)
 		if err != nil {
-			log.Warn().Msg(err.Error())
+			log.Debug().Msg(err.Error())
 			continue
 		}
-		log.Printf("M3U Creation: Found Template Group: %s", group.Name)
-		channel, err := m.Db.GetTmplChannel(item.ChannelId)
-		if err != nil {
-			log.Warn().Msg(err.Error())
-			continue
-		}
-		logo, err := m.Db.GetLogo(channel.LogoId)
-		if err != nil {
-			log.Warn().Msg(err.Error())
-			continue
-		}
-		logoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, GetLogoUrl(logo.Uuid))
 
-		log.Printf("M3U Creation: Adding Template Channel: %s", channel.Name)
-		channelURL := fmt.Sprintf("http://%s:%d/stream/%s", m.host, m.port, channel.Uuid)
-		_, err = writer.WriteString(fmt.Sprintf("#EXTINF:-1 tvg-chno=\"%d\" tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n%s\n", chNo, channel.TvgID, channel.TvgID, logoURL, group.Name, channel.Name, channelURL))
-		if err != nil {
-			log.Err(err)
-			continue
+		for _, channel := range channels {
+			logo, err := m.Db.GetLogo(channel.LogoId)
+			if err != nil {
+				log.Warn().Msg(err.Error())
+				continue
+			}
+			logoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, GetLogoUrl(logo.Uuid))
+			channelURL := fmt.Sprintf("http://%s:%d/stream/%s", m.host, m.port, channel.Uuid)
+
+			log.Info().Msgf("M3U Creation: Adding Template Channel: %s", channel.Name)
+
+			if _, err = writer.WriteString(fmt.Sprintf("#EXTINF:-1 tvg-chno=\"%d\" tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n%s\n", chNo, channel.TvgID, channel.TvgID, logoURL, group.Name, channel.Name, channelURL)); err != nil {
+				log.Err(err)
+				continue
+			}
+			chNo++
 		}
-		chNo++
 	}
 
 	return writer.Flush()

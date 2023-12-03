@@ -67,7 +67,10 @@ CREATE TABLE template (
 -- Create templategroup table
 CREATE TABLE templategroup (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR (255) UNIQUE NOT NULL
+    name VARCHAR (255) UNIQUE NOT NULL,
+    dynamic BOOLEAN,
+    playlistgroup INTEGER NULL,
+    FOREIGN KEY (playlistgroup) REFERENCES playlistgroup(id)
 );
 
 -- Create templatechannel table
@@ -114,7 +117,6 @@ CREATE TABLE templatechannelitem (
     orderr INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (channel_id) REFERENCES templatechannel(id) ON DELETE CASCADE,
     FOREIGN KEY (playlist_channel_id) REFERENCES playlistchannel(id) ON DELETE CASCADE
-    ON DELETE CASCADE
 );
 
 -- Create epg table
@@ -180,7 +182,6 @@ CREATE TABLE templatechannelvectors (
     vector_id INTEGER NOT NULL,
     FOREIGN KEY (channel_id) REFERENCES templatechannel(id) ON DELETE CASCADE,
     FOREIGN KEY (vector_id) REFERENCES channelvectors(id) ON DELETE CASCADE
-    ON DELETE CASCADE
 );
 
 -- Create playlistchannelvectors table
@@ -190,14 +191,23 @@ CREATE TABLE playlistchannelvectors (
     vector_id INTEGER NOT NULL,
     FOREIGN KEY (channel_id) REFERENCES playlistchannel(id) ON DELETE CASCADE,
     FOREIGN KEY (vector_id) REFERENCES channelvectors(id) ON DELETE CASCADE
-    ON DELETE CASCADE
 );
 
--- Create channelfilters table
-CREATE TABLE channelfilters (
+-- Create regexfilters table
+CREATE TABLE regexfilters (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    oldname VARCHAR (255) UNIQUE NOT NULL,
-    newname VARCHAR (255) NOT NULL
+    name VARCHAR (255) UNIQUE NOT NULL,
+    regex VARCHAR (255) NOT NULL
+);
+
+-- Create playlist_group_filters table
+CREATE TABLE groupfilters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    filter_id INTEGER NOT NULL,
+    type BOOLEAN NOT NULL,
+    FOREIGN KEY (group_id) REFERENCES playlistgroup(id) ON DELETE CASCADE,
+    FOREIGN KEY (filter_id) REFERENCES regexfilters(id) ON DELETE CASCADE
 );
 
 -- Add indexes
@@ -207,7 +217,8 @@ CREATE INDEX idx_template_tvgid ON templatechannel (tvgid);
 CREATE INDEX idx_channel_vector ON channelvectors (name);
 CREATE INDEX idx_template_vector ON templatechannelvectors (channel_id);
 CREATE INDEX idx_playlist_vector ON playlistchannelvectors (channel_id);
-CREATE INDEX idx_channel_filters ON channelfilters (oldname);
+CREATE INDEX idx_regex_filters ON regexfilters (id);
+CREATE INDEX idx_group_filters ON groupfilters (group_id);
 CREATE INDEX idx_template_group_item_orderr ON template_group_item (orderr);
 CREATE INDEX idx_template_group_channel_orderr ON template_group_channel (orderr);
 
@@ -273,7 +284,9 @@ AFTER DELETE ON playlistgroup
 FOR EACH ROW
 BEGIN
     DELETE FROM playlist_group_item WHERE group_id = old.id;
+    DELETE FROM groupfilters WHERE group_id = old.id;
     DELETE FROM playlistchannel WHERE id NOT IN (SELECT channel_id FROM playlist_group_channel);
+    UPDATE templategroup SET dynamic = false, templategroup = NULL WHERE templategroup = old.id;
 END;
 
 CREATE TRIGGER delete_playlistchannel_cascade
@@ -331,6 +344,13 @@ AFTER DELETE ON logo
 FOR EACH ROW
 BEGIN
     UPDATE templatechannel SET logoid = 0 WHERE logoid = old.id;
+END;
+
+CREATE TRIGGER delete_regex_filters_cascade
+AFTER DELETE ON regexfilters
+FOR EACH ROW
+BEGIN
+    DELETE FROM groupfilters WHERE filter_id = old.id;
 END;
 
 -- Initial Values

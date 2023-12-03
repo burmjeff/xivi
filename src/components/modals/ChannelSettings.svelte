@@ -13,7 +13,7 @@
     import {flip} from 'svelte/animate';
     import {fade} from 'svelte/transition';
     import {cubicIn} from 'svelte/easing';
-	import { playlistmatches } from '@xivi/stores/playlist_store';
+	import { playlistMatches } from '@xivi/stores/playlist_store';
 
 	export let parent: SvelteComponent;
 
@@ -83,7 +83,7 @@
 
 			const fetchedMatches = await updateChannelMatches();
 			if (typeof fetchedMatches !== 'undefined') {
-				playlistmatches.set(fetchedMatches);
+				playlistMatches.set(fetchedMatches);
 			}
 		//}
 	});
@@ -173,16 +173,16 @@
 		e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
 
 		if (trigger === TRIGGERS.DRAG_STARTED) {
-			dndIdx = $playlistmatches.findIndex(item => item.id === Number(id));
-			dndItem =  $playlistmatches[dndIdx];
-			$playlistmatches = e.detail.items
+			dndIdx = $playlistMatches.findIndex(item => item.id === Number(id));
+			dndItem =  $playlistMatches[dndIdx];
+			$playlistMatches = e.detail.items
 			shouldIgnoreDndEvents = true;
 		}
         else if (!shouldIgnoreDndEvents) {
-            $playlistmatches = e.detail.items;
+            $playlistMatches = e.detail.items;
         }
         else {
-            $playlistmatches = [...$playlistmatches]
+            $playlistMatches = [...$playlistMatches]
         }
 	}
 	function handleDndConsiderItem(e: CustomEvent<DndEvent<PlaylistChannel>>) {
@@ -206,19 +206,19 @@
 		const {trigger, id} = e.detail.info;
         if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreDndEvents) {
             //e.detail.items = e.detail.items.filter(item => !item.isDragged);
-            $playlistmatches = e.detail.items
+            $playlistMatches = e.detail.items
             shouldIgnoreDndEvents = false;
         }
         else if (!shouldIgnoreDndEvents) {
-            $playlistmatches = e.detail.items
+            $playlistMatches = e.detail.items
         }
         else if (trigger === TRIGGERS.DROPPED_INTO_ANOTHER){
 			e.detail.items = e.detail.items.filter(item => !item[SHADOW_ITEM_MARKER_PROPERTY_NAME]);
 			e.detail.items.splice(dndIdx,0, dndItem)
-            $playlistmatches = e.detail.items
+            $playlistMatches = e.detail.items
             shouldIgnoreDndEvents = false;
         } else {
-            $playlistmatches = e.detail.items
+            $playlistMatches = e.detail.items
             shouldIgnoreDndEvents = false;
         }
     }
@@ -312,9 +312,9 @@
 							<th>Score</th>
 						</tr>
 					</thead>
-					<tbody use:dndzone={{items: $playlistmatches, flipDurationMs, type: dndTypeChannels, dropFromOthersDisabled}} on:consider={handleDndConsiderMatch} on:finalize={handleDndFinalizeMatch}>
-						{#if $playlistmatches != null && $playlistmatches.length > 0}
-							{#each $playlistmatches as channel, channelIdx (channel.id)}
+					<tbody use:dndzone={{items: $playlistMatches, flipDurationMs, type: dndTypeChannels, dropFromOthersDisabled}} on:consider={handleDndConsiderMatch} on:finalize={handleDndFinalizeMatch}>
+						{#if $playlistMatches != null && $playlistMatches.length > 0}
+							{#each $playlistMatches as channel, channelIdx (channel.id)}
 								<tr id="animate" animate:flip={{duration:flipDurationMs}}>
 									<td>{channel.name}</td>
 									<td>{channel.tvgid}</td>

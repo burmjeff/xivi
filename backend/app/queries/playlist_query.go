@@ -121,7 +121,7 @@ func (q *PlaylistQueries) ChannelUrlExists(playlistID int64, plChannelID int64) 
 	return channelID, nil
 }
 
-// Get Playlist Groups method
+// Get Playlist Groups by playlist
 func (q *PlaylistQueries) GetPlGroups(playlistId int64) ([]models.PlaylistGroup, error) {
 	playlistgroup := []models.PlaylistGroup{}
 
@@ -141,7 +141,25 @@ func (q *PlaylistQueries) GetPlGroups(playlistId int64) ([]models.PlaylistGroup,
 	return playlistgroup, nil
 }
 
-// Get Playlist Group method for getting one group by given ID.
+// Get all Playlist Groups
+func (q *PlaylistQueries) GetAllPlGroups() ([]models.PlaylistGroup, error) {
+	playlistgroup := []models.PlaylistGroup{}
+
+	// Define query string.
+	query := `SELECT playlistgroup.* FROM playlistgroup;`
+
+	// Send query to database.
+	err := q.Select(&playlistgroup, query)
+	if err != nil {
+		// Return empty object and error.
+		return playlistgroup, err
+	}
+
+	// Return query result.
+	return playlistgroup, nil
+}
+
+// Get Playlist Groupby Id
 func (q *PlaylistQueries) GetPlGroup(id int64) (models.PlaylistGroup, error) {
 	// Define playlist variable.
 	group := models.PlaylistGroup{}
@@ -160,7 +178,7 @@ func (q *PlaylistQueries) GetPlGroup(id int64) (models.PlaylistGroup, error) {
 	return group, nil
 }
 
-// Get Playlist Group method for getting one group by given Name.
+// Get Playlist Group by given Name.
 func (q *PlaylistQueries) GetPlGroupByName(name string) (models.PlaylistGroup, error) {
 	// Define group variable.
 	group := models.PlaylistGroup{}
@@ -179,7 +197,7 @@ func (q *PlaylistQueries) GetPlGroupByName(name string) (models.PlaylistGroup, e
 	return group, nil
 }
 
-// Create Playlist Group method for creating group by given Playlist Group object.
+// Create Playlist Group.
 func (q *PlaylistQueries) CreatePlGroup(p *models.PlaylistGroup) (int64, error) {
 	// Define query string.
 	query := `INSERT INTO playlistgroup VALUES (null, ?)`
@@ -200,7 +218,7 @@ func (q *PlaylistQueries) CreatePlGroup(p *models.PlaylistGroup) (int64, error) 
 	return id, nil
 }
 
-// Update Playlist Group method for updating group by given Playlist Group object.
+// Update Playlist Group by given Playlist Group object.
 func (q *PlaylistQueries) UpdatePlGroup(id int64, p *models.PlaylistGroup) error {
 	// Define query string.
 	query := `UPDATE playlistgroup SET name = ? WHERE id = ?`

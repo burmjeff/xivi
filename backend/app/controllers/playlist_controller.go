@@ -147,6 +147,45 @@ func GetPlaylistGroups(c *fiber.Ctx) error {
 	})
 }
 
+// GetAllPlaylistGroups
+// @Description Get all playlist groups
+// @Summary get all playlist groups
+// @Tags Playlist
+// @Accept json
+// @Produce json
+// @Success 200 {array} models.PlaylistGroup
+// @Router /playlist/groups/all [get]
+func GetAllPlaylistGroups(c *fiber.Ctx) error {
+
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Get playlist groups by ID.
+	playlistGroups, err := db.GetAllPlGroups()
+	if err != nil {
+		// Return, if playlist not found.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":          true,
+			"msg":            "playlist groups not found",
+			"playlistgroups": nil,
+		})
+	}
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error":          false,
+		"msg":            nil,
+		"playlistgroups": playlistGroups,
+	})
+}
+
 // GetPlaylistChannels func gets playlist channels by given group ID.
 // @Description Get playlist channels by given group ID
 // @Summary get playlist channels by given group ID

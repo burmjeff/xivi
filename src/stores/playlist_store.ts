@@ -2,5 +2,5 @@ import type { Playlist, PlaylistGroup, Match } from '@xivi/data/playlist_entitie
 import { writable } from 'svelte/store';
 
 export const playlists = writable<Playlist[]>([]);
-export const playlistgroups = writable<PlaylistGroup[]>([]);
-export const playlistmatches = writable<Match[]>([]);
+export const playlistGroups = writable<PlaylistGroup[]>([]);
+export const playlistMatches = writable<Match[]>([]);
