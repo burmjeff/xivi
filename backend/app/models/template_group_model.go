@@ -4,7 +4,7 @@ package models
 type TemplateGroup struct {
 	ID            int64  `db:"id" json:"id"`
 	Name          string `db:"name" json:"name" validate:"required,lte=255"`
-	Dynamic       bool   `db:"dynamic" json:"dynamic" validate:"required"`
+	Dynamic       bool   `db:"dynamic" json:"dynamic"`
 	PlaylistGroup int64  `db:"playlistgroup" json:"playlistgroup"`
 }
 
@@ -21,5 +21,7 @@ type TemplateGroupChannel struct {
 }
 
 type TemplateGroupCreateParam struct {
-	Name string `json:"name" validate:"required,lte=255"`
+	Name          string `db:"name" json:"name" validate:"required,lte=255"`
+	Dynamic       bool   `db:"dynamic" json:"dynamic" validate:"required"`
+	PlaylistGroup int64  `db:"playlistgroup" json:"playlistgroup"`
 }

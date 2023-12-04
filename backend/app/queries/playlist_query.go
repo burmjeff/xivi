@@ -434,15 +434,13 @@ func (q *PlaylistQueries) GetM3UParseByTvgID(tvgId string, groupId int64, playli
 	channels := []models.PlaylistChannel{}
 
 	// Define query string.
-	query := `SELECT * FROM playlistchannel, playlist_group_channel, playlist_group_item 
-		WHERE tvg_id LIKE ?
-		AND playlist_group_channel.channel_id = playlistchannel.id
-		AND playlist_group_channel.group_id = ?
-		AND playlist_group_item.group_id = playlist_group_channel.group_id
-		AND playlist_group_item.playlist_id = ?`
+	query := `SELECT playlistchannel.* FROM playlistchannel
+		JOIN playlist_group_channel ON playlist_group_channel.channel_id = playlistchannel.id AND playlist_group_channel.group_id = ?
+		JOIN playlist_group_item ON playlist_group_item.group_id = playlist_group_channel.group_id AND playlist_group_item.playlist_id = ?
+		WHERE tvg_id LIKE ?;`
 
 	// Send query to database.
-	if err := q.Select(&channels, query, tvgId, groupId, playlistId); err != nil {
+	if err := q.Select(&channels, query, groupId, playlistId, tvgId); err != nil {
 		return nil, err
 	}
 

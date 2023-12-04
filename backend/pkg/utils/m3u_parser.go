@@ -167,6 +167,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan *models.PlaylistChan
 		if err != nil {
 			log.Error().Err(err)
 		}
+
 		if len(foundChannels) == 0 {
 			log.Info().Msgf("Channel not found. Creating Channel: %s", playlistChannel.Title)
 			playlistChannel.CreatedAt = time.Now()
