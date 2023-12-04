@@ -8,6 +8,7 @@ import (
 	"xivi/backend/platform/database"
 	"xivi/backend/platform/settings"
 
+	"github.com/davidbyttow/govips/v2/vips"
 	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog/log"
 )
@@ -17,6 +18,10 @@ func StartServer(app *fiber.App) {
 
 	//Initialize DB
 	database.InitDB()
+
+	vips.Startup(nil)
+	defer vips.Shutdown()
+	vips.LoggingSettings(nil, vips.LogLevelError)
 
 	//config values
 	host := flag.String("host", settings.APP_SETTINGS.Host, "Server Host")

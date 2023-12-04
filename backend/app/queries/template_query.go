@@ -228,7 +228,7 @@ func (q *TemplateQueries) UpdateTmplGroup(t *models.TemplateGroup) error {
 	query := `UPDATE templategroup SET name = ?, dynamic = ?, playlistgroup = ? WHERE id = ?`
 
 	// Send query to database.
-	_, err := q.Exec(query, t.Name, t.ID)
+	_, err := q.Exec(query, t.Name, t.Dynamic, t.PlaylistGroup, t.ID)
 	if err != nil {
 		// Return only error.
 		return err

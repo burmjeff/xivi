@@ -119,9 +119,13 @@
 					body: JSON.stringify(newChannel)
 				});
 				const data = await response.json();
-				console.log('Added template channel:', data);
-				$templateGroups[groupIdx].channels.push(data.templatechannel)
-				$templateGroups[groupIdx].channels = $templateGroups[groupIdx].channels
+                if (response.ok) {
+                    console.log('Added template channel:', data);
+                    $templateGroups[groupIdx].channels.push(data.templatechannel)
+                    $templateGroups[groupIdx].channels = $templateGroups[groupIdx].channels
+                } else {
+                    console.error('Error:', response.status, response.statusText);
+                }
 			} catch (error) {
 				console.log('Error updating template channel:', error);
 				return;
@@ -129,39 +133,70 @@
 		}
 	}
 
-    async function addTemplateGroup(formData: any) {
+    async function addTemplateGroup(formData: any, groupIdx: number, isNew: boolean, group: TemplateGroup | undefined) {
+        let method: string;
+        if (formData.name) {
+            let newGroup = {
+				id: group?.id,
+                name: formData.name,
+				dynamic: formData.dynamic,
+				playlistgroup: formData.playlistgroup
+			};
 
-        if (formData.name !== null) {
+            if (isNew) {
+                method = 'POST';
+            } else {
+                method = 'PUT';
+            }
+
             try {
                 const response = await fetch('/api/template/group', {
-                method: 'POST',
+                method: method,
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(formData)
+                body: JSON.stringify(newGroup)
                 });
-                const data = await response.json();
-                console.log('Created template group', data);
-                $templateGroups.push(data.templategroup);
-                $templateGroups = $templateGroups;
+                if (response.ok) {
+                    if (isNew) {
+                        const data = await response.json();
+                        console.log('Created template group: ', data);
+                        $templateGroups.push(data.templategroup);
+                        $templateGroups = $templateGroups;
+                    } else {
+                        console.log('Updated template group: ', formData.name);
+                        $templateGroups[groupIdx].name = formData.name
+                        $templateGroups[groupIdx].dynamic = formData.dynamic
+                        $templateGroups[groupIdx].playlistgroup = formData.playlistgroup
+                    }
+                    
+                } else {
+                    console.error('Error:', response.status, response.statusText);
+                }
             } catch (error) {
                 console.log('Error creating templateGroup:', error);
             }
         }
     }
 
-    function modalAddTemplateGroup() {
+    function modalTemplateGroup(isNew: boolean, groupIdx: number, group: TemplateGroup | undefined) {
 		new Promise<boolean>((resolve) => {
 			const modal: ModalSettings = {
 				type: 'component',
 				component: 'modalAddGroup',
+                meta: { 
+					isNew: isNew,
+					name: group?.name,
+					dynamic: group?.dynamic,
+                    playlistgroup: group?.playlistgroup 
+				 },
 				response: (r: boolean) => {
 					resolve(r);
 				}
 			};
 			modalStore.trigger(modal);
 		}).then((r: any) => {
-			if (r) {addTemplateGroup(r)};
+			if (r) {addTemplateGroup(r, groupIdx, isNew, group)};
 		});
 	}
 
@@ -272,7 +307,7 @@
 <section class="tmplgroups card card-hover p-1" >
     <header class="tmplgroups-header flex justify-center items-center space-x-4">
         <h3 class="h3 font-bold">Groups</h3>
-        <button class="btn btn-sm variant-ringed-primary" on:click={() => modalAddTemplateGroup()}>+ add new</button>
+        <button class="btn btn-sm variant-ringed-primary" on:click={() => modalTemplateGroup(true, 0, undefined)}>+ add new</button>
     </header>
     {#if $templateGroups != null}
         <Accordion>
@@ -287,7 +322,7 @@
                                     <div class="flex flex-row">
                                         <h4>{group.name}</h4>
                                         <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" 
-                                            on:click={() => {group.itemOpen = true, renamePrompt(groupIdx, group.name, group.id)}}>
+                                            on:click={() => {group.itemOpen = true, modalTemplateGroup(false, groupIdx, group)}}>
                                             <i><IconParkOutlineEditTwo/></i>
                                         </button>
                                         <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" 
