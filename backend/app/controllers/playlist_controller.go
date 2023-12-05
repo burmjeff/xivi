@@ -9,6 +9,7 @@ import (
 	"xivi/backend/platform/database"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/rs/zerolog/log"
 )
 
 // GetPlaylists func gets all playlists.
@@ -525,5 +526,83 @@ func ConvertPlaylistGroup(c *fiber.Ctx) error {
 		"error":         false,
 		"msg":           nil,
 		"templategroup": templateGroup,
+	})
+}
+
+// ConvertPlaylistChannel func for converting a playlist channel into a template channel.
+// @Summary Convert a playlist channel into a template channel.
+// @Description Convert a playlist channel into a template channel.
+// @Tags Playlist
+// @Produce json
+// @Param channel_id path int64 true "Channel ID"
+// @Param group_id path int64 true "Group ID"
+// @Param templatechannel body models.TemplateChannel true "TemplateChannel"
+// @Success 200 {object} models.TemplateChannel
+// @Router /playlist/channel/{channel_id}/convert/{group_id} [post]
+func ConvertPlaylistChannel(c *fiber.Ctx) error {
+	channel_id, err := strconv.ParseInt(c.Params("channel_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	group_id, err := strconv.ParseInt(c.Params("group_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create database connection.
+	db, err := database.OpenDBConnection()
+	if err != nil {
+		// Return status 500 and database connection error.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	playlistChannel, err := db.GetPlChannel(channel_id)
+	if err != nil {
+		// Return, if playlistchannel not found.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":             true,
+			"msg":               "playlist channel with the given ID is not found",
+			"playlistChannelId": channel_id,
+		})
+	}
+
+	channelID := utils.ConvertPlChannel(db, playlistChannel)
+	tmplGroupChannel := &models.TemplateGroupChannel{GroupId: group_id, ChannelId: channelID}
+
+	if err := db.CreateTmplGroupChannel(tmplGroupChannel); err != nil {
+		log.Warn().Msg(err.Error())
+		// Return, if tmplGroupChannel not found.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":             true,
+			"msg":               "Failed to create tmplGroupChannel",
+			"templateChannelId": channel_id,
+		})
+	}
+
+	templateChannel, err := db.GetTmplChannel(channelID)
+	if err != nil {
+		// Return, if templatechannel not found.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":             true,
+			"msg":               "template channel with the given ID is not found",
+			"templateChannelId": channel_id,
+		})
+	}
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error":           false,
+		"msg":             nil,
+		"templatechannel": templateChannel,
 	})
 }

@@ -51,7 +51,8 @@
         groupNames = $playlistGroups.map( ( group ) => { return group.name } )
         groupOptions = $playlistGroups.map( ( group ) => { return { label: group.name, value: group.name }} )
         if (!isNew && formData.playlistgroup !== 0) {
-            addedNames[0] = $playlistGroups[Number(formData.playlistgroup)].name;
+            addedNames[0] = $playlistGroups[$playlistGroups.findIndex(item => Number(item.id) === formData.playlistgroup)].name;
+            
         }
         //groupNames = [...groupNames]
     });
@@ -69,7 +70,7 @@
                 formData.dynamic = false
                 formData.playlistgroup = 0
             } else {
-                formData.playlistgroup = Number($playlistGroups[groupNames.findIndex(item => item === addedNames[0])].id);
+                formData.playlistgroup = Number($playlistGroups[$playlistGroups.findIndex(item => item.name === addedNames[0])].id);
             }
         } else {
             formData.playlistgroup = 0

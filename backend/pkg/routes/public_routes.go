@@ -16,15 +16,16 @@ func PublicRoutes(a *fiber.App) {
 	router := a.Group("/")
 
 	// Playlist Routes
-	api.Get("/token/new", controllers.GetNewAccessToken)                                // create a new access tokens
-	api.Get("/playlists", controllers.GetPlaylists)                                     // get list of all playlists
-	api.Get("/playlist/:id", controllers.GetPlaylist)                                   // get a playlist by ID
-	api.Get("/playlist/:id/groups", controllers.GetPlaylistGroups)                      // get groups by playlist_id
-	api.Get("/playlist/groups/all", controllers.GetAllPlaylistGroups)                   // get playlist groups
-	api.Get("/playlist/group/:group_id/channels", controllers.GetPlaylistGroupChannels) // get channels by playlist group
-	api.Post("/playlist", controllers.CreatePlaylist)                                   // create a new playlist
-	api.Post("/playlist/group/:group_id/convert", controllers.ConvertPlaylistGroup)     // convert playlistgroup
-	api.Delete("/playlist/:playlist_id", controllers.DeletePlaylist)                    // delete playlist by ID
+	api.Get("/token/new", controllers.GetNewAccessToken)                                            // create a new access tokens
+	api.Get("/playlists", controllers.GetPlaylists)                                                 // get list of all playlists
+	api.Get("/playlist/:id", controllers.GetPlaylist)                                               // get a playlist by ID
+	api.Get("/playlist/:id/groups", controllers.GetPlaylistGroups)                                  // get groups by playlist_id
+	api.Get("/playlist/groups/all", controllers.GetAllPlaylistGroups)                               // get playlist groups
+	api.Get("/playlist/group/:group_id/channels", controllers.GetPlaylistGroupChannels)             // get channels by playlist group
+	api.Post("/playlist", controllers.CreatePlaylist)                                               // create a new playlist
+	api.Post("/playlist/group/:group_id/convert", controllers.ConvertPlaylistGroup)                 // convert playlistgroup
+	api.Post("/playlist/channel/:channel_id/convert/:group_id", controllers.ConvertPlaylistChannel) // convert playlistchannel
+	api.Delete("/playlist/:playlist_id", controllers.DeletePlaylist)                                // delete playlist by ID
 
 	// Template Routes
 	api.Get("/templates", controllers.GetTemplates)                                                // get all templates
