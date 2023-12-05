@@ -91,7 +91,6 @@
 	}
 
 	async function convertChannel(channelId: string) {
-		console.log(groupId)
 		if (channelId !== '') {
 			try {
 				const response = await fetch(`/api/playlist/channel/${channelId}/convert/${groupId}`, {

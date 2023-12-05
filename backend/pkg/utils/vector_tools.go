@@ -23,6 +23,7 @@ func PlaylistVectorQueue(in <-chan *models.PlaylistChannel, db *database.Queries
 		_ = UpdatePlaylistVector(db, playlistCh)
 
 		//try to match template channel only if auto-match=true
+		//TODO: IS THIS A PROBLEM HERE??
 		go MatchPlaylistChannel(db, playlistCh)
 	}
 }

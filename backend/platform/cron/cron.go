@@ -109,6 +109,7 @@ func UpdateEpgs() {
 	for _, epg := range epgs {
 		log.Log().Msgf("Updating EPG: %s", epg.Name)
 		epgParser.ParseEpg(&epg)
+		log.Log().Msgf("Finished Updating EPG: %s", epg.Name)
 	}
 
 	for _, template := range templates {

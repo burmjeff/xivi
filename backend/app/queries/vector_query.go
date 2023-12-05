@@ -104,7 +104,7 @@ func (q *VectorQueries) GetPlaylistChannelVector(channel_id int64) (*models.Play
 	query := `SELECT * FROM playlistchannelvectors WHERE channel_id = ?`
 
 	// Send query to database.
-	err := q.Select(&vectorChannel, query, channel_id)
+	err := q.Get(&vectorChannel, query, channel_id)
 	if err != nil {
 		// Return empty object and error.
 		return vectorChannel, err

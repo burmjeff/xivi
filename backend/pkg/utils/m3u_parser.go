@@ -200,7 +200,9 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan *models.PlaylistChan
 					return
 				}
 				playlistChannel.ID = foundChannel.ID
-				vectorIn <- playlistChannel
+				if foundChannel.Title != playlistChannel.Title {
+					vectorIn <- playlistChannel
+				}
 
 				//Set channel URL model
 				channelURL.Url = streamLink
