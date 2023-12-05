@@ -116,7 +116,8 @@ CREATE TABLE templatechannelitem (
     playlist_channel_id INTEGER NOT NULL,
     orderr INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (channel_id) REFERENCES templatechannel(id) ON DELETE CASCADE,
-    FOREIGN KEY (playlist_channel_id) REFERENCES playlistchannel(id) ON DELETE CASCADE
+    FOREIGN KEY (playlist_channel_id) REFERENCES playlistchannel(id) ON DELETE CASCADE,
+    UNIQUE(channel_id, playlist_channel_id) ON CONFLICT IGNORE
 );
 
 -- Create epg table
@@ -178,7 +179,7 @@ CREATE TABLE channelvectors (
 -- Create templatechannelvectors table
 CREATE TABLE templatechannelvectors (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    channel_id INTEGER NOT NULL,
+    channel_id INTEGER NOT NULL UNIQUE,
     vector_id INTEGER NOT NULL,
     FOREIGN KEY (channel_id) REFERENCES templatechannel(id) ON DELETE CASCADE,
     FOREIGN KEY (vector_id) REFERENCES channelvectors(id) ON DELETE CASCADE
@@ -187,7 +188,7 @@ CREATE TABLE templatechannelvectors (
 -- Create playlistchannelvectors table
 CREATE TABLE playlistchannelvectors (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    channel_id INTEGER NOT NULL,
+    channel_id INTEGER NOT NULL UNIQUE,
     vector_id INTEGER NOT NULL,
     FOREIGN KEY (channel_id) REFERENCES playlistchannel(id) ON DELETE CASCADE,
     FOREIGN KEY (vector_id) REFERENCES channelvectors(id) ON DELETE CASCADE

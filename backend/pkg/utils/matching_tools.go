@@ -49,19 +49,26 @@ func MatchTemplateChannel(db *database.Queries, templateCh *models.TemplateChann
 
 // Search if tvgid matches for playlist channel and add to template if match
 func matchPlaylistTvgid(db *database.Queries, playlistCh *models.PlaylistChannel) error {
+	playlistChUrl, err := db.GetChannelUrlByPlChannelID(playlistCh.ID)
+	if err != nil {
+		log.Debug().Msgf("matchChannels:, %v", err)
+	}
+
 	channels, err := db.GetTmplChannelsBytvgid(playlistCh.TvgID)
 	if err != nil {
 		log.Debug().Msgf("matchChannels:, %v", err)
 		return err
 	}
 	for _, channel := range channels {
-		channelItem := models.TemplateChannelItem{
-			ChannelId:         channel.ID,
-			PlaylistChannelId: playlistCh.ID,
-		}
-		if _, err := db.CreateTmplChannelItem(&channelItem); err != nil {
-			log.Debug().Msgf("matchChannels:, %v", err)
-			return err
+		if !itemExists(db, channel.ID, playlistChUrl.Url) {
+			channelItem := models.TemplateChannelItem{
+				ChannelId:         channel.ID,
+				PlaylistChannelId: playlistCh.ID,
+			}
+			if _, err := db.CreateTmplChannelItem(&channelItem); err != nil {
+				log.Debug().Msgf("matchChannels:, %v", err)
+				return err
+			}
 		}
 	}
 	return nil
@@ -73,7 +80,10 @@ func matchPlaylistChannelName(db *database.Queries, playlistCh *models.PlaylistC
 	var chMatch int64
 	var score float64
 
-	//TODO LOOP THROUGH EACH TEMPLATE GROUP SEPARATELY AKA MATCH 1 CHANNEL PER GROUP
+	playlistChUrl, err := db.GetChannelUrlByPlChannelID(playlistCh.ID)
+	if err != nil {
+		log.Debug().Msgf("matchChannels:, %v", err)
+	}
 
 	channelVector, err := db.GetChannelVectorByName(playlistCh.Title)
 	if err != nil {
@@ -103,13 +113,15 @@ func matchPlaylistChannelName(db *database.Queries, playlistCh *models.PlaylistC
 		}
 	}
 	if chMatch != 0 {
-		channelItem := models.TemplateChannelItem{
-			ChannelId:         chMatch,
-			PlaylistChannelId: playlistCh.ID,
-		}
-		if _, err := db.CreateTmplChannelItem(&channelItem); err != nil {
-			log.Debug().Msgf("matchChannels:, %v", err)
-			return err
+		if !itemExists(db, chMatch, playlistChUrl.Url) {
+			channelItem := models.TemplateChannelItem{
+				ChannelId:         chMatch,
+				PlaylistChannelId: playlistCh.ID,
+			}
+			if _, err := db.CreateTmplChannelItem(&channelItem); err != nil {
+				log.Debug().Msgf("matchChannels:, %v", err)
+				return err
+			}
 		}
 	}
 
@@ -125,6 +137,13 @@ func matchTemplateTvgid(db *database.Queries, templateCh *models.TemplateChannel
 	}
 
 	for _, channel := range channels {
+		playlistChUrl, err := db.GetChannelUrlByPlChannelID(channel.ID)
+		if err != nil {
+			log.Debug().Msgf("matchChannels:, %v", err)
+		} else if itemExists(db, channel.ID, playlistChUrl.Url) {
+			continue
+		}
+
 		channelItem := models.TemplateChannelItem{
 			ChannelId:         templateCh.ID,
 			PlaylistChannelId: channel.ID,
@@ -175,6 +194,12 @@ func matchTemplateChannelName(db *database.Queries, templateCh *models.TemplateC
 		}
 		if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
 			if cosine >= settings.APP_SETTINGS.Playlist.Name_score {
+				playlistChUrl, err := db.GetChannelUrlByPlChannelID(playlistVector.ChannelId)
+				if err != nil {
+					log.Debug().Msgf("matchChannels:, %v", err)
+				} else if itemExists(db, templateCh.ID, playlistChUrl.Url) {
+					continue
+				}
 				channelItem := models.TemplateChannelItem{
 					ChannelId:         templateCh.ID,
 					PlaylistChannelId: playlistVector.ChannelId,
@@ -187,6 +212,21 @@ func matchTemplateChannelName(db *database.Queries, templateCh *models.TemplateC
 	}
 
 	return nil
+}
+
+func itemExists(db *database.Queries, tmplId int64, plUrl string) bool {
+	if items, _ := db.GetTmplChannelItemsByCh(tmplId); len(items) > 0 {
+		for _, item := range items {
+			if itemUrl, err := db.GetChannelUrlByPlChannelID(item.PlaylistChannelId); err != nil {
+				log.Debug().Msgf("matchChannels:, %v", err)
+			} else {
+				if itemUrl.Url == plUrl {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func TemplateChannelMatches(db *database.Queries, templateCh *models.TemplateChannel) ([]models.VectorMatch, error) {

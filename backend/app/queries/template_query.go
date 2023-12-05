@@ -518,6 +518,23 @@ func (q *TemplateQueries) DeleteTmplChannel(id int64) error {
 	return nil
 }
 
+// GetTemplateChannelItem
+func (q *TemplateQueries) GetTmplChannelItem(tmpl int64, pl int64) (models.TemplateChannelItem, error) {
+	templatechannelitem := models.TemplateChannelItem{}
+
+	// Define query string.
+	query := `SELECT * FROM templatechannelitem WHERE channel_id = ? AND playlist_channel_id = ?`
+
+	// Send query to database.
+	if err := q.Get(&templatechannelitem, query, tmpl, pl); err != nil {
+		// Return empty object and error.
+		return templatechannelitem, err
+	}
+
+	// Return query result.
+	return templatechannelitem, nil
+}
+
 // GetTemplateChannelItems by channel_id
 func (q *TemplateQueries) GetTmplChannelItemsByCh(id int64) ([]models.TemplateChannelItem, error) {
 	templatechannelitems := []models.TemplateChannelItem{}
