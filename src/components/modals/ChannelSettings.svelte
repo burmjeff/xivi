@@ -239,7 +239,7 @@
 </script>
 
 {#if $modalStore[0]}
-	<div class="modal-channel-settings card p-4 w-fit shadow-xl space-y-4">
+	<div class="modal-channel-settings card p-4 shadow-xl space-y-4 max-w-screen max-h-screen">
 		{#if isNew}
 			<header class="text-2xl font-bold text-center justify-center">Add Channel</header>
 		{:else}
@@ -275,61 +275,64 @@
 						on:change={onUploadHandler}>Upload</FileButton>
 				</div>
 			</div>
-			<div class="playlist_ch_items grid grid-cols-2 space-x-2 max-h-16">
-				<table class="table table-hover text-center justify-center shadow-md" use:dndzone={{items: $playlist_ch_items, flipDurationMs, type: dndTypeChannels}} on:consider={handleDndConsiderItem} on:finalize={handleDndFinalizeItem}>
-					<thead>
-						<tr id ="thead">
-							<th>Title</th>
-							<th>tvg-id</th>
-							<th>Remove</th>
-						</tr>
-					</thead>
-					<tbody >
-						{#if $playlist_ch_items != null && $playlist_ch_items.length > 0}
-							{#each $playlist_ch_items as channel, channelIdx (channel.id)}
-								<tr id="animate" animate:flip={{duration:flipDurationMs}}>
-									<td>{channel.title}</td>
-									<td>{channel.tvg_id}</td>
-									<td class="hover:bg-red-900" on:click={removeChannelItem(channel.id)}>
-										<i><IconParkOutlineDelete/></i>
-									</td>
+			<div class="playlist_ch_items grid grid-cols-2 space-x-2">
+				<div class="max-h-80 overflow-y-scroll">
+					<table class="table table-hover text-center justify-center shadow-md" use:dndzone={{items: $playlist_ch_items, flipDurationMs, type: dndTypeChannels}} on:consider={handleDndConsiderItem} on:finalize={handleDndFinalizeItem}>
+						<thead>
+							<tr id ="thead">
+								<th>Title</th>
+								<th>tvg-id</th>
+								<th>Remove</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#if $playlist_ch_items != null && $playlist_ch_items.length > 0}
+								{#each $playlist_ch_items as channel, channelIdx (channel.id)}
+									<tr id="animate" animate:flip={{duration:flipDurationMs}}>
+										<td>{channel.title}</td>
+										<td>{channel.tvg_id}</td>
+										<td class="hover:bg-red-900 w-5" on:click={removeChannelItem(channel.id)}>
+											<i><IconParkOutlineDelete/></i>
+										</td>
 
-									{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-										<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.title}</div>
-									{/if}
-								</tr>
-							{/each}
-						{:else}
-							<p>No channels found</p>
-						{/if}
-					</tbody>
-				</table>
-				<table class="table table-hover text-center justify-center shadow-md">
-					<thead>
-						<tr id ="thead">
-							<th>Title</th>
-							<th>tvg-id</th>
-							<th>Score</th>
-						</tr>
-					</thead>
-					<tbody use:dndzone={{items: $playlistMatches, flipDurationMs, type: dndTypeChannels, dropFromOthersDisabled}} on:consider={handleDndConsiderMatch} on:finalize={handleDndFinalizeMatch}>
-						{#if $playlistMatches != null && $playlistMatches.length > 0}
-							{#each $playlistMatches as channel, channelIdx (channel.id)}
-								<tr id="animate" animate:flip={{duration:flipDurationMs}}>
-									<td>{channel.name}</td>
-									<td>{channel.tvgid}</td>
-									<td>{channel.score}</td>
+										{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+											<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.title}</div>
+										{/if}
+									</tr>
+								{/each}
+							{:else}
+								<p>No channels found</p>
+							{/if}
+						</tbody>
+					</table>
+				</div>
+				<div class="max-h-80 overflow-y-scroll">
+					<table class="table table-hover text-center justify-center shadow-md ">
+						<thead>
+							<tr id ="thead">
+								<th>Title</th>
+								<th>tvg-id</th>
+								<th>Score</th>
+							</tr>
+						</thead>
+						<tbody use:dndzone={{items: $playlistMatches, flipDurationMs, type: dndTypeChannels, dropFromOthersDisabled}} on:consider={handleDndConsiderMatch} on:finalize={handleDndFinalizeMatch}>
+							{#if $playlistMatches != null && $playlistMatches.length > 0}
+								{#each $playlistMatches as channel, channelIdx (channel.id)}
+									<tr id="animate" animate:flip={{duration:flipDurationMs}}>
+										<td>{channel.name}</td>
+										<td>{channel.tvgid}</td>
+										<td>{channel.score}</td>
 
-									{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-										<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.name}</div>
-									{/if}
-								</tr>
-							{/each}
-						{:else}
-							<p>No channels found</p>
-						{/if}
-					</tbody>
-				</table>
+										{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+											<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.name}</div>
+										{/if}
+									</tr>
+								{/each}
+							{:else}
+								<p>No channels found</p>
+							{/if}
+					</table>
+				</div>
 			</div>
 		</form>
 		<footer class="modal-footer {parent.regionFooter}">

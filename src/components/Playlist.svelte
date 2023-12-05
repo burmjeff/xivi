@@ -53,7 +53,7 @@
 				});
 				const data = await response.json();
 				console.log('Created playlist:', data);
-				$playlists.push(data.playlists);
+				$playlists.push(data.playlist);
 				$playlists = [...$playlists];
 			} catch (error) {
 				console.log('Error creating playlist:', error);

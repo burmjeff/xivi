@@ -431,18 +431,8 @@ func DeletePlaylist(c *fiber.Ctx) error {
 		})
 	}
 
-	// Checking, if playlist with given ID is exists.
-	foundPlaylist, err := db.GetPlaylist(playlist_id)
-	if err != nil {
-		// Return status 404 and playlist not found error.
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": true,
-			"msg":   "playlist with this ID not found",
-		})
-	}
-
 	// Delete playlist by given ID.
-	if err := db.DeletePlaylist(foundPlaylist.ID); err != nil {
+	if err := db.DeletePlaylist(playlist_id); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
