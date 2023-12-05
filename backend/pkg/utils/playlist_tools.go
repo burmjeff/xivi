@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"slices"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
 
@@ -97,9 +98,9 @@ func UpdateDynamicGroup(db *database.Queries, group models.TemplateGroup) {
 		log.Warn().Msg(err.Error())
 	}
 
+	var foundChannels []models.TemplateChannel
 	for _, plChannel := range plChannels {
 		foundChannel := false
-		var tmplChannel models.TemplateChannel
 
 		for _, tmplChannel := range tmplChannels {
 			if plChannel.TvgID == tmplChannel.TvgID {
@@ -108,18 +109,22 @@ func UpdateDynamicGroup(db *database.Queries, group models.TemplateGroup) {
 					log.Err(err)
 				}
 				foundChannel = true
-				tmplChannel = tmplChannel
+				foundChannels = append(foundChannels, tmplChannel)
 				break
 			}
 		}
 		if !foundChannel {
-			if err := db.DeleteTmplChannel(tmplChannel.ID); err != nil {
-				log.Err(err)
-			}
 			channelID := ConvertPlChannel(db, plChannel)
 			tmplGroupChannel := &models.TemplateGroupChannel{GroupId: group.ID, ChannelId: channelID}
 			err := db.CreateTmplGroupChannel(tmplGroupChannel)
 			if err != nil {
+				log.Err(err)
+			}
+		}
+	}
+	for _, tmplChannel := range tmplChannels {
+		if !(slices.Contains(foundChannels, tmplChannel)) {
+			if err := db.DeleteTmplChannel(tmplChannel.ID); err != nil {
 				log.Err(err)
 			}
 		}

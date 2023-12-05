@@ -90,6 +90,30 @@
 		});
 	}
 
+	async function convertChannel(channelId: string) {
+		console.log(groupId)
+		if (channelId !== '') {
+			try {
+				const response = await fetch(`/api/playlist/channel/${channelId}/convert/${groupId}`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					}
+				});
+				if (response.ok) {
+                    const data = await response.json();
+                    console.log('Created template channel:', data);
+                    $templateGroups[groupIdx].channels.push(data.templatechannel)
+                    $templateGroups[groupIdx].channels = [...$templateGroups[groupIdx].channels]
+                } else{
+                    console.error('Error:', response.status, response.statusText);
+                }
+			} catch (error) {
+				console.log('Error creating template channel:', error);
+			}
+		}
+	}
+
 	function handleDndConsider(e: CustomEvent<DndEvent<TemplateChannel>>) {
 		const {trigger, id} = e.detail.info;
 		//e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
@@ -111,7 +135,7 @@
 		const {trigger, id} = e.detail.info;
         if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreDndEvents) {
             e.detail.items = e.detail.items.filter(item => !item.isDragged);
-			//addChannel(id)
+			convertChannel(id)
             $templateGroups[groupIdx].channels = e.detail.items
             shouldIgnoreDndEvents = false;
         }
@@ -133,16 +157,17 @@
 	}
 </script>
 
-{#if $templateGroups[groupIdx].channels != null && $templateGroups[groupIdx].channels.length > 0}
-		<table class="templateChannel table table-hover">
-			<thead>
-				<tr id="thead">
-					<th>Logo</th>
-					<th>Name</th>
-					<th>tvg-id</th>
-				</tr>
-			</thead>
-			<tbody use:dndzone={{items: $templateGroups[groupIdx].channels, flipDurationMs, type: dndTypeChannels, transformDraggedElement}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
+{#if $templateGroups[groupIdx].channels != null}
+	<table class="templateChannel table table-hover" use:dndzone={{items: $templateGroups[groupIdx].channels, flipDurationMs, type: dndTypeChannels, transformDraggedElement}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
+		<thead>
+			<tr id="thead">
+				<th>Logo</th>
+				<th>Name</th>
+				<th>tvg-id</th>
+			</tr>
+		</thead>
+		<tbody>
+			{#if $templateGroups[groupIdx].channels.length > 0}
 				{#each $templateGroups[groupIdx].channels as channel, channelIdx (channel.id)}
 					<tr id="animate" animate:flip={{duration:flipDurationMs}} on:click={() => modalSettings(channelIdx)}>
 						<td><img class="w-14" src={channel.logo} alt="Logo" /></td>
@@ -154,10 +179,11 @@
 						{/if}
 					</tr>
 				{/each}
-			</tbody>
-		</table>
-{:else}
-	<p>No channels found</p>
+			{:else}
+				<p>No channels found</p>
+			{/if}
+		</tbody>
+	</table>
 {/if}
 
 <style>

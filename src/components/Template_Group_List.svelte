@@ -31,22 +31,6 @@
         templateGroups.set(await updateTemplateGroups());
     });
 
-    function renamePrompt(groupIdx: number, groupName: string, groupId: string): void {
-		const prompt: ModalSettings = {
-			type: 'prompt',
-			title: 'Rename Group',
-			body: 'Enter new template group name in field below.',
-			value: groupName,
-			valueAttr: { type: 'text', minlength: 1, maxlength: 20, required: true },
-			response: (newName: string) => {
-				if (newName) renameGroup(groupIdx, newName, groupId);
-			},
-            buttonTextCancel: 'Cancel',
-		    buttonTextSubmit: 'Submit',
-		};
-		modalStore.trigger(prompt);
-	}
-
     async function renameGroup(groupIdx: number, groupName: string, groupId: string) {
         if (groupName !=='') {
             const newGroup = {
@@ -249,10 +233,14 @@
 					},
 					body: JSON.stringify(newGroup)
 				});
-				const data = await response.json();
-				console.log('Created template group:', data);
-				$templateGroups.push(data.templategroup)
-                $templateGroups = [...$templateGroups]
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Created template group:', data);
+                    $templateGroups.push(data.templategroup)
+                    $templateGroups = [...$templateGroups]
+                } else{
+                    console.error('Error:', response.status, response.statusText);
+                }
 			} catch (error) {
 				console.log('Error creating template group:', error);
 			}

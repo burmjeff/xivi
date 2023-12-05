@@ -776,7 +776,8 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 		})
 	}
 
-	if templateGroup.Dynamic != oldGroup.Dynamic && templateGroup.Dynamic {
+	if (templateGroup.Dynamic != oldGroup.Dynamic && templateGroup.Dynamic) ||
+		(templateGroup.PlaylistGroup != oldGroup.PlaylistGroup && templateGroup.Dynamic) {
 		utils.UpdateDynamicGroup(db, *templateGroup)
 	}
 

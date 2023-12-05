@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-gst/go-gst/gst"
 	gstapp "github.com/go-gst/go-gst/gst/app"
+	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
 )
 
@@ -75,25 +76,25 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 		if s.count <= 0 {
 			go func() {
 				if !s.pipeline.SendEvent(gst.NewEOSEvent()) {
-					fmt.Println("WARNING: Failed to send EOS to pipeline")
+					log.Warn().Msg("WARNING: Failed to send EOS to pipeline")
 				}
 				elements, _ := s.pipeline.GetElementsSorted()
 
 				for _, element := range elements {
-					fmt.Println("Disposing GST element:", element.GetName(), "state:", element.GetCurrentState())
+					log.Debug().Msgf("Disposing GST element: %s with state: %s", element.GetName(), element.GetCurrentState())
 					pads, _ := element.GetSrcPads()
 					for _, pad := range pads {
 						pad.PauseTask()
 					}
 					if err := element.SetState(gst.StateNull); err != nil {
-						fmt.Println("WARNING: Failed to set", element.GetName(), "state to Null")
+						log.Warn().Msgf("WARNING: Failed to set %s state to Null", element.GetName())
 					}
 					if err := s.pipeline.Remove(element); err != nil {
-						fmt.Println("WARNING: Failed to remove element from pipeline:", element.GetName())
+						log.Warn().Msgf("WARNING: Failed to remove element from pipeline: %s", element.GetName())
 					}
 				}
 				s.pipeline.Clear()
-				fmt.Println("PIPELINE DISPOSED")
+				log.Debug().Msg("PIPELINE DISPOSED")
 			}()
 			RemoveStream(s)
 			return gst.FlowEOS
@@ -102,26 +103,26 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 		tee, _ := s.pipeline.GetElementByName("stream")
 		tee.Unlink(sinkBin.Element)
 		if err := s.pipeline.Remove(sinkBin.Element); err != nil {
-			fmt.Println("WARNING: Failed to remove stream bin from pipeline:", sinkBin.GetName())
+			log.Warn().Msgf("WARNING: Failed to remove stream bin from pipeline: %s", sinkBin.GetName())
 		}
 		go func() {
 			if !sinkBin.SendEvent(gst.NewEOSEvent()) {
-				fmt.Println("WARNING: Failed to send EOS to stream branch")
+				log.Warn().Msg("WARNING: Failed to send EOS to stream branch")
 			}
 			elements, _ := sinkBin.GetElementsSorted()
 			for _, element := range elements {
-				fmt.Println("Disposing GST element:", element.GetName(), "state:", element.GetCurrentState())
+				log.Debug().Msgf("Disposing GST element: %s with state: %s", element.GetName(), element.GetCurrentState())
 				pads, _ := element.GetPads()
 				for _, pad := range pads {
 					pad.PauseTask()
 				}
 			}
 			if err := sinkBin.SetState(gst.StateNull); err != nil {
-				fmt.Println("WARNING: Failed to set", sinkBin.GetName(), "state to Null")
+				log.Warn().Msgf("WARNING: Failed to set %s state to Null", sinkBin.GetName())
 			}
 
 			sinkBin.Clear()
-			fmt.Println("STREAM CLOSED")
+			log.Info().Msgf("STREAM CLOSED")
 		}()
 	}
 
@@ -151,7 +152,7 @@ func (s *Stream) Flush(writer *bufio.Writer) error {
 // SetStatusCode sets the status code. *Must* be called before Write and Flush
 func (s *Stream) SetStatusCode(ctx *fasthttp.RequestCtx, writer *bufio.Writer, statusCode int) error {
 	if writer != nil {
-		return fmt.Errorf("Streaming started - can't set status")
+		return errors.New("Streaming started - can't set status")
 	}
 
 	ctx.SetStatusCode(statusCode)
@@ -162,7 +163,7 @@ func (s *Stream) SetStatusCode(ctx *fasthttp.RequestCtx, writer *bufio.Writer, s
 // value can be string or []byte
 func (s *Stream) SetHeader(ctx *fasthttp.RequestCtx, writer *bufio.Writer, key string, value interface{}) error {
 	if writer != nil {
-		return fmt.Errorf("Streaming started - can't set header")
+		return errors.New("Streaming started - can't set header")
 	}
 
 	switch v := value.(type) {
@@ -239,11 +240,11 @@ func (s *Stream) NewSink(ctx *fasthttp.RequestCtx) error {
 			defer buffer.Unmap()
 
 			if _, err = s.Write(writer, buffer.Extract(0, buffer.GetSize())); err != nil {
-				fmt.Println("STREAM WRITE ERROR:", err)
+				log.Debug().Msgf("STREAM WRITE ERROR: %v", err)
 				return s.Close(bin, done)
 			}
 			if err = s.Flush(writer); err != nil {
-				fmt.Println("STREAM FLUSH ERROR:", err)
+				log.Debug().Msgf("STREAM FLUSH ERROR: %v", err)
 				return s.Close(bin, done)
 			}
 
@@ -318,7 +319,7 @@ func (s *Stream) CreatePipeline() (*gst.Pipeline, error) {
 		if strings.HasPrefix(caps.String(), "application/x-hls") {
 			demux, err := gst.NewElement("hlsdemux")
 			if err != nil {
-				fmt.Println(err) //TODO RETURN ERROR
+				log.Err(err) //TODO RETURN ERROR
 			}
 			pipeline.Add(demux)
 			typefind.Link(demux)
@@ -352,13 +353,13 @@ func (s *Stream) StartPipeline(pipeline *gst.Pipeline) error {
 			// The parsed error implements the error interface, but also
 			// contains additional debug information.
 			gerr := msg.ParseError()
-			fmt.Println("go-gst-debug:", gerr.DebugString())
+			log.Debug().Msgf("go-gst-debug: %v", gerr.DebugString())
 			err = gerr
 		}
 
 		// If either condition triggered an error, log and quit
 		if err != nil {
-			fmt.Println("ERROR:", err.Error())
+			log.Error().Msgf("ERROR: %v", err.Error())
 			s.Close(nil, nil)
 			return false
 		}
@@ -369,7 +370,7 @@ func (s *Stream) StartPipeline(pipeline *gst.Pipeline) error {
 		return err
 	}
 
-	fmt.Println(gst.LevelInfo, "Stream has started")
+	log.Info().Msgf("Stream has started")
 	return nil
 }
 
