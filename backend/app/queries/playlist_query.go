@@ -36,7 +36,7 @@ func (q *PlaylistQueries) GetPlaylist(id int64) (models.Playlist, error) {
 	playlist := models.Playlist{}
 
 	// Define query string.
-	query := `SELECT * FROM playlist WHERE id = $1`
+	query := `SELECT * FROM playlist WHERE id = ?`
 
 	// Send query to database.
 	err := q.Get(&playlist, query, id)
@@ -52,7 +52,7 @@ func (q *PlaylistQueries) GetPlaylist(id int64) (models.Playlist, error) {
 // CreatePlaylist method for creating a playlist by given Playlist object.
 func (q *PlaylistQueries) CreatePlaylist(p *models.Playlist) (int64, error) {
 	// Define query string.
-	query := `INSERT INTO playlist VALUES (null, $1, $2, $3, $4)`
+	query := `INSERT INTO playlist VALUES (null, ?, ?, ?, ?)`
 
 	// Send query to database.
 	res, err := q.Exec(query, p.Name, p.URL, p.CreatedAt, p.UpdatedAt)
@@ -74,10 +74,10 @@ func (q *PlaylistQueries) CreatePlaylist(p *models.Playlist) (int64, error) {
 // UpdatePlaylist method for updating playlist by given Playlist object.
 func (q *PlaylistQueries) UpdatePlaylist(id int64, p *models.Playlist) error {
 	// Define query string.
-	query := `UPDATE playlist SET name = $2, url = $3, updated_at = $4 WHERE id = $1`
+	query := `UPDATE playlist SET name = ?, url = ?, updated_at = ? WHERE id = ?`
 
 	// Send query to database.
-	_, err := q.Exec(query, id, p.Name, p.URL, p.UpdatedAt)
+	_, err := q.Exec(query, p.Name, p.URL, p.UpdatedAt, id)
 	if err != nil {
 		// Return only error.
 		return err
@@ -90,7 +90,7 @@ func (q *PlaylistQueries) UpdatePlaylist(id int64, p *models.Playlist) error {
 // DeletePlaylist method for delete playlist by given ID.
 func (q *PlaylistQueries) DeletePlaylist(id int64) error {
 	// Define query string.
-	query := `DELETE FROM playlist WHERE id = $1`
+	query := `DELETE FROM playlist WHERE id = ?`
 
 	// Send query to database.
 	_, err := q.Exec(query, id)
@@ -165,7 +165,7 @@ func (q *PlaylistQueries) GetPlGroup(id int64) (models.PlaylistGroup, error) {
 	group := models.PlaylistGroup{}
 
 	// Define query string.
-	query := `SELECT * FROM playlistgroup WHERE id = $1`
+	query := `SELECT * FROM playlistgroup WHERE id = ?`
 
 	// Send query to database.
 	err := q.Get(&group, query, id)
@@ -519,7 +519,7 @@ func (q *PlaylistQueries) UpdatePlChannel(id int64, p *models.PlaylistChannel) e
 // DeleteChannel method for delete channel by given ID.
 func (q *PlaylistQueries) DeletePlChannel(id int64) error {
 	// Define query string.
-	query := `DELETE FROM playlistchannel WHERE id = $1`
+	query := `DELETE FROM playlistchannel WHERE id = ?`
 
 	// Send query to database.
 	_, err := q.Exec(query, id)
@@ -554,7 +554,7 @@ func (q *PlaylistQueries) GetChannelUrl(id int64) (models.ChannelUrl, error) {
 	channel := models.ChannelUrl{}
 
 	// Define query string.
-	query := `SELECT * FROM channelurl WHERE id = $1`
+	query := `SELECT * FROM channelurl WHERE id = ?`
 
 	// Send query to database.
 	err := q.Select(&channel, query, id)
@@ -573,7 +573,7 @@ func (q *PlaylistQueries) GetChannelUrlByPlChannelID(id int64) (models.ChannelUr
 	channel := models.ChannelUrl{}
 
 	// Define query string.
-	query := `SELECT * FROM channelurl WHERE playlist_channel+id = $1`
+	query := `SELECT * FROM channelurl WHERE playlist_channel.id = ?`
 
 	// Send query to database.
 	err := q.Select(&channel, query, id)
@@ -621,7 +621,7 @@ func (q *PlaylistQueries) UpdateChannelUrl(id int64, p *models.ChannelUrl) error
 // DeleteChannel method for delete channel by given ID.
 func (q *PlaylistQueries) DeleteChannelUrl(id int64) error {
 	// Define query string.
-	query := `DELETE FROM channelurl WHERE id = $1`
+	query := `DELETE FROM channelurl WHERE id = ?`
 
 	// Send query to database.
 	_, err := q.Exec(query, id)

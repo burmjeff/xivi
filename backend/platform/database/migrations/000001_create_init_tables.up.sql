@@ -286,7 +286,7 @@ BEGIN
     DELETE FROM playlist_group_item WHERE group_id = old.id;
     DELETE FROM groupfilters WHERE group_id = old.id;
     DELETE FROM playlistchannel WHERE id NOT IN (SELECT channel_id FROM playlist_group_channel);
-    UPDATE templategroup SET dynamic = false, templategroup = NULL WHERE templategroup = old.id;
+    UPDATE templategroup SET dynamic = false, playlistgroup = NULL WHERE playlistgroup = old.id;
 END;
 
 CREATE TRIGGER delete_playlistchannel_cascade

@@ -35,7 +35,7 @@ func (q *LogoQueries) GetLogo(id int64) (models.Logo, error) {
 	logo := models.Logo{}
 
 	// Define query string.
-	query := `SELECT * FROM logo WHERE id = $1`
+	query := `SELECT * FROM logo WHERE id = ?`
 
 	// Send query to database.
 	err := q.Get(&logo, query, id)
@@ -51,7 +51,7 @@ func (q *LogoQueries) GetLogo(id int64) (models.Logo, error) {
 // CreateLogo method for creating a Logo by given Logo object.
 func (q *LogoQueries) CreateLogo(uuid string) (int64, error) {
 	// Define query string.
-	query := `INSERT INTO logo VALUES (null, $1)`
+	query := `INSERT INTO logo VALUES (null, ?)`
 
 	// Send query to database.
 	res, err := q.Exec(query, uuid)
@@ -72,10 +72,10 @@ func (q *LogoQueries) CreateLogo(uuid string) (int64, error) {
 // UpdateLogo method for updating Logo by given Logo object.
 func (q *LogoQueries) UpdateLogo(id int64, p *models.Logo) error {
 	// Define query string.
-	query := `UPDATE logo SET uuid = $2 WHERE id = $1`
+	query := `UPDATE logo SET uuid = ? WHERE id = ?`
 
 	// Send query to database.
-	_, err := q.Exec(query, id, p.Uuid)
+	_, err := q.Exec(query, p.Uuid, id)
 	if err != nil {
 		// Return only error.
 		return err
@@ -88,7 +88,7 @@ func (q *LogoQueries) UpdateLogo(id int64, p *models.Logo) error {
 // DeleteLogo method for delete logo by given ID.
 func (q *LogoQueries) DeleteLogo(id int64) error {
 	// Define query string.
-	query := `DELETE FROM logo WHERE id = $1`
+	query := `DELETE FROM logo WHERE id = ?`
 
 	// Send query to database.
 	_, err := q.Exec(query, id)
