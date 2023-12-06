@@ -16,11 +16,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type ImageTools struct {
-	Db *database.Queries
-}
-
-func UploadLogo(db *database.Queries, logoUpload *models.LogoPath) (int64, error) {
+func UploadLogo(logoUpload *models.LogoPath) (int64, error) {
 	image, err := base64Decode(logoUpload.Image)
 
 	if err != nil {
@@ -34,7 +30,7 @@ func UploadLogo(db *database.Queries, logoUpload *models.LogoPath) (int64, error
 		return 0, err
 	}
 
-	logoID, err := db.CreateLogo(uuid)
+	logoID, err := database.Db.CreateLogo(uuid)
 	if err != nil {
 		log.Warn().Msg(err.Error())
 		return 0, err
@@ -54,7 +50,7 @@ func base64Decode(str string) ([]byte, error) {
 	return data, nil
 }
 
-func CreateLogo(db *database.Queries, logoUrl string) (int64, error) {
+func CreateLogo(logoUrl string) (int64, error) {
 	img, err := downloadImage(logoUrl)
 	if err != nil {
 		log.Warn().Msgf("Failed Image Download: %v", err)
@@ -67,7 +63,7 @@ func CreateLogo(db *database.Queries, logoUrl string) (int64, error) {
 		return 0, err
 	}
 
-	logoID, err := db.CreateLogo(uuid)
+	logoID, err := database.Db.CreateLogo(uuid)
 	if err != nil {
 		log.Warn().Msg(err.Error())
 		return 0, err

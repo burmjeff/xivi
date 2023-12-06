@@ -18,18 +18,9 @@ import (
 // @Success 200 {array} models.Epg
 // @Router /epgs [get]
 func GetEpgs(c *fiber.Ctx) error {
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
 
 	// Get all epgs.
-	epgs, err := db.GetEpgs()
+	epgs, err := database.Db.GetEpgs()
 	if err != nil {
 		// Return, if epgs not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -68,18 +59,8 @@ func CreateEpg(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Checking, if template with given ID is exists.
-	template, err := db.GetTemplate(id)
+	template, err := database.Db.GetTemplate(id)
 	if err != nil {
 		// Return status 404 and template not found error.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -88,7 +69,7 @@ func CreateEpg(c *fiber.Ctx) error {
 		})
 	}
 
-	go utils.CreateEpgXML(db, template)
+	go utils.CreateEpgXML(template)
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
@@ -120,16 +101,6 @@ func AddEpg(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Create a new validator for a Epg model.
 	validate := utils.NewValidator()
 
@@ -143,7 +114,7 @@ func AddEpg(c *fiber.Ctx) error {
 	}
 
 	// Create epg.
-	id, err := db.CreateEpg(epg)
+	id, err := database.Db.CreateEpg(epg)
 	if err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -154,8 +125,7 @@ func AddEpg(c *fiber.Ctx) error {
 	epg.ID = id
 
 	//TODO async Parse m3u and insert channels
-	epgParser := utils.EpgParser{Db: db}
-	go epgParser.ParseEpg(epg)
+	go utils.ParseEpg(epg)
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
@@ -182,18 +152,8 @@ func DeleteEpg(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Checking, if epg with given ID is exists.
-	foundEpg, err := db.GetEpg(epg_id)
+	foundEpg, err := database.Db.GetEpg(epg_id)
 	if err != nil {
 		// Return status 404 and epg not found error.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -205,7 +165,7 @@ func DeleteEpg(c *fiber.Ctx) error {
 	go utils.RemoveEpg(&foundEpg)
 
 	// Delete epg by given ID.
-	if err := db.DeleteEpg(foundEpg.ID); err != nil {
+	if err := database.Db.DeleteEpg(foundEpg.ID); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,

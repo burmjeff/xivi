@@ -33,18 +33,8 @@ func GetStream(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Get channels by UUID.
-	channels, err := db.GetChannelsbyUuid(stream_id)
+	channels, err := database.Db.GetChannelsbyUuid(stream_id)
 	if err != nil {
 		// Return, if no channels found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{

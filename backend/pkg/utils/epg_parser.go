@@ -12,12 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// EpgParser - A parser for epg xml files.
-type EpgParser struct {
-	Db *database.Queries
-}
-
-func (m *EpgParser) ParseEpg(epg *models.Epg) {
+func ParseEpg(epg *models.Epg) {
 	epgItem := models.EpgItem{}
 
 	log.Info().Msg("EPG Parser started")
@@ -66,10 +61,10 @@ func (m *EpgParser) ParseEpg(epg *models.Epg) {
 	// Print out the parsed data
 	for _, channel := range epgItem.Channels {
 		if channel.ChannelId != "" {
-			_, err := m.Db.GetEpgChannelByChannelId(channel.ChannelId)
+			_, err := database.Db.GetEpgChannelByChannelId(channel.ChannelId)
 			if err != nil {
 				log.Info().Msgf("EPG XML PARSER: Creating new channel: %s", channel.DisplayName)
-				_, err = m.Db.CreateEpgChannel(&channel)
+				_, err = database.Db.CreateEpgChannel(&channel)
 				if err != nil {
 					log.Error().Msgf("EPG XML PARSER: Failed to create new EPG channel: %v", err)
 					continue
@@ -86,17 +81,17 @@ func (m *EpgParser) ParseEpg(epg *models.Epg) {
 		if !programme.Start.IsZero() {
 
 			if programme.Channel != "" {
-				FoundProg, err := m.Db.GetEpgProgrammeByChannelandTime(programme.Channel, programme.Start)
+				FoundProg, err := database.Db.GetEpgProgrammeByChannelandTime(programme.Channel, programme.Start)
 				if err != nil {
 					log.Info().Msgf("EPG XML PARSER: Creating new Programme: %s", programme.Title.Value)
-					m.Db.CreateEpgProgramme(&programme)
+					database.Db.CreateEpgProgramme(&programme)
 					if err != nil {
 						log.Warn().Msgf("EPG XML PARSER: Failed to create new programme: %v", err)
 						continue
 					}
 				} else {
 					log.Info().Msgf("EPG XML PARSER: Updating Programme: %s", programme.Title.Value)
-					m.Db.UpdateEpgProgramme(FoundProg.ID, &programme)
+					database.Db.UpdateEpgProgramme(FoundProg.ID, &programme)
 					if err != nil {
 						log.Warn().Msgf("EPG XML PARSER: Failed to update programme: %v", err)
 						continue
@@ -111,12 +106,12 @@ func (m *EpgParser) ParseEpg(epg *models.Epg) {
 	log.Info().Msg("EPG Parser Finished")
 
 	// Get all templates.
-	templates, err := m.Db.GetTemplates()
+	templates, err := database.Db.GetTemplates()
 	if err != nil {
 		log.Error().Msg("EPG XML PARSER: NO TEMPLATE FOUND")
 	} else {
 		for _, template := range templates {
-			go CreateEpgXML(m.Db, template)
+			go CreateEpgXML(template)
 		}
 	}
 

@@ -184,7 +184,7 @@ func (q *PlaylistQueries) GetPlGroupByName(name string) (models.PlaylistGroup, e
 	group := models.PlaylistGroup{}
 
 	// Define query string.
-	query := `SELECT * FROM playlistgroup WHERE name = ?`
+	query := `SELECT * FROM playlistgroup WHERE name LIKE ?`
 
 	// Send query to database.
 	err := q.Get(&group, query, name)

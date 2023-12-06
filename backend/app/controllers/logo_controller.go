@@ -20,18 +20,9 @@ import (
 // @Success 200 {array} models.Logo
 // @Router /logos [get]
 func GetLogos(c *fiber.Ctx) error {
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
 
 	// Get all logos.
-	logos, err := db.GetLogos()
+	logos, err := database.Db.GetLogos()
 	if err != nil {
 		// Return, if logos not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -80,18 +71,8 @@ func GetLogo(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Get logo.
-	logo, err := db.GetLogo(logoid)
+	logo, err := database.Db.GetLogo(logoid)
 	if err != nil {
 		// Return, if logos not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -151,18 +132,8 @@ func UploadLogo(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Create logo.
-	logoid, err := utils.UploadLogo(db, logoPath)
+	logoid, err := utils.UploadLogo(logoPath)
 	if err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -172,7 +143,7 @@ func UploadLogo(c *fiber.Ctx) error {
 	}
 
 	// Get logo.
-	logo, err := db.GetLogo(logoid)
+	logo, err := database.Db.GetLogo(logoid)
 	if err != nil {
 		// Return, if logos not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -220,18 +191,8 @@ func UpdateLogo(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Checking, if logo with given ID is exists.
-	foundLogo, err := db.GetLogo(logo.ID)
+	foundLogo, err := database.Db.GetLogo(logo.ID)
 	if err != nil {
 		// Return status 404 and logo not found error.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -253,7 +214,7 @@ func UpdateLogo(c *fiber.Ctx) error {
 	}
 
 	// Update logo by given ID.
-	if err := db.UpdateLogo(foundLogo.ID, logo); err != nil {
+	if err := database.Db.UpdateLogo(foundLogo.ID, logo); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -325,18 +286,8 @@ func DeleteLogo(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Checking, if logo with given ID is exists.
-	foundedLogo, err := db.GetLogo(logo.ID)
+	foundedLogo, err := database.Db.GetLogo(logo.ID)
 	if err != nil {
 		// Return status 404 and logo not found error.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -346,7 +297,7 @@ func DeleteLogo(c *fiber.Ctx) error {
 	}
 
 	// Delete logo by given ID.
-	if err := db.DeleteLogo(foundedLogo.ID); err != nil {
+	if err := database.Db.DeleteLogo(foundedLogo.ID); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,

@@ -26,18 +26,8 @@ func CreateM3U(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Checking, if template with given ID is exists.
-	template, err := db.GetTemplate(template_id)
+	template, err := database.Db.GetTemplate(template_id)
 	if err != nil {
 		// Return status 404 and template not found error.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -46,9 +36,9 @@ func CreateM3U(c *fiber.Ctx) error {
 		})
 	}
 
-	m3uTools := utils.M3uTools{Db: db}
+	m3uTools := utils.M3uTools{}
 	go m3uTools.CreateM3u(template)
-	go utils.CreateEpgXML(db, template)
+	go utils.CreateEpgXML(template)
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{

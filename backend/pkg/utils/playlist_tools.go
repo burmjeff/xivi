@@ -8,16 +8,12 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type PlaylistTools struct {
-	Db *database.Queries
-}
-
 // Convert all playlist channels in playlist group to template channels attached to given group name.
-func (p *PlaylistTools) ConvertPlGroup(templateGroup int64, playlistChannels []models.PlaylistChannel) {
+func ConvertPlGroup(templateGroup int64, playlistChannels []models.PlaylistChannel) {
 	for _, channel := range playlistChannels {
-		channelID := ConvertPlChannel(p.Db, channel)
+		channelID := ConvertPlChannel(channel)
 		tmplGroupChannel := &models.TemplateGroupChannel{GroupId: templateGroup, ChannelId: channelID}
-		err := p.Db.CreateTmplGroupChannel(tmplGroupChannel)
+		err := database.Db.CreateTmplGroupChannel(tmplGroupChannel)
 		if err != nil {
 			log.Warn().Msg(err.Error())
 		}
@@ -25,7 +21,7 @@ func (p *PlaylistTools) ConvertPlGroup(templateGroup int64, playlistChannels []m
 }
 
 // Convert a playlist channel to a template channel
-func ConvertPlChannel(db *database.Queries, playlistChannel models.PlaylistChannel) int64 {
+func ConvertPlChannel(playlistChannel models.PlaylistChannel) int64 {
 	validate := NewValidator()
 	templateChannel := &models.TemplateChannel{}
 	tmplChannelItem := &models.TemplateChannelItem{}
@@ -37,7 +33,7 @@ func ConvertPlChannel(db *database.Queries, playlistChannel models.PlaylistChann
 		templateChannel.TvgID = playlistChannel.TvgID
 	}
 	if playlistChannel.Logo != "" {
-		templateChannel.LogoId, _ = CreateLogo(db, playlistChannel.Logo)
+		templateChannel.LogoId, _ = CreateLogo(playlistChannel.Logo)
 	}
 	templateChannel.Uuid = CreateUuid()
 
@@ -46,23 +42,23 @@ func ConvertPlChannel(db *database.Queries, playlistChannel models.PlaylistChann
 		//Some fields are not valid.
 		log.Warn().Msg(err.Error())
 	} else {
-		channelID, err := db.CreateTmplChannel(templateChannel)
+		channelID, err := database.Db.CreateTmplChannel(templateChannel)
 		if err != nil {
 			log.Warn().Msg(err.Error())
 		} else {
 			tmplChannelItem.ChannelId = channelID
 			tmplChannelItem.PlaylistChannelId = playlistChannel.ID
-			db.CreateTmplChannelItem(tmplChannelItem)
+			database.Db.CreateTmplChannelItem(tmplChannelItem)
 		}
 		return channelID
 	}
 	return 0
 }
 
-func MatchDomain(db *database.Queries, playlistId int64) int64 {
+func MatchDomain(playlistId int64) int64 {
 	domainRegex := CompileRegex(`^(?:https?:\/\/)?(?:[^@\/\n]+@)?(?:www\.)?([^:\/?\n]+)`)
 
-	newPlaylist, err := db.GetPlaylist(playlistId)
+	newPlaylist, err := database.Db.GetPlaylist(playlistId)
 	if err != nil {
 		// Return empty object and error.
 		log.Err(err)
@@ -71,7 +67,7 @@ func MatchDomain(db *database.Queries, playlistId int64) int64 {
 
 	newDomain := GetByRegex(domainRegex, newPlaylist.URL)
 
-	playlists, err := db.GetPlaylists()
+	playlists, err := database.Db.GetPlaylists()
 	if err != nil {
 		// Return empty object and error.
 		log.Err(err)
@@ -87,13 +83,13 @@ func MatchDomain(db *database.Queries, playlistId int64) int64 {
 	return 0
 }
 
-func UpdateDynamicGroup(db *database.Queries, group models.TemplateGroup) {
-	tmplChannels, err := db.GetTmplChannelsByGroup(group.ID)
+func UpdateDynamicGroup(group models.TemplateGroup) {
+	tmplChannels, err := database.Db.GetTmplChannelsByGroup(group.ID)
 	if err != nil {
 		log.Debug().Msg(err.Error())
 	}
 
-	plChannels, err := db.GetPlGroupChannels(group.PlaylistGroup)
+	plChannels, err := database.Db.GetPlGroupChannels(group.PlaylistGroup)
 	if err != nil {
 		log.Warn().Msg(err.Error())
 	}
@@ -105,7 +101,7 @@ func UpdateDynamicGroup(db *database.Queries, group models.TemplateGroup) {
 		for _, tmplChannel := range tmplChannels {
 			if plChannel.TvgID == tmplChannel.TvgID {
 				tmplChannel.Name = plChannel.Title
-				if err := db.UpdateTmplChannel(&tmplChannel); err != nil {
+				if err := database.Db.UpdateTmplChannel(&tmplChannel); err != nil {
 					log.Err(err)
 				}
 				foundChannel = true
@@ -114,9 +110,9 @@ func UpdateDynamicGroup(db *database.Queries, group models.TemplateGroup) {
 			}
 		}
 		if !foundChannel {
-			channelID := ConvertPlChannel(db, plChannel)
+			channelID := ConvertPlChannel(plChannel)
 			tmplGroupChannel := &models.TemplateGroupChannel{GroupId: group.ID, ChannelId: channelID}
-			err := db.CreateTmplGroupChannel(tmplGroupChannel)
+			err := database.Db.CreateTmplGroupChannel(tmplGroupChannel)
 			if err != nil {
 				log.Err(err)
 			}
@@ -124,7 +120,7 @@ func UpdateDynamicGroup(db *database.Queries, group models.TemplateGroup) {
 	}
 	for _, tmplChannel := range tmplChannels {
 		if !(slices.Contains(foundChannels, tmplChannel)) {
-			if err := db.DeleteTmplChannel(tmplChannel.ID); err != nil {
+			if err := database.Db.DeleteTmplChannel(tmplChannel.ID); err != nil {
 				log.Err(err)
 			}
 		}

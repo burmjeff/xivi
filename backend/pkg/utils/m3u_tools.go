@@ -15,7 +15,6 @@ import (
 )
 
 type M3uTools struct {
-	Db       *database.Queries
 	template models.Template
 	host     string
 	port     int
@@ -76,7 +75,7 @@ func (m *M3uTools) RenameTemplate(template *models.Template, oldTemplate string)
 		return
 	}
 
-	go CreateEpgXML(m.Db, *template)
+	go CreateEpgXML(*template)
 }
 
 func (m *M3uTools) RemoveTemplate(template *models.Template) {
@@ -136,7 +135,7 @@ func (m *M3uTools) UpdateChannel(template *models.Template, channel *models.Temp
 		return
 	}
 
-	logo, err := m.Db.GetLogo(oldChannel.LogoId)
+	logo, err := database.Db.GetLogo(oldChannel.LogoId)
 	if err != nil {
 		log.Warn().Msg(err.Error())
 		return
@@ -163,7 +162,7 @@ func (m *M3uTools) UpdateChannel(template *models.Template, channel *models.Temp
 		return
 	}
 
-	go CreateEpgXML(m.Db, *template)
+	go CreateEpgXML(*template)
 }
 
 func (m *M3uTools) RemoveGroup(template *models.Template, group *models.TemplateGroup) {
@@ -266,7 +265,7 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 		return nil
 	}
 
-	groups, err := m.Db.GetTmplGroups(m.template.ID)
+	groups, err := database.Db.GetTmplGroups(m.template.ID)
 	if err != nil {
 		log.Warn().Msg(err.Error())
 		return err
@@ -274,14 +273,14 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 
 	for _, group := range groups {
 		log.Info().Msgf("M3U Creation: Found Template Group: %s", group.Name)
-		channels, err := m.Db.GetTmplChannelsByGroup(group.ID)
+		channels, err := database.Db.GetTmplChannelsByGroup(group.ID)
 		if err != nil {
 			log.Debug().Msg(err.Error())
 			continue
 		}
 
 		for _, channel := range channels {
-			logo, err := m.Db.GetLogo(channel.LogoId)
+			logo, err := database.Db.GetLogo(channel.LogoId)
 			if err != nil {
 				log.Warn().Msg(err.Error())
 				continue

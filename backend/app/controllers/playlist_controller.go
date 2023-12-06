@@ -21,18 +21,8 @@ import (
 // @Success 200 {array} models.Playlist
 // @Router /playlists [get]
 func GetPlaylists(c *fiber.Ctx) error {
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Get all playlists.
-	playlists, err := db.GetPlaylists()
+	playlists, err := database.Db.GetPlaylists()
 	if err != nil {
 		// Return, if playlists not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -71,18 +61,8 @@ func GetPlaylist(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Get playlist by ID.
-	playlist, err := db.GetPlaylist(id)
+	playlist, err := database.Db.GetPlaylist(id)
 	if err != nil {
 		// Return, if playlist not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -119,18 +99,8 @@ func GetPlaylistGroups(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Get playlist groups by ID.
-	playlistGroups, err := db.GetPlGroups(playlist_id)
+	playlistGroups, err := database.Db.GetPlGroups(playlist_id)
 	if err != nil {
 		// Return, if playlist not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -158,18 +128,8 @@ func GetPlaylistGroups(c *fiber.Ctx) error {
 // @Router /playlist/groups/all [get]
 func GetAllPlaylistGroups(c *fiber.Ctx) error {
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Get playlist groups by ID.
-	playlistGroups, err := db.GetAllPlGroups()
+	playlistGroups, err := database.Db.GetAllPlGroups()
 	if err != nil {
 		// Return, if playlist not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -205,18 +165,8 @@ func GetPlaylistGroupChannels(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Get playlist channels by playlist group.
-	channels, err := db.GetPlGroupChannels(group_id)
+	channels, err := database.Db.GetPlGroupChannels(group_id)
 	if err != nil {
 		// Return, if playlist not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -257,16 +207,6 @@ func CreatePlaylist(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Create a new validator for a Playlist model.
 	validate := utils.NewValidator()
 
@@ -284,7 +224,7 @@ func CreatePlaylist(c *fiber.Ctx) error {
 	}
 
 	// Create playlist.
-	id, err := db.CreatePlaylist(playlist)
+	id, err := database.Db.CreatePlaylist(playlist)
 	if err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -296,7 +236,7 @@ func CreatePlaylist(c *fiber.Ctx) error {
 	playlist.ID = id
 
 	//TODO async Parse m3u and insert channels
-	m3uParser := utils.M3uParser{Db: db}
+	m3uParser := utils.M3uParser{}
 	go m3uParser.ParseM3u(playlist)
 
 	// Return status 200 OK.
@@ -357,18 +297,8 @@ func UpdatePlaylist(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Checking, if playlist with given ID is exists.
-	foundPlaylist, err := db.GetPlaylist(playlist.ID)
+	foundPlaylist, err := database.Db.GetPlaylist(playlist.ID)
 	if err != nil {
 		// Return status 404 and playlist not found error.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -393,7 +323,7 @@ func UpdatePlaylist(c *fiber.Ctx) error {
 	}
 
 	// Update playlist by given ID.
-	if err := db.UpdatePlaylist(foundPlaylist.ID, playlist); err != nil {
+	if err := database.Db.UpdatePlaylist(foundPlaylist.ID, playlist); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -422,18 +352,8 @@ func DeletePlaylist(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Delete playlist by given ID.
-	if err := db.DeletePlaylist(playlist_id); err != nil {
+	if err := database.Db.DeletePlaylist(playlist_id); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -475,16 +395,6 @@ func ConvertPlaylistGroup(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Create a new validator for a Template model.
 	validate := utils.NewValidator()
 
@@ -497,7 +407,7 @@ func ConvertPlaylistGroup(c *fiber.Ctx) error {
 		})
 	}
 
-	playlistChannels, err := db.GetPlGroupChannels(group_id)
+	playlistChannels, err := database.Db.GetPlGroupChannels(group_id)
 	if err != nil {
 		// Return, if playlistgroup not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -508,7 +418,7 @@ func ConvertPlaylistGroup(c *fiber.Ctx) error {
 	}
 
 	// Create template group.
-	tmplGroupID, err := db.CreateTmplGroup(templateGroup)
+	tmplGroupID, err := database.Db.CreateTmplGroup(templateGroup)
 	if err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -516,8 +426,7 @@ func ConvertPlaylistGroup(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
-	playlistTools := utils.PlaylistTools{Db: db}
-	go playlistTools.ConvertPlGroup(tmplGroupID, playlistChannels)
+	go utils.ConvertPlGroup(tmplGroupID, playlistChannels)
 
 	templateGroup.ID = tmplGroupID
 
@@ -556,17 +465,7 @@ func ConvertPlaylistChannel(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	playlistChannel, err := db.GetPlChannel(channel_id)
+	playlistChannel, err := database.Db.GetPlChannel(channel_id)
 	if err != nil {
 		// Return, if playlistchannel not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -576,10 +475,10 @@ func ConvertPlaylistChannel(c *fiber.Ctx) error {
 		})
 	}
 
-	channelID := utils.ConvertPlChannel(db, playlistChannel)
+	channelID := utils.ConvertPlChannel(playlistChannel)
 	tmplGroupChannel := &models.TemplateGroupChannel{GroupId: group_id, ChannelId: channelID}
 
-	if err := db.CreateTmplGroupChannel(tmplGroupChannel); err != nil {
+	if err := database.Db.CreateTmplGroupChannel(tmplGroupChannel); err != nil {
 		log.Warn().Msg(err.Error())
 		// Return, if tmplGroupChannel not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -589,7 +488,7 @@ func ConvertPlaylistChannel(c *fiber.Ctx) error {
 		})
 	}
 
-	templateChannel, err := db.GetTmplChannel(channelID)
+	templateChannel, err := database.Db.GetTmplChannel(channelID)
 	if err != nil {
 		// Return, if templatechannel not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
