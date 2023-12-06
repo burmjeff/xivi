@@ -13,6 +13,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+var Db *Queries
+
 // Queries struct for collect all app queries.
 type Queries struct {
 	*queries.PlaylistQueries // load queries from Playlist model
@@ -42,7 +44,7 @@ func OpenDBConnection() (*Queries, error) {
 }
 
 func getDB() (*sqlx.DB, error) {
-	return sqlx.Open("sqlite3", fmt.Sprintf("%s/xivi.db?parseTime=true", settings.CONFIG_PATH))
+	return sqlx.Open("sqlite3", fmt.Sprintf("%s/xivi.db?parseTime=true&_journal_mode=WAL", settings.CONFIG_PATH))
 }
 
 func InitDB() error {

@@ -11,14 +11,14 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func CreateEpgXML(db *database.Queries, template models.Template) {
+func CreateEpgXML(template models.Template) {
 	log.Info().Msg("Create EPG XML: STARTED")
 	epg := models.EpgItem{
 		GeneratorInfo:  settings.APP_SETTINGS.Application.AppName,
 		SourceInfoName: fmt.Sprintf("%s - %s", settings.APP_SETTINGS.Application.AppName, settings.APP_SETTINGS.Application.AppVersion),
 	}
 
-	channels, err := db.GetTmplChannelsByGroup(template.ID)
+	channels, err := database.Db.GetTmplChannelsByGroup(template.ID)
 	if err != nil {
 		log.Error().Msgf("No tvgids found for template: %v", template.ID)
 		return
@@ -41,7 +41,7 @@ func CreateEpgXML(db *database.Queries, template models.Template) {
 	}
 
 	for _, channel := range channels {
-		epgChannel, err := db.GetEpgChannelByChannelId(channel.TvgID)
+		epgChannel, err := database.Db.GetEpgChannelByChannelId(channel.TvgID)
 		if err != nil {
 			log.Warn().Msgf("No channel found for %s: %v", channel, err)
 			continue
@@ -51,7 +51,7 @@ func CreateEpgXML(db *database.Queries, template models.Template) {
 	}
 
 	for _, channel := range channels {
-		epgProgrammes, err := db.GetProgrammesByChannelId(channel.TvgID)
+		epgProgrammes, err := database.Db.GetProgrammesByChannelId(channel.TvgID)
 		if err != nil {
 			log.Warn().Msgf("No programme found for %s: %v", channel.TvgID, err)
 			continue

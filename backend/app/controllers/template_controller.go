@@ -20,18 +20,8 @@ import (
 // @Success 200 {array} models.Template
 // @Router /templates [get]
 func GetTemplates(c *fiber.Ctx) error {
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Get all templates.
-	templates, err := db.GetTemplates()
+	templates, err := database.Db.GetTemplates()
 	if err != nil {
 		// Return, if templates not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -70,18 +60,8 @@ func GetTemplate(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Get template by ID.
-	template, err := db.GetTemplate(template_id)
+	template, err := database.Db.GetTemplate(template_id)
 	if err != nil {
 		// Return, if template not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -121,16 +101,6 @@ func CreateTemplate(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Create a new validator for a Template model.
 	validate := utils.NewValidator()
 
@@ -144,7 +114,7 @@ func CreateTemplate(c *fiber.Ctx) error {
 	}
 
 	// Create template.
-	id, err := db.CreateTemplate(template)
+	id, err := database.Db.CreateTemplate(template)
 	if err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -198,18 +168,8 @@ func UpdateTemplate(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Checking, if template with given ID is exists.
-	oldTemplate, err := db.GetTemplate(template.ID)
+	oldTemplate, err := database.Db.GetTemplate(template.ID)
 	if err != nil {
 		// Return status 404 and template not found error.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -217,11 +177,11 @@ func UpdateTemplate(c *fiber.Ctx) error {
 			"msg":   "template with this ID not found",
 		})
 	}
-	m3uTools := utils.M3uTools{Db: db}
+	m3uTools := utils.M3uTools{}
 	go m3uTools.RenameTemplate(template, oldTemplate.Name)
 
 	// Update template by given ID.
-	if err := db.UpdateTemplate(template); err != nil {
+	if err := database.Db.UpdateTemplate(template); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -252,20 +212,10 @@ func DeleteTemplate(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	m3uTools := utils.M3uTools{Db: db}
+	m3uTools := utils.M3uTools{}
 
 	// Get template
-	template, err := db.GetTemplate(template_id)
+	template, err := database.Db.GetTemplate(template_id)
 	if err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -277,7 +227,7 @@ func DeleteTemplate(c *fiber.Ctx) error {
 	go m3uTools.RemoveTemplate(&template)
 
 	// Delete template by given ID.
-	if err := db.DeleteTemplate(template_id); err != nil {
+	if err := database.Db.DeleteTemplate(template_id); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -307,18 +257,8 @@ func GetTemplateGroups(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Get Template groups by Template.
-	groups, err := db.GetTmplGroups(template_id)
+	groups, err := database.Db.GetTmplGroups(template_id)
 	if err != nil {
 		// Return, if template not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -345,18 +285,9 @@ func GetTemplateGroups(c *fiber.Ctx) error {
 // @Success 200 {array} models.TemplateGroup
 // @Router /template/groups/all [get]
 func GetGroups(c *fiber.Ctx) error {
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
 
 	// Get Template groups.
-	groups, err := db.GetAllTmplGroups()
+	groups, err := database.Db.GetAllTmplGroups()
 	if err != nil {
 		// Return, if template not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -392,18 +323,8 @@ func GetTemplateGroupChannels(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Get Template channels by group.
-	channels, err := db.GetTmplChannelsByGroup(group_id)
+	channels, err := database.Db.GetTmplChannelsByGroup(group_id)
 	if err != nil {
 		// Return, if template not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -418,7 +339,7 @@ func GetTemplateGroupChannels(c *fiber.Ctx) error {
 		channelLogo := models.TemplateChannelLogo{}
 		channelLogo.TemplateChannel = channel
 		// Get logo.
-		logo, err := db.GetLogo(channel.LogoId)
+		logo, err := database.Db.GetLogo(channel.LogoId)
 		if err != nil {
 			continue
 		}
@@ -456,16 +377,6 @@ func CreateTemplateGroup(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Create a new validator for a Template model.
 	validate := utils.NewValidator()
 
@@ -479,7 +390,7 @@ func CreateTemplateGroup(c *fiber.Ctx) error {
 	}
 
 	// Create template.
-	id, err := db.CreateTmplGroup(templateGroup)
+	id, err := database.Db.CreateTmplGroup(templateGroup)
 	if err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -491,7 +402,7 @@ func CreateTemplateGroup(c *fiber.Ctx) error {
 	templateGroup.ID = id
 
 	if templateGroup.Dynamic {
-		go utils.UpdateDynamicGroup(db, *templateGroup)
+		go utils.UpdateDynamicGroup(*templateGroup)
 	}
 
 	// Return status 200 OK.
@@ -532,19 +443,9 @@ func CreateTemplateGroupItem(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Create TemplateGroupItem
 	templateGroupItem := &models.TemplateGroupItem{TemplateId: template_id, GroupId: group_id}
-	if err := db.CreateTmplGroupItem(templateGroupItem); err != nil {
+	if err := database.Db.CreateTmplGroupItem(templateGroupItem); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -552,13 +453,13 @@ func CreateTemplateGroupItem(c *fiber.Ctx) error {
 		})
 	}
 
-	template, err := db.GetTemplate(template_id)
+	m3uTools := utils.M3uTools{}
+	template, err := database.Db.GetTemplate(template_id)
 	if err != nil {
 		log.Error().Msgf("Failed to find template: %s", err)
 	} else {
-		m3uTools := utils.M3uTools{Db: db}
 		go m3uTools.CreateM3u(template)
-		go utils.CreateEpgXML(db, template)
+		go utils.CreateEpgXML(template)
 	}
 
 	// Return status 201 OK.
@@ -595,20 +496,10 @@ func DeleteTemplateGroupItem(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	templateGroupItem := &models.TemplateGroupItem{TemplateId: template_id, GroupId: group_id}
 
 	// Get template
-	template, err := db.GetTemplate(templateGroupItem.TemplateId)
+	template, err := database.Db.GetTemplate(templateGroupItem.TemplateId)
 	if err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -618,7 +509,7 @@ func DeleteTemplateGroupItem(c *fiber.Ctx) error {
 	}
 
 	// Get Group
-	group, err := db.GetTmplGroup(templateGroupItem.GroupId)
+	group, err := database.Db.GetTmplGroup(templateGroupItem.GroupId)
 	if err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -628,7 +519,7 @@ func DeleteTemplateGroupItem(c *fiber.Ctx) error {
 	}
 
 	// Delete template by given ID.
-	if err := db.DeleteTmplGroupItem(templateGroupItem); err != nil {
+	if err := database.Db.DeleteTmplGroupItem(templateGroupItem); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -636,7 +527,7 @@ func DeleteTemplateGroupItem(c *fiber.Ctx) error {
 		})
 	}
 
-	m3uTools := utils.M3uTools{Db: db}
+	m3uTools := utils.M3uTools{}
 	go m3uTools.RemoveGroup(&template, &group)
 
 	// Return status 204 no content.
@@ -663,21 +554,10 @@ func DeleteTemplateGroup(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	if templateGroupItems, err := db.GetTmplGroupItemsByGroup(group_id); err == nil {
-		m3uTools := utils.M3uTools{Db: db}
+	if templateGroupItems, err := database.Db.GetTmplGroupItemsByGroup(group_id); err == nil {
 		for _, templateGroupItem := range templateGroupItems {
 			// Get template
-			template, err := db.GetTemplate(templateGroupItem.TemplateId)
+			template, err := database.Db.GetTemplate(templateGroupItem.TemplateId)
 			if err != nil {
 				// Return status 500 and error message.
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -686,8 +566,9 @@ func DeleteTemplateGroup(c *fiber.Ctx) error {
 				})
 			}
 
+			m3uTools := utils.M3uTools{}
 			// Get Group
-			group, err := db.GetTmplGroup(templateGroupItem.GroupId)
+			group, err := database.Db.GetTmplGroup(templateGroupItem.GroupId)
 			if err != nil {
 				// Return status 500 and error message.
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -700,7 +581,7 @@ func DeleteTemplateGroup(c *fiber.Ctx) error {
 	}
 
 	// Delete template group by given ID.
-	if err := db.DeleteTmplGroup(group_id); err != nil {
+	if err := database.Db.DeleteTmplGroup(group_id); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -745,18 +626,7 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		log.Err(err)
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	oldGroup, err := db.GetTmplGroup(templateGroup.ID)
+	oldGroup, err := database.Db.GetTmplGroup(templateGroup.ID)
 	if err != nil {
 		log.Err(err)
 		// Return status 500 and error message.
@@ -767,7 +637,7 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 	}
 
 	// Update template group.
-	if err := db.UpdateTmplGroup(templateGroup); err != nil {
+	if err := database.Db.UpdateTmplGroup(templateGroup); err != nil {
 		log.Err(err)
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -778,15 +648,15 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 
 	if (templateGroup.Dynamic != oldGroup.Dynamic && templateGroup.Dynamic) ||
 		(templateGroup.PlaylistGroup != oldGroup.PlaylistGroup && templateGroup.Dynamic) {
-		utils.UpdateDynamicGroup(db, *templateGroup)
+		utils.UpdateDynamicGroup(*templateGroup)
 	}
 
-	m3uTools := utils.M3uTools{Db: db}
-	if templateGroupItems, err := db.GetTmplGroupItemsByGroup(templateGroup.ID); err == nil {
+	m3uTools := utils.M3uTools{}
+	if templateGroupItems, err := database.Db.GetTmplGroupItemsByGroup(templateGroup.ID); err == nil {
 		go func() {
 			for _, templateGroupItem := range templateGroupItems {
 				// Get template
-				template, err := db.GetTemplate(templateGroupItem.TemplateId)
+				template, err := database.Db.GetTemplate(templateGroupItem.TemplateId)
 				if err != nil {
 					continue
 				}
@@ -794,7 +664,7 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 					go m3uTools.UpdateGroup(&template, templateGroup, oldGroup)
 				} else {
 					go m3uTools.CreateM3u(template)
-					go utils.CreateEpgXML(db, template)
+					go utils.CreateEpgXML(template)
 				}
 			}
 		}()
@@ -852,18 +722,8 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Create template channel.
-	id, err := db.CreateTmplChannel(templateChannel)
+	id, err := database.Db.CreateTmplChannel(templateChannel)
 	if err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -879,7 +739,7 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 	}
 
 	// Create template channelgroup.
-	if err := db.CreateTmplGroupChannel(templategroupchannel); err != nil {
+	if err := database.Db.CreateTmplGroupChannel(templategroupchannel); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -887,7 +747,7 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 		})
 	}
 
-	foundLogo, err := db.GetLogo(templateChannel.LogoId)
+	foundLogo, err := database.Db.GetLogo(templateChannel.LogoId)
 	if err != nil {
 		// Return status 404 and logo not found error.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -901,12 +761,12 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 		Logo:            utils.GetLogoUrl(foundLogo.Uuid),
 	}
 
-	m3uTools := utils.M3uTools{Db: db}
+	m3uTools := utils.M3uTools{}
 	go m3uTools.AddChannel(templateChannel, group_id)
 
 	go func() {
-		utils.UpdateTemplateVector(db, templateChannel)
-		utils.MatchTemplateChannel(db, templateChannel)
+		utils.UpdateTemplateVector(templateChannel)
+		utils.MatchTemplateChannel(templateChannel)
 	}()
 
 	// Return status 200 OK.
@@ -951,18 +811,9 @@ func UpdateTemplateChannel(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	if templateGroupChannels, err := db.GetTmplGroupChannelsByChannel(templateChannelLogo.ID); err == nil {
-		oldChannel, err := db.GetTmplChannel(templateChannelLogo.ID)
+	m3uTools := utils.M3uTools{}
+	if templateGroupChannels, err := database.Db.GetTmplGroupChannelsByChannel(templateChannelLogo.ID); err == nil {
+		oldChannel, err := database.Db.GetTmplChannel(templateChannelLogo.ID)
 		if err != nil {
 			// Return status 500 and error message.
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -972,11 +823,10 @@ func UpdateTemplateChannel(c *fiber.Ctx) error {
 		}
 		go func() {
 			for _, item := range templateGroupChannels {
-				if templateGroupItems, err := db.GetTmplGroupItemsByGroup(item.GroupId); err == nil {
-					m3uTools := utils.M3uTools{Db: db}
+				if templateGroupItems, err := database.Db.GetTmplGroupItemsByGroup(item.GroupId); err == nil {
 					for _, templateGroupItem := range templateGroupItems {
 						// Get template
-						template, err := db.GetTemplate(templateGroupItem.TemplateId)
+						template, err := database.Db.GetTemplate(templateGroupItem.TemplateId)
 						if err != nil {
 							continue
 						}
@@ -988,7 +838,7 @@ func UpdateTemplateChannel(c *fiber.Ctx) error {
 	}
 
 	// Update template channel.
-	if err := db.UpdateTmplChannel(&templateChannelLogo.TemplateChannel); err != nil {
+	if err := database.Db.UpdateTmplChannel(&templateChannelLogo.TemplateChannel); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -996,7 +846,7 @@ func UpdateTemplateChannel(c *fiber.Ctx) error {
 		})
 	}
 
-	go utils.UpdateTemplateVector(db, &templateChannelLogo.TemplateChannel)
+	go utils.UpdateTemplateVector(&templateChannelLogo.TemplateChannel)
 
 	// Return status 201.
 	return c.SendStatus(fiber.StatusCreated)
@@ -1020,18 +870,8 @@ func DeleteTemplateChannel(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	if templateGroupChannels, err := db.GetTmplGroupChannelsByChannel(channel_id); err == nil {
-		channel, err := db.GetTmplChannel(channel_id)
+	if templateGroupChannels, err := database.Db.GetTmplGroupChannelsByChannel(channel_id); err == nil {
+		channel, err := database.Db.GetTmplChannel(channel_id)
 		if err != nil {
 			// Return status 500 and error message.
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -1040,17 +880,17 @@ func DeleteTemplateChannel(c *fiber.Ctx) error {
 			})
 		}
 
+		m3uTools := utils.M3uTools{}
 		go func() {
 			for _, item := range templateGroupChannels {
-				if templateGroupItems, err := db.GetTmplGroupItemsByGroup(item.GroupId); err == nil {
-					group, err := db.GetTmplGroup(item.GroupId)
+				if templateGroupItems, err := database.Db.GetTmplGroupItemsByGroup(item.GroupId); err == nil {
+					group, err := database.Db.GetTmplGroup(item.GroupId)
 					if err != nil {
 						continue
 					}
-					m3uTools := utils.M3uTools{Db: db}
 					for _, templateGroupItem := range templateGroupItems {
 						// Get template
-						template, err := db.GetTemplate(templateGroupItem.TemplateId)
+						template, err := database.Db.GetTemplate(templateGroupItem.TemplateId)
 						if err != nil {
 							continue
 						}
@@ -1062,7 +902,7 @@ func DeleteTemplateChannel(c *fiber.Ctx) error {
 	}
 
 	// Delete template group by given ID.
-	if err := db.DeleteTmplChannel(channel_id); err != nil {
+	if err := database.Db.DeleteTmplChannel(channel_id); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -1092,18 +932,8 @@ func GetTemplateChannelItems(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Get Template channels by group.
-	channels, err := db.GetTmplChannelItemsByCh(channel_id)
+	channels, err := database.Db.GetTmplChannelItemsByCh(channel_id)
 	if err != nil {
 		log.Err(err)
 		// Return, if template not found.
@@ -1115,7 +945,7 @@ func GetTemplateChannelItems(c *fiber.Ctx) error {
 
 	playlistChannels := []models.PlaylistChannel{}
 	for _, channel := range channels {
-		playlistChannel, err := db.GetPlChannel(channel.PlaylistChannelId)
+		playlistChannel, err := database.Db.GetPlChannel(channel.PlaylistChannelId)
 		if err != nil {
 			continue
 		}
@@ -1156,19 +986,8 @@ func DeleteTemplateChannelItem(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	// Get Template channels by group.
-	err = db.DeleteTmplChannelItem(templateItem)
-	if err != nil {
+	if err := database.Db.DeleteTmplChannelItem(templateItem); err != nil {
 		log.Err(err)
 		// Return, if template not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -1199,17 +1018,7 @@ func GetTemplateChannelMatches(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	channel, err := db.GetTmplChannel(channel_id)
+	channel, err := database.Db.GetTmplChannel(channel_id)
 	if err != nil {
 		log.Err(err)
 		// Return, if template not found.
@@ -1219,7 +1028,7 @@ func GetTemplateChannelMatches(c *fiber.Ctx) error {
 		})
 	}
 
-	vectorMatches, err := utils.TemplateChannelMatches(db, &channel)
+	vectorMatches, err := utils.TemplateChannelMatches(&channel)
 	if err != nil {
 		log.Err(err)
 		// Return, if template not found.
@@ -1230,7 +1039,7 @@ func GetTemplateChannelMatches(c *fiber.Ctx) error {
 	}
 
 	for idx, vectorMatch := range vectorMatches {
-		if channel, err := db.GetPlChannel(vectorMatch.Id); err != nil {
+		if channel, err := database.Db.GetPlChannel(vectorMatch.Id); err != nil {
 			log.Err(err)
 			// Return, if template not found.
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{

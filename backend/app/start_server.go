@@ -18,6 +18,7 @@ func StartServer(app *fiber.App) {
 
 	//Initialize DB
 	database.InitDB()
+	database.Db, _ = database.OpenDBConnection()
 
 	vips.Startup(nil)
 	defer vips.Shutdown()

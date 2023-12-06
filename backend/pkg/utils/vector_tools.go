@@ -18,34 +18,34 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func PlaylistVectorQueue(in <-chan *models.PlaylistChannel, db *database.Queries) {
+func PlaylistVectorQueue(in <-chan *models.PlaylistChannel) {
 	for playlistCh := range in {
-		_ = UpdatePlaylistVector(db, playlistCh)
+		_ = UpdatePlaylistVector(playlistCh)
 
 		//try to match template channel only if auto-match=true
 		//TODO: IS THIS A PROBLEM HERE??
-		go MatchPlaylistChannel(db, playlistCh)
+		go MatchPlaylistChannel(playlistCh)
 	}
 }
 
 // returns vector id
-func UpdatePlaylistVector(db *database.Queries, playlistCh *models.PlaylistChannel) int64 {
-	if vectorId, err := getChannelVector(db, playlistCh.Title); err != nil {
+func UpdatePlaylistVector(playlistCh *models.PlaylistChannel) int64 {
+	if vectorId, err := getChannelVector(playlistCh.Title); err != nil {
 		log.Warn().Msgf("VECTORIZE_STRING: %v", err)
 	} else {
-		if channelVector, err := db.GetPlaylistChannelVector(playlistCh.ID); err != nil {
+		if channelVector, err := database.Db.GetPlaylistChannelVector(playlistCh.ID); err != nil {
 			log.Debug().Msgf("matchChannels:, %v", err)
 			channelVector = &models.PlaylistChannelVector{
 				ChannelId: playlistCh.ID,
 				VectorId:  vectorId,
 			}
-			if _, err := db.CreatePlaylistChannelVector(channelVector); err != nil {
+			if _, err := database.Db.CreatePlaylistChannelVector(channelVector); err != nil {
 				log.Debug().Msgf("matchChannels:, %v", err)
 				return channelVector.VectorId
 			}
 		} else {
 			channelVector.VectorId = vectorId
-			if err := db.UpdatePlaylistChannelVector(channelVector); err != nil {
+			if err := database.Db.UpdatePlaylistChannelVector(channelVector); err != nil {
 				log.Debug().Msgf("matchChannels:, %v", err)
 				return channelVector.VectorId
 			}
@@ -55,23 +55,23 @@ func UpdatePlaylistVector(db *database.Queries, playlistCh *models.PlaylistChann
 }
 
 // returns vector id
-func UpdateTemplateVector(db *database.Queries, templateCh *models.TemplateChannel) int64 {
-	if vectorId, err := getChannelVector(db, templateCh.Name); err != nil {
+func UpdateTemplateVector(templateCh *models.TemplateChannel) int64 {
+	if vectorId, err := getChannelVector(templateCh.Name); err != nil {
 		log.Warn().Msgf("VECTORIZE_STRING: %v", err)
 	} else {
-		if channelVector, err := db.GetTemplateChannelVector(templateCh.ID); err != nil {
+		if channelVector, err := database.Db.GetTemplateChannelVector(templateCh.ID); err != nil {
 			log.Debug().Msgf("matchChannels:, %v", err)
 			channelVector = &models.TemplateChannelVector{
 				ChannelId: templateCh.ID,
 				VectorId:  vectorId,
 			}
-			if _, err := db.CreateTemplateChannelVector(channelVector); err != nil {
+			if _, err := database.Db.CreateTemplateChannelVector(channelVector); err != nil {
 				log.Debug().Msgf("matchChannels:, %v", err)
 				return channelVector.VectorId
 			}
 		} else {
 			channelVector.VectorId = vectorId
-			if err := db.UpdateTemplateChannelVector(channelVector); err != nil {
+			if err := database.Db.UpdateTemplateChannelVector(channelVector); err != nil {
 				log.Debug().Msgf("matchChannels:, %v", err)
 				return channelVector.VectorId
 			}
@@ -80,18 +80,18 @@ func UpdateTemplateVector(db *database.Queries, templateCh *models.TemplateChann
 	return 0
 }
 
-func getChannelVector(db *database.Queries, name string) (int64, error) {
+func getChannelVector(name string) (int64, error) {
 	var channelVector models.ChannelVector
 	var err error
 
-	channelVector, err = db.GetChannelVectorByName(name)
+	channelVector, err = database.Db.GetChannelVectorByName(name)
 	if err != nil {
 		vector, err := vectorizeString(name)
 		if err != nil {
 			return 0, err
 		}
 		channelVector = models.ChannelVector{Name: name, Vector: vector}
-		channelVector.ID, err = db.CreateChannelVector(channelVector)
+		channelVector.ID, err = database.Db.CreateChannelVector(channelVector)
 		if err != nil {
 			return 0, err
 		}

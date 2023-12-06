@@ -30,53 +30,47 @@ func RunCronJobs() {
 }
 
 func UpdatePlaylists() {
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		log.Err(err)
-		return
-	}
 
 	// get playlists.
-	playlists, err := db.GetPlaylists()
-	cleanPlaylists(db, playlists)
+	playlists, err := database.Db.GetPlaylists()
+	cleanPlaylists(database.Db, playlists)
 	if err != nil {
 		log.Err(err)
 		return
 	}
 
-	m3uParser := utils.M3uParser{Db: db}
 	for _, playlist := range playlists {
 		log.Log().Msgf("Updating Playlist: %s", playlist.Name)
+		m3uParser := utils.M3uParser{}
 		m3uParser.ParseM3u(&playlist)
 
-		if channels, err := db.GetPlChannels(playlist.ID); err != nil {
+		if channels, err := database.Db.GetPlChannels(playlist.ID); err != nil {
 			log.Err(err)
 		} else {
 			for _, channel := range channels {
 				if channel.UpdatedAt.Before(time.Now().Add(-24*time.Hour)) && channel.CreatedAt.Before(time.Now().Add(-24*time.Hour)) {
-					db.DeletePlChannel(channel.ID)
+					database.Db.DeletePlChannel(channel.ID)
 				}
 			}
 		}
 		log.Log().Msgf("Finished Updating Playlist: %s", playlist.Name)
 	}
 
-	if groups, err := db.GetAllTmplGroups(); err != nil {
+	if groups, err := database.Db.GetAllTmplGroups(); err != nil {
 		log.Err(err)
 	} else {
 		for _, group := range groups {
 			if group.Dynamic {
-				utils.UpdateDynamicGroup(db, group)
+				utils.UpdateDynamicGroup(group)
 			}
 		}
 	}
 
 	// get templates.
-	if templates, err := db.GetTemplates(); err != nil {
+	if templates, err := database.Db.GetTemplates(); err != nil {
 		log.Debug().Err(err)
 	} else {
-		m3uTools := utils.M3uTools{Db: db}
+		m3uTools := utils.M3uTools{}
 		for _, template := range templates {
 			go m3uTools.CreateM3u(template)
 		}
@@ -84,36 +78,28 @@ func UpdatePlaylists() {
 }
 
 func UpdateEpgs() {
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		log.Err(err)
-		return
-	}
-
 	// get epgs.
-	epgs, err := db.GetEpgs()
+	epgs, err := database.Db.GetEpgs()
 	if err != nil {
 		log.Err(err)
 		return
 	}
 
 	// get templates.
-	templates, err := db.GetTemplates()
+	templates, err := database.Db.GetTemplates()
 	if err != nil {
 		log.Err(err)
 		return
 	}
 
-	epgParser := utils.EpgParser{Db: db}
 	for _, epg := range epgs {
 		log.Log().Msgf("Updating EPG: %s", epg.Name)
-		epgParser.ParseEpg(&epg)
+		utils.ParseEpg(&epg)
 		log.Log().Msgf("Finished Updating EPG: %s", epg.Name)
 	}
 
 	for _, template := range templates {
-		go utils.CreateEpgXML(db, template)
+		go utils.CreateEpgXML(template)
 	}
 
 }
