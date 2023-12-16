@@ -294,6 +294,10 @@ func (s *Stream) CreatePipeline() (*gst.Pipeline, error) {
 	if err != nil {
 		return nil, err
 	}
+	buffer, err := gst.NewElement("queue")
+	if err != nil {
+		return nil, err
+	}
 	typefind, err := gst.NewElement("typefind")
 	if err != nil {
 		return nil, err
@@ -306,9 +310,14 @@ func (s *Stream) CreatePipeline() (*gst.Pipeline, error) {
 	src.Set("location", s.Settings.Src)
 	src.Set("user-agent", s.Settings.userAgent)
 	src.Set("is-live", true)
+	buffer.Set("max-size-buffers", 0)
+	buffer.Set("max-size-bytes", 0)
+	buffer.Set("max-size-time", 10000000000)
+	buffer.Set("min-size-time", s.Settings.buffer*1000000)
 	tee.Set("name", "stream")
 
 	pipeline.Add(src)
+	pipeline.Add(buffer)
 	pipeline.Add(typefind)
 	pipeline.Add(tee)
 
@@ -324,15 +333,16 @@ func (s *Stream) CreatePipeline() (*gst.Pipeline, error) {
 			pipeline.Add(demux)
 			typefind.Link(demux)
 			demux.Connect("pad-added", func(self *gst.Element, pad *gst.Pad) {
-				self.Link(tee)
+				self.Link(buffer)
 			})
 			demux.SetState(gst.StatePlaying)
 
 		} else if strings.HasPrefix(caps.String(), "video/mpegts") {
-			self.Link(tee)
+			self.Link(buffer)
 		}
 
 	})
+	buffer.Link(tee)
 
 	return pipeline, nil
 }

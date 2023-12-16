@@ -86,7 +86,7 @@ CREATE TABLE templatechannel (
 -- Create logo table
 CREATE TABLE logo (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    uuid VARCHAR (255) UNIQUE NOT NULL
+    name VARCHAR (255) UNIQUE NOT NULL
 );
 
 -- Create template_group_item table

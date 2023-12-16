@@ -343,7 +343,7 @@ func GetTemplateGroupChannels(c *fiber.Ctx) error {
 		if err != nil {
 			continue
 		}
-		channelLogo.Logo = utils.GetLogoUrl(logo.Uuid)
+		channelLogo.Logo = utils.GetLogoUrl(logo.Name)
 		channelLogos = append(channelLogos, channelLogo)
 	}
 
@@ -758,7 +758,7 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 
 	templateChannelLogo := &models.TemplateChannelLogo{
 		TemplateChannel: *templateChannel,
-		Logo:            utils.GetLogoUrl(foundLogo.Uuid),
+		Logo:            utils.GetLogoUrl(foundLogo.Name),
 	}
 
 	m3uTools := utils.M3uTools{}
@@ -1028,7 +1028,7 @@ func GetTemplateChannelMatches(c *fiber.Ctx) error {
 		})
 	}
 
-	vectorMatches, err := utils.TemplateChannelMatches(&channel)
+	vectorMatches, err := utils.TopChannelMatches(&channel)
 	if err != nil {
 		log.Err(err)
 		// Return, if template not found.

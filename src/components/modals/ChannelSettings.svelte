@@ -6,7 +6,7 @@
 	import IconParkOutlineSaveOne from '~icons/icon-park-outline/save-one';
 	import IconParkOutlineDelete from '~icons/icon-park-outline/delete';
 	import { writable } from 'svelte/store';
-	import { getModalStore, FileButton } from '@skeletonlabs/skeleton';
+	import { getModalStore, FileButton, popup, type PopupSettings } from '@skeletonlabs/skeleton';
 	import xivi from '$lib/assets/xivi.png';
 	import type { Match, PlaylistChannel } from '@xivi/data/playlist_entities';
 	import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
@@ -14,6 +14,8 @@
     import {fade} from 'svelte/transition';
     import {cubicIn} from 'svelte/easing';
 	import { playlistMatches } from '@xivi/stores/playlist_store';
+	import { logos } from '@xivi/stores/logo_store';	
+	import type { Logo } from '@xivi/data/logo_entities';
 
 	export let parent: SvelteComponent;
 
@@ -74,8 +76,17 @@
 		return data.vectormatches;
 	};
 
+	const updateLogos = async () => {
+		const response = await fetch(`/api/logos`);
+		const data = await response.json();
+		console.log(data)
+		if (typeof data.logos !== 'undefined') {
+			logos.set(data.logos);
+		}
+	};
+
 	onMount(async () => {
-		//if (!isNew) {
+		if (!isNew) {
 			const fetchedItems = await updateChannelItems();
 			if (typeof fetchedItems !== 'undefined') {
 				playlist_ch_items.set(fetchedItems);
@@ -85,8 +96,17 @@
 			if (typeof fetchedMatches !== 'undefined') {
 				playlistMatches.set(fetchedMatches);
 			}
-		//}
+		}
 	});
+
+	const popupLogo: PopupSettings = {
+		// Represents the type of event that opens/closed the popup
+		event: 'click',
+		// Matches the data-popup value on your popup element
+		target: 'popupLogo',
+		// Defines which side of your trigger the popup will appear
+		placement: 'right',
+	};
 
 	const toBase64 = (file: File) =>
 		new Promise((resolve, reject) => {
@@ -109,7 +129,6 @@
 	}
 
 	async function onUploadHandler(e: Event) {
-		console.log('file data:', e);
 		if (files) {
 			const result = String(await toBase64(files[0]));
 			if (result) {
@@ -118,6 +137,12 @@
 			}
 		}
 	}
+
+	async function chooseImage(logo: Logo) {
+		formData.logoid = logo.id;
+		formData.logo = logo.image;
+	}
+	
 
 	async function onFormSubmit(): Promise<void> {
 		if (newImg) {
@@ -238,8 +263,26 @@
     }
 </script>
 
+<div class="card p-4 shadow w-fit h-fit bg-cover z-0" data-popup="popupLogo">
+	<div><p>Choose Logo</p></div>
+	{#if $logos != null && $logos.length > 0}
+		<section class="grid grid-cols-7 justify-items-center items-center">
+			{#each $logos as logo, logoIdx (logo.id)}
+				<img class="h-auto w-20 p-1" src={logo.image} alt="" on:click={chooseImage(logo)}>
+				<span class="divider-vertical h-20" />
+			{/each}
+		</section>
+	{/if}
+	<FileButton
+		name="files"
+		bind:files
+		accept=".png,.jpg,.webp,.svg"
+		on:change={onUploadHandler}>Upload New Image
+	</FileButton>
+</div>
+
 {#if $modalStore[0]}
-	<div class="modal-channel-settings card p-4 shadow-xl space-y-4 max-w-screen max-h-screen">
+	<div class="modal-channel-settings card p-4 shadow-xl space-y-4 max-w-screen max-h-screen z-1">
 		{#if isNew}
 			<header class="text-2xl font-bold text-center justify-center">Add Channel</header>
 		{:else}
@@ -268,11 +311,7 @@
 				<span>Channel Logo</span>
 				<div class="grid grid-cols-2 p-1 w-64 items-center space-x-10">
 					<img class="w-fit" src={formData.logo} alt="Logo" />
-					<FileButton
-						name="files"
-						bind:files
-						accept=".png,.jpg,.webp,.svg"
-						on:change={onUploadHandler}>Upload</FileButton>
+					<button class="btn variant-filled" on:click={updateLogos} use:popup={popupLogo}>Show Popup</button>
 				</div>
 			</div>
 			<div class="playlist_ch_items grid grid-cols-2 space-x-2">
@@ -353,6 +392,8 @@
 	</div>
 {/if}
 
+
+
 <style>
     #animate {
 		position: relative;
@@ -370,6 +411,8 @@
 	#thead {
 		position: relative;
 		text-align: center;
+		height: 0.25rem;
+		max-height: 0.25rem;
 	}
 	.center { 
 		text-align: center; 

@@ -140,7 +140,7 @@ func (m *M3uTools) UpdateChannel(template *models.Template, channel *models.Temp
 		log.Warn().Msg(err.Error())
 		return
 	}
-	oldLogoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, GetLogoUrl(logo.Uuid))
+	oldLogoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, GetLogoUrl(logo.Name))
 	logoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, channel.Logo)
 
 	// TODO FIX CHANNEL NAME IN M3U
@@ -285,7 +285,7 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 				log.Warn().Msg(err.Error())
 				continue
 			}
-			logoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, GetLogoUrl(logo.Uuid))
+			logoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, GetLogoUrl(logo.Name))
 			channelURL := fmt.Sprintf("http://%s:%d/stream/%s", m.host, m.port, channel.Uuid)
 
 			log.Info().Msgf("M3U Creation: Adding Template Channel: %s", channel.Name)

@@ -225,10 +225,12 @@ func itemExists(tmplId int64, plUrl string) bool {
 	return false
 }
 
-func TemplateChannelMatches(templateCh *models.TemplateChannel) ([]models.VectorMatch, error) {
+func TopChannelMatches(templateCh *models.TemplateChannel) ([]models.VectorMatch, error) {
 	//var channelVector models.ChannelVector
 	var err error
 	var vectorMatches []models.VectorMatch
+	lowestIdx := 0
+	lowestValue := 2.0
 
 	channelVector, err := database.Db.GetChannelVectorByName(templateCh.Name)
 	if err != nil {
@@ -246,25 +248,29 @@ func TemplateChannelMatches(templateCh *models.TemplateChannel) ([]models.Vector
 		return nil, err
 	}
 	for _, playlistVector := range playlistVectors {
+
 		vector, err := database.Db.GetChannelVector(playlistVector.VectorId)
 		if err != nil {
 			continue
 		}
 		if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
-			vectorMatch := models.VectorMatch{Id: playlistVector.ChannelId, Score: cosine}
 			if len(vectorMatches) < 5 {
-				vectorMatches = append(vectorMatches, vectorMatch)
+				vectorMatches = append(vectorMatches, models.VectorMatch{Id: playlistVector.ChannelId, Score: cosine})
+				if cosine < lowestValue {
+					lowestIdx = len(vectorMatches) - 1
+					lowestValue = cosine
+				}
 			} else {
-				lowestIdx := 0
-				lowestValue := vectorMatches[0].Score
-
-				for i := 1; i < len(vectorMatches); i++ {
-					if vectorMatches[i].Score < lowestValue {
-						lowestIdx = i
-						lowestValue = vectorMatches[i].Score
+				if cosine > lowestValue {
+					lowestValue = 2.0
+					vectorMatches[lowestIdx] = models.VectorMatch{Id: playlistVector.ChannelId, Score: cosine}
+					for i := 0; i < len(vectorMatches); i++ {
+						if vectorMatches[i].Score < lowestValue {
+							lowestIdx = i
+							lowestValue = vectorMatches[i].Score
+						}
 					}
 				}
-				vectorMatches[lowestIdx] = vectorMatch
 			}
 
 			sort.Slice(vectorMatches, func(i, j int) bool {

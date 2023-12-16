@@ -33,22 +33,17 @@ func GetLogos(c *fiber.Ctx) error {
 		})
 	}
 
-	logoPaths := []models.LogoPath{}
-
-	for _, logo := range logos {
-		l := utils.GetLogoUrl(logo.Uuid)
-		logoPaths = append(logoPaths, models.LogoPath{
-			ID:    logo.ID,
-			Image: l,
-		})
+	for i, logo := range logos {
+		url := utils.GetLogoUrl(logo.Name)
+		logos[i].Image = url
 	}
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
 		"error": false,
 		"msg":   nil,
-		"count": len(logoPaths),
-		"logos": logoPaths,
+		"count": len(logos),
+		"logos": logos,
 	})
 }
 
@@ -83,9 +78,10 @@ func GetLogo(c *fiber.Ctx) error {
 		})
 	}
 
-	logoPath := models.LogoPath{
+	logoPath := models.Logo{
 		ID:    logo.ID,
-		Image: utils.GetLogoUrl(logo.Uuid),
+		Name:  logo.Name,
+		Image: utils.GetLogoUrl(logo.Name),
 	}
 
 	// Return status 200 OK.
@@ -102,15 +98,15 @@ func GetLogo(c *fiber.Ctx) error {
 // @Tags Logo
 // @Accept json
 // @Produce json
-// @Param logo body models.LogoPath true "LogoPath"
-// @Success 200 {object} models.LogoPath
+// @Param logo body models.Logo true "Logo"
+// @Success 200 {object} models.Logo
 // @Router /logo [post]
 func UploadLogo(c *fiber.Ctx) error {
 	// Create new Logo struct
-	logoPath := &models.LogoPath{}
+	logo := &models.Logo{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(logoPath); err != nil {
+	if err := c.BodyParser(logo); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -118,13 +114,13 @@ func UploadLogo(c *fiber.Ctx) error {
 		})
 	}
 
-	logoPath.ID = 0
+	logo.ID = 0
 
 	// Create a new validator for a Logo model.
 	validate := utils.NewValidator()
 
 	// Validate logo fields.
-	if err := validate.Struct(logoPath); err != nil {
+	if err := validate.Struct(logo); err != nil {
 		// Return, if some fields are not valid.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -133,7 +129,7 @@ func UploadLogo(c *fiber.Ctx) error {
 	}
 
 	// Create logo.
-	logoid, err := utils.UploadLogo(logoPath)
+	logoid, err := utils.UploadLogo(logo)
 	if err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -143,7 +139,7 @@ func UploadLogo(c *fiber.Ctx) error {
 	}
 
 	// Get logo.
-	logo, err := database.Db.GetLogo(logoid)
+	foundLogo, err := database.Db.GetLogo(logoid)
 	if err != nil {
 		// Return, if logos not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -154,16 +150,13 @@ func UploadLogo(c *fiber.Ctx) error {
 		})
 	}
 
-	logoPath = &models.LogoPath{
-		ID:    logo.ID,
-		Image: utils.GetLogoUrl(logo.Uuid),
-	}
+	foundLogo.Image = utils.GetLogoUrl(foundLogo.Name)
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
 		"error": false,
 		"msg":   nil,
-		"logo":  logoPath,
+		"logo":  foundLogo,
 	})
 }
 
