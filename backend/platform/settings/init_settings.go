@@ -101,18 +101,18 @@ func SetDefaults() (*AppSettings, error) {
 			UpdateCron: "0 0 * * *",
 		},
 		Server: Server{
-			Host:        "0.0.0.0",
+			Host:        "127.0.0.1",
 			Port:        3000,
 			ReadTimeout: 60,
 		},
 		Playlist: Playlist{
 			Tvgid_match: true,
 			Name_match:  true,
-			Name_score:  0.81,
+			Name_score:  0.95,
 		},
 		Streaming: Streaming{
 			Proxy:     true,
-			Buffer:    0,
+			Buffer:    200,
 			UserAgent: "Xivi 1.0",
 		},
 	}

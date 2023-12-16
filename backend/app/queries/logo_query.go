@@ -49,12 +49,12 @@ func (q *LogoQueries) GetLogo(id int64) (models.Logo, error) {
 }
 
 // CreateLogo method for creating a Logo by given Logo object.
-func (q *LogoQueries) CreateLogo(uuid string) (int64, error) {
+func (q *LogoQueries) CreateLogo(name string) (int64, error) {
 	// Define query string.
 	query := `INSERT INTO logo VALUES (null, ?)`
 
 	// Send query to database.
-	res, err := q.Exec(query, uuid)
+	res, err := q.Exec(query, name)
 	if err != nil {
 		// Return only error.
 		return 0, err
@@ -72,10 +72,10 @@ func (q *LogoQueries) CreateLogo(uuid string) (int64, error) {
 // UpdateLogo method for updating Logo by given Logo object.
 func (q *LogoQueries) UpdateLogo(id int64, p *models.Logo) error {
 	// Define query string.
-	query := `UPDATE logo SET uuid = ? WHERE id = ?`
+	query := `UPDATE logo SET name = ? WHERE id = ?`
 
 	// Send query to database.
-	_, err := q.Exec(query, p.Uuid, id)
+	_, err := q.Exec(query, p.Name, id)
 	if err != nil {
 		// Return only error.
 		return err

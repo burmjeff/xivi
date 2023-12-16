@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
@@ -16,21 +17,20 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func UploadLogo(logoUpload *models.LogoPath) (int64, error) {
-	image, err := base64Decode(logoUpload.Image)
+func UploadLogo(logo *models.Logo) (int64, error) {
+	image, err := base64Decode(logo.Image)
 
 	if err != nil {
 		log.Warn().Msg(err.Error())
 		return 0, err
 	}
 
-	uuid, err := saveImage(image)
-	if err != nil {
+	if err := saveImage(logo.Name, image); err != nil {
 		log.Warn().Msg(err.Error())
 		return 0, err
 	}
 
-	logoID, err := database.Db.CreateLogo(uuid)
+	logoID, err := database.Db.CreateLogo(logo.Name)
 	if err != nil {
 		log.Warn().Msg(err.Error())
 		return 0, err
@@ -56,14 +56,14 @@ func CreateLogo(logoUrl string) (int64, error) {
 		log.Warn().Msgf("Failed Image Download: %v", err)
 		return 0, err
 	}
+	logoName := strings.Split(path.Base(logoUrl), ".")[0]
 
-	uuid, err := saveImage(img)
-	if err != nil {
+	if err := saveImage(logoName, img); err != nil {
 		log.Warn().Msg(err.Error())
 		return 0, err
 	}
 
-	logoID, err := database.Db.CreateLogo(uuid)
+	logoID, err := database.Db.CreateLogo(logoName)
 	if err != nil {
 		log.Warn().Msg(err.Error())
 		return 0, err
@@ -91,10 +91,10 @@ func downloadImage(URL string) ([]byte, error) {
 	return imgBuf, nil
 }
 
-func saveImage(img []byte) (string, error) {
+func saveImage(name string, img []byte) error {
 	image, err := vips.NewImageFromBuffer(img)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	//imageScale := float64(256 / image.Width())
@@ -103,24 +103,23 @@ func saveImage(img []byte) (string, error) {
 	ep := vips.NewDefaultPNGExportParams()
 	imageBytes, _, err := image.Export(ep)
 
-	uuid := CreateUuid()
-	imgPath := GetLogoPath(uuid)
+	imgPath := GetLogoPath(name)
 
 	err = os.WriteFile(imgPath, imageBytes, 0644)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	return uuid, nil
+	return nil
 }
 
-func GetLogoUrl(uuid string) string {
+func GetLogoUrl(name string) string {
 	//TODO: images route
-	return fmt.Sprintf("images/%s.png", uuid)
+	return fmt.Sprintf("images/%s.png", name)
 }
 
-func GetLogoPath(uuid string) string {
+func GetLogoPath(name string) string {
 	//TODO: images route
-	return fmt.Sprintf("%s/%s.png", settings.LOGO_FILEPATH, uuid)
+	return fmt.Sprintf("%s/%s.png", settings.LOGO_FILEPATH, name)
 
 }
