@@ -48,6 +48,24 @@ func (q *LogoQueries) GetLogo(id int64) (models.Logo, error) {
 	return logo, nil
 }
 
+// GetLogo method for getting one Logo by given ID.
+func (q *LogoQueries) GetLogoByName(name string) (models.Logo, error) {
+	logo := models.Logo{}
+
+	// Define query string.
+	query := `SELECT * FROM logo WHERE name = ?`
+
+	// Send query to database.
+	err := q.Get(&logo, query, name)
+	if err != nil {
+		// Return empty object and error.
+		return logo, err
+	}
+
+	// Return query result.
+	return logo, nil
+}
+
 // CreateLogo method for creating a Logo by given Logo object.
 func (q *LogoQueries) CreateLogo(name string) (int64, error) {
 	// Define query string.

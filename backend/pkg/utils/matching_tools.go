@@ -61,7 +61,7 @@ func matchPlaylistTvgid(playlistCh *models.PlaylistChannel) error {
 				ChannelId:         channel.ID,
 				PlaylistChannelId: playlistCh.ID,
 			}
-			if _, err := database.Db.CreateTmplChannelItem(&channelItem); err != nil {
+			if _, err := database.Db.CreateTmplChannelItem(channelItem); err != nil {
 				log.Debug().Msgf("matchChannels:, %v", err)
 				return err
 			}
@@ -114,7 +114,7 @@ func matchPlaylistChannelName(playlistCh *models.PlaylistChannel) error {
 				ChannelId:         chMatch,
 				PlaylistChannelId: playlistCh.ID,
 			}
-			if _, err := database.Db.CreateTmplChannelItem(&channelItem); err != nil {
+			if _, err := database.Db.CreateTmplChannelItem(channelItem); err != nil {
 				log.Debug().Msgf("matchChannels:, %v", err)
 				return err
 			}
@@ -144,7 +144,7 @@ func matchTemplateTvgid(templateCh *models.TemplateChannel) ([]models.PlaylistCh
 			ChannelId:         templateCh.ID,
 			PlaylistChannelId: channel.ID,
 		}
-		if _, err := database.Db.CreateTmplChannelItem(&channelItem); err != nil {
+		if _, err := database.Db.CreateTmplChannelItem(channelItem); err != nil {
 			log.Debug().Msgf("matchChannels:, %v", err)
 			continue
 		}
@@ -200,7 +200,7 @@ func matchTemplateChannelName(templateCh *models.TemplateChannel, addedChannels 
 					ChannelId:         templateCh.ID,
 					PlaylistChannelId: playlistVector.ChannelId,
 				}
-				if _, err := database.Db.CreateTmplChannelItem(&channelItem); err != nil {
+				if _, err := database.Db.CreateTmplChannelItem(channelItem); err != nil {
 					log.Debug().Msgf("matchChannels:, %v", err)
 				}
 			}

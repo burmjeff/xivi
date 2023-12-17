@@ -519,16 +519,16 @@ func (q *TemplateQueries) DeleteTmplChannel(id int64) error {
 }
 
 // GetTemplateChannelItem
-func (q *TemplateQueries) GetTmplChannelItem(tmpl int64, pl int64) (models.TemplateChannelItem, error) {
-	templatechannelitem := models.TemplateChannelItem{}
+func (q *TemplateQueries) GetTmplChannelItem(item models.TemplateChannelItem) (*models.TemplateChannelItem, error) {
+	templatechannelitem := &models.TemplateChannelItem{}
 
 	// Define query string.
-	query := `SELECT * FROM templatechannelitem WHERE channel_id = ? AND playlist_channel_id = ?`
+	query := `SELECT templatechannelitem.* FROM templatechannelitem WHERE channel_id = ? AND playlist_channel_id = ?`
 
 	// Send query to database.
-	if err := q.Get(&templatechannelitem, query, tmpl, pl); err != nil {
+	if err := q.Get(&templatechannelitem, query, item.ChannelId, item.PlaylistChannelId); err != nil {
 		// Return empty object and error.
-		return templatechannelitem, err
+		return nil, err
 	}
 
 	// Return query result.
@@ -587,7 +587,7 @@ func (q *TemplateQueries) GetTmplChannelItems(id int64) ([]models.TemplateChanne
 }
 
 // CreateTemplateChannelItem method for creating an item by given object.
-func (q *TemplateQueries) CreateTmplChannelItem(p *models.TemplateChannelItem) (int64, error) {
+func (q *TemplateQueries) CreateTmplChannelItem(p models.TemplateChannelItem) (int64, error) {
 	// Define query string.
 	query := `INSERT INTO templatechannelitem VALUES (null, ?, ?, ?)`
 

@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"path"
 	"slices"
+	"strings"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
 
@@ -24,7 +26,7 @@ func ConvertPlGroup(templateGroup int64, playlistChannels []models.PlaylistChann
 func ConvertPlChannel(playlistChannel models.PlaylistChannel) int64 {
 	validate := NewValidator()
 	templateChannel := &models.TemplateChannel{}
-	tmplChannelItem := &models.TemplateChannelItem{}
+	tmplChannelItem := models.TemplateChannelItem{}
 
 	if playlistChannel.Title != "" {
 		templateChannel.Name = playlistChannel.Title
@@ -33,7 +35,13 @@ func ConvertPlChannel(playlistChannel models.PlaylistChannel) int64 {
 		templateChannel.TvgID = playlistChannel.TvgID
 	}
 	if playlistChannel.Logo != "" {
-		templateChannel.LogoId, _ = CreateLogo(playlistChannel.Logo)
+		logoName := strings.Split(path.Base(playlistChannel.Logo), ".")[0]
+		if exists, logo := logoExists(logoName); exists {
+			templateChannel.LogoId = logo.ID
+		} else {
+			templateChannel.LogoId, _ = CreateLogo(playlistChannel.Logo)
+
+		}
 	}
 	templateChannel.Uuid = CreateUuid()
 

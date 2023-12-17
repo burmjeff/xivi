@@ -973,7 +973,7 @@ func GetTemplateChannelItems(c *fiber.Ctx) error {
 // @Accept json
 // @Param templatechannelitem body models.TemplateChannelItem true "Template Item"
 // @Success 204 {string} status "ok"
-// @Router /template/channel/item [delete]
+// @Router /template/chan/item [delete]
 func DeleteTemplateChannelItem(c *fiber.Ctx) error {
 	templateItem := &models.TemplateChannelItem{}
 
@@ -1058,5 +1058,66 @@ func GetTemplateChannelMatches(c *fiber.Ctx) error {
 		"error":         false,
 		"msg":           nil,
 		"vectormatches": vectorMatches,
+	})
+}
+
+// AddChannelMatch func to match playlist channel to a template channel.
+// @Description match playlist channel to a template channel.
+// @Summary match playlist channel to a template channel
+// @Tags Template Channel
+// @Produce json
+// @Param channel_id path string true "Channel ID"
+// @Param match_id path string true "Match ID"
+// @Success 200 {object} models.PlaylistChannel
+// @Router /template/channel/${channel_id}/match/${match_id} [post]
+func AddChannelMatch(c *fiber.Ctx) error {
+
+	channel_id, err := strconv.ParseInt(c.Params("channel_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	match_id, err := strconv.ParseInt(c.Params("match_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	channelItem := models.TemplateChannelItem{
+		ChannelId:         channel_id,
+		PlaylistChannelId: match_id,
+	}
+
+	// Create template channel.
+	if _, err := database.Db.GetTmplChannelItem(channelItem); err != nil {
+		if _, err := database.Db.CreateTmplChannelItem(channelItem); err != nil {
+			log.Error().Msgf("Failed to create channelItem:, %v", err)
+			// Return status 500 and error message.
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": true,
+				"msg":   err.Error(),
+			})
+		}
+	}
+
+	playlistChannel, err := database.Db.GetPlChannel(match_id)
+	if err != nil {
+		// Return status 404 and playlist channel snot found error.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "playlist channel with this ID not found",
+		})
+	}
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error":           false,
+		"msg":             nil,
+		"playlistchannel": playlistChannel,
 	})
 }

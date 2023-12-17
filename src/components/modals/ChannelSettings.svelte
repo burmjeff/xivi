@@ -29,7 +29,8 @@
 	let newImg = false
 
 	let dndTypeChannels = "channelSettings";
-	let shouldIgnoreDndEvents = false;
+	let shouldIgnoreMatchEvents = false;
+	let shouldIgnoreItemEvents = false;
 	const dropFromOthersDisabled = true;
     const flipDurationMs = 150;
     let dndItem: any;
@@ -170,12 +171,12 @@
 	}
 
 	async function removeChannelItem(playlistId: string) {
-			let channelItem = {
-				channel_id: $templateGroups[groupIdx].channels[channelIdx].id,
-				playlist_channel_id: playlistId
-			};
+		let channelItem = {
+			channel_id: $templateGroups[groupIdx].channels[channelIdx].id,
+			playlist_channel_id: playlistId
+		};
 		try {
-			const response = await fetch(`/api/template/channel/item`, {
+			const response = await fetch(`/api/template/chan/item`, {
 				method: 'DELETE',
 					headers: {
 						'Content-Type': 'application/json'
@@ -193,6 +194,27 @@
 		}
 	}
 
+	async function addChannelMatch(channelId: string) {
+		try {
+			const response = await fetch(`/api/template/channel/${formData.id}/match/${channelId}`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+			});
+			if (response.ok) {
+				const data = await response.json();
+				console.log('Add Channel Match:', data);
+				$playlist_ch_items.push(data.playlistchannel)
+				$playlist_ch_items = [...$playlist_ch_items]
+			} else{
+				console.error('Error:', response.status, response.statusText);
+			}
+		} catch (error) {
+			console.log('Error creating template group:', error);
+		}
+	}
+
 	function handleDndConsiderMatch(e: CustomEvent<DndEvent<Match>>) {
 		const {trigger, id} = e.detail.info;
 		e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
@@ -201,9 +223,9 @@
 			dndIdx = $playlistMatches.findIndex(item => item.id === Number(id));
 			dndItem =  $playlistMatches[dndIdx];
 			$playlistMatches = e.detail.items
-			shouldIgnoreDndEvents = true;
+			shouldIgnoreMatchEvents = true;
 		}
-        else if (!shouldIgnoreDndEvents) {
+        else if (!shouldIgnoreMatchEvents) {
             $playlistMatches = e.detail.items;
         }
         else {
@@ -218,9 +240,9 @@
 			dndIdx = $playlist_ch_items.findIndex(item => item.id === id);
 			dndItem =  $playlist_ch_items[dndIdx];
 			$playlist_ch_items = e.detail.items
-			shouldIgnoreDndEvents = true;
+			shouldIgnoreItemEvents = true;
 		}
-        else if (!shouldIgnoreDndEvents) {
+        else if (!shouldIgnoreItemEvents) {
             $playlist_ch_items = e.detail.items;
         }
         else {
@@ -229,60 +251,48 @@
 	}
 	function handleDndFinalizeMatch(e: CustomEvent<DndEvent<Match>>) {
 		const {trigger, id} = e.detail.info;
-        if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreDndEvents) {
+        if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreMatchEvents) {
             //e.detail.items = e.detail.items.filter(item => !item.isDragged);
             $playlistMatches = e.detail.items
-            shouldIgnoreDndEvents = false;
+            shouldIgnoreMatchEvents = false;
         }
-        else if (!shouldIgnoreDndEvents) {
+        else if (!shouldIgnoreMatchEvents) {
             $playlistMatches = e.detail.items
         }
         else if (trigger === TRIGGERS.DROPPED_INTO_ANOTHER){
 			e.detail.items = e.detail.items.filter(item => !item[SHADOW_ITEM_MARKER_PROPERTY_NAME]);
 			e.detail.items.splice(dndIdx,0, dndItem)
             $playlistMatches = e.detail.items
-            shouldIgnoreDndEvents = false;
+            shouldIgnoreMatchEvents = false;
         } else {
             $playlistMatches = e.detail.items
-            shouldIgnoreDndEvents = false;
+            shouldIgnoreMatchEvents = false;
         }
     }
 	function handleDndFinalizeItem(e: CustomEvent<DndEvent<PlaylistChannel>>) {
 		const {trigger, id} = e.detail.info;
-        if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreDndEvents) {
+        if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreItemEvents) {
             e.detail.items = e.detail.items.filter(item => !item.isDragged);
             $playlist_ch_items = e.detail.items
-            shouldIgnoreDndEvents = false;
+			addChannelMatch(id)
+            shouldIgnoreItemEvents = false;
         }
-        else if (!shouldIgnoreDndEvents) {
+        else if (!shouldIgnoreItemEvents) {
             $playlist_ch_items = e.detail.items
         } else {
             $playlist_ch_items = e.detail.items
-            shouldIgnoreDndEvents = false;
+            shouldIgnoreItemEvents = false;
         }
     }
+
+	function transformDraggedElement(draggedEl: HTMLElement | undefined, data: Item | undefined, index: number | undefined) {
+        if (!shouldIgnoreItemEvents) data!.isDragged = true
+	}
 </script>
 
-<div class="card p-4 shadow w-fit h-fit bg-cover z-0" data-popup="popupLogo">
-	<div><p>Choose Logo</p></div>
-	{#if $logos != null && $logos.length > 0}
-		<section class="grid grid-cols-7 justify-items-center items-center">
-			{#each $logos as logo, logoIdx (logo.id)}
-				<img class="h-auto w-20 p-1" src={logo.image} alt="" on:click={chooseImage(logo)}>
-				<span class="divider-vertical h-20" />
-			{/each}
-		</section>
-	{/if}
-	<FileButton
-		name="files"
-		bind:files
-		accept=".png,.jpg,.webp,.svg"
-		on:change={onUploadHandler}>Upload New Image
-	</FileButton>
-</div>
-
 {#if $modalStore[0]}
-	<div class="modal-channel-settings card p-4 shadow-xl space-y-4 max-w-screen max-h-screen z-1">
+	
+	<div class="modal-channel-settings card p-4 shadow-xl space-y-4 max-w-screen max-h-screen">
 		{#if isNew}
 			<header class="text-2xl font-bold text-center justify-center">Add Channel</header>
 		{:else}
@@ -314,65 +324,68 @@
 					<button class="btn variant-filled" on:click={updateLogos} use:popup={popupLogo}>Show Popup</button>
 				</div>
 			</div>
-			<div class="playlist_ch_items grid grid-cols-2 space-x-2">
-				<div class="max-h-80 overflow-y-scroll">
-					<table class="table table-hover text-center justify-center shadow-md" use:dndzone={{items: $playlist_ch_items, flipDurationMs, type: dndTypeChannels}} on:consider={handleDndConsiderItem} on:finalize={handleDndFinalizeItem}>
-						<thead>
-							<tr id ="thead">
-								<th>Title</th>
-								<th>tvg-id</th>
-								<th>Remove</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#if $playlist_ch_items != null && $playlist_ch_items.length > 0}
-								{#each $playlist_ch_items as channel, channelIdx (channel.id)}
-									<tr id="animate" animate:flip={{duration:flipDurationMs}}>
-										<td>{channel.title}</td>
-										<td>{channel.tvg_id}</td>
-										<td class="hover:bg-red-900 w-5" on:click={removeChannelItem(channel.id)}>
-											<i><IconParkOutlineDelete/></i>
-										</td>
+			{#if !isNew}
+				<div class="playlist_ch_items grid grid-cols-2 space-x-2">
+					<div class="max-h-80 overflow-y-scroll">
+						<table class="table table-hover text-center justify-center shadow-md">
+							<thead>
+								<tr id ="thead">
+									<th>Title</th>
+									<th>tvg-id</th>
+									<th>Remove</th>
+								</tr>
+							</thead>
+							<tbody use:dndzone={{items: $playlist_ch_items, flipDurationMs, type: dndTypeChannels, transformDraggedElement}} on:consider={handleDndConsiderItem} on:finalize={handleDndFinalizeItem}>
+								{#if $playlist_ch_items != null && $playlist_ch_items.length > 0}
+									{#each $playlist_ch_items as channel, channelIdx (channel.id)}
+										<tr id="animate" animate:flip={{duration:flipDurationMs}}>
+											<td>{channel.title}</td>
+											<td>{channel.tvg_id}</td>
+											<td class="hover:bg-red-900 w-5" on:click={removeChannelItem(channel.id)}>
+												<i><IconParkOutlineDelete/></i>
+											</td>
 
-										{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-											<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.title}</div>
-										{/if}
-									</tr>
-								{/each}
-							{:else}
-								<p>No channels found</p>
-							{/if}
-						</tbody>
-					</table>
-				</div>
-				<div class="max-h-80 overflow-y-scroll">
-					<table class="table table-hover text-center justify-center shadow-md ">
-						<thead>
-							<tr id ="thead">
-								<th>Title</th>
-								<th>tvg-id</th>
-								<th>Score</th>
-							</tr>
-						</thead>
-						<tbody use:dndzone={{items: $playlistMatches, flipDurationMs, type: dndTypeChannels, dropFromOthersDisabled}} on:consider={handleDndConsiderMatch} on:finalize={handleDndFinalizeMatch}>
+											{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+												<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.title}</div>
+											{/if}
+										</tr>
+									{/each}
+								{:else}
+									<p class="h-20">No channels found</p>
+								{/if}
+							</tbody>
+						</table>
+					</div>
+					<div class="max-h-80 overflow-y-scroll">
+						<table class="table table-hover text-center justify-center shadow-md ">
+							<thead>
+								<tr id ="thead">
+									<th>Title</th>
+									<th>tvg-id</th>
+									<th>Score</th>
+								</tr>
+							</thead>
 							{#if $playlistMatches != null && $playlistMatches.length > 0}
-								{#each $playlistMatches as channel, channelIdx (channel.id)}
-									<tr id="animate" animate:flip={{duration:flipDurationMs}}>
-										<td>{channel.name}</td>
-										<td>{channel.tvgid}</td>
-										<td>{channel.score}</td>
+								<tbody use:dndzone={{items: $playlistMatches, flipDurationMs, type: dndTypeChannels, dropFromOthersDisabled}} on:consider={handleDndConsiderMatch} on:finalize={handleDndFinalizeMatch}>
+										{#each $playlistMatches as channel, channelIdx (channel.id)}
+											<tr id="animate" animate:flip={{duration:flipDurationMs}}>
+												<td>{channel.name}</td>
+												<td>{channel.tvgid}</td>
+												<td>{channel.score}</td>
 
-										{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-											<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.name}</div>
-										{/if}
-									</tr>
-								{/each}
+												{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+													<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.name}</div>
+												{/if}
+											</tr>
+										{/each}
+								</tbody>
 							{:else}
 								<p>No channels found</p>
 							{/if}
-					</table>
+						</table>
+					</div>
 				</div>
-			</div>
+			{/if}
 		</form>
 		<footer class="modal-footer {parent.regionFooter}">
 			{#if !isNew}
@@ -390,6 +403,25 @@
 			
 		</footer>
 	</div>
+
+	<section class="logoList card p-2 shadow-2xl" data-popup="popupLogo">
+		<p class="h3 font-bold text-center p-1">Choose Logo</p>
+		<div class="p-2 shadow w-fit h-fit bg-cover max-h-96 overflow-y-scroll ring-4 ring-blue-500/50 border-transparent rounded-lg">
+			{#if $logos != null && $logos.length > 0}
+				<section class="grid grid-cols-7 justify-items-center items-center space-x-4 space-y-1">
+					{#each $logos as logo, logoIdx (logo.id)}
+						<img class="h-auto w-20" src={logo.image} alt="" on:click={chooseImage(logo)}>
+					{/each}
+				</section>
+			{/if}
+	</div>
+	<FileButton class="mt-2 text-center"
+			name="files"
+			bind:files
+			accept=".png,.jpg,.webp,.svg"
+			on:change={onUploadHandler}>Upload New Image
+		</FileButton>
+	</section>
 {/if}
 
 

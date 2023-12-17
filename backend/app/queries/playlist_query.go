@@ -573,7 +573,7 @@ func (q *PlaylistQueries) GetChannelUrlByPlChannelID(id int64) (models.ChannelUr
 	channel := models.ChannelUrl{}
 
 	// Define query string.
-	query := `SELECT * FROM channelurl WHERE playlist_channel.id = ?`
+	query := `SELECT * FROM channelurl WHERE playlist_channel_id = ?`
 
 	// Send query to database.
 	err := q.Select(&channel, query, id)
