@@ -44,13 +44,14 @@ func PublicRoutes(a *fiber.App) {
 	api.Delete("/template/group/:group_id", controllers.DeleteTemplateGroup) // delete a template group by ID
 
 	// Template Channel Routes
-	api.Get("/template/group/:group_id/channels", controllers.GetTemplateGroupChannels)     // get channels by template group
+	api.Get("/template/group/:group_id/channels", controllers.GetTemplateGroupChannels)     // Get channels by template group
 	api.Post("/template/group/:group_id/channel", controllers.CreateTemplateChannel)        // Create a template channel
-	api.Put("/template/channel", controllers.UpdateTemplateChannel)                         // update a template channel
+	api.Put("/template/channel", controllers.UpdateTemplateChannel)                         // Update a template channel
 	api.Delete("/template/channel/:channel_id", controllers.DeleteTemplateChannel)          // Delete a template channel
-	api.Get("/template/channel/:channel_id/items", controllers.GetTemplateChannelItems)     // get channel items
-	api.Delete("/api/template/channel/item", controllers.DeleteTemplateChannelItem)         // Delete channel item
-	api.Get("/template/channel/:channel_id/matches", controllers.GetTemplateChannelMatches) // get channel matches
+	api.Get("/template/channel/:channel_id/items", controllers.GetTemplateChannelItems)     // Get channel items
+	api.Delete("/template/chan/item", controllers.DeleteTemplateChannelItem)                // Delete channel item
+	api.Get("/template/channel/:channel_id/matches", controllers.GetTemplateChannelMatches) // Get channel matches
+	api.Post("/template/channel/:channel_id/match/:match_id", controllers.AddChannelMatch)  // Add channel match
 
 	//M3U Routes
 	api.Post("/m3u/:template_id", controllers.CreateM3U) // create m3u from template id

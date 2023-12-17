@@ -123,3 +123,12 @@ func GetLogoPath(name string) string {
 	return fmt.Sprintf("%s/%s.png", settings.LOGO_FILEPATH, name)
 
 }
+
+func logoExists(logoName string) (bool, models.Logo) {
+	if logo, err := database.Db.GetLogoByName(logoName); err != nil {
+		log.Debug().Msgf("logoExists: %v", err.Error())
+		return false, logo
+	} else {
+		return true, logo
+	}
+}
