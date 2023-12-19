@@ -46,7 +46,6 @@ func GetPlaylists(c *fiber.Ctx) error {
 // @Description Get playlist by given ID.
 // @Summary get playlist by given ID
 // @Tags Playlist
-// @Accept json
 // @Produce json
 // @Param id path string true "Playlist ID"
 // @Success 200 {object} models.Playlist
@@ -84,7 +83,6 @@ func GetPlaylist(c *fiber.Ctx) error {
 // @Description Get playlist groups by given playlist ID
 // @Summary get playlist groups by given playlist ID
 // @Tags Playlist
-// @Accept json
 // @Produce json
 // @Param id path string true "Playlist ID"
 // @Success 200 {array} models.PlaylistGroup

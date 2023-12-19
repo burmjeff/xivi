@@ -122,8 +122,8 @@ func (q *PlaylistQueries) ChannelUrlExists(playlistID int64, plChannelID int64) 
 }
 
 // Get Playlist Groups by playlist
-func (q *PlaylistQueries) GetPlGroups(playlistId int64) ([]models.PlaylistGroup, error) {
-	playlistgroup := []models.PlaylistGroup{}
+func (q *PlaylistQueries) GetPlGroups(playlistId int64) (*[]models.PlaylistGroup, error) {
+	playlistgroup := &[]models.PlaylistGroup{}
 
 	// Define query string.
 	query := `SELECT playlistgroup.* FROM playlistgroup
@@ -131,10 +131,10 @@ func (q *PlaylistQueries) GetPlGroups(playlistId int64) ([]models.PlaylistGroup,
 	WHERE playlist_group_item.playlist_id = ?`
 
 	// Send query to database.
-	err := q.Select(&playlistgroup, query, playlistId)
+	err := q.Select(playlistgroup, query, playlistId)
 	if err != nil {
 		// Return empty object and error.
-		return playlistgroup, err
+		return nil, err
 	}
 
 	// Return query result.
