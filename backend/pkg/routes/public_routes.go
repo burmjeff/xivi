@@ -75,6 +75,9 @@ func PublicRoutes(a *fiber.App) {
 	// Stream Routes
 	router.Get("/stream/:stream_id", controllers.GetStream)
 
+	//SSDP Routes
+	//router.Get("/discover.json", controllers.GetSSDPDiscovery)
+
 	// App Routes
 	router.Use("/images", filesystem.New(filesystem.Config{
 		Root:   http.Dir(settings.LOGO_FILEPATH),

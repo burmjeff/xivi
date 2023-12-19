@@ -136,8 +136,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan *models.PlaylistChan
 		var groupID int64 = 0
 		if group != "" {
 			// Checking, if playlist with given ID is exists.
-			foundGroup, err := database.Db.GetPlGroupByName(group)
-			if err != nil {
+			if foundGroup, err := database.Db.GetPlGroupByName(group); err != nil {
 				log.Info().Msgf("Group not found. Creating Group: %s", group)
 				playlistGroup.Name = group
 				groupId, err := database.Db.CreatePlGroup(playlistGroup)
@@ -147,7 +146,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan *models.PlaylistChan
 					groupID = groupId
 				}
 				if _, err := database.Db.CreatePlGroupItem(m.playlistID, groupID); err != nil {
-					log.Debug().Msgf("FAILED TO CREATE PLAYLIST_GROUP_ITEM: %v", err)
+					log.Warn().Msgf("FAILED TO CREATE PLAYLIST_GROUP_ITEM: %v", err)
 				}
 			} else {
 				groupID = foundGroup.ID

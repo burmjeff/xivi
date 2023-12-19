@@ -321,7 +321,7 @@
 				<span>Channel Logo</span>
 				<div class="grid grid-cols-2 p-1 w-64 items-center space-x-10">
 					<img class="w-fit" src={formData.logo} alt="Logo" />
-					<button class="btn variant-filled" on:click={updateLogos} use:popup={popupLogo}>Show Popup</button>
+					<button class="btn variant-filled-primary w-fit h-fit" on:click={updateLogos} use:popup={popupLogo}>Choose Logo</button>
 				</div>
 			</div>
 			{#if !isNew}

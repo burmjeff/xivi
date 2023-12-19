@@ -12,7 +12,7 @@ CREATE TABLE playlist (
 -- Create playlistgroup table
 CREATE TABLE playlistgroup (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR (255) NOT NULL
+    name VARCHAR (255) UNIQUE NOT NULL
 );
 
 -- Create playlistchannel table
@@ -277,6 +277,7 @@ CREATE TRIGGER delete_playlist_cascade
 AFTER DELETE ON playlist
 FOR EACH ROW
 BEGIN
+    DELETE FROM playlist_group_item WHERE playlist_id = old.id;
     DELETE FROM playlistgroup WHERE id NOT IN (SELECT group_id FROM playlist_group_item);
 END;
 
