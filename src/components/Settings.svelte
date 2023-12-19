@@ -22,6 +22,7 @@
         (document.querySelector('.settings_model input') as HTMLInputElement).value = $settings.application.model;
         (document.querySelector('.settings_loglevel input') as HTMLInputElement).value = $settings.application.loglevel.toString();
         (document.querySelector('.settings_updatecron input') as HTMLInputElement).value = $settings.application.updatecron;
+        (document.querySelector('.settings_ssdp select') as HTMLInputElement).value = $settings.application.ssdp.toString();
         (document.querySelector('.settings_host input') as HTMLInputElement).value = $settings.server.host;
         (document.querySelector('.settings_port input') as HTMLInputElement).value = $settings.server.port.toString();
         (document.querySelector('.settings_readtimeout input') as HTMLInputElement).value = $settings.server.readtimeout.toString();
@@ -41,6 +42,7 @@
         const inputModel = (document.querySelector('.settings_model input') as HTMLInputElement).value;
         const inputLogLevel = (document.querySelector('.settings_loglevel input') as HTMLInputElement).value;
         const inputUpdateCron = (document.querySelector('.settings_updatecron input') as HTMLInputElement).value;
+        const inputSsdp = (document.querySelector('.settings_ssdp select') as HTMLInputElement).value
         const inputHost = (document.querySelector('.settings_host input') as HTMLInputElement).value;
         const inputPort = (document.querySelector('.settings_port input') as HTMLInputElement).value;
         const inputReadTimeout = (document.querySelector('.settings_readtimeout input') as HTMLInputElement).value;
@@ -54,7 +56,6 @@
         &&  inputModel !='' &&  inputLogLevel !='' &&  inputUpdateCron !='' &&  inputHost !=''
         &&  inputPort !='' &&  inputReadTimeout !='' &&  inputProxy !='' &&  inputBuffer !=''
         &&  inputUserAgent !='') {
-            console.log("asdasdas")
             let newSettings: AppSettings;
             newSettings = {
                 application: {
@@ -65,6 +66,7 @@
                     model: inputModel,
                     loglevel: Number(inputLogLevel),
                     updatecron: inputUpdateCron,
+                    ssdp: (inputSsdp === "true"),
                 },
                 server: {
                     host: inputHost,
@@ -135,6 +137,15 @@
                     <span>Cron Update Schedule</span>
                     <input class="input variant-form-material" type="text" placeholder="0 0 * * *" />
                 </label>
+                <div class="w-full space-y-4">
+                    <label class="settings_ssdp">
+                        <span>ssdp Discovery Enabled</span>
+                        <select class="select">
+                            <option value="true">True</option>
+                            <option value="false">False</option>
+                        </select>
+                    </label>
+                </div>
                 <label class="settings_host">
                     <span>Server Host</span>
                     <input class="input variant-form-material" type="text" placeholder="0.0.0.0" />

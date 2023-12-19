@@ -99,6 +99,7 @@ func SetDefaults() (*AppSettings, error) {
 			Model:      "sentence-transformers/all-MiniLM-L6-v2",
 			LogLevel:   3,
 			UpdateCron: "0 0 * * *",
+			Ssdp:       true,
 		},
 		Server: Server{
 			Host:        "127.0.0.1",

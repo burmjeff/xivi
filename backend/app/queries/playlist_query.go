@@ -128,7 +128,7 @@ func (q *PlaylistQueries) GetPlGroups(playlistId int64) ([]models.PlaylistGroup,
 	// Define query string.
 	query := `SELECT playlistgroup.* FROM playlistgroup
 	JOIN playlist_group_item ON playlistgroup.id = playlist_group_item.group_id
-	WHERE playlist_group_item.playlist_id = ?;`
+	WHERE playlist_group_item.playlist_id = ?`
 
 	// Send query to database.
 	err := q.Select(&playlistgroup, query, playlistId)
@@ -146,7 +146,7 @@ func (q *PlaylistQueries) GetAllPlGroups() ([]models.PlaylistGroup, error) {
 	playlistgroup := []models.PlaylistGroup{}
 
 	// Define query string.
-	query := `SELECT playlistgroup.* FROM playlistgroup;`
+	query := `SELECT playlistgroup.* FROM playlistgroup`
 
 	// Send query to database.
 	err := q.Select(&playlistgroup, query)
@@ -179,18 +179,18 @@ func (q *PlaylistQueries) GetPlGroup(id int64) (models.PlaylistGroup, error) {
 }
 
 // Get Playlist Group by given Name.
-func (q *PlaylistQueries) GetPlGroupByName(name string) (models.PlaylistGroup, error) {
+func (q *PlaylistQueries) GetPlGroupByName(name string) (*models.PlaylistGroup, error) {
 	// Define group variable.
-	group := models.PlaylistGroup{}
+	group := &models.PlaylistGroup{}
 
 	// Define query string.
-	query := `SELECT * FROM playlistgroup WHERE name LIKE ?`
+	query := `SELECT * FROM playlistgroup WHERE name = ?`
 
 	// Send query to database.
-	err := q.Get(&group, query, name)
+	err := q.Get(group, query, name)
 	if err != nil {
 		// Return empty object and error.
-		return group, err
+		return nil, err
 	}
 
 	// Return query result.

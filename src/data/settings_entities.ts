@@ -13,6 +13,7 @@ export interface Application {
 	model: string;
 	loglevel: number;
 	updatecron: string;
+	ssdp: boolean;
 }
 
 export interface Server {

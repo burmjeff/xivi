@@ -34,6 +34,7 @@ type Application struct {
 	Model      string `yaml:"model" json:"model"`
 	LogLevel   int    `yaml:"loglevel" json:"loglevel"`
 	UpdateCron string `yaml:"updatecron" json:"updatecron"`
+	Ssdp       bool   `yaml:"ssdp" json:"ssdp"`
 }
 
 type Server struct {

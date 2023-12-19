@@ -5,6 +5,7 @@ application:
   model: sentence-transformers/all-MiniLM-L6-v2
   loglevel: 3
   updatecron: "0 0 * * *"
+  ssdp: true
 
 server:
   host: 127.0.0.1
