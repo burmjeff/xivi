@@ -18,7 +18,7 @@ func CreateEpgXML(template models.Template) {
 		SourceInfoName: fmt.Sprintf("%s - %s", settings.APP_SETTINGS.Application.AppName, settings.APP_SETTINGS.Application.AppVersion),
 	}
 
-	channels, err := database.Db.GetTmplChannelsByGroup(template.ID)
+	channels, err := database.Db.GetTmplChannels(template.ID)
 	if err != nil {
 		log.Error().Msgf("No tvgids found for template: %v", template.ID)
 		return
