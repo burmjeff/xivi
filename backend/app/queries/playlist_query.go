@@ -37,12 +37,11 @@ func (q *PlaylistQueries) GetPlaylist(id int64) (models.Playlist, error) {
 	playlist := models.Playlist{}
 
 	// Define query string.
-	query := `SELECT * FROM playlist WHERE id = ?`
+	query := `SELECT * FROM playlist WHERE id = ? LIMIT 1`
 
 	// Send query to database.
 	err := q.Get(&playlist, query, id)
 	if err != nil {
-		// Return empty object and error.
 		return playlist, err
 	}
 
@@ -123,23 +122,19 @@ func (q *PlaylistQueries) ChannelUrlExists(playlistID int64, plChannelID int64) 
 }
 
 // Get Playlist Groups by playlist
-func (q *PlaylistQueries) GetPlGroups(playlistId int64) (*[]models.PlaylistGroup, error) {
-	playlistgroup := &[]models.PlaylistGroup{}
+func (q *PlaylistQueries) GetPlGroups(playlistId int64) ([]models.PlaylistGroup, error) {
+	playlistgroups := []models.PlaylistGroup{}
 
-	// Define query string.
 	query := `SELECT playlistgroup.* FROM playlistgroup
 	JOIN playlist_group_item ON playlistgroup.id = playlist_group_item.group_id
 	WHERE playlist_group_item.playlist_id = ?`
 
-	// Send query to database.
-	err := q.Select(playlistgroup, query, playlistId)
+	err := q.Select(&playlistgroups, query, playlistId)
 	if err != nil {
-		// Return empty object and error.
 		return nil, err
 	}
 
-	// Return query result.
-	return playlistgroup, nil
+	return playlistgroups, nil
 }
 
 // Get all Playlist Groups
