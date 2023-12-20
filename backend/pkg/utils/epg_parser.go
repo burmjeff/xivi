@@ -64,8 +64,7 @@ func ParseEpg(epg *models.Epg) {
 			_, err := database.Db.GetEpgChannelByChannelId(channel.ChannelId)
 			if err != nil {
 				log.Info().Msgf("EPG XML PARSER: Creating new channel: %s", channel.DisplayName)
-				_, err = database.Db.CreateEpgChannel(&channel)
-				if err != nil {
+				if _, err = database.Db.CreateEpgChannel(channel); err != nil {
 					log.Error().Msgf("EPG XML PARSER: Failed to create new EPG channel: %v", err)
 					continue
 				}
@@ -84,8 +83,7 @@ func ParseEpg(epg *models.Epg) {
 				FoundProg, err := database.Db.GetEpgProgrammeByChannelandTime(programme.Channel, programme.Start)
 				if err != nil {
 					log.Info().Msgf("EPG XML PARSER: Creating new Programme: %s", programme.Title.Value)
-					database.Db.CreateEpgProgramme(&programme)
-					if err != nil {
+					if _, err := database.Db.CreateEpgProgramme(programme); err != nil {
 						log.Warn().Msgf("EPG XML PARSER: Failed to create new programme: %v", err)
 						continue
 					}

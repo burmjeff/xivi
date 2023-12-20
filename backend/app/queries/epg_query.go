@@ -1,6 +1,7 @@
 package queries
 
 import (
+	"database/sql"
 	"strings"
 	"xivi/backend/app/models"
 	utils "xivi/backend/pkg/dbutils"
@@ -165,7 +166,7 @@ func (q *EpgQueries) GetEpgChannelByChannelId(channelID string) (models.EpgChann
 }
 
 // Create Epg Channel method for creating epgchannel by given Epg Channel object.
-func (q *EpgQueries) CreateEpgChannel(p *models.EpgChannel) (int64, error) {
+func (q *EpgQueries) CreateEpgChannel(p models.EpgChannel) (int64, error) {
 	// Define query string.
 	query := `INSERT INTO epgchannel VALUES (null, ?, ?, ?)`
 
@@ -293,7 +294,7 @@ func (q *EpgQueries) GetEpgProgrammeByChannelandTime(channelID string, start *mo
 }
 
 // Create Epg Programme method for creating a programme by given object.
-func (q *EpgQueries) CreateEpgProgramme(p *models.EpgProgramme) (int64, error) {
+func (q *EpgQueries) CreateEpgProgramme(p models.EpgProgramme) (int64, error) {
 
 	q.MapperFunc(utils.CustomMapper)
 	// Define query string.
@@ -321,8 +322,8 @@ func (q *EpgQueries) CreateEpgProgramme(p *models.EpgProgramme) (int64, error) {
 		p.Rating.Value,
 		p.Video.Quality,
 		p.Date)
-	if err != nil {
-		// Return only error.
+
+	if err != sql.ErrNoRows && err != nil {
 		return 0, err
 	}
 
@@ -332,7 +333,6 @@ func (q *EpgQueries) CreateEpgProgramme(p *models.EpgProgramme) (int64, error) {
 		return 0, err
 	}
 
-	// This query returns nothing.
 	return id, nil
 }
 

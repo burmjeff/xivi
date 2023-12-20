@@ -1,6 +1,7 @@
 package queries
 
 import (
+	"database/sql"
 	"xivi/backend/app/models"
 	utils "xivi/backend/pkg/dbutils"
 
@@ -179,18 +180,18 @@ func (q *PlaylistQueries) GetPlGroup(id int64) (models.PlaylistGroup, error) {
 }
 
 // Get Playlist Group by given Name.
-func (q *PlaylistQueries) GetPlGroupByName(name string) (*models.PlaylistGroup, error) {
+func (q *PlaylistQueries) GetPlGroupByName(name string) (models.PlaylistGroup, error) {
 	// Define group variable.
-	group := &models.PlaylistGroup{}
+	group := models.PlaylistGroup{}
 
 	// Define query string.
-	query := `SELECT * FROM playlistgroup WHERE name = ?`
+	query := `SELECT * FROM playlistgroup WHERE name = ? LIMIT 1`
 
 	// Send query to database.
-	err := q.Get(group, query, name)
+	err := q.Get(&group, query, name)
 	if err != nil {
 		// Return empty object and error.
-		return nil, err
+		return group, err
 	}
 
 	// Return query result.
@@ -204,7 +205,7 @@ func (q *PlaylistQueries) CreatePlGroup(p *models.PlaylistGroup) (int64, error) 
 
 	// Send query to database.
 	res, err := q.Exec(query, p.Name)
-	if err != nil {
+	if err != sql.ErrNoRows && err != nil {
 		// Return only error.
 		return 0, err
 	}
