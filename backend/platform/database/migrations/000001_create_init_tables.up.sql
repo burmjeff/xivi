@@ -145,7 +145,7 @@ CREATE TABLE epgprogramme (
     "title.value" VARCHAR (255) NULL,
     "title.lang" VARCHAR (20) NULL,
     subtitle VARCHAR (255) NULL,
-    desc VARCHAR (500) NULL,
+    desc VARCHAR (2000) NULL,
     categories VARCHAR NULL,
     "icon.src" VARCHAR (255) NULL,
     directors VARCHAR NULL,
@@ -157,7 +157,7 @@ CREATE TABLE epgprogramme (
     "rating.system" VARCHAR (20) NULL,
     "rating.value" VARCHAR (20) NULL,
     "video.quality" VARCHAR (20) NULL,
-    date VARCHAR (4) NULL
+    date VARCHAR (12) NULL
 );
 
 -- Create epgchannelitem table

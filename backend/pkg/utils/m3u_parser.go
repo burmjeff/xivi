@@ -139,14 +139,13 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan *models.PlaylistChan
 			if foundGroup, err := database.Db.GetPlGroupByName(group); err != nil {
 				log.Info().Msgf("Group not found. Creating Group: %s", group)
 				playlistGroup.Name = group
-				groupId, err := database.Db.CreatePlGroup(playlistGroup)
-				if err != nil {
+				groupID, err := database.Db.CreatePlGroup(playlistGroup)
+				if groupID == 0 {
 					log.Warn().Msgf("FAILED TO CREATE PLAYLIST GROUP: %v", err)
 				} else {
-					groupID = groupId
-				}
-				if _, err := database.Db.CreatePlGroupItem(m.playlistID, groupID); err != nil {
-					log.Warn().Msgf("FAILED TO CREATE PLAYLIST_GROUP_ITEM: %v", err)
+					if _, err := database.Db.CreatePlGroupItem(m.playlistID, groupID); err != nil {
+						log.Warn().Msgf("FAILED TO CREATE PLAYLIST_GROUP_ITEM: %v", err)
+					}
 				}
 			} else {
 				groupID = foundGroup.ID
