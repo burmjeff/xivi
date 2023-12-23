@@ -175,26 +175,26 @@ func (q *PlaylistQueries) GetPlGroup(id int64) (models.PlaylistGroup, error) {
 }
 
 // Get Playlist Group by given Name.
-func (q *PlaylistQueries) GetPlGroupByName(name string) (models.PlaylistGroup, error) {
+func (q *PlaylistQueries) GetPlGroupByName(name string) (int64, error) {
 	// Define group variable.
-	group := models.PlaylistGroup{}
+	var id int64
 
 	// Define query string.
-	query := `SELECT * FROM playlistgroup WHERE name = ? LIMIT 1`
+	query := `SELECT id FROM playlistgroup WHERE name LIKE $1 LIMIT 1`
 
 	// Send query to database.
-	err := q.Get(&group, query, name)
+	err := q.Get(id, query, name)
 	if err != nil {
 		// Return empty object and error.
-		return group, err
+		return 0, err
 	}
 
 	// Return query result.
-	return group, nil
+	return id, nil
 }
 
 // Create Playlist Group.
-func (q *PlaylistQueries) CreatePlGroup(p *models.PlaylistGroup) (int64, error) {
+func (q *PlaylistQueries) CreatePlGroup(p models.PlaylistGroup) (int64, error) {
 	// Define query string.
 	query := `INSERT INTO playlistgroup VALUES (null, ?)`
 
@@ -475,7 +475,7 @@ func (q *PlaylistQueries) CleanPlaylistChannels(ids []int64) error {
 }
 
 // CreateChannel method for creating a Channel by given Channel object.
-func (q *PlaylistQueries) CreatePlChannel(p *models.PlaylistChannel) (int64, error) {
+func (q *PlaylistQueries) CreatePlChannel(p models.PlaylistChannel) (int64, error) {
 	// Define query string.
 	query := `INSERT INTO playlistchannel VALUES (null, ?, ?, ?, ?, ?, ?, ?)`
 
@@ -497,7 +497,7 @@ func (q *PlaylistQueries) CreatePlChannel(p *models.PlaylistChannel) (int64, err
 }
 
 // UpdatePlaylist method for updating a channel by given Channel object.
-func (q *PlaylistQueries) UpdatePlChannel(id int64, p *models.PlaylistChannel) error {
+func (q *PlaylistQueries) UpdatePlChannel(id int64, p models.PlaylistChannel) error {
 	// Define query string.
 	query := `UPDATE playlistchannel SET tvg_id = ?, tvg_name = ?, tvg_logo = ?, title = ?, enabled = ?, updated_at = ? WHERE id = ?`
 
@@ -583,7 +583,7 @@ func (q *PlaylistQueries) GetChannelUrlByPlChannelID(id int64) (models.ChannelUr
 }
 
 // CreateChannel method for creating a Channel by given Channel object.
-func (q *PlaylistQueries) CreateChannelUrl(p *models.ChannelUrl) error {
+func (q *PlaylistQueries) CreateChannelUrl(p models.ChannelUrl) error {
 	// Define query string.
 	query := `INSERT INTO channelurl VALUES (null, ?, ?, ?, ?, ?, ?)`
 
@@ -599,7 +599,7 @@ func (q *PlaylistQueries) CreateChannelUrl(p *models.ChannelUrl) error {
 }
 
 // UpdatePlaylist method for updating a channel by given Channel object.
-func (q *PlaylistQueries) UpdateChannelUrl(id int64, p *models.ChannelUrl) error {
+func (q *PlaylistQueries) UpdateChannelUrl(id int64, p models.ChannelUrl) error {
 	// Define query string.
 	query := `UPDATE channelurl SET url = ?, playlist_id = ?, playlist_channel_id = ?, orderr = ?, updated_at = ? WHERE id = ?`
 

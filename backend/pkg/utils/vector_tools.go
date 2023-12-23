@@ -18,7 +18,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func PlaylistVectorQueue(in <-chan *models.PlaylistChannel) {
+func PlaylistVectorQueue(in <-chan models.PlaylistChannel) {
 	for playlistCh := range in {
 		_ = UpdatePlaylistVector(playlistCh)
 
@@ -29,7 +29,7 @@ func PlaylistVectorQueue(in <-chan *models.PlaylistChannel) {
 }
 
 // returns vector id
-func UpdatePlaylistVector(playlistCh *models.PlaylistChannel) int64 {
+func UpdatePlaylistVector(playlistCh models.PlaylistChannel) int64 {
 	if vectorId, err := getChannelVector(playlistCh.Title); err != nil {
 		log.Warn().Msgf("VECTORIZE_STRING: %v", err)
 	} else {
@@ -55,7 +55,7 @@ func UpdatePlaylistVector(playlistCh *models.PlaylistChannel) int64 {
 }
 
 // returns vector id
-func UpdateTemplateVector(templateCh *models.TemplateChannel) int64 {
+func UpdateTemplateVector(templateCh models.TemplateChannel) int64 {
 	if vectorId, err := getChannelVector(templateCh.Name); err != nil {
 		log.Warn().Msgf("VECTORIZE_STRING: %v", err)
 	} else {

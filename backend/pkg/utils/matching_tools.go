@@ -9,7 +9,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func MatchPlaylistChannel(playlistCh *models.PlaylistChannel) {
+func MatchPlaylistChannel(playlistCh models.PlaylistChannel) {
 	if settings.APP_SETTINGS.Playlist.Tvgid_match {
 		if err := matchPlaylistTvgid(playlistCh); err == nil {
 			return
@@ -26,7 +26,7 @@ func MatchPlaylistChannel(playlistCh *models.PlaylistChannel) {
 
 }
 
-func MatchTemplateChannel(templateCh *models.TemplateChannel) {
+func MatchTemplateChannel(templateCh models.TemplateChannel) {
 	var addedChannels []models.PlaylistChannel
 	var err error
 	if settings.APP_SETTINGS.Playlist.Tvgid_match {
@@ -44,7 +44,7 @@ func MatchTemplateChannel(templateCh *models.TemplateChannel) {
 }
 
 // Search if tvgid matches for playlist channel and add to template if match
-func matchPlaylistTvgid(playlistCh *models.PlaylistChannel) error {
+func matchPlaylistTvgid(playlistCh models.PlaylistChannel) error {
 	playlistChUrl, err := database.Db.GetChannelUrlByPlChannelID(playlistCh.ID)
 	if err != nil {
 		log.Debug().Msgf("matchChannels:, %v", err)
@@ -70,7 +70,7 @@ func matchPlaylistTvgid(playlistCh *models.PlaylistChannel) error {
 	return nil
 }
 
-func matchPlaylistChannelName(playlistCh *models.PlaylistChannel) error {
+func matchPlaylistChannelName(playlistCh models.PlaylistChannel) error {
 	//var channelVector models.ChannelVector
 	var err error
 	var chMatch int64
@@ -125,7 +125,7 @@ func matchPlaylistChannelName(playlistCh *models.PlaylistChannel) error {
 }
 
 // Search if tvgid matches for template channel and add to template if match
-func matchTemplateTvgid(templateCh *models.TemplateChannel) ([]models.PlaylistChannel, error) {
+func matchTemplateTvgid(templateCh models.TemplateChannel) ([]models.PlaylistChannel, error) {
 	channels, err := database.Db.GetPlChannelsByTvgID(templateCh.TvgID)
 	if err != nil {
 		log.Debug().Msgf("matchChannels:, %v", err)
@@ -153,7 +153,7 @@ func matchTemplateTvgid(templateCh *models.TemplateChannel) ([]models.PlaylistCh
 	return channels, nil
 }
 
-func matchTemplateChannelName(templateCh *models.TemplateChannel, addedChannels []models.PlaylistChannel) error {
+func matchTemplateChannelName(templateCh models.TemplateChannel, addedChannels []models.PlaylistChannel) error {
 	//var channelVector models.ChannelVector
 	var err error
 
@@ -225,7 +225,7 @@ func itemExists(tmplId int64, plUrl string) bool {
 	return false
 }
 
-func TopChannelMatches(templateCh *models.TemplateChannel) ([]models.VectorMatch, error) {
+func TopChannelMatches(templateCh models.TemplateChannel) ([]models.VectorMatch, error) {
 	//var channelVector models.ChannelVector
 	var err error
 	var vectorMatches []models.VectorMatch
