@@ -32,6 +32,9 @@ func OpenDBConnection() (*Queries, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	InitDB(db)
+
 	return &Queries{
 		// Set queries from models:
 		PlaylistQueries: &queries.PlaylistQueries{DB: db}, // from Playlist model
@@ -44,14 +47,14 @@ func OpenDBConnection() (*Queries, error) {
 }
 
 func getDB() (*sqlx.DB, error) {
-	return sqlx.Open("sqlite3", fmt.Sprintf("%s/xivi.db?parseTime=true&_journal_mode=WAL", settings.CONFIG_PATH))
+	return sqlx.Open("sqlite3", fmt.Sprintf("%s/xivi.db?_journal_mode=WAL", settings.CONFIG_PATH))
 }
 
-func InitDB() error {
-	db, err := getDB()
-	if err != nil {
-		log.Fatal().Msgf("Failed to connect to database: %v", err)
-	}
+func InitDB(db *sqlx.DB) error {
+	//db, err := getDB()
+	//if err != nil {
+	//	log.Fatal().Msgf("Failed to connect to database: %v", err)
+	//}
 
 	driver, err := sqlite3.WithInstance(db.DB, &sqlite3.Config{})
 	if err != nil {
