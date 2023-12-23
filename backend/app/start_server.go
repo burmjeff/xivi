@@ -15,10 +15,12 @@ import (
 
 // StartServer func for starting a simple server.
 func StartServer(app *fiber.App) {
-
+	var err error
 	//Initialize DB
-	database.InitDB()
-	database.Db, _ = database.OpenDBConnection()
+	database.Db, err = database.OpenDBConnection()
+	if err != nil {
+		log.Fatal().Msgf("Failed to connect to database: %v", err)
+	}
 
 	vips.Startup(nil)
 	defer vips.Shutdown()

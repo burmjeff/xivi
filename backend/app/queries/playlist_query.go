@@ -142,13 +142,13 @@ func (q *PlaylistQueries) GetAllPlGroups() ([]models.PlaylistGroup, error) {
 	playlistgroup := []models.PlaylistGroup{}
 
 	// Define query string.
-	query := `SELECT playlistgroup.* FROM playlistgroup`
+	query := `SELECT * FROM playlistgroup`
 
 	// Send query to database.
 	err := q.Select(&playlistgroup, query)
 	if err != nil {
 		// Return empty object and error.
-		return playlistgroup, err
+		return nil, err
 	}
 
 	// Return query result.
@@ -180,10 +180,10 @@ func (q *PlaylistQueries) GetPlGroupByName(name string) (int64, error) {
 	var id int64
 
 	// Define query string.
-	query := `SELECT id FROM playlistgroup WHERE name LIKE $1 LIMIT 1`
+	query := `SELECT id FROM playlistgroup WHERE name = ?`
 
 	// Send query to database.
-	err := q.Get(id, query, name)
+	err := q.Get(&id, query, name)
 	if err != nil {
 		// Return empty object and error.
 		return 0, err
