@@ -255,7 +255,7 @@ func (q *TemplateQueries) DeleteTmplGroup(id int64) error {
 }
 
 // CreateTemplate method for creating a template by given Template object.
-func (q *TemplateQueries) CreateTmplGroupChannel(p *models.TemplateGroupChannel) error {
+func (q *TemplateQueries) CreateTmplGroupChannel(p models.TemplateGroupChannel) error {
 	// Define query string.
 	query := `INSERT INTO template_group_channel VALUES (?, ?, ?)`
 
@@ -450,7 +450,7 @@ func (q *TemplateQueries) GetTmplChannelsBytvgid(tvgid string) ([]models.Templat
 }
 
 // CreateChannel method for creating a Channel by given Channel object.
-func (q *TemplateQueries) CreateTmplChannel(p *models.TemplateChannel) (int64, error) {
+func (q *TemplateQueries) CreateTmplChannel(p models.TemplateChannel) (int64, error) {
 	// Define query string.
 	query := `INSERT INTO templatechannel VALUES (null, ?, ?, ?, ?)`
 
@@ -471,7 +471,7 @@ func (q *TemplateQueries) CreateTmplChannel(p *models.TemplateChannel) (int64, e
 }
 
 // UpdateChannel method for updating a channel by given object.
-func (q *TemplateQueries) UpdateTmplChannel(t *models.TemplateChannel) error {
+func (q *TemplateQueries) UpdateTmplChannel(t models.TemplateChannel) error {
 	// Define query string.
 	query := `UPDATE templatechannel SET name = ?, tvgid = ?, logoid = ? WHERE id = ?`
 

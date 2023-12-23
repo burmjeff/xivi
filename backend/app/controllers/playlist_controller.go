@@ -474,7 +474,7 @@ func ConvertPlaylistChannel(c *fiber.Ctx) error {
 	}
 
 	channelID := utils.ConvertPlChannel(playlistChannel)
-	tmplGroupChannel := &models.TemplateGroupChannel{GroupId: group_id, ChannelId: channelID}
+	tmplGroupChannel := models.TemplateGroupChannel{GroupId: group_id, ChannelId: channelID}
 
 	if err := database.Db.CreateTmplGroupChannel(tmplGroupChannel); err != nil {
 		log.Warn().Msg(err.Error())

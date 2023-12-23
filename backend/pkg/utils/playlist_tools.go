@@ -14,7 +14,7 @@ import (
 func ConvertPlGroup(templateGroup int64, playlistChannels []models.PlaylistChannel) {
 	for _, channel := range playlistChannels {
 		channelID := ConvertPlChannel(channel)
-		tmplGroupChannel := &models.TemplateGroupChannel{GroupId: templateGroup, ChannelId: channelID}
+		tmplGroupChannel := models.TemplateGroupChannel{GroupId: templateGroup, ChannelId: channelID}
 		err := database.Db.CreateTmplGroupChannel(tmplGroupChannel)
 		if err != nil {
 			log.Warn().Msg(err.Error())
@@ -25,7 +25,7 @@ func ConvertPlGroup(templateGroup int64, playlistChannels []models.PlaylistChann
 // Convert a playlist channel to a template channel
 func ConvertPlChannel(playlistChannel models.PlaylistChannel) int64 {
 	validate := NewValidator()
-	templateChannel := &models.TemplateChannel{}
+	templateChannel := models.TemplateChannel{}
 	tmplChannelItem := models.TemplateChannelItem{}
 
 	if playlistChannel.Title != "" {
@@ -109,7 +109,7 @@ func UpdateDynamicGroup(group models.TemplateGroup) {
 		for _, tmplChannel := range tmplChannels {
 			if plChannel.TvgID == tmplChannel.TvgID {
 				tmplChannel.Name = plChannel.Title
-				if err := database.Db.UpdateTmplChannel(&tmplChannel); err != nil {
+				if err := database.Db.UpdateTmplChannel(tmplChannel); err != nil {
 					log.Err(err)
 				}
 				foundChannel = true
@@ -119,7 +119,7 @@ func UpdateDynamicGroup(group models.TemplateGroup) {
 		}
 		if !foundChannel {
 			channelID := ConvertPlChannel(plChannel)
-			tmplGroupChannel := &models.TemplateGroupChannel{GroupId: group.ID, ChannelId: channelID}
+			tmplGroupChannel := models.TemplateGroupChannel{GroupId: group.ID, ChannelId: channelID}
 			err := database.Db.CreateTmplGroupChannel(tmplGroupChannel)
 			if err != nil {
 				log.Err(err)
