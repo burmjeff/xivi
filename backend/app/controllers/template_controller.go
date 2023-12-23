@@ -696,7 +696,7 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 	}
 
 	//templateChannelCreate := &models.TemplateChannelCreateParam{}
-	templateChannel := &models.TemplateChannel{}
+	templateChannel := models.TemplateChannel{}
 
 	// Check, if received JSON data is valid.
 	if err := c.BodyParser(templateChannel); err != nil {
@@ -733,7 +733,7 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 	}
 
 	templateChannel.ID = id
-	templategroupchannel := &models.TemplateGroupChannel{
+	templategroupchannel := models.TemplateGroupChannel{
 		GroupId:   group_id,
 		ChannelId: templateChannel.ID,
 	}
@@ -756,8 +756,8 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 		})
 	}
 
-	templateChannelLogo := &models.TemplateChannelLogo{
-		TemplateChannel: *templateChannel,
+	templateChannelLogo := models.TemplateChannelLogo{
+		TemplateChannel: templateChannel,
 		Logo:            utils.GetLogoUrl(foundLogo.Name),
 	}
 
@@ -830,7 +830,7 @@ func UpdateTemplateChannel(c *fiber.Ctx) error {
 						if err != nil {
 							continue
 						}
-						m3uTools.UpdateChannel(&template, templateChannelLogo, &oldChannel)
+						m3uTools.UpdateChannel(template, templateChannelLogo, &oldChannel)
 					}
 				}
 			}
@@ -838,7 +838,7 @@ func UpdateTemplateChannel(c *fiber.Ctx) error {
 	}
 
 	// Update template channel.
-	if err := database.Db.UpdateTmplChannel(&templateChannelLogo.TemplateChannel); err != nil {
+	if err := database.Db.UpdateTmplChannel(templateChannelLogo.TemplateChannel); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -846,7 +846,7 @@ func UpdateTemplateChannel(c *fiber.Ctx) error {
 		})
 	}
 
-	go utils.UpdateTemplateVector(&templateChannelLogo.TemplateChannel)
+	go utils.UpdateTemplateVector(templateChannelLogo.TemplateChannel)
 
 	// Return status 201.
 	return c.SendStatus(fiber.StatusCreated)
@@ -1028,7 +1028,7 @@ func GetTemplateChannelMatches(c *fiber.Ctx) error {
 		})
 	}
 
-	vectorMatches, err := utils.TopChannelMatches(&channel)
+	vectorMatches, err := utils.TopChannelMatches(channel)
 	if err != nil {
 		log.Err(err)
 		// Return, if template not found.

@@ -118,11 +118,11 @@ func (m *M3uTools) UpdateGroup(template *models.Template, group *models.Template
 	}
 }
 
-func (m *M3uTools) AddChannel(templateChannel *models.TemplateChannel, groupId int64) {
+func (m *M3uTools) AddChannel(templateChannel models.TemplateChannel, groupId int64) {
 	//TODO ADD CHANNEL
 }
 
-func (m *M3uTools) UpdateChannel(template *models.Template, channel *models.TemplateChannelLogo, oldChannel *models.TemplateChannel) {
+func (m *M3uTools) UpdateChannel(template models.Template, channel *models.TemplateChannelLogo, oldChannel *models.TemplateChannel) {
 	// Create a new string variable to hold the filtered content.
 	var filtered string
 
@@ -162,7 +162,7 @@ func (m *M3uTools) UpdateChannel(template *models.Template, channel *models.Temp
 		return
 	}
 
-	go CreateEpgXML(*template)
+	go CreateEpgXML(template)
 }
 
 func (m *M3uTools) RemoveGroup(template *models.Template, group *models.TemplateGroup) {
