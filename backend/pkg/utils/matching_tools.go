@@ -26,8 +26,8 @@ func MatchPlaylistChannel(playlistCh models.PlaylistChannel) {
 
 }
 
-func MatchTemplateChannel(templateCh models.TemplateChannel) {
-	var addedChannels []models.PlaylistChannel
+func MatchTemplateChannel(templateCh *models.TemplateChannel) {
+	addedChannels := &[]models.PlaylistChannel{}
 	var err error
 	if settings.APP_SETTINGS.Playlist.Tvgid_match {
 		if addedChannels, err = matchTemplateTvgid(templateCh); err != nil {
@@ -57,7 +57,7 @@ func matchPlaylistTvgid(playlistCh models.PlaylistChannel) error {
 	}
 	for _, channel := range *channels {
 		if playlistChUrl == nil || !itemExists(channel.ID, playlistChUrl.Url) {
-			channelItem := models.TemplateChannelItem{
+			channelItem := &models.TemplateChannelItem{
 				ChannelId:         channel.ID,
 				PlaylistChannelId: playlistCh.ID,
 			}
@@ -110,7 +110,7 @@ func matchPlaylistChannelName(playlistCh models.PlaylistChannel) error {
 	}
 	if chMatch != 0 {
 		if !itemExists(chMatch, playlistChUrl.Url) {
-			channelItem := models.TemplateChannelItem{
+			channelItem := &models.TemplateChannelItem{
 				ChannelId:         chMatch,
 				PlaylistChannelId: playlistCh.ID,
 			}
@@ -125,7 +125,7 @@ func matchPlaylistChannelName(playlistCh models.PlaylistChannel) error {
 }
 
 // Search if tvgid matches for template channel and add to template if match
-func matchTemplateTvgid(templateCh models.TemplateChannel) ([]models.PlaylistChannel, error) {
+func matchTemplateTvgid(templateCh *models.TemplateChannel) (*[]models.PlaylistChannel, error) {
 	channels, err := database.Db.GetPlChannelsByTvgID(templateCh.TvgID)
 	if err != nil {
 		log.Debug().Msgf("matchChannels:, %v", err)
@@ -140,7 +140,7 @@ func matchTemplateTvgid(templateCh models.TemplateChannel) ([]models.PlaylistCha
 			continue
 		}
 
-		channelItem := models.TemplateChannelItem{
+		channelItem := &models.TemplateChannelItem{
 			ChannelId:         templateCh.ID,
 			PlaylistChannelId: channel.ID,
 		}
@@ -150,10 +150,10 @@ func matchTemplateTvgid(templateCh models.TemplateChannel) ([]models.PlaylistCha
 		}
 	}
 
-	return *channels, nil
+	return channels, nil
 }
 
-func matchTemplateChannelName(templateCh models.TemplateChannel, addedChannels []models.PlaylistChannel) error {
+func matchTemplateChannelName(templateCh *models.TemplateChannel, addedChannels *[]models.PlaylistChannel) error {
 	//var channelVector models.ChannelVector
 	var err error
 
@@ -174,7 +174,7 @@ func matchTemplateChannelName(templateCh models.TemplateChannel, addedChannels [
 	}
 	for _, playlistVector := range *playlistVectors {
 		isMatch := false
-		for _, channel := range addedChannels {
+		for _, channel := range *addedChannels {
 			if playlistVector.ChannelId == channel.ID {
 				isMatch = true
 				break
@@ -196,7 +196,7 @@ func matchTemplateChannelName(templateCh models.TemplateChannel, addedChannels [
 				} else if itemExists(templateCh.ID, playlistChUrl.Url) {
 					continue
 				}
-				channelItem := models.TemplateChannelItem{
+				channelItem := &models.TemplateChannelItem{
 					ChannelId:         templateCh.ID,
 					PlaylistChannelId: playlistVector.ChannelId,
 				}
@@ -225,7 +225,7 @@ func itemExists(tmplId int64, plUrl string) bool {
 	return false
 }
 
-func TopChannelMatches(templateCh models.TemplateChannel) ([]models.VectorMatch, error) {
+func TopChannelMatches(templateCh *models.TemplateChannel) ([]models.VectorMatch, error) {
 	//var channelVector models.ChannelVector
 	var err error
 	var vectorMatches []models.VectorMatch

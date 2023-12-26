@@ -25,8 +25,8 @@ func ConvertPlGroup(templateGroup int64, playlistChannels []models.PlaylistChann
 // Convert a playlist channel to a template channel
 func ConvertPlChannel(playlistChannel models.PlaylistChannel) int64 {
 	validate := NewValidator()
-	templateChannel := models.TemplateChannel{}
-	tmplChannelItem := models.TemplateChannelItem{}
+	templateChannel := &models.TemplateChannel{}
+	tmplChannelItem := &models.TemplateChannelItem{}
 
 	if playlistChannel.Title != "" {
 		templateChannel.Name = playlistChannel.Title

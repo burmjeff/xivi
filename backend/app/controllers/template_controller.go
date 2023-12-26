@@ -696,10 +696,11 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 	}
 
 	//templateChannelCreate := &models.TemplateChannelCreateParam{}
-	templateChannel := models.TemplateChannel{}
+	templateChannel := &models.TemplateChannel{}
 
 	// Check, if received JSON data is valid.
 	if err := c.BodyParser(templateChannel); err != nil {
+		log.Err(err)
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -715,6 +716,7 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 
 	// Validate fields.
 	if err := validate.Struct(templateChannel); err != nil {
+		log.Err(err)
 		// Return, if some fields are not valid.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -725,6 +727,7 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 	// Create template channel.
 	id, err := database.Db.CreateTmplChannel(templateChannel)
 	if err != nil {
+		log.Err(err)
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -740,6 +743,7 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 
 	// Create template channelgroup.
 	if err := database.Db.CreateTmplGroupChannel(templategroupchannel); err != nil {
+		log.Err(err)
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -749,6 +753,7 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 
 	foundLogo, err := database.Db.GetLogo(templateChannel.LogoId)
 	if err != nil {
+		log.Err(err)
 		// Return status 404 and logo not found error.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": true,
@@ -757,7 +762,7 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 	}
 
 	templateChannelLogo := models.TemplateChannelLogo{
-		TemplateChannel: templateChannel,
+		TemplateChannel: *templateChannel,
 		Logo:            utils.GetLogoUrl(foundLogo.Name),
 	}
 
@@ -846,7 +851,7 @@ func UpdateTemplateChannel(c *fiber.Ctx) error {
 		})
 	}
 
-	go utils.UpdateTemplateVector(templateChannelLogo.TemplateChannel)
+	go utils.UpdateTemplateVector(&templateChannelLogo.TemplateChannel)
 
 	// Return status 201.
 	return c.SendStatus(fiber.StatusCreated)
@@ -1028,7 +1033,7 @@ func GetTemplateChannelMatches(c *fiber.Ctx) error {
 		})
 	}
 
-	vectorMatches, err := utils.TopChannelMatches(*channel)
+	vectorMatches, err := utils.TopChannelMatches(channel)
 	if err != nil {
 		log.Err(err)
 		// Return, if template not found.
@@ -1088,7 +1093,7 @@ func AddChannelMatch(c *fiber.Ctx) error {
 		})
 	}
 
-	channelItem := models.TemplateChannelItem{
+	channelItem := &models.TemplateChannelItem{
 		ChannelId:         channel_id,
 		PlaylistChannelId: match_id,
 	}

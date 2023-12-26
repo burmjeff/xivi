@@ -124,7 +124,7 @@ func (q *EpgQueries) GetEpgChannelByChannelId(channelID string) (*models.EpgChan
 
 	query := `SELECT * FROM epgchannel WHERE channelid = ? LIMIT 1`
 
-	err := q.Get(&epgchannel, query, channelID)
+	err := q.Get(epgchannel, query, channelID)
 	if err != nil {
 		return nil, err
 	}

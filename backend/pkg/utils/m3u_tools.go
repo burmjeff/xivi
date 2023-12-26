@@ -118,7 +118,7 @@ func (m *M3uTools) UpdateGroup(template *models.Template, group *models.Template
 	}
 }
 
-func (m *M3uTools) AddChannel(templateChannel models.TemplateChannel, groupId int64) {
+func (m *M3uTools) AddChannel(templateChannel *models.TemplateChannel, groupId int64) {
 	//TODO ADD CHANNEL
 }
 

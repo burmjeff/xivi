@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bufio"
 	"compress/gzip"
 	"encoding/xml"
 	"io"
@@ -20,28 +21,34 @@ func ParseEpg(epg *models.Epg) {
 	if isValidURL(epg.URL) {
 		log.Info().Msg("Started parsing xml URL...")
 		resp, err := http.Get(epg.URL)
+		defer resp.Body.Close()
 		if err != nil {
 			log.Error().Msgf("Unable to get epg.xml FILE: %v", err)
 			return
 		}
 
-		gzipReader, err := gzip.NewReader(resp.Body)
-		defer gzipReader.Close()
-		if err != nil {
-			epgItem, err = parseXML(resp.Body)
+		bufReader := bufio.NewReader(resp.Body)
+		testBytes, err := bufReader.Peek(2)
+		if testBytes[0] == 31 && testBytes[1] == 139 { //Check if gzip
+			gzipReader, err := gzip.NewReader(bufReader)
+			defer gzipReader.Close()
 			if err != nil {
-				log.Error().Msgf("Unable to parse epg.xml FILE: %v", err)
 				return
+			} else {
+				epgItem, err = parseXML(gzipReader)
+				if err != nil {
+					log.Error().Msgf("Unable to parse epg.xml.gzip FILE: %v", err)
+					return
+				}
 			}
 		} else {
-			epgItem, err = parseXML(gzipReader)
+			epgItem, err = parseXML(bufReader)
 			if err != nil {
 				log.Error().Msgf("Unable to parse epg.xml FILE: %v", err)
 				return
 			}
 		}
 
-		defer resp.Body.Close()
 	} else {
 		log.Info().Msg("Started parsing xml file...")
 		// Open the XML file

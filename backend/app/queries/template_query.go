@@ -370,7 +370,7 @@ func (q *TemplateQueries) GetTmplChannelsBytvgid(tvgid string) (*[]models.Templa
 }
 
 // Create a template Channel by given Channel object.
-func (q *TemplateQueries) CreateTmplChannel(p models.TemplateChannel) (int64, error) {
+func (q *TemplateQueries) CreateTmplChannel(p *models.TemplateChannel) (int64, error) {
 	query := `INSERT INTO templatechannel VALUES (null, ?, ?, ?, ?)`
 
 	res, err := q.Exec(query, p.Name, utils.NewNullString(p.TvgID), p.LogoId, p.Uuid)
@@ -411,7 +411,7 @@ func (q *TemplateQueries) DeleteTmplChannel(id int64) error {
 }
 
 // GetTemplateChannelItem
-func (q *TemplateQueries) GetTmplChannelItem(item models.TemplateChannelItem) (*models.TemplateChannelItem, error) {
+func (q *TemplateQueries) GetTmplChannelItem(item *models.TemplateChannelItem) (*models.TemplateChannelItem, error) {
 	templatechannelitem := &models.TemplateChannelItem{}
 
 	query := `SELECT templatechannelitem.* FROM templatechannelitem WHERE channel_id = ? AND playlist_channel_id = ?`
@@ -463,7 +463,7 @@ func (q *TemplateQueries) GetTmplChannelItems(id int64) (*[]models.TemplateChann
 }
 
 // Create a TemplateChannelItem by given object.
-func (q *TemplateQueries) CreateTmplChannelItem(p models.TemplateChannelItem) (int64, error) {
+func (q *TemplateQueries) CreateTmplChannelItem(p *models.TemplateChannelItem) (int64, error) {
 	query := `INSERT INTO templatechannelitem VALUES (null, ?, ?, ?)`
 
 	res, err := q.Exec(query, p.ChannelId, p.PlaylistChannelId, p.Order)
