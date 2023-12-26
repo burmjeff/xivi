@@ -19,51 +19,40 @@ type Res struct {
 	Data []string
 }
 
-// GetEpgs method
-func (q *EpgQueries) GetEpgs() ([]models.Epg, error) {
-	epgs := []models.Epg{}
+// Get Epgs
+func (q *EpgQueries) GetEpgs() (*[]models.Epg, error) {
+	epgs := &[]models.Epg{}
 
-	// Define query string.
 	query := `SELECT * FROM epg`
 
-	// Send query to database.
-	err := q.Select(&epgs, query)
+	err := q.Select(epgs, query)
 	if err != nil {
-		// Return empty object and error.
 		return nil, err
 	}
 
-	// Return query result.
 	return epgs, nil
 }
 
-// GetEpg method for getting one epg by given ID.
-func (q *EpgQueries) GetEpg(id int64) (models.Epg, error) {
-	epg := models.Epg{}
+// Get a epg by given ID.
+func (q *EpgQueries) GetEpg(id int64) (*models.Epg, error) {
+	epg := &models.Epg{}
 
-	// Define query string.
 	query := `SELECT * FROM epg WHERE id = ?`
 
-	// Send query to database.
-	err := q.Get(&epg, query, id)
+	err := q.Get(epg, query, id)
 	if err != nil {
-		// Return empty object and error.
-		return epg, err
+		return nil, err
 	}
 
-	// Return query result.
 	return epg, nil
 }
 
-// CreateEpg method for creating a epg by given Epg object.
+// Create a epg by given Epg object.
 func (q *EpgQueries) CreateEpg(p *models.Epg) (int64, error) {
-	// Define query string.
 	query := `INSERT INTO epg VALUES (null, ?, ?, ?)`
 
-	// Send query to database.
 	res, err := q.Exec(query, p.Name, p.URL, p.Order)
-	if err != nil {
-		// Return only error.
+	if err != sql.ErrNoRows && err != nil {
 		return 0, err
 	}
 
@@ -73,107 +62,82 @@ func (q *EpgQueries) CreateEpg(p *models.Epg) (int64, error) {
 		return 0, err
 	}
 
-	// This query returns nothing.
 	return id, nil
 }
 
-// UpdateEpg method for updating epg by given Epg object.
+// Update a epg by given Epg object.
 func (q *EpgQueries) UpdateEpg(id int64, p *models.Epg) error {
-	// Define query string.
 	query := `UPDATE epg SET name = ?, url = ?, orderr = ? WHERE id = ?`
 
-	// Send query to database.
 	_, err := q.Exec(query, id, p.Name, p.URL, p.Order)
 	if err != nil {
-		// Return only error.
 		return err
 	}
 
-	// This query returns nothing.
 	return nil
 }
 
-// DeleteEpg method for delete epg by given ID.
+// Delete a epg by given ID.
 func (q *EpgQueries) DeleteEpg(id int64) error {
-	// Define query string.
 	query := `DELETE FROM epg WHERE id = ?`
 
-	// Send query to database.
 	_, err := q.Exec(query, id)
 	if err != nil {
-		// Return only error.
 		return err
 	}
 
-	// This query returns nothing.
 	return nil
 }
 
-// Get Epg Channels method
-func (q *EpgQueries) GetEpgChannels() ([]models.EpgChannel, error) {
-	epgchannel := []models.EpgChannel{}
+// Get Epg Channels
+func (q *EpgQueries) GetEpgChannels() (*[]models.EpgChannel, error) {
+	epgchannel := &[]models.EpgChannel{}
 
-	// Define query string.
 	query := `SELECT * FROM epgchannel`
 
-	// Send query to database.
-	err := q.Select(&epgchannel, query)
+	err := q.Select(epgchannel, query)
 	if err != nil {
-		// Return empty object and error.
-		return epgchannel, err
+		return nil, err
 	}
 
-	// Return query result.
 	return epgchannel, nil
 }
 
-// Get Epg Channel method for getting one goup by given ID.
-func (q *EpgQueries) GetEpgChannel(id int64) (models.EpgChannel, error) {
-	// Define epg variable.
-	epgchannel := models.EpgChannel{}
+// Get a Epg Channel by given ID.
+func (q *EpgQueries) GetEpgChannel(id int64) (*models.EpgChannel, error) {
+	epgchannel := &models.EpgChannel{}
 
-	// Define query string.
 	query := `SELECT * FROM epgchannel WHERE id = ?`
 
-	// Send query to database.
-	err := q.Get(&epgchannel, query, id)
+	err := q.Get(epgchannel, query, id)
 	if err != nil {
-		// Return empty object and error.
-		return epgchannel, err
+		return nil, err
 	}
 
 	// Return query result.
 	return epgchannel, nil
 }
 
-// Get Epg Channel method for getting one epgchannel by given Name.
-func (q *EpgQueries) GetEpgChannelByChannelId(channelID string) (models.EpgChannel, error) {
-	// Define epgchannel variable.
-	epgchannel := models.EpgChannel{}
+// Get a epgchannel by channel id.
+func (q *EpgQueries) GetEpgChannelByChannelId(channelID string) (*models.EpgChannel, error) {
+	epgchannel := &models.EpgChannel{}
 
-	// Define query string.
 	query := `SELECT * FROM epgchannel WHERE channelid = ? LIMIT 1`
 
-	// Send query to database.
 	err := q.Get(&epgchannel, query, channelID)
 	if err != nil {
-		// Return empty object and error.
-		return epgchannel, err
+		return nil, err
 	}
 
-	// Return query result.
 	return epgchannel, nil
 }
 
-// Create Epg Channel method for creating epgchannel by given Epg Channel object.
+// Create a Epg Channel by given Epg Channel object.
 func (q *EpgQueries) CreateEpgChannel(p models.EpgChannel) (int64, error) {
-	// Define query string.
 	query := `INSERT INTO epgchannel VALUES (null, ?, ?, ?)`
 
-	// Send query to database.
 	res, err := q.Exec(query, p.ChannelId, p.DisplayName, p.Icon.Src)
-	if err != nil {
-		// Return only error.
+	if err != sql.ErrNoRows && err != nil {
 		return 0, err
 	}
 	id, err := res.LastInsertId()
@@ -182,126 +146,97 @@ func (q *EpgQueries) CreateEpgChannel(p models.EpgChannel) (int64, error) {
 		return 0, err
 	}
 
-	// This query returns nothing.
 	return id, nil
 }
 
-// Update Epg Channel method for updating epgchannel by given Epg Channel object.
+// Update a Epg Channel by given Epg Channel object.
 func (q *EpgQueries) UpdateEpgChannel(id int64, p *models.EpgChannel) error {
-	// Define query string.
 	query := `UPDATE epgchannel SET channelid = ?, displayname = ?, icon = ? WHERE id = ?`
 
-	// Send query to database.
 	_, err := q.Exec(query, id, p.ChannelId, p.DisplayName, p.Icon.Src)
 	if err != nil {
-		// Return only error.
 		return err
 	}
 
-	// This query returns nothing.
 	return nil
 }
 
-// Delete Epg Channel method for delete Epg Channel by given ID.
+// Delete a Epg Channel by given ID.
 func (q *EpgQueries) DeleteEpgChannel(id int64) error {
-	// Define query string.
 	query := `DELETE FROM epgchannel WHERE id = ?`
 
-	// Send query to database.
 	_, err := q.Exec(query, id)
 	if err != nil {
-		// Return only error.
 		return err
 	}
 
-	// This query returns nothing.
 	return nil
 }
 
-// Get Epg Programmes method for getting all programmes.
-func (q *EpgQueries) GetEpgProgrammes() ([]models.EpgProgramme, error) {
-	programmes := []models.EpgProgramme{}
+// Get all Epg Programmes.
+func (q *EpgQueries) GetEpgProgrammes() (*[]models.EpgProgramme, error) {
+	programmes := &[]models.EpgProgramme{}
 
-	// Define query string.
 	query := `SELECT * FROM epgprogramme`
 
-	// Send query to database.
-	err := q.Select(&programmes, query)
+	err := q.Select(programmes, query)
 	if err != nil {
-		// Return empty object and error.
-		return programmes, err
+		return nil, err
 	}
 
-	// Return query result.
 	return programmes, nil
 }
 
-// Get Epg Programmes method for getting all programmes by channel.
+// Get Epg Programmes by channel.
 func (q *EpgQueries) GetProgrammesByChannelId(channelID string) (*[]models.EpgProgramme, error) {
-	programmes := []models.EpgProgramme{}
+	programmes := &[]models.EpgProgramme{}
 
-	// Define query string.
 	query := `SELECT * FROM epgprogramme WHERE channel = ?`
 
-	// Send query to database.
-	err := q.Select(&programmes, query, channelID)
+	err := q.Select(programmes, query, channelID)
 	if err != nil {
-		// Return empty object and error.
 		return nil, err
 	}
 
-	// Return query result.
-	return &programmes, nil
+	return programmes, nil
 }
 
-// Get Epg Programme method for getting one programme by given ID.
+// Get a Epg Programme by given ID.
 func (q *EpgQueries) GetEpgProgramme(id int64) (*models.EpgProgramme, error) {
-	// Define programme variable.
-	programme := models.EpgProgramme{}
+	programme := &models.EpgProgramme{}
 
-	// Define query string.
 	query := `SELECT * FROM epgprogramme WHERE id = ?`
 
-	// Send query to database.
-	err := q.Select(&programme, query, id)
+	err := q.Select(programme, query, id)
 	if err != nil {
-		// Return empty object and error.
 		return nil, err
 	}
 
-	// Return query result.
-	return &programme, nil
-}
-
-// Get Epg Programme method for getting one programme by given ID.
-func (q *EpgQueries) GetEpgProgrammeByChannelandTime(channelID string, start *models.Time) (models.EpgProgramme, error) {
-
-	// Define programme variable.
-	programme := models.EpgProgramme{}
-
-	// Define query string.
-	query := `SELECT * FROM epgprogramme WHERE channel = ? and start = ? LIMIT 1`
-
-	// Send query to database.
-	err := q.Get(&programme, query, channelID, start)
-	if err != nil {
-		// Return empty object and error.
-		return programme, err
-	}
-
-	// Return query result.
 	return programme, nil
 }
 
-// Create Epg Programme method for creating a programme by given object.
+// Get a Epg Programme by ID and starttime.
+func (q *EpgQueries) GetEpgProgrammeByChannelandTime(channelID string, start *models.Time) (*models.EpgProgramme, error) {
+
+	programme := &models.EpgProgramme{}
+
+	query := `SELECT * FROM epgprogramme WHERE channel = ? and start = ? LIMIT 1`
+
+	err := q.Get(programme, query, channelID, start)
+	if err != nil {
+		return nil, err
+	}
+
+	return programme, nil
+}
+
+// Create Epg Programme by given object.
 func (q *EpgQueries) CreateEpgProgramme(p models.EpgProgramme) (int64, error) {
 
 	q.MapperFunc(utils.CustomMapper)
-	// Define query string.
 	query := `INSERT INTO epgprogramme VALUES (null, ?, ?, ?, ?, ?, ?, ?, ?, 
 		?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-	// Send query to database.
 	res, err := q.Exec(query,
 		p.Start,
 		p.Stop,
@@ -336,10 +271,9 @@ func (q *EpgQueries) CreateEpgProgramme(p models.EpgProgramme) (int64, error) {
 	return id, nil
 }
 
-// Update Epg Programme method for updating a programme by given Channel object.
+// Update a Epg Programme by given Channel object.
 func (q *EpgQueries) UpdateEpgProgramme(id int64, p *models.EpgProgramme) error {
 
-	// Build the update query
 	query := `UPDATE epgprogramme SET `
 
 	if p.Title.Value != "" {
@@ -412,7 +346,6 @@ func (q *EpgQueries) UpdateEpgProgramme(id int64, p *models.EpgProgramme) error 
 	// Add the WHERE clause to match the ID
 	query += " WHERE id = ?"
 
-	// Send query to database.
 	_, err := q.Exec(query, id,
 		p.Title.Value,
 		p.Title.Lang,
@@ -431,93 +364,73 @@ func (q *EpgQueries) UpdateEpgProgramme(id int64, p *models.EpgProgramme) error 
 		p.Video.Quality,
 		p.Date)
 	if err != nil {
-		// Return only error.
 		return err
 	}
 
-	// This query returns nothing.
 	return nil
 }
 
-// Delete Epg Programme method for delete programme by given ID.
+// Delete a Epg Programme by given ID.
 func (q *EpgQueries) DeleteEpgProgramme(id int64) error {
-	// Define query string.
 	query := `DELETE FROM epgprogramme WHERE id = ?`
 
-	// Send query to database.
 	_, err := q.Exec(query, id)
 	if err != nil {
-		// Return only error.
 		return err
 	}
 
-	// This query returns nothing.
 	return nil
 }
 
 // GetEpgChannelItems method
-func (q *EpgQueries) GetEpgChannelItemsByCh(id int64) ([]models.EpgChannelItem, error) {
-	epgchannelitems := []models.EpgChannelItem{}
+func (q *EpgQueries) GetEpgChannelItemsByCh(id int64) (*[]models.EpgChannelItem, error) {
+	epgchannelitems := &[]models.EpgChannelItem{}
 
-	// Define query string.
 	query := `SELECT * FROM epgchannelitem WHERE channel_id = ?`
 
-	// Send query to database.
-	err := q.Select(&epgchannelitems, query, id)
+	err := q.Select(epgchannelitems, query, id)
 	if err != nil {
-		// Return empty object and error.
-		return epgchannelitems, err
+		return nil, err
 	}
 
-	// Return query result.
 	return epgchannelitems, nil
 }
 
-// GetEpgChannelItems method
-func (q *EpgQueries) GetEpgChannelItemsByProgramme(id int64) ([]models.EpgChannelItem, error) {
-	epgchannelitems := []models.EpgChannelItem{}
+// GetEpgChannelItems by programme id
+func (q *EpgQueries) GetEpgChannelItemsByProgramme(id int64) (*[]models.EpgChannelItem, error) {
+	epgchannelitems := &[]models.EpgChannelItem{}
 
-	// Define query string.
 	query := `SELECT * FROM epgchannelitem WHERE epg_programme_id = ?`
 
-	// Send query to database.
-	err := q.Select(&epgchannelitems, query, id)
+	err := q.Select(epgchannelitems, query, id)
 	if err != nil {
-		// Return empty object and error.
-		return epgchannelitems, err
+		return nil, err
 	}
 
-	// Return query result.
 	return epgchannelitems, nil
 }
 
-// GetEpgChannelItem method for getting one EpgChannelItem by given ID.
-func (q *EpgQueries) GetEpgChannelItem(id int64) (models.EpgChannelItem, error) {
-	channelitem := models.EpgChannelItem{}
+// Get a EpgChannelItem by given ID.
+func (q *EpgQueries) GetEpgChannelItem(id int64) (*models.EpgChannelItem, error) {
+	channelitem := &models.EpgChannelItem{}
 
-	// Define query string.
 	query := `SELECT * FROM epgchannelitem WHERE id = ?`
 
-	// Send query to database.
-	err := q.Get(&channelitem, query, id)
+	err := q.Get(channelitem, query, id)
 	if err != nil {
-		// Return empty object and error.
-		return channelitem, err
+		return nil, err
 	}
 
 	// Return query result.
 	return channelitem, nil
 }
 
-// CreateEpgChannelItem method for creating a template by given EpgChannelItem object.
+// Create EpgChannelItem method by given EpgChannelItem object.
 func (q *EpgQueries) CreateEpgChannelItem(p *models.EpgChannelItem) (int64, error) {
-	// Define query string.
 	query := `INSERT INTO epgchannelitem VALUES (null, ?, ?, ?)`
 
-	// Send query to database.
 	res, err := q.Exec(query, p.EpgChannelId, p.EpgProgrammeId)
-	if err != nil {
-		// Return only error.
+	if err != sql.ErrNoRows && err != nil {
 		return 0, err
 	}
 
@@ -527,38 +440,29 @@ func (q *EpgQueries) CreateEpgChannelItem(p *models.EpgChannelItem) (int64, erro
 		return 0, err
 	}
 
-	// This query returns nothing.
 	return id, nil
 }
 
-// UpdateEpgChannelItem method for updating template by given EpgChannelItem object.
+// Update EpgChannelItem by given EpgChannelItem object.
 func (q *EpgQueries) UpdateEpgChannelItem(id int64, p *models.EpgChannelItem) error {
-	// Define query string.
 	query := `UPDATE epgchannelitem SET epg_channel_id = ?, epg_programme_id = ? WHERE id = ?`
 
-	// Send query to database.
 	_, err := q.Exec(query, id, p.EpgChannelId, p.EpgProgrammeId)
 	if err != nil {
-		// Return only error.
 		return err
 	}
 
-	// This query returns nothing.
 	return nil
 }
 
-// DeleteEpgChannelItem method for delete template by given ID.
+// Delete EpgChannelItem by given ID.
 func (q *EpgQueries) DeleteEpgChannelItem(id int64) error {
-	// Define query string.
 	query := `DELETE FROM epgchannelitem WHERE id = ?`
 
-	// Send query to database.
 	_, err := q.Exec(query, id)
 	if err != nil {
-		// Return only error.
 		return err
 	}
 
-	// This query returns nothing.
 	return nil
 }

@@ -24,7 +24,7 @@ type M3uParser struct {
 }
 
 // ParseM3u - Parses the content of local file/URL.
-func (m *M3uParser) ParseM3u(playlist *models.Playlist) {
+func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 	m.playlistID = playlist.ID
 	log.Info().Msg("Parser started")
 
@@ -139,16 +139,20 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan models.PlaylistChann
 			if foundId, err := database.Db.GetPlGroupByName(group); foundId == 0 {
 				log.Info().Msgf("Group not found. %v, Creating Group: %s", err, group)
 				playlistGroup.Name = group
-				if groupID, err := database.Db.CreatePlGroup(playlistGroup); groupID == 0 {
-					log.Warn().Msgf("FAILED TO CREATE PLAYLIST GROUP: %v", err)
+				if groupID, err = database.Db.CreatePlGroup(playlistGroup); groupID == 0 {
+					log.Error().Msgf("FAILED TO CREATE PLAYLIST GROUP: %v", err)
+					return
 				} else {
 					if _, err := database.Db.CreatePlGroupItem(m.playlistID, groupID); err != nil {
-						log.Warn().Msgf("FAILED TO CREATE PLAYLIST_GROUP_ITEM: %v", err)
+						log.Error().Msgf("FAILED TO CREATE PLAYLIST_GROUP_ITEM: %v", err)
 					}
 				}
 			} else {
 				groupID = foundId
 			}
+		} else {
+			log.Error().Msgf("M3U PARSER: No Group found for %s", title)
+			return
 		}
 
 		// Validate playlist fields.
@@ -164,7 +168,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan models.PlaylistChann
 			log.Error().Err(err)
 		}
 
-		if len(foundChannels) == 0 {
+		if len(*foundChannels) == 0 {
 			log.Info().Msgf("Channel not found. Creating Channel: %s", playlistChannel.Title)
 			playlistChannel.CreatedAt = time.Now()
 			playlistChannelID, err := database.Db.CreatePlChannel(playlistChannel)
@@ -187,7 +191,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan models.PlaylistChann
 				return
 			}
 		} else {
-			for _, foundChannel := range foundChannels {
+			for _, foundChannel := range *foundChannels {
 				log.Info().Msgf("Channel found. Adding url to Channel: %s", playlistChannel.Title)
 				playlistChannel.UpdatedAt = time.Now()
 				err = database.Db.UpdatePlChannel(foundChannel.ID, playlistChannel)

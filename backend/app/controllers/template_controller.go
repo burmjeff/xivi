@@ -36,7 +36,7 @@ func GetTemplates(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"error":     false,
 		"msg":       nil,
-		"count":     len(templates),
+		"count":     len(*templates),
 		"templates": templates,
 	})
 }
@@ -224,7 +224,7 @@ func DeleteTemplate(c *fiber.Ctx) error {
 		})
 	}
 
-	go m3uTools.RemoveTemplate(&template)
+	go m3uTools.RemoveTemplate(template)
 
 	// Delete template by given ID.
 	if err := database.Db.DeleteTemplate(template_id); err != nil {
@@ -289,7 +289,7 @@ func GetGroups(c *fiber.Ctx) error {
 	// Get Template groups.
 	groups, err := database.Db.GetAllTmplGroups()
 	if err != nil {
-		// Return, if template not found.
+		log.Debug().Msgf("GetAllTmplGroups Error: %v", err)
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error":          true,
 			"msg":            "template groups not found",
@@ -335,7 +335,7 @@ func GetTemplateGroupChannels(c *fiber.Ctx) error {
 	}
 
 	channelLogos := []models.TemplateChannelLogo{}
-	for _, channel := range channels {
+	for _, channel := range *channels {
 		channelLogo := models.TemplateChannelLogo{}
 		channelLogo.TemplateChannel = channel
 		// Get logo.
@@ -361,7 +361,7 @@ func GetTemplateGroupChannels(c *fiber.Ctx) error {
 // @Tags Template Group
 // @Accept json
 // @Produce json
-// @Param templategroup body models.TemplateGroupCreateParam true "Template Group"
+// @Param templategroup body models.TemplateGroup true "Template Group"
 // @Success 200 {object} models.TemplateGroup
 // @Router /template/group [post]
 func CreateTemplateGroup(c *fiber.Ctx) error {
@@ -458,8 +458,8 @@ func CreateTemplateGroupItem(c *fiber.Ctx) error {
 	if err != nil {
 		log.Error().Msgf("Failed to find template: %s", err)
 	} else {
-		go m3uTools.CreateM3u(template)
-		go utils.CreateEpgXML(template)
+		go m3uTools.CreateM3u(*template)
+		go utils.CreateEpgXML(*template)
 	}
 
 	// Return status 201 OK.
@@ -528,7 +528,7 @@ func DeleteTemplateGroupItem(c *fiber.Ctx) error {
 	}
 
 	m3uTools := utils.M3uTools{}
-	go m3uTools.RemoveGroup(&template, &group)
+	go m3uTools.RemoveGroup(template, group)
 
 	// Return status 204 no content.
 	return c.SendStatus(fiber.StatusNoContent)
@@ -555,7 +555,7 @@ func DeleteTemplateGroup(c *fiber.Ctx) error {
 	}
 
 	if templateGroupItems, err := database.Db.GetTmplGroupItemsByGroup(group_id); err == nil {
-		for _, templateGroupItem := range templateGroupItems {
+		for _, templateGroupItem := range *templateGroupItems {
 			// Get template
 			template, err := database.Db.GetTemplate(templateGroupItem.TemplateId)
 			if err != nil {
@@ -576,7 +576,7 @@ func DeleteTemplateGroup(c *fiber.Ctx) error {
 					"msg":   err.Error(),
 				})
 			}
-			go m3uTools.RemoveGroup(&template, &group)
+			go m3uTools.RemoveGroup(template, group)
 		}
 	}
 
@@ -647,24 +647,24 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 	}
 
 	if (templateGroup.Dynamic != oldGroup.Dynamic && templateGroup.Dynamic) ||
-		(templateGroup.PlaylistGroup != oldGroup.PlaylistGroup && templateGroup.Dynamic) {
+		(templateGroup.DynamicGroup != oldGroup.DynamicGroup && templateGroup.Dynamic) {
 		utils.UpdateDynamicGroup(*templateGroup)
 	}
 
 	m3uTools := utils.M3uTools{}
 	if templateGroupItems, err := database.Db.GetTmplGroupItemsByGroup(templateGroup.ID); err == nil {
 		go func() {
-			for _, templateGroupItem := range templateGroupItems {
+			for _, templateGroupItem := range *templateGroupItems {
 				// Get template
 				template, err := database.Db.GetTemplate(templateGroupItem.TemplateId)
 				if err != nil {
 					continue
 				}
 				if templateGroup.Dynamic == oldGroup.Dynamic {
-					go m3uTools.UpdateGroup(&template, templateGroup, oldGroup)
+					go m3uTools.UpdateGroup(template, templateGroup, *oldGroup)
 				} else {
-					go m3uTools.CreateM3u(template)
-					go utils.CreateEpgXML(template)
+					go m3uTools.CreateM3u(*template)
+					go utils.CreateEpgXML(*template)
 				}
 			}
 		}()
@@ -822,15 +822,15 @@ func UpdateTemplateChannel(c *fiber.Ctx) error {
 			})
 		}
 		go func() {
-			for _, item := range templateGroupChannels {
+			for _, item := range *templateGroupChannels {
 				if templateGroupItems, err := database.Db.GetTmplGroupItemsByGroup(item.GroupId); err == nil {
-					for _, templateGroupItem := range templateGroupItems {
+					for _, templateGroupItem := range *templateGroupItems {
 						// Get template
 						template, err := database.Db.GetTemplate(templateGroupItem.TemplateId)
 						if err != nil {
 							continue
 						}
-						m3uTools.UpdateChannel(template, templateChannelLogo, &oldChannel)
+						m3uTools.UpdateChannel(*template, templateChannelLogo, oldChannel)
 					}
 				}
 			}
@@ -882,19 +882,19 @@ func DeleteTemplateChannel(c *fiber.Ctx) error {
 
 		m3uTools := utils.M3uTools{}
 		go func() {
-			for _, item := range templateGroupChannels {
+			for _, item := range *templateGroupChannels {
 				if templateGroupItems, err := database.Db.GetTmplGroupItemsByGroup(item.GroupId); err == nil {
 					group, err := database.Db.GetTmplGroup(item.GroupId)
 					if err != nil {
 						continue
 					}
-					for _, templateGroupItem := range templateGroupItems {
+					for _, templateGroupItem := range *templateGroupItems {
 						// Get template
 						template, err := database.Db.GetTemplate(templateGroupItem.TemplateId)
 						if err != nil {
 							continue
 						}
-						m3uTools.RemoveChannel(&template, &group, &channel)
+						m3uTools.RemoveChannel(template, group, channel)
 					}
 				}
 			}
@@ -944,12 +944,12 @@ func GetTemplateChannelItems(c *fiber.Ctx) error {
 	}
 
 	playlistChannels := []models.PlaylistChannel{}
-	for _, channel := range channels {
+	for _, channel := range *channels {
 		playlistChannel, err := database.Db.GetPlChannel(channel.PlaylistChannelId)
 		if err != nil {
 			continue
 		}
-		playlistChannels = append(playlistChannels, playlistChannel)
+		playlistChannels = append(playlistChannels, *playlistChannel)
 	}
 	if len(playlistChannels) <= 0 {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -1028,7 +1028,7 @@ func GetTemplateChannelMatches(c *fiber.Ctx) error {
 		})
 	}
 
-	vectorMatches, err := utils.TopChannelMatches(channel)
+	vectorMatches, err := utils.TopChannelMatches(*channel)
 	if err != nil {
 		log.Err(err)
 		// Return, if template not found.

@@ -13,7 +13,7 @@
     import IconParkOutlineDelete from '~icons/icon-park-outline/delete';
     import IconParkOutlineAdd from '~icons/icon-park-outline/add';
 
-    let dndTypePlaylist = "playlist";
+    let dndPlaylistId: number;
     let dndTypeGroups = "groups";
     let shouldIgnoreDndEvents = false;
     const flipDurationMs = 150;
@@ -124,7 +124,7 @@
 				id: group?.id,
                 name: formData.name,
 				dynamic: formData.dynamic,
-				playlistgroup: formData.playlistgroup
+				dynamicgroup: formData.dynamicgroup
 			};
 
             if (isNew) {
@@ -151,7 +151,7 @@
                         console.log('Updated template group: ', formData.name);
                         $templateGroups[groupIdx].name = formData.name
                         $templateGroups[groupIdx].dynamic = formData.dynamic
-                        $templateGroups[groupIdx].playlistgroup = formData.playlistgroup
+                        $templateGroups[groupIdx].dynamicgroup = formData.dynamicgroup
                     }
                     
                 } else {
@@ -172,7 +172,7 @@
 					isNew: isNew,
 					name: group?.name,
 					dynamic: group?.dynamic,
-                    playlistgroup: group?.playlistgroup 
+                    dynamicgroup: group?.dynamicgroup 
 				 },
 				response: (r: boolean) => {
 					resolve(r);
@@ -221,12 +221,12 @@
 	}
 
 	async function convertGroup(groupName: string, groupId: string) {
-		if (groupName !== '') {
+		if (groupName !== '' && dndPlaylistId !== 0) {
 			const newGroup = {
 				name: groupName
 			};
 			try {
-				const response = await fetch(`/api/playlist/group/${groupId}/convert`, {
+				const response = await fetch(`/api/playlist/${dndPlaylistId}/group/${groupId}/convert`, {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json'
@@ -288,7 +288,10 @@
         }
     }
     function transformDraggedElement(draggedEl: HTMLElement | undefined, data: Item | undefined, index: number | undefined) {
-        if (!shouldIgnoreDndEvents) data!.isDragged = true
+        if (!shouldIgnoreDndEvents) {
+            data!.isDragged = true;
+            dndPlaylistId = data!.playlistId;
+        }
 	}
 </script>
 

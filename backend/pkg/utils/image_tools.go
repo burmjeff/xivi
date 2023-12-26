@@ -124,11 +124,11 @@ func GetLogoPath(name string) string {
 
 }
 
-func logoExists(logoName string) (bool, models.Logo) {
+func logoExists(logoName string) *models.Logo {
 	if logo, err := database.Db.GetLogoByName(logoName); err != nil {
 		log.Debug().Msgf("logoExists: %v", err.Error())
-		return false, logo
+		return nil
 	} else {
-		return true, logo
+		return logo
 	}
 }

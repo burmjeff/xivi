@@ -40,17 +40,17 @@ func CreateEpgXML(template models.Template) {
 		return
 	}
 
-	for _, channel := range channels {
+	for _, channel := range *channels {
 		epgChannel, err := database.Db.GetEpgChannelByChannelId(channel.TvgID)
 		if err != nil {
 			log.Warn().Msgf("No channel found for %s: %v", channel, err)
 			continue
 		}
 		epgChannel.Icon.Src = fmt.Sprintf("http://%s:%d/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, GetLogoUrl(channel.Uuid))
-		epg.Channels = append(epg.Channels, epgChannel)
+		epg.Channels = append(epg.Channels, *epgChannel)
 	}
 
-	for _, channel := range channels {
+	for _, channel := range *channels {
 		epgProgrammes, err := database.Db.GetProgrammesByChannelId(channel.TvgID)
 		if err != nil {
 			log.Warn().Msgf("No programme found for %s: %v", channel.TvgID, err)

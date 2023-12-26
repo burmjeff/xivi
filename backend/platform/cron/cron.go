@@ -33,21 +33,21 @@ func UpdatePlaylists() {
 
 	// get playlists.
 	playlists, err := database.Db.GetPlaylists()
-	cleanPlaylists(database.Db, playlists)
+	cleanPlaylists(*playlists)
 	if err != nil {
 		log.Err(err)
 		return
 	}
 
-	for _, playlist := range playlists {
+	for _, playlist := range *playlists {
 		log.Log().Msgf("Updating Playlist: %s", playlist.Name)
 		m3uParser := utils.M3uParser{}
-		m3uParser.ParseM3u(&playlist)
+		m3uParser.ParseM3u(playlist)
 
 		if channels, err := database.Db.GetPlChannels(playlist.ID); err != nil {
 			log.Err(err)
 		} else {
-			for _, channel := range channels {
+			for _, channel := range *channels {
 				if channel.UpdatedAt.Before(time.Now().Add(-24*time.Hour)) && channel.CreatedAt.Before(time.Now().Add(-24*time.Hour)) {
 					database.Db.DeletePlChannel(channel.ID)
 				}
@@ -59,7 +59,7 @@ func UpdatePlaylists() {
 	if groups, err := database.Db.GetAllTmplGroups(); err != nil {
 		log.Err(err)
 	} else {
-		for _, group := range groups {
+		for _, group := range *groups {
 			if group.Dynamic {
 				utils.UpdateDynamicGroup(group)
 			}
@@ -71,7 +71,7 @@ func UpdatePlaylists() {
 		log.Debug().Err(err)
 	} else {
 		m3uTools := utils.M3uTools{}
-		for _, template := range templates {
+		for _, template := range *templates {
 			go m3uTools.CreateM3u(template)
 		}
 	}
@@ -92,36 +92,34 @@ func UpdateEpgs() {
 		return
 	}
 
-	for _, epg := range epgs {
+	for _, epg := range *epgs {
 		log.Log().Msgf("Updating EPG: %s", epg.Name)
 		utils.ParseEpg(&epg)
 		log.Log().Msgf("Finished Updating EPG: %s", epg.Name)
 	}
 
-	for _, template := range templates {
+	for _, template := range *templates {
 		go utils.CreateEpgXML(template)
 	}
 
 }
 
-func cleanPlaylists(db *database.Queries, playlists []models.Playlist) {
+func cleanPlaylists(playlists []models.Playlist) {
 	if len(playlists) == 0 {
-		if err := db.DeletePlGroups(); err != nil {
+		if err := database.Db.DeletePlGroups(); err != nil {
 			log.Err(err)
 		}
-		if err := db.DeletePlChannels(); err != nil {
+		if err := database.Db.DeletePlChannels(); err != nil {
 			log.Err(err)
 		}
 	} else {
-		var playlistIds []int64
 		for _, playlist := range playlists {
-			playlistIds = append(playlistIds, playlist.ID)
-		}
-		if err := db.CleanPlaylistGroups(playlistIds); err != nil {
-			log.Debug().Msgf("Playlist Clean: %v", err)
-		}
-		if err := db.CleanPlaylistChannels(playlistIds); err != nil {
-			log.Debug().Msgf("Playlist Clean: %v", err)
+			if err := database.Db.CleanPlaylistGroups(playlist.ID); err != nil {
+				log.Debug().Msgf("Playlist Clean: %v", err)
+			}
+			if err := database.Db.CleanPlaylistChannels(playlist.ID); err != nil {
+				log.Debug().Msgf("Playlist Clean: %v", err)
+			}
 		}
 	}
 

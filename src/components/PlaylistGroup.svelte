@@ -5,8 +5,6 @@
 	import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
 	import { playlists } from '@xivi/stores/playlist_store';
 	import { getModalStore } from '@skeletonlabs/skeleton';
-	import type { ModalSettings } from '@skeletonlabs/skeleton';
-	import IconParkOutlineTransferData from '~icons/icon-park-outline/transfer-data';
 	import type { PlaylistGroup } from '@xivi/data/playlist_entities';
 	import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME, DRAGGED_ELEMENT_ID } from 'svelte-dnd-action';
 	import { flip } from 'svelte/animate';
@@ -15,7 +13,6 @@
 
 	export let playlistId: number;
 	export let playlistIdx: number;
-	const modalStore = getModalStore();
 	let shouldIgnoreDndEvents = false;
 	const flipDurationMs = 150;
 	const dropFromOthersDisabled = true;
@@ -40,52 +37,14 @@
 		}
 	});
 
-	function convertPrompt(groupId: string): void {
-		const prompt: ModalSettings = {
-			type: 'prompt',
-			title: 'Convert Playlist Group to Template Group',
-			body: 'Enter new template group name in field below.',
-			value: 'Example Template',
-			valueAttr: { type: 'text', minlength: 1, maxlength: 20, required: true },
-			response: (groupName: string) => {
-				if (groupName) convertGroup(groupName, groupId);
-			},
-			buttonTextCancel: 'Cancel',
-			buttonTextSubmit: 'Submit'
-		};
-		modalStore.trigger(prompt);
-	}
-
-	async function convertGroup(groupName: string, groupId: string) {
-		if (groupName !== '') {
-			const newGroup = {
-				name: groupName
-			};
-			try {
-				const response = await fetch(`/api/playlist/group/${groupId}/convert`, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json'
-					},
-					body: JSON.stringify(newGroup)
-				});
-				const data = await response.json();
-				console.log('Created template group:', data);
-				//$templateGroups.push(data.templateGroup)
-			} catch (error) {
-				console.log('Error creating template group:', error);
-				return [];
-			}
-		}
-	}
-
 	function handleDndConsider(e: CustomEvent<DndEvent<PlaylistGroup>>) {
 		const {trigger, id} = e.detail.info;
 		e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
 		
 		if (trigger === TRIGGERS.DRAG_STARTED) {
 			dndIdx = $playlists[playlistIdx].groups.findIndex(item => item.id === id);
-			dndItem =  $playlists[playlistIdx].groups[dndIdx];
+			dndItem = $playlists[playlistIdx].groups[dndIdx];
+			$playlists[playlistIdx].groups[dndIdx].playlistId = playlistId
 			$playlists[playlistIdx].groups = e.detail.items
 			shouldIgnoreDndEvents = true;
 		}
@@ -112,6 +71,10 @@
             shouldIgnoreDndEvents = false;
         }
     }
+
+	function transformDraggedElement(draggedEl: HTMLElement | undefined, data: Item | undefined, index: number | undefined) {
+		data!.playlistId = playlistId;
+	}
 </script>
 
 {#if $playlists[playlistIdx].groups != null && $playlists[playlistIdx].groups.length > 0}
@@ -120,14 +83,15 @@
 			items: $playlists[playlistIdx].groups,
 			flipDurationMs,
 			dropFromOthersDisabled,
-			type: dndTypeGroups
+			type: dndTypeGroups,
+			transformDraggedElement
 			}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
 			{#each $playlists[playlistIdx].groups as group, groupIdx (group.id)}
 			<div id="animate" animate:flip={{ duration: flipDurationMs }}>
 				<AccordionItem class="card mb-1" key={group.id}>
 					<svelte:fragment slot="summary"><h4>{group.name}</h4></svelte:fragment>
 					<svelte:fragment slot="content">
-						<PlaylistChannel {playlistIdx} groupId={group.id} {groupIdx} />
+						<PlaylistChannel playlistId={playlistId} playlistIdx={playlistIdx} groupId={group.id} groupIdx={groupIdx} />
 					</svelte:fragment>
 				</AccordionItem>
 				{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
