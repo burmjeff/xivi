@@ -1,23 +1,23 @@
 package queries
 
 import (
+	"database/sql"
 	"xivi/backend/app/models"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
 )
 
-// EpgQueries struct for queries from Epg model.
 type FilterQueries struct {
 	*sqlx.DB
 }
 
-func (q *FilterQueries) GetFilters() ([]models.RegexFilter, error) {
-	filters := []models.RegexFilter{}
+func (q *FilterQueries) GetFilters() (*[]models.RegexFilter, error) {
+	filters := &[]models.RegexFilter{}
 
 	query := `SELECT * FROM regexfilters`
 
-	if err := q.Select(&filters, query); err != nil {
+	if err := q.Select(filters, query); err != nil {
 		return nil, err
 	}
 
@@ -29,7 +29,7 @@ func (q *FilterQueries) GetFilter(id int64) (*models.RegexFilter, error) {
 
 	query := `SELECT * FROM regexfilters WHERE id = ?`
 
-	err := q.Get(&filter, query, id)
+	err := q.Get(filter, query, id)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +42,7 @@ func (q *FilterQueries) CreateFilter(filter *models.RegexFilter) (int64, error) 
 	query := `INSERT INTO regexfilters VALUES (null, ?, ?)`
 
 	res, err := q.Exec(query, filter.Name, filter.Regex)
-	if err != nil {
+	if err != sql.ErrNoRows && err != nil {
 		return 0, err
 	}
 	id, err := res.LastInsertId()
@@ -56,40 +56,34 @@ func (q *FilterQueries) CreateFilter(filter *models.RegexFilter) (int64, error) 
 
 func (q *FilterQueries) UpdateFilter(filter *models.RegexFilter) error {
 
-	// Define query string.
 	query := `UPDATE regexfilters SET name = ?, regex = ? WHERE id = ?`
-	// Send query to database.
+
 	_, err := q.Exec(query, filter.Name, filter.Regex, filter.ID)
 	if err != nil {
-		// Return empty object and error.
 		return err
 	}
 
-	// Return query result.
 	return nil
 }
 
 func (q *FilterQueries) DeleteFilter(id int64) error {
 
-	// Define query string.
 	query := `DELETE FROM regexfilters WHERE id = ?`
-	// Send query to database.
+
 	_, err := q.Exec(query, id)
 	if err != nil {
-		// Return empty object and error.
 		return err
 	}
 
-	// Return query result.
 	return nil
 }
 
-func (q *FilterQueries) GetGroupFilters(group_id int64) ([]models.GroupFilter, error) {
-	filters := []models.GroupFilter{}
+func (q *FilterQueries) GetGroupFilters(group_id int64) (*[]models.GroupFilter, error) {
+	filters := &[]models.GroupFilter{}
 
 	query := `SELECT * FROM groupfilters WHERE group_id = ?`
 
-	if err := q.Select(&filters, query, group_id); err != nil {
+	if err := q.Select(filters, query, group_id); err != nil {
 		return nil, err
 	}
 
@@ -101,7 +95,7 @@ func (q *FilterQueries) CreateGroupFilter(filter *models.GroupFilter) (int64, er
 	query := `INSERT INTO groupfilters VALUES (null, ?, ?, ?)`
 
 	res, err := q.Exec(query, filter.GroupId, filter.FilterId, filter.Type)
-	if err != nil {
+	if err != sql.ErrNoRows && err != nil {
 		return 0, err
 	}
 	id, err := res.LastInsertId()
@@ -115,30 +109,24 @@ func (q *FilterQueries) CreateGroupFilter(filter *models.GroupFilter) (int64, er
 
 func (q *FilterQueries) UpdateGroupFilter(filter *models.GroupFilter) error {
 
-	// Define query string.
 	query := `UPDATE groupfilters SET group_id = ?, filter_id = ?, type = ? WHERE id = ?`
-	// Send query to database.
+
 	_, err := q.Exec(query, filter.GroupId, filter.FilterId, filter.Type, filter.ID)
 	if err != nil {
-		// Return empty object and error.
 		return err
 	}
 
-	// Return query result.
 	return nil
 }
 
 func (q *FilterQueries) DeleteGroupFilter(id int64) error {
 
-	// Define query string.
 	query := `DELETE FROM groupfilters WHERE id = ?`
-	// Send query to database.
+
 	_, err := q.Exec(query, id)
 	if err != nil {
-		// Return empty object and error.
 		return err
 	}
 
-	// Return query result.
 	return nil
 }

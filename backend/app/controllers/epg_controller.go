@@ -35,7 +35,7 @@ func GetEpgs(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"error": false,
 		"msg":   nil,
-		"count": len(epgs),
+		"count": len(*epgs),
 		"epgs":  epgs,
 	})
 }
@@ -69,7 +69,7 @@ func CreateEpg(c *fiber.Ctx) error {
 		})
 	}
 
-	go utils.CreateEpgXML(template)
+	go utils.CreateEpgXML(*template)
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
@@ -162,7 +162,7 @@ func DeleteEpg(c *fiber.Ctx) error {
 		})
 	}
 
-	go utils.RemoveEpg(&foundEpg)
+	go utils.RemoveEpg(foundEpg)
 
 	// Delete epg by given ID.
 	if err := database.Db.DeleteEpg(foundEpg.ID); err != nil {

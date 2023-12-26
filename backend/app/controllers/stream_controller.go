@@ -44,16 +44,16 @@ func GetStream(c *fiber.Ctx) error {
 		})
 	}
 
-	if len(channels) > 0 {
+	if len(*channels) > 0 {
 		switch settings.APP_SETTINGS.Streaming.Proxy {
 
 		case false:
 			//TODO LOOP CHECK STREAM STATUS UNTIL 302
-			return c.Redirect(channels[0].Url, http.StatusTemporaryRedirect)
+			return c.Redirect((*channels)[0].Url, http.StatusTemporaryRedirect)
 
 		case true:
 			for _, stream := range streaming.Streams {
-				if stream.Settings.Src == channels[0].Url {
+				if stream.Settings.Src == (*channels)[0].Url {
 					if err := stream.NewSink(c.Context()); err != nil {
 						return err
 					}
@@ -63,7 +63,7 @@ func GetStream(c *fiber.Ctx) error {
 			}
 
 			s := streaming.NewStreamer()
-			if err := s.StartStream(channels[0].Url); err != nil {
+			if err := s.StartStream((*channels)[0].Url); err != nil {
 				return err
 			}
 			streaming.AddStream(s)

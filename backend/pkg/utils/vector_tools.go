@@ -81,16 +81,13 @@ func UpdateTemplateVector(templateCh models.TemplateChannel) int64 {
 }
 
 func getChannelVector(name string) (int64, error) {
-	var channelVector models.ChannelVector
-	var err error
-
-	channelVector, err = database.Db.GetChannelVectorByName(name)
+	channelVector, err := database.Db.GetChannelVectorByName(name)
 	if err != nil {
 		vector, err := vectorizeString(name)
 		if err != nil {
 			return 0, err
 		}
-		channelVector = models.ChannelVector{Name: name, Vector: vector}
+		channelVector = &models.ChannelVector{Name: name, Vector: vector}
 		channelVector.ID, err = database.Db.CreateChannelVector(channelVector)
 		if err != nil {
 			return 0, err

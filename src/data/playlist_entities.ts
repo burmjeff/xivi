@@ -11,6 +11,7 @@ export interface PlaylistGroup {
 	name: string;
 	isDndShadowItem: boolean;
 	isDragged: boolean;
+	playlistId: number;
 	channels: PlaylistChannel[];
 }
 

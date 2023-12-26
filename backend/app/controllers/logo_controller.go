@@ -33,16 +33,16 @@ func GetLogos(c *fiber.Ctx) error {
 		})
 	}
 
-	for i, logo := range logos {
+	for i, logo := range *logos {
 		url := utils.GetLogoUrl(logo.Name)
-		logos[i].Image = url
+		(*logos)[i].Image = url
 	}
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
 		"error": false,
 		"msg":   nil,
-		"count": len(logos),
+		"count": len(*logos),
 		"logos": logos,
 	})
 }

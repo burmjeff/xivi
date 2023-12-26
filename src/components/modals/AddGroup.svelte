@@ -3,42 +3,62 @@
 <script lang="ts">
     import { onMount, type SvelteComponent } from 'svelte';
     import { popup, getModalStore, SlideToggle, InputChip, Autocomplete, type AutocompleteOption, type PopupSettings} from '@skeletonlabs/skeleton';
-    import {playlistGroups} from '@xivi/stores/playlist_store';
+    import {playlists} from '@xivi/stores/playlist_store';
+    import type { PlaylistGroup } from '@xivi/data/playlist_entities';
 
     export let parent: SvelteComponent;
 
     const modalStore = getModalStore();
     let isNew = $modalStore[0].meta.isNew
-    let groupNames: string[];
-    let addedNames: string[];
-    let groupOptions: AutocompleteOption<string>[];
+    let dynamicNames: string[];
+    let addedLabels: string[];
+    let dynamicOptions: AutocompleteOption<string>[];
     let inputPlaylist: string;
 
     let formData: {
 		name: string,
 		dynamic: boolean,
-		playlistgroup: number
+		dynamicgroup: number
 	}
+
+    interface playlistItem {
+        id: number,
+        playlist_id: number,
+        group_id: number
+    }
+    const playlistItems = [] as Array<playlistItem>;
 
     if (!isNew) {
 		formData = {
             name: $modalStore[0].meta.name,
             dynamic: $modalStore[0].meta.dynamic,
-            playlistgroup: $modalStore[0].meta.playlistgroup
+            dynamicgroup: $modalStore[0].meta.dynamicgroup
 		};
 	} else {
 		formData = {
             name: "",
             dynamic: false,
-            playlistgroup: 0
+            dynamicgroup: 0
         }
 	}
 
-    const updatePlaylistGroups = async () => {
-        const response = await fetch('/api/playlist/groups/all');
-        const data = await response.json();
-        return data.playlistgroups;
-    }
+    const updatePlaylists = async () => {
+		const response = await fetch('/api/playlists');
+		const data = await response.json();
+		return data.playlists;
+	};
+
+    const updatePlaylistGroups = async (playlistId: number) => {
+		const response = await fetch(`/api/playlist/${playlistId}/groups`);
+		const data = await response.json();
+		return data.playlistgroups;
+	};
+
+    const getPlaylistGroupItems = async () => {
+		const response = await fetch(`/api/playlist/group/items`);
+		const data = await response.json();
+		return data.items;
+	};
 
     let popupDynamic: PopupSettings = {
         event: 'focus-click',
@@ -47,33 +67,59 @@
     };
 
     onMount(async () => {
-        playlistGroups.set(await updatePlaylistGroups());
-        groupNames = $playlistGroups.map( ( group ) => { return group.name } )
-        groupOptions = $playlistGroups.map( ( group ) => { return { label: group.name, value: group.name }} )
-        if (!isNew && formData.playlistgroup !== 0) {
-            addedNames[0] = $playlistGroups[$playlistGroups.findIndex(item => Number(item.id) === formData.playlistgroup)].name;
+        const fetchedItems = await getPlaylistGroupItems();
+        if (typeof fetchedItems !== 'undefined') {
+            fetchedItems.forEach(function (item: playlistItem) {
+                playlistItems.push(item);
+            });
+        }
+
+        if ($playlists.length == 0) {
+            playlists.set(await updatePlaylists());
+        }
+        for (let i = 0; i < $playlists.length; i++) {
+            if ($playlists[i].groups == undefined) {
+                $playlists[i].groups = [];
+                const fetchedData = await updatePlaylistGroups($playlists[i].id);
+                if (typeof fetchedData !== 'undefined') {
+                    fetchedData.forEach(function (group: PlaylistGroup) {
+                        $playlists[i].groups.push(group);
+                        $playlists[i].groups = $playlists[i].groups;
+                    });
+                }
+            }
+
+            dynamicNames = $playlists[i].groups.map( ( group ) => { return `${$playlists[i].name} - ${group.name}` } )
+            dynamicOptions = $playlists[i].groups.map( ( group ) => { return { label: `${$playlists[i].name} - ${group.name}`, value: `${$playlists[i].name} - ${group.name}`, meta: `${$playlists[i].id},${group.id}` }} )
+        }
+        
+        if (!isNew && formData.dynamicgroup !== 0 && formData.dynamicgroup !== undefined) {
+            let item = playlistItems[playlistItems.findIndex(item => item.id === formData.dynamicgroup)]
+            let playlistIdx = $playlists.findIndex(playlist => playlist.id === item.playlist_id)
+            let groupIdx = $playlists[playlistIdx].groups.findIndex(group => Number(group.id) === item.group_id)
+            addedLabels[0] = `${$playlists[playlistIdx].name} - ${$playlists[playlistIdx].groups[groupIdx].name}`;
             
         }
-        //groupNames = [...groupNames]
     });
 
     function onInputChipSelect(event: CustomEvent<AutocompleteOption<string>>): void {
-        if (addedNames.length === 0) {
-            addedNames.push(event.detail.label);
-            addedNames = [...addedNames]
+        if (addedLabels.length === 0) {
+            addedLabels.push(event.detail.label);
+            addedLabels = [...addedLabels]
         }
     }
 
     async function onFormSubmit(): Promise<void> {
         if (formData.dynamic) {
-            if (addedNames.length == 0) {
+            if (addedLabels.length == 0) {
                 formData.dynamic = false
-                formData.playlistgroup = 0
+                formData.dynamicgroup = 0
             } else {
-                formData.playlistgroup = Number($playlistGroups[$playlistGroups.findIndex(item => item.name === addedNames[0])].id);
+                const dynamicItem = dynamicOptions[dynamicOptions.findIndex(item => item.label === addedLabels[0])].meta.split(',');
+                formData.dynamicgroup = playlistItems[playlistItems.findIndex(item => item.playlist_id === Number(dynamicItem[0]) && item.group_id === Number(dynamicItem[1]))].id;
             }
         } else {
-            formData.playlistgroup = 0
+            formData.dynamicgroup = 0
         }
 		if ($modalStore[0].response) $modalStore[0].response(formData);
 		modalStore.close();
@@ -97,12 +143,12 @@
                 <SlideToggle class="w-fit h-fit" name="slide" active="bg-primary-500" bind:checked={formData.dynamic}>Dynamic</SlideToggle>
                 <div class="template_group_playlist" use:popup={popupDynamic}>
                     <span>Playlist Group</span>
-                    <InputChip bind:input={inputPlaylist} bind:value={addedNames} whitelist={groupNames} max={1} placeholder="Search..."  name="chips" />
-                    <div data-popup="popupAutocomplete" class="card">
+                    <InputChip bind:input={inputPlaylist} bind:value={addedLabels} whitelist={dynamicNames} max={1} placeholder="Search..."  name="chips" />
+                    <div data-popup="popupAutocomplete" class="card w-fit max-h-96 overflow-y-scroll">
                         <Autocomplete
                             bind:input={inputPlaylist}
-                            options={groupOptions}
-                            allowlist={groupNames}
+                            options={dynamicOptions}
+                            allowlist={dynamicNames}
                             on:selection={onInputChipSelect}
                         />
                     </div>

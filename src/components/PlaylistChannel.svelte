@@ -8,6 +8,7 @@
 	import { fade } from 'svelte/transition';
 	import { cubicIn } from 'svelte/easing';
 
+	export let playlistId: number;
 	export let playlistIdx: number;
 	export let groupId: string;
 	export let groupIdx: number;
@@ -19,7 +20,7 @@
 	const dropFromOthersDisabled = true;
 
 	const updatePlaylistChannels = async () => {
-		const response = await fetch(`/api/playlist/group/${groupId}/channels`);
+		const response = await fetch(`/api/playlist/${playlistId}/group/${groupId}/channels`);
 		const data = await response.json();
 		return data.playlistchannels;
 	};

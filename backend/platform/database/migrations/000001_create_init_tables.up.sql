@@ -42,16 +42,17 @@ CREATE TABLE channelurl (
 
 -- Create playlist_group_item table
 CREATE TABLE playlist_group_item (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     playlist_id INTEGER NOT NULL,
-    group_id INTEGER NULL,
-    PRIMARY KEY (playlist_id, group_id),
+    group_id INTEGER NOT NULL,
     FOREIGN KEY (playlist_id) REFERENCES playlist(id) ON DELETE CASCADE,
-    FOREIGN KEY (group_id) REFERENCES playlistgroup(id) ON DELETE CASCADE
+    FOREIGN KEY (group_id) REFERENCES playlistgroup(id) ON DELETE CASCADE,
+    UNIQUE(playlist_id, group_id) ON CONFLICT IGNORE
 );
 
 -- Create playlist_group_channel table
 CREATE TABLE playlist_group_channel (
-    group_id INTEGER NULL,
+    group_id INTEGER NOT NULL,
     channel_id INTEGER NOT NULL,
     PRIMARY KEY (group_id, channel_id),
     FOREIGN KEY (group_id) REFERENCES playlistgroup(id) ON DELETE CASCADE,
@@ -69,8 +70,8 @@ CREATE TABLE templategroup (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR (255) UNIQUE NOT NULL,
     dynamic BOOLEAN,
-    playlistgroup INTEGER NULL,
-    FOREIGN KEY (playlistgroup) REFERENCES playlistgroup(id)
+    dynamicgroup INTEGER DEFAULT 0 NULL,
+    FOREIGN KEY (dynamicgroup) REFERENCES playlist_group_item(id) ON DELETE SET DEFAULT
 );
 
 -- Create templatechannel table
@@ -78,9 +79,9 @@ CREATE TABLE templatechannel (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR (255) NOT NULL,
     tvgid VARCHAR (255) NULL,
-    logoid INTEGER NULL,
+    logoid INTEGER DEFAULT 0 NULL,
     uuid VARCHAR (255) UNIQUE NOT NULL,
-    FOREIGN KEY (logoid) REFERENCES logo(id)
+    FOREIGN KEY (logoid) REFERENCES logo(id) ON DELETE SET DEFAULT
 );
 
 -- Create logo table
@@ -101,7 +102,7 @@ CREATE TABLE template_group_item (
 
 -- Create template_group_channel table
 CREATE TABLE template_group_channel (
-    group_id INTEGER NULL,
+    group_id INTEGER NOT NULL,
     channel_id INTEGER NOT NULL,
     orderr INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (group_id, channel_id),
@@ -279,6 +280,7 @@ FOR EACH ROW
 BEGIN
     DELETE FROM playlist_group_item WHERE playlist_id = old.id;
     DELETE FROM playlistgroup WHERE id NOT IN (SELECT group_id FROM playlist_group_item);
+    UPDATE templategroup SET dynamic = false, dynamicgroup = 0 WHERE dynamicgroup NOT IN (SELECT id FROM playlist_group_item);
 END;
 
 CREATE TRIGGER delete_playlistgroup_cascade
@@ -286,9 +288,10 @@ AFTER DELETE ON playlistgroup
 FOR EACH ROW
 BEGIN
     DELETE FROM playlist_group_item WHERE group_id = old.id;
+    DELETE FROM playlist_group_channel WHERE group_id = old.id;
     DELETE FROM groupfilters WHERE group_id = old.id;
     DELETE FROM playlistchannel WHERE id NOT IN (SELECT channel_id FROM playlist_group_channel);
-    UPDATE templategroup SET dynamic = false, playlistgroup = NULL WHERE playlistgroup = old.id;
+    UPDATE templategroup SET dynamic = false, dynamicgroup = 0 WHERE dynamicgroup NOT IN (SELECT id FROM playlist_group_item);
 END;
 
 CREATE TRIGGER delete_playlistchannel_cascade
@@ -296,9 +299,10 @@ AFTER DELETE ON playlistchannel
 FOR EACH ROW
 BEGIN
     DELETE FROM playlist_group_channel WHERE channel_id = old.id;
-    DELETE FROM playlistgroup WHERE id NOT IN (SELECT group_id FROM playlist_group_item);
+    DELETE FROM templatechannelitem WHERE playlist_channel_id = old.id;
     DELETE FROM channelurl WHERE playlist_channel_id = old.id;
     DELETE FROM playlistchannelvectors WHERE channel_id = old.id;
+    DELETE FROM playlistgroup WHERE id NOT IN (SELECT group_id FROM playlist_group_channel);
 END;
 
 CREATE TRIGGER delete_channelurl_cascade

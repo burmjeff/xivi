@@ -108,7 +108,7 @@ func ParseEpg(epg *models.Epg) {
 	if err != nil {
 		log.Error().Msg("EPG XML PARSER: NO TEMPLATE FOUND")
 	} else {
-		for _, template := range templates {
+		for _, template := range *templates {
 			go CreateEpgXML(template)
 		}
 	}
