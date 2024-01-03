@@ -8,7 +8,7 @@ import (
 type PlaylistChannel struct {
 	ID        int64     `db:"id" json:"id"`
 	TvgID     string    `db:"tvg_id" json:"tvg_id" validate:"lte=255"`
-	TvgName   string    `db:"tvg_name"  json:"tvg_name" validate:"required,lte=255"`
+	TvgName   string    `db:"tvg_name" json:"tvg_name" validate:"required,lte=255"`
 	Logo      string    `db:"tvg_logo" json:"tvg_logo" validate:"lte=255"`
 	Title     string    `db:"title" json:"title" validate:"lte=255"`
 	Enabled   bool      `db:"enabled" json:"enabled"`
