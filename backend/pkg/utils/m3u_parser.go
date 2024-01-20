@@ -129,8 +129,16 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan models.PlaylistChann
 		if tvgLogo != "" {
 			playlistChannel.Logo = tvgLogo
 		}
+
 		if title != "" {
 			playlistChannel.Title = title
+			if tvgName == "" {
+				playlistChannel.TvgName = title
+			}
+		} else if tvgName != "" {
+			playlistChannel.Title = tvgName
+		} else if tvgID != "" {
+			playlistChannel.Title = tvgID
 		}
 
 		var groupID int64 = 0
@@ -158,7 +166,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan models.PlaylistChann
 		// Validate playlist fields.
 		if err := validate.Struct(playlistChannel); err != nil {
 			//Some fields are not valid.
-			log.Warn().Msg(err.Error())
+			log.Error().Msg(err.Error())
 			return
 		}
 
