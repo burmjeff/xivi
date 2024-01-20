@@ -63,7 +63,7 @@ func GetStream(c *fiber.Ctx) error {
 			}
 
 			s := streaming.NewStreamer()
-			if err := s.StartStream((*channels)[0].Url); err != nil {
+			if err := s.StartStream((*channels)[0]); err != nil {
 				return err
 			}
 			streaming.AddStream(s)

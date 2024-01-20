@@ -81,7 +81,7 @@ func downloadImage(URL string) ([]byte, error) {
 	defer response.Body.Close()
 
 	if response.StatusCode != 200 {
-		return nil, errors.New("Received non 200 response code")
+		return nil, errors.New(fmt.Sprintf("Received non 200 response code of %v", response.StatusCode))
 	}
 	imgBuf, err := io.ReadAll(response.Body)
 	if err != nil {

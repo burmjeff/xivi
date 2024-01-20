@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"xivi/backend/app/models"
 	"xivi/backend/platform/settings"
 
+	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
 	gstapp "github.com/go-gst/go-gst/gst/app"
 	"github.com/rs/zerolog/log"
@@ -73,7 +75,7 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 			s.count--
 			close(done)
 		}
-		if s.count <= 0 {
+		if s.count <= 0 || sinkBin == nil {
 			go func() {
 				if !s.pipeline.SendEvent(gst.NewEOSEvent()) {
 					log.Warn().Msg("WARNING: Failed to send EOS to pipeline")
@@ -81,16 +83,16 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 				elements, _ := s.pipeline.GetElementsSorted()
 
 				for _, element := range elements {
-					log.Debug().Msgf("Disposing GST element: %s with state: %s", element.GetName(), element.GetCurrentState())
+					log.Debug().Msgf("Disposing GST element: %s", element.GetName())
 					pads, _ := element.GetSrcPads()
 					for _, pad := range pads {
 						pad.PauseTask()
 					}
 					if err := element.SetState(gst.StateNull); err != nil {
-						log.Warn().Msgf("WARNING: Failed to set %s state to Null", element.GetName())
+						log.Debug().Msgf("WARNING: Failed to set %s state to Null", element.GetName())
 					}
 					if err := s.pipeline.Remove(element); err != nil {
-						log.Warn().Msgf("WARNING: Failed to remove element from pipeline: %s", element.GetName())
+						log.Debug().Msgf("WARNING: Failed to remove element from pipeline: %s", element.GetName())
 					}
 				}
 				s.pipeline.Clear()
@@ -179,9 +181,9 @@ func (s *Stream) SetHeader(ctx *fasthttp.RequestCtx, writer *bufio.Writer, key s
 }
 
 func (s *Stream) NewSink(ctx *fasthttp.RequestCtx) error {
+	var bin *gst.Bin
 	var writer *bufio.Writer
 	var done chan bool
-	var bin *gst.Bin
 
 	if writer == nil {
 		done = make(chan bool)
@@ -195,7 +197,7 @@ func (s *Stream) NewSink(ctx *fasthttp.RequestCtx) error {
 		<-ready // Wait until writer is set
 	}
 
-	queue, err := gst.NewElement("queue")
+	buffer, err := gst.NewElement("queue")
 	if err != nil {
 		return err
 	}
@@ -204,11 +206,15 @@ func (s *Stream) NewSink(ctx *fasthttp.RequestCtx) error {
 		return err
 	}
 
-	queue.Set("name", "sinkqueue")
+	buffer.Set("max-size-buffers", 0)
+	buffer.Set("max-size-bytes", 0)
+	buffer.Set("max-size-time", 15000000000)
+	buffer.Set("min-threshold-time", s.Settings.buffer*1000000)
+
 	sink.Set("max-time", 15000000000)
 	sink.Set("drop", true)
-	sink.SetProperty("emit-signals", true)
-	sink.SetProperty("sync", false)
+	sink.Set("emit-signals", true)
+	sink.Set("sync", false)
 
 	for i := 0; i <= s.count; i++ {
 		if element, _ := s.pipeline.GetElementByName(fmt.Sprintf("sinkbin%d", i)); element == nil {
@@ -217,16 +223,20 @@ func (s *Stream) NewSink(ctx *fasthttp.RequestCtx) error {
 		}
 	}
 
-	bin.Add(queue)
+	bin.Add(buffer)
 	bin.Add(sink.Element)
-	queue.Link(sink.Element)
+	buffer.Link(sink.Element)
 
-	queuepad := gst.NewGhostPad("sink", queue.GetStaticPad("sink"))
+	queuepad := gst.NewGhostPad("sink", buffer.GetStaticPad("sink"))
 	queuepad.SetActive(true)
 	bin.AddPad(queuepad.Pad)
 
 	sink.SetCallbacks(&gstapp.SinkCallbacks{
 		NewSampleFunc: func(appSink *gstapp.Sink) gst.FlowReturn {
+
+			if appSink.IsEOS() {
+				return s.Close(bin, done)
+			}
 
 			sample := appSink.TryPullSample(gst.ClockTime(30 * time.Second))
 			if sample == nil {
@@ -235,7 +245,10 @@ func (s *Stream) NewSink(ctx *fasthttp.RequestCtx) error {
 
 			buffer := sample.GetBuffer()
 			if buffer == nil {
-				return gst.FlowOK
+				return s.Close(bin, done)
+			}
+			if buffer.GetSize() == 0 {
+				return s.Close(bin, done)
 			}
 			defer buffer.Unmap()
 
@@ -260,21 +273,24 @@ func (s *Stream) NewSink(ctx *fasthttp.RequestCtx) error {
 	}
 	bin.SetState(gst.StatePaused)
 	s.pipeline.Add(bin.Element)
+
 	if err := tee.Link(bin.Element); err != nil {
 		s.pipeline.Remove(bin.Element)
 		bin.SetState(gst.StateNull)
 		bin.Clear()
 		return err
 	}
-	//bin.SyncStateWithParent()
+
+	bin.SyncStateWithParent()
 	bin.SetState(gst.StatePlaying)
+	log.Info().Msgf("New Stream started")
 
 	s.count++
 
 	return nil
 }
 
-func (s *Stream) CreatePipeline() (*gst.Pipeline, error) {
+func (s *Stream) createPipeline() (*gst.Pipeline, error) {
 	var pipeline *gst.Pipeline
 	var err error
 
@@ -294,10 +310,6 @@ func (s *Stream) CreatePipeline() (*gst.Pipeline, error) {
 	if err != nil {
 		return nil, err
 	}
-	buffer, err := gst.NewElement("queue")
-	if err != nil {
-		return nil, err
-	}
 	typefind, err := gst.NewElement("typefind")
 	if err != nil {
 		return nil, err
@@ -310,14 +322,10 @@ func (s *Stream) CreatePipeline() (*gst.Pipeline, error) {
 	src.Set("location", s.Settings.Src)
 	src.Set("user-agent", s.Settings.userAgent)
 	src.Set("is-live", true)
-	buffer.Set("max-size-buffers", 0)
-	buffer.Set("max-size-bytes", 0)
-	buffer.Set("max-size-time", 10000000000)
-	buffer.Set("min-size-time", s.Settings.buffer*1000000)
+
 	tee.Set("name", "stream")
 
 	pipeline.Add(src)
-	pipeline.Add(buffer)
 	pipeline.Add(typefind)
 	pipeline.Add(tee)
 
@@ -333,73 +341,95 @@ func (s *Stream) CreatePipeline() (*gst.Pipeline, error) {
 			pipeline.Add(demux)
 			typefind.Link(demux)
 			demux.Connect("pad-added", func(self *gst.Element, pad *gst.Pad) {
-				self.Link(buffer)
+				self.Link(tee)
 			})
 			demux.SetState(gst.StatePlaying)
 
 		} else if strings.HasPrefix(caps.String(), "video/mpegts") {
-			self.Link(buffer)
+			self.Link(tee)
 		}
 
 	})
-	buffer.Link(tee)
 
 	return pipeline, nil
 }
 
-func (s *Stream) StartPipeline(pipeline *gst.Pipeline) error {
+func (s *Stream) mainLoop(loop *glib.MainLoop) error {
 	// Start the pipeline
-	pipeline.SetState(gst.StatePlaying)
-	var err error
 
-	pipeline.GetPipelineBus().AddWatch(func(msg *gst.Message) bool {
+	// Due to recent changes in the bindings - the finalizers might fire on the pipeline
+	// prematurely when it's passed between scopes. So when you do this, it is safer to
+	// take a reference that you dispose of when you are done. There is an alternative
+	// to this method in other examples.
+	s.pipeline.Ref()
+	defer s.pipeline.Unref()
 
-		// If the stream has ended or any element posts an error to the
-		// bus, populate error.
+	s.pipeline.GetPipelineBus().AddWatch(func(msg *gst.Message) bool {
+		log.Debug().Msgf("go-gst-debug-message: %v", msg)
 		switch msg.Type() {
-		case gst.MessageEOS:
-			err = errors.New("end-of-stream")
 		case gst.MessageError:
 			// The parsed error implements the error interface, but also
 			// contains additional debug information.
 			gerr := msg.ParseError()
 			log.Debug().Msgf("go-gst-debug: %v", gerr.DebugString())
-			err = gerr
-		}
-
-		// If either condition triggered an error, log and quit
-		if err != nil {
-			log.Error().Msgf("ERROR: %v", err.Error())
+			log.Error().Msgf("go-gst-error: %v", gerr.Error())
 			s.Close(nil, nil)
+			loop.Quit()
 			return false
+		case gst.MessageEOS:
+			log.Info().Msgf("go-gst-EOS: %v", msg)
+			s.Close(nil, nil)
+			loop.Quit()
+			return false
+		case gst.MessageBuffering:
+			bufPercent := msg.ParseBuffering()
+			log.Debug().Msgf("go-gst-debug - stream buffer percent: %v", bufPercent)
+			/* Wait until buffering is complete before start/resume playing */
+			if bufPercent < 100 {
+				s.pipeline.SetState(gst.StatePaused)
+			} else {
+				s.pipeline.SetState(gst.StatePlaying)
+			}
+		case gst.MessageClockLost:
+			/* Get a new clock */
+			log.Debug().Msgf("go-gst-debug - clock lost: %v", msg)
+			s.pipeline.SetState(gst.StatePaused)
+			s.pipeline.SetState(gst.StatePlaying)
 		}
 
 		return true
 	})
-	if err != nil {
-		return err
-	}
 
-	log.Info().Msgf("Stream has started")
-	return nil
+	s.pipeline.SetState(gst.StatePlaying)
+
+	return loop.RunError()
 }
 
-func (s *Stream) StartStream(channel string) error {
+func RunLoop(f func(*glib.MainLoop) error) {
+	mainLoop := glib.NewMainLoop(glib.MainContextDefault(), false)
+
+	if err := f(mainLoop); err != nil {
+		fmt.Println("ERROR!", err)
+	}
+}
+
+func (s *Stream) StartStream(channel models.ChannelUrl) error {
 	var err error
 	s.Settings.userAgent = "Xivi 1.0"
 	s.Settings.buffer = settings.APP_SETTINGS.Streaming.Buffer
 
-	s.Settings.Src = channel
+	s.Settings.Src = channel.Url
 
-	if s.pipeline, err = s.CreatePipeline(); err != nil {
+	if s.pipeline, err = s.createPipeline(); err != nil {
 		return err
 	}
-	if err = s.StartPipeline(s.pipeline); err != nil {
-		return err
-	}
+
+	go RunLoop(func(loop *glib.MainLoop) error {
+		return s.mainLoop(loop)
+	})
+
 	//TODO GO CHAN TO CHECK FOR GST ERRORS AND RESTART/CLOSE ON ERR
 	s.count = 0
 
 	return nil
-
 }
