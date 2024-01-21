@@ -3,4 +3,6 @@ export interface Epg {
 	name: string;
 	url: string;
 	itemOpen: boolean;
+	created_at: string;
+	updated_at: string;
 }

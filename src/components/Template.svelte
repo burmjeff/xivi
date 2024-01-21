@@ -4,8 +4,7 @@
     import { onMount } from 'svelte';
     import { Accordion, AccordionItem, popup, getModalStore, type PopupSettings, type ModalSettings } from '@skeletonlabs/skeleton';
     import { templates } from '@xivi/stores/template_store';
-    import IconParkOutlineEditTwo from '~icons/icon-park-outline/edit-two'
-    import IconParkOutlineDelete from '~icons/icon-park-outline/delete';
+    import Icon from '@iconify/svelte';
 
     const modalStore = getModalStore();
 
@@ -25,6 +24,12 @@
         // Provide a matching 'data-popup' value.
         target: 'addTemplatePopup'
     };
+
+    const addTemplateTooltip: PopupSettings = {
+		event: 'hover',
+		target: 'addTemplateTooltip',
+		placement: 'top'
+	};
 
     async function addTemplate() {
         const inputName = {name: (document.querySelector('.template_name input') as HTMLInputElement).value};
@@ -118,9 +123,11 @@
 </script>
 
 <section class="templates card card-hover p-1">
-    <header class="templates-header flex justify-center items-center space-x-4">
+    <header class="templates-header flex justify-center items-center">
         <h3 class="h3 font-bold">Templates</h3>
-        <button class="btn btn-sm variant-ringed-primary" use:popup={templateSettings}>+ add new</button>
+        <button class="btn btn-md" use:popup={templateSettings} use:popup={addTemplateTooltip}>
+            <Icon icon="icon-park-twotone:add-one" color="#0a7e85" width="25" height="25" />
+        </button>
     </header>
     <div id="accord" class="templates-viewport min-w-full overflow-auto">
         {#if $templates.length > 0}
@@ -128,10 +135,14 @@
                 {#each $templates as template, templateIdx (template.id)}
                     <AccordionItem class="card mb-1" key={template.id} bind:open={template.itemOpen}>
                         <svelte:fragment slot="summary">
-                            <div class="flex flex-row">
-                                <h4>{template.name}</h4>
-                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => renamePrompt(template.name, template.id)}><i><IconParkOutlineEditTwo/></i></button>
-                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => {template.itemOpen = true, deletePrompt(template.id)}}><i><IconParkOutlineDelete/></i></button>
+                            <div class="flex flex-row item-center">
+                                <h4 class="text-lg">{template.name}</h4>
+                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => renamePrompt(template.name, template.id)}>
+                                    <Icon icon="icon-park-outline:edit-two" width="18" height="18"/>
+                                </button>
+                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => {template.itemOpen = true, deletePrompt(template.id)}}>
+                                    <Icon icon="icon-park-outline:delete" width="18" height="18"/>
+                                </button>
                             </div>
                         </svelte:fragment>
                         <svelte:fragment slot="content">
@@ -156,6 +167,11 @@
             <button class="btn bg-primary-500" on:click={addTemplate}>Add Template</button>
         </label>
     </div>
+</div>
+
+<div class="card p-2 variant-filled-secondary" data-popup="addTemplateTooltip">
+	<p>Add New Template</p>
+	<div class="arrow variant-filled-secondary" />
 </div>
 
 <style>

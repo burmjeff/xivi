@@ -224,7 +224,6 @@ func GetPlaylistGroupItems(c *fiber.Ctx) error {
 // @Produce json
 // @Param playlist body models.Playlist true "Playlist"
 // @Success 200 {object} models.Playlist
-// @Security ApiKeyAuth
 // @Router /playlist [post]
 func CreatePlaylist(c *fiber.Ctx) error {
 	// Create new Playlist struct
@@ -285,38 +284,10 @@ func CreatePlaylist(c *fiber.Ctx) error {
 // @Tags Playlist
 // @Accept json
 // @Produce json
-// @Param id body string true "Playlist ID"
-// @Param name body string true "Name"
-// @Param url body string true "URL"
+// @Param playlist body models.Playlist true "Playlist"
 // @Success 201 {string} status "ok"
-// @Security ApiKeyAuth
 // @Router /playlist [put]
 func UpdatePlaylist(c *fiber.Ctx) error {
-	// Get now time.
-	now := time.Now().Unix()
-
-	// Get claims from JWT.
-	claims, err := utils.ExtractTokenMetadata(c)
-	if err != nil {
-		// Return status 500 and JWT parse error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	// Set expiration time from JWT data of current playlist.
-	expires := claims.Expires
-
-	// Checking, if now time greather than expiration from JWT.
-	if now > expires {
-		// Return status 401 and unauthorized error message.
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": true,
-			"msg":   "unauthorized, check expiration time of your token",
-		})
-	}
-
 	// Create new Playlist struct
 	playlist := &models.Playlist{}
 
@@ -538,11 +509,16 @@ func ConvertPlaylistChannel(c *fiber.Ctx) error {
 			"templateChannelId": channel_id,
 		})
 	}
+	channelLogo := models.TemplateChannelLogo{}
+	channelLogo.TemplateChannel = *templateChannel
+	// Get logo.
+	logo, _ := database.Db.GetLogo(templateChannel.LogoId)
+	channelLogo.Logo = utils.GetLogoUrl(logo.Name)
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
 		"error":           false,
 		"msg":             nil,
-		"templatechannel": templateChannel,
+		"templatechannel": channelLogo,
 	})
 }

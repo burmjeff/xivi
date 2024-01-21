@@ -72,7 +72,7 @@
 {#if $playlists[playlistIdx].groups[groupIdx].channels != null && $playlists[playlistIdx].groups[groupIdx].channels.length > 0}
 	<table class="playlistChannel table">
 		<thead>
-			<tr id ="thead">
+			<tr id="thead">
 				<th>Logo</th>
 				<th>Name</th>
 				<th>tvg-id</th>

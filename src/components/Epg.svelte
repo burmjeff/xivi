@@ -11,7 +11,7 @@
 		type PopupSettings
 	} from '@skeletonlabs/skeleton';
 	import { epgs } from '@xivi/stores/epg_store';
-	import IconParkOutlineDelete from '~icons/icon-park-outline/delete';
+	import Icon from '@iconify/svelte';
 
 	const modalStore = getModalStore();
 
@@ -30,6 +30,12 @@
 		event: 'click',
 		// Provide a matching 'data-popup' value.
 		target: 'addEpgPopup'
+	};
+
+	const addEpgTooltip: PopupSettings = {
+		event: 'hover',
+		target: 'addEpgTooltip',
+		placement: 'right'
 	};
 
 	async function addEpg() {
@@ -92,31 +98,65 @@
 <section class="epgs card card-hover p-1">
 	<header class="epgs-header flex justify-center items-center space-x-4">
 		<h3 class="h3 font-bold">Epgs</h3>
-		<button class="btn btn-sm variant-ringed-primary" use:popup={epgSettings}>+ add new</button>
+		<button class="btn btn-md" use:popup={epgSettings} use:popup={addEpgTooltip}>
+            <Icon icon="icon-park-twotone:add-one" color="#0a7e85" width="25" height="25" />
+        </button>
 	</header>
-		<Accordion>
-			<div id="accord" class="epgs-viewport min-w-full overflow-auto">
-				{#if $epgs != null && $epgs.length > 0}
-					{#each $epgs as epg, index (epg.id)}
-						<AccordionItem class="card" key={epg.id} bind:open={epg.itemOpen}>
-							<svelte:fragment slot="summary">
-								<div class="flex flex-row">
-									<h4>{epg.name}</h4>
+	<div id="accord" class="epgs-viewport min-w-full overflow-auto">
+		{#if $epgs != null}
+			<table class="epgTable table table-hover">
+				<thead class="items-center text-center">
+					<tr id="thead">
+						<th>Name</th>
+						<th>Url</th>
+						<th>Updated</th>
+						<th>Delete</th>
+					</tr>
+				</thead>
+				<tbody class="items-center">
+					{#if $epgs.length > 0}
+						{#each $epgs as epg, index (epg.id)}
+							<tr>
+								<td>
+									{epg.name}
 									<button
-										class="btn-icon btn-icon-sm !bg-transparent inset-y-0"
-										on:click={() => {
-											(epg.itemOpen = true), deletePrompt(epg.id);
-										}}><i><IconParkOutlineDelete /></i></button
-									>
-								</div>
-							</svelte:fragment>
-						</AccordionItem>
-					{/each}
-				{:else}
-					<p>No epgs found</p>
-				{/if}
-			</div>
-		</Accordion>
+									class="btn-icon btn-icon-sm !bg-transparent inset-y-0"
+									on:click={() => {
+										(epg.itemOpen = true), deletePrompt(epg.id);
+									}}>
+									<Icon icon="icon-park-outline:edit-one" width="18" height="18"/>
+									</button>
+								</td>
+								<td>
+									{epg.url}
+									<button
+									class="btn-icon btn-icon-sm !bg-transparent inset-y-0"
+									on:click={() => {
+										(epg.itemOpen = true), deletePrompt(epg.id);
+									}}>
+									<Icon icon="icon-park-outline:edit-one" width="18" height="18"/>
+									</button>
+								</td>
+								<td>
+									{epg.updated_at}
+								</td>
+								<td><button
+									class="btn-icon btn-icon-sm !bg-transparent inset-y-0"
+									on:click={() => {
+										(epg.itemOpen = true), deletePrompt(epg.id);
+									}}>
+									<Icon icon="icon-park-outline:delete" width="18" height="18"/>
+									</button>
+								</td>
+							</tr>
+						{/each}
+					{:else}
+						<p>No epgs found</p>
+					{/if}
+				</tbody>
+			</table>
+		{/if}
+	</div>
 </section>
 
 <div class="card p-4 gap-4" data-popup="addEpgPopup">
@@ -136,9 +176,18 @@
 	</div>
 </div>
 
+<div class="card p-2 variant-filled-secondary" data-popup="addEpgTooltip">
+	<p>Add New EPG</p>
+	<div class="arrow variant-filled-secondary" />
+</div>
+
 <style>
 	#accord {
 		max-height: 82vh;
 		height: 82vh;
+	}
+	#thead {
+		position: relative;
+		text-align: center;
 	}
 </style>

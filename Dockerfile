@@ -2,7 +2,7 @@
 # svelte-builder
 #
 
-FROM node:20.9.0-alpine3.18 as app-builder
+FROM node:21.6.0-alpine3.19 as app-builder
 
 WORKDIR /app
 COPY . /app
@@ -15,13 +15,13 @@ RUN npx vite build
 # server-builder
 #
 
-FROM golang:1.21.4-alpine3.18 as server-builder
+FROM golang:1.21.6-alpine3.19 as server-builder
 
 RUN echo "@main https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories
 RUN echo "@community https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
 
 RUN apk add build-base
-RUN apk add --no-cache vips-dev@community=8.14.3-r0 \
+RUN apk add --no-cache vips-dev@community=8.15.0-r0 \
 glib-dev \
 gstreamer-dev \
 gst-plugins-base-dev \
@@ -47,12 +47,12 @@ RUN go build -ldflags="-s -w" -buildvcs=false -mod=readonly -v -o xivi .
 # deploy
 #
 
-FROM alpine:3.18.4 as deployment
+FROM alpine:3.19.0 as deployment
 
 RUN echo "@community https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
 
 RUN apk add tzdata \
-vips@community=8.14.3-r0 \
+vips@community=8.15.0-r0 \
 glib \
 gstreamer \
 gst-plugins-base \

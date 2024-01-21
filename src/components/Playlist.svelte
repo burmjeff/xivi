@@ -12,7 +12,7 @@
 		type PopupSettings
 	} from '@skeletonlabs/skeleton';
 	import { playlists } from '@xivi/stores/playlist_store';
-	import IconParkOutlineDelete from '~icons/icon-park-outline/delete';
+	import Icon from '@iconify/svelte';
 
 	const modalStore = getModalStore();
 
@@ -31,6 +31,12 @@
 		event: 'click',
 		// Provide a matching 'data-popup' value.
 		target: 'addPlaylistPopup'
+	};
+
+	const addPlTooltip: PopupSettings = {
+		event: 'hover',
+		target: 'addPlTooltip',
+		placement: 'top'
 	};
 
 	async function addPlaylist() {
@@ -91,10 +97,11 @@
 </script>
 
 <section class="playlists card card-hover p-1">
-	<header class="playlists-header flex justify-center items-center space-x-4">
+	<header class="playlists-header flex justify-center items-center">
 		<h3 class="h3 font-bold">Playlists</h3>
-		<button class="btn btn-sm variant-ringed-primary" use:popup={playlistSettings}>+ add new</button
-		>
+		<button class="btn btn-md" use:popup={playlistSettings} use:popup={addPlTooltip}>
+            <Icon icon="icon-park-twotone:add-one" color="#0a7e85" width="25" height="25" />
+        </button>
 	</header>
 	<Accordion>
 		<div id="accord" class="playlists-viewport min-w-full overflow-auto">
@@ -102,14 +109,14 @@
 				{#each $playlists as playlist, index (playlist.id)}
 					<AccordionItem class="card" key={playlist.id} bind:open={playlist.itemOpen}>
 						<svelte:fragment slot="summary">
-							<div class="flex flex-row">
-								<h4>{playlist.name}</h4>
+							<div class="flex flex-row items-center">
+								<h4 class="text-lg">{playlist.name}</h4>
 								<button
 									class="btn-icon btn-icon-sm !bg-transparent inset-y-0"
 									on:click={() => {
 										(playlist.itemOpen = true), deletePrompt(playlist.id);
-									}}><i><IconParkOutlineDelete /></i></button
-								>
+									}}><Icon icon="icon-park-outline:delete" width="18" height="18"/>
+								</button>
 							</div>
 						</svelte:fragment>
 						<svelte:fragment slot="content">
@@ -139,6 +146,11 @@
 			<button class="btn bg-primary-500" on:click={addPlaylist}>Add Playlist</button>
 		</label>
 	</div>
+</div>
+
+<div class="card p-2 variant-filled-secondary" data-popup="addPlTooltip">
+	<p>Add New Playlist</p>
+	<div class="arrow variant-filled-secondary" />
 </div>
 
 <style>
