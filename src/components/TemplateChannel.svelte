@@ -12,6 +12,7 @@
 
 	export let groupId: string;
 	export let groupIdx: number;
+
 	const modalStore = getModalStore();
 	let dndTypeChannels = "channels";
 	let dndItem: TemplateChannel;
@@ -119,23 +120,23 @@
 
 		if (trigger === TRIGGERS.DRAG_STARTED) {
 			dndIdx = $templateGroups[groupIdx].channels.findIndex(item => item.id === id);
-			dndItem =  $templateGroups[groupIdx].channels[dndIdx];
-			$templateGroups[groupIdx].channels = e.detail.items
+			dndItem = $templateGroups[groupIdx].channels[dndIdx];
+			$templateGroups[groupIdx].channels = e.detail.items;
 			shouldIgnoreDndEvents = true;
 		}
         else if (!shouldIgnoreDndEvents) {
             $templateGroups[groupIdx].channels = e.detail.items;
         }
         else {
-            $templateGroups[groupIdx].channels = e.detail.items;
+            $templateGroups[groupIdx].channels = [...$templateGroups[groupIdx].channels];
         }
 	}
 	function handleDndFinalize(e: CustomEvent<DndEvent<TemplateChannel>>) {
 		const {trigger, id} = e.detail.info;
         if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreDndEvents) {
             e.detail.items = e.detail.items.filter(item => !item.isDragged);
+			$templateGroups[groupIdx].channels = e.detail.items
 			convertChannel(id)
-            $templateGroups[groupIdx].channels = e.detail.items
             shouldIgnoreDndEvents = false;
         }
         else if (!shouldIgnoreDndEvents) {
@@ -152,12 +153,14 @@
         }
     }
     function transformDraggedElement(draggedEl: HTMLElement | undefined, data: Item | undefined, index: number | undefined) {
-        if (!shouldIgnoreDndEvents) data!.isDragged = true
+        if (!shouldIgnoreDndEvents) {
+            data!.isDragged = true;
+        }
 	}
 </script>
 
-{#if $templateGroups[groupIdx].channels != null}
-	<table class="templateChannel table table-hover" use:dndzone={{items: $templateGroups[groupIdx].channels, flipDurationMs, type: dndTypeChannels, transformDraggedElement}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
+{#if $templateGroups[groupIdx] != null && $templateGroups[groupIdx].channels != null}
+	<table class="templateChannel table table-hover">
 		<thead>
 			<tr id="thead">
 				<th>Logo</th>
@@ -165,7 +168,7 @@
 				<th>tvg-id</th>
 			</tr>
 		</thead>
-		<tbody>
+		<tbody use:dndzone={{items: $templateGroups[groupIdx].channels, flipDurationMs, type: dndTypeChannels, transformDraggedElement}} on:consider={handleDndConsider} on:finalize={handleDndFinalize}>
 			{#if $templateGroups[groupIdx].channels.length > 0}
 				{#each $templateGroups[groupIdx].channels as channel, channelIdx (channel.id)}
 					<tr id="animate" animate:flip={{duration:flipDurationMs}} on:click={() => modalSettings(channelIdx)}>
@@ -174,7 +177,11 @@
 						<td>{channel.tvgid}</td>
 
 						{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-							<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.name}</div>
+							{#if channel.title}
+								<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.title}</div>
+							{:else}
+								<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.name}</div>
+							{/if}
 						{/if}
 					</tr>
 				{/each}

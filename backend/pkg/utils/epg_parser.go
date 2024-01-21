@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
 
@@ -21,11 +22,11 @@ func ParseEpg(epg *models.Epg) {
 	if isValidURL(epg.URL) {
 		log.Info().Msg("Started parsing xml URL...")
 		resp, err := http.Get(epg.URL)
-		defer resp.Body.Close()
 		if err != nil {
 			log.Error().Msgf("Unable to get epg.xml FILE: %v", err)
 			return
 		}
+		defer resp.Body.Close()
 
 		bufReader := bufio.NewReader(resp.Body)
 		testBytes, err := bufReader.Peek(2)
@@ -108,6 +109,10 @@ func ParseEpg(epg *models.Epg) {
 		}
 
 	}
+
+	epg.UpdatedAt = time.Now()
+	database.Db.UpdateEpg(epg.ID, epg)
+
 	log.Info().Msg("EPG Parser Finished")
 
 	// Get all templates.

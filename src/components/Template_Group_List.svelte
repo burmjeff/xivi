@@ -9,9 +9,7 @@
     import {flip} from 'svelte/animate';
     import {fade} from 'svelte/transition';
     import {cubicIn} from 'svelte/easing';
-    import IconParkOutlineEditTwo from '~icons/icon-park-outline/edit-two'
-    import IconParkOutlineDelete from '~icons/icon-park-outline/delete';
-    import IconParkOutlineAdd from '~icons/icon-park-outline/add';
+    import Icon from '@iconify/svelte';
 
     let dndPlaylistId: number;
     let dndTypeGroups = "groups";
@@ -30,6 +28,12 @@
     onMount(async () => {
         templateGroups.set(await updateTemplateGroups());
     });
+
+    const addTooltip: PopupSettings = {
+		event: 'hover',
+		target: 'addTooltip',
+		placement: 'top'
+	};
 
     async function renameGroup(groupIdx: number, groupName: string, groupId: string) {
         if (groupName !=='') {
@@ -204,12 +208,12 @@
 		});
 	}
 
-    function convertPrompt(groupId: string): void {
+    function convertPrompt(groupId: string, name: string): void {
 		const prompt: ModalSettings = {
 			type: 'prompt',
 			title: 'Convert Playlist Group to Template Group',
 			body: 'Enter new template group name in field below.',
-			value: 'Example Template',
+			value: name,
 			valueAttr: { type: 'text', minlength: 1, maxlength: 20, required: true },
 			response: (groupName: string) => {
 				if (groupName) convertGroup(groupName, groupId);
@@ -263,15 +267,16 @@
             $templateGroups = e.detail.items;
         }
         else {
-            $templateGroups = [...$templateGroups]
+            $templateGroups = [...$templateGroups];
         }
 	}
 	function handleDndFinalize(e: CustomEvent<DndEvent<TemplateGroup>>) {
 		const {trigger, id} = e.detail.info;
         if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreDndEvents) {
+            name = e.detail.items.filter(item => item.isDragged)[0].name;
             e.detail.items = e.detail.items.filter(item => !item.isDragged);
             $templateGroups = e.detail.items
-            convertPrompt(id)
+            convertPrompt(id, name)
             shouldIgnoreDndEvents = false;
         }
         else if (!shouldIgnoreDndEvents) {
@@ -296,9 +301,11 @@
 </script>
 
 <section class="tmplgroups card card-hover p-1" >
-    <header class="tmplgroups-header flex justify-center items-center space-x-4">
-        <h3 class="h3 font-bold">Groups</h3>
-        <button class="btn btn-sm variant-ringed-primary" on:click={() => modalTemplateGroup(true, 0, undefined)}>+ add new</button>
+    <header class="tmplgroups-header flex justify-center items-center">
+        <h3 class="h3 font-bold">Template Groups</h3>
+        <button class="btn btn-md" on:click={() => modalTemplateGroup(true, 0, undefined)} use:popup={addTooltip}>
+            <Icon icon="icon-park-twotone:add-one" color="#0a7e85" width="25" height="25" />
+        </button>
     </header>
     {#if $templateGroups != null}
         <Accordion>
@@ -310,19 +317,19 @@
                         <div id="animate" animate:flip={{duration: flipDurationMs}}>
                             <AccordionItem class="card mb-1" key={groupIdx} bind:open={group.itemOpen}>
                                 <svelte:fragment slot="summary">
-                                    <div class="flex flex-row">
-                                        <h4>{group.name}</h4>
+                                    <div class="flex flex-row items-center">
+                                        <h4 class="text-lg">{group.name}</h4>
                                         <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" 
                                             on:click={() => {group.itemOpen = true, modalTemplateGroup(false, groupIdx, group)}}>
-                                            <i><IconParkOutlineEditTwo/></i>
+                                            <Icon icon="icon-park-outline:edit-two" width="18" height="18"/>
                                         </button>
                                         <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" 
                                             on:click={() => {group.itemOpen = true, deletePrompt(group.id)}}>
-                                            <i><IconParkOutlineDelete/></i>
+                                            <Icon icon="icon-park-outline:delete" width="18" height="18"/>
                                         </button>
                                         <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" 
                                             on:click={() => modalAddChannel(group.id, groupIdx)}>
-                                            <i><IconParkOutlineAdd/></i>
+                                            <Icon icon="icon-park-outline:add" width="18" height="18"/>
                                         </button>
                                     </div>
                                 </svelte:fragment>
@@ -344,6 +351,11 @@
         </Accordion>
     {/if}
 </section>
+
+<div class="card p-2 variant-filled-secondary" data-popup="addTooltip">
+	<p>Add New Template Group</p>
+	<div class="arrow variant-filled-secondary" />
+</div>
 
 <style>
     #accord {

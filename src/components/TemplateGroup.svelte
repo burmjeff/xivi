@@ -10,7 +10,7 @@
     import {flip} from 'svelte/animate';
     import {fade} from 'svelte/transition';
     import {cubicIn} from 'svelte/easing';
-    import IconParkOutlineDelete from '~icons/icon-park-outline/delete';
+    import Icon from '@iconify/svelte';
     
     const modalStore = getModalStore();
     export let templateId: number;
@@ -100,7 +100,7 @@
             $templates[templateIdx].groups = e.detail.items;
         }
         else {
-            $templates[templateIdx].groups = e.detail.items;
+            $templates[templateIdx].groups = [...$templates[templateIdx].groups];
         }
 	}
 	function handleDndFinalize(e: CustomEvent<DndEvent<TemplateGroup>>) {
@@ -138,9 +138,11 @@
                         <div id="animate" animate:flip={{duration: flipDurationMs}}>
                             <AccordionItem class="card mb-1" key={groupIdx} bind:open={group.itemOpen}>
                                 <svelte:fragment slot="summary">
-                                    <div class="flex flex-row">
-                                        <h4>{group.name}</h4>
-                                        <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => {group.itemOpen = true, deletePrompt(group.id)}}><i><IconParkOutlineDelete/></i></button>
+                                    <div class="flex flex-row items-center">
+                                        <h4 class="text-lg">{group.name}</h4>
+                                        <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => {group.itemOpen = true, deletePrompt(group.id)}}>
+                                            <Icon icon="icon-park-outline:delete" width="18" height="18"/>
+                                        </button>
                                     </div>
                                 </svelte:fragment>
                                 <svelte:fragment slot="content">

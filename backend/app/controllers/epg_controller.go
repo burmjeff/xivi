@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"strconv"
+	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/platform/database"
@@ -101,6 +102,8 @@ func AddEpg(c *fiber.Ctx) error {
 		})
 	}
 
+	epg.CreatedAt = time.Now()
+
 	// Create a new validator for a Epg model.
 	validate := utils.NewValidator()
 
@@ -133,6 +136,66 @@ func AddEpg(c *fiber.Ctx) error {
 		"msg":   nil,
 		"epg":   epg,
 	})
+}
+
+// UpdateEpg func for updates epg by given ID.
+// @Description Update epg.
+// @Summary update epg
+// @Tags Epg
+// @Accept json
+// @Produce json
+// @Param epg body models.Epg true "Epg"
+// @Success 201 {string} status "ok"
+// @Router /epg [put]
+func UpdateEpg(c *fiber.Ctx) error {
+	// Create new Epg struct
+	epg := &models.Epg{}
+
+	// Check, if received JSON data is valid.
+	if err := c.BodyParser(epg); err != nil {
+		// Return status 400 and error message.
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Checking, if epg with given ID is exists.
+	foundEpg, err := database.Db.GetEpg(epg.ID)
+	if err != nil {
+		// Return status 404 and epg not found error.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "epg with this ID not found",
+		})
+	}
+
+	// Set initialized default data for epg:
+	epg.UpdatedAt = time.Now()
+
+	// Create a new validator for a Epg model.
+	validate := utils.NewValidator()
+
+	// Validate epg fields.
+	if err := validate.Struct(epg); err != nil {
+		// Return, if some fields are not valid.
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   utils.ValidatorErrors(err),
+		})
+	}
+
+	// Update epg by given ID.
+	if err := database.Db.UpdateEpg(foundEpg.ID, epg); err != nil {
+		// Return status 500 and error message.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Return status 201.
+	return c.SendStatus(fiber.StatusCreated)
 }
 
 // DeleteEpg func to delete a epg by given ID.

@@ -75,6 +75,10 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 	} else {
 		log.Info().Msg("No content to parse!!!")
 	}
+
+	playlist.UpdatedAt = time.Now()
+	database.Db.UpdatePlaylist(playlist.ID, &playlist)
+
 	log.Info().Msg("Parser finished")
 }
 

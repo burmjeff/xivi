@@ -24,9 +24,9 @@
 <AppShell slotSidebarLeft="bg-surface-500/5 w-56 p-4">
 	<svelte:fragment slot="header">
 		<!-- App Bar -->
-		<AppBar>
+		<AppBar class="h-14 justify-center">
 			<svelte:fragment slot="lead">
-				<img class="h-12 w-auto" src={xivi}  alt=""/>
+				<img class="h-14 w-auto" src={xivi}  alt=""/>
 			</svelte:fragment>
 			<svelte:fragment slot="trail">
 				<a
@@ -45,8 +45,7 @@
 		<!-- Insert the list: -->
 		<nav class="list-nav">
 			<ul>
-				<li><a href="/">Home</a></li>
-				<li><a href="/templates">Template Management</a></li>
+				<li><a href="/">Status</a></li>
 				<li><a href="/channels">Channel Management</a></li>
 				<li><a href="/epg">Epg</a></li>
 				<li><a href="/settings">Settings</a></li>

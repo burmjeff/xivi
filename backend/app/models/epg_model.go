@@ -1,13 +1,18 @@
 package models
 
-import "encoding/xml"
+import (
+	"encoding/xml"
+	"time"
+)
 
 // Channel struct to describe Playlist object.
 type Epg struct {
-	ID    int64  `db:"id" json:"id"`
-	Name  string `db:"name" json:"name" validate:"required,lte=255"`
-	URL   string `db:"url" json:"url" validate:"required,lte=255"`
-	Order int64  `db:"orderr" json:"orderr"`
+	ID        int64     `db:"id" json:"id"`
+	Name      string    `db:"name" json:"name" validate:"required,lte=255"`
+	URL       string    `db:"url" json:"url" validate:"required,lte=255"`
+	Order     int64     `db:"orderr" json:"orderr"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
 type EpgAddParam struct {

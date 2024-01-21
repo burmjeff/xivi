@@ -49,9 +49,9 @@ func (q *EpgQueries) GetEpg(id int64) (*models.Epg, error) {
 
 // Create a epg by given Epg object.
 func (q *EpgQueries) CreateEpg(p *models.Epg) (int64, error) {
-	query := `INSERT INTO epg VALUES (null, ?, ?, ?)`
+	query := `INSERT INTO epg VALUES (null, ?, ?, ?, ?, ?)`
 
-	res, err := q.Exec(query, p.Name, p.URL, p.Order)
+	res, err := q.Exec(query, p.Name, p.URL, p.Order, p.CreatedAt, p.UpdatedAt)
 	if err != sql.ErrNoRows && err != nil {
 		return 0, err
 	}
@@ -67,9 +67,9 @@ func (q *EpgQueries) CreateEpg(p *models.Epg) (int64, error) {
 
 // Update a epg by given Epg object.
 func (q *EpgQueries) UpdateEpg(id int64, p *models.Epg) error {
-	query := `UPDATE epg SET name = ?, url = ?, orderr = ? WHERE id = ?`
+	query := `UPDATE epg SET name = ?, url = ?, orderr = ?, updated_at = ? WHERE id = ?`
 
-	_, err := q.Exec(query, id, p.Name, p.URL, p.Order)
+	_, err := q.Exec(query, p.Name, p.URL, p.Order, p.UpdatedAt, id)
 	if err != nil {
 		return err
 	}

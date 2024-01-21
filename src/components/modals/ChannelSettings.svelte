@@ -3,8 +3,7 @@
 <script lang="ts">
 	import { onMount, type SvelteComponent } from 'svelte';
 	import { templateGroups } from '@xivi/stores/template_store';
-	import IconParkOutlineSaveOne from '~icons/icon-park-outline/save-one';
-	import IconParkOutlineDelete from '~icons/icon-park-outline/delete';
+	import Icon from '@iconify/svelte';
 	import { writable } from 'svelte/store';
 	import { getModalStore, FileButton, popup, type PopupSettings } from '@skeletonlabs/skeleton';
 	import xivi from '$lib/assets/xivi.png';
@@ -107,6 +106,7 @@
 		target: 'popupLogo',
 		// Defines which side of your trigger the popup will appear
 		placement: 'right',
+		closeQuery: '#chooseImage',
 	};
 
 	const toBase64 = (file: File) =>
@@ -142,6 +142,7 @@
 	async function chooseImage(logo: Logo) {
 		formData.logoid = logo.id;
 		formData.logo = logo.image;
+
 	}
 	
 
@@ -217,7 +218,7 @@
 
 	function handleDndConsiderMatch(e: CustomEvent<DndEvent<Match>>) {
 		const {trigger, id} = e.detail.info;
-		e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
+		//e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
 
 		if (trigger === TRIGGERS.DRAG_STARTED) {
 			dndIdx = $playlistMatches.findIndex(item => item.id === Number(id));
@@ -246,7 +247,7 @@
             $playlist_ch_items = e.detail.items;
         }
         else {
-			$playlist_ch_items = e.detail.items;
+			$playlist_ch_items = [...$playlist_ch_items]
         }
 	}
 	function handleDndFinalizeMatch(e: CustomEvent<DndEvent<Match>>) {
@@ -342,11 +343,11 @@
 											<td>{channel.title}</td>
 											<td>{channel.tvg_id}</td>
 											<td class="hover:bg-red-900 w-5" on:click={removeChannelItem(channel.id)}>
-												<i><IconParkOutlineDelete/></i>
+												<Icon icon="icon-park-outline:delete" width="18" height="18"/>
 											</td>
 
 											{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-												<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.title}</div>
+												<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.name}</div>
 											{/if}
 										</tr>
 									{/each}
@@ -389,15 +390,15 @@
 		</form>
 		<footer class="modal-footer {parent.regionFooter}">
 			{#if !isNew}
-				<button class="btn variant-ghost-error" on:click={deleteChannel}>
-					<i><IconParkOutlineDelete/></i>
+				<button class="btn variant-ghost-error items-center" on:click={deleteChannel}>
+					<Icon icon="icon-park-outline:delete" width="20" height="20"/>
 					<span>Delete</span>
 				</button>
 			{/if}
-			<button class="btn {parent.buttonNeutral}" on:click={parent.onClose}>
+			<button class="btn items-center {parent.buttonNeutral}" on:click={parent.onClose}>
 				{parent.buttonTextCancel}</button>
-			<button class="btn {parent.buttonPositive}" on:click={onFormSubmit}>
-				<i><IconParkOutlineSaveOne/></i>
+			<button class="btn items-center {parent.buttonPositive}" on:click={onFormSubmit}>
+				<Icon icon="icon-park-outline:save-one" width="20" height="20"/>
 				<span>Save Changes</span>
 			</button>
 			
@@ -410,7 +411,7 @@
 			{#if $logos != null && $logos.length > 0}
 				<section class="grid grid-cols-7 justify-items-center items-center space-x-4 space-y-1">
 					{#each $logos as logo, logoIdx (logo.id)}
-						<img class="h-auto w-20" src={logo.image} alt="" on:click={chooseImage(logo)}>
+						<img id="chooseImage" class="h-auto w-20" src={logo.image} alt="" on:click={chooseImage(logo)}>
 					{/each}
 				</section>
 			{/if}
