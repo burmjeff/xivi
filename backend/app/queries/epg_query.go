@@ -3,6 +3,7 @@ package queries
 import (
 	"database/sql"
 	"strings"
+	"time"
 	"xivi/backend/app/models"
 	utils "xivi/backend/pkg/dbutils"
 
@@ -188,12 +189,12 @@ func (q *EpgQueries) GetEpgProgrammes() (*[]models.EpgProgramme, error) {
 }
 
 // Get Epg Programmes by channel.
-func (q *EpgQueries) GetProgrammesByChannelId(channelID string) (*[]models.EpgProgramme, error) {
+func (q *EpgQueries) GetProgrammesBytvgid(tvgid string) (*[]models.EpgProgramme, error) {
 	programmes := &[]models.EpgProgramme{}
 
 	query := `SELECT * FROM epgprogramme WHERE channel = ?`
 
-	err := q.Select(programmes, query, channelID)
+	err := q.Select(programmes, query, tvgid)
 	if err != nil {
 		return nil, err
 	}
@@ -201,28 +202,13 @@ func (q *EpgQueries) GetProgrammesByChannelId(channelID string) (*[]models.EpgPr
 	return programmes, nil
 }
 
-// Get a Epg Programme by given ID.
-func (q *EpgQueries) GetEpgProgramme(id int64) (*models.EpgProgramme, error) {
+// Get the current live Epg Programme by given ID.
+func (q *EpgQueries) GetProgrammeByTime(tvgid string, epgTime time.Time) (*models.EpgProgramme, error) {
 	programme := &models.EpgProgramme{}
 
-	query := `SELECT * FROM epgprogramme WHERE id = ?`
+	query := `SELECT * FROM epgprogramme WHERE channel = ? AND start <= ? AND stop > ? LIMIT 1`
 
-	err := q.Select(programme, query, id)
-	if err != nil {
-		return nil, err
-	}
-
-	return programme, nil
-}
-
-// Get a Epg Programme by ID and starttime.
-func (q *EpgQueries) GetEpgProgrammeByChannelandTime(channelID string, start *models.Time) (*models.EpgProgramme, error) {
-
-	programme := &models.EpgProgramme{}
-
-	query := `SELECT * FROM epgprogramme WHERE channel = ? and start = ? LIMIT 1`
-
-	err := q.Get(programme, query, channelID, start)
+	err := q.Get(programme, query, tvgid, epgTime, epgTime)
 	if err != nil {
 		return nil, err
 	}

@@ -55,7 +55,7 @@ func CreateEpgXML(template models.Template) {
 	}
 
 	for _, channel := range epg.Channels {
-		epgProgrammes, err := database.Db.GetProgrammesByChannelId(channel.ChannelId)
+		epgProgrammes, err := database.Db.GetProgrammesBytvgid(channel.ChannelId)
 		if epgProgrammes == nil || len(*epgProgrammes) == 0 {
 			log.Warn().Msgf("No EPG programme found for %s: %v", channel.ChannelId, err)
 

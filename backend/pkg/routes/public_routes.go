@@ -75,6 +75,7 @@ func PublicRoutes(a *fiber.App) {
 
 	// Stream Routes
 	router.Get("/stream/:stream_id", controllers.GetStream)
+	api.Get("/live/channels/:group_id", controllers.GetChannels)
 
 	//SSDP Routes
 	//router.Get("/discover.json", controllers.GetSSDPDiscovery)

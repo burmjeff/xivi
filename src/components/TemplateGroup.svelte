@@ -49,7 +49,7 @@
                     $templates[templateIdx].groups = fetchedData;
                     $templates[templateIdx].groups = $templates[templateIdx].groups;
                 }
-            } else console.log('Error adding template group:',response)
+            } else console.log('Error adding template group:', response)
         } catch (error) {
             console.log('Error adding template group:', error);
         }

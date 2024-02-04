@@ -3,8 +3,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import {
-		Accordion,
-		AccordionItem,
 		popup,
 		getModalStore,
 		type ModalSettings,
