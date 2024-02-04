@@ -163,33 +163,13 @@ func (s *Stream) SetStatusCode(ctx *fasthttp.RequestCtx, writer *bufio.Writer, s
 	return nil
 }
 
-// SetHeader sets a response header. *Must* be called before Write and Flush
-// value can be string or []byte
-func (s *Stream) SetHeader(ctx *fasthttp.RequestCtx, writer *bufio.Writer, key string, value interface{}) error {
-	if writer != nil {
-		return errors.New("Streaming started - can't set header")
-	}
-
-	switch v := value.(type) {
-	case string:
-		ctx.Response.Header.Set(key, v)
-	case []byte:
-		ctx.Response.Header.SetBytesV(key, v)
-	default:
-		return fmt.Errorf("Unsupported header value type - %T", value)
-	}
-
-	return nil
-}
-
 func (s *Stream) NewSink(ctx *fiber.Ctx) error {
 	var bin *gst.Bin
 	var writer *bufio.Writer
 	var done chan bool
 
-	s.SetStatusCode(ctx.Context(), writer, 200)
-	s.SetHeader(ctx.Context(), writer, fiber.HeaderContentType, s.mimeType)
-	s.SetHeader(ctx.Context(), writer, fiber.HeaderAcceptRanges, "bytes")
+	ctx.Set(fiber.HeaderContentType, s.mimeType)
+	ctx.Status(fiber.StatusOK)
 
 	if writer == nil {
 		done = make(chan bool)
