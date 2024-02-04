@@ -88,7 +88,7 @@ func ParseEpg(epg *models.Epg) {
 		if !programme.Start.IsZero() {
 
 			if programme.Channel != "" {
-				FoundProg, err := database.Db.GetEpgProgrammeByChannelandTime(programme.Channel, programme.Start)
+				FoundProg, err := database.Db.GetProgrammeByTime(programme.Channel, programme.Start.Time)
 				if err != nil {
 					log.Info().Msgf("EPG XML PARSER: Creating new Programme: %s", programme.Title.Value)
 					if _, err := database.Db.CreateEpgProgramme(programme); err != nil {

@@ -1,5 +1,6 @@
 import { join } from 'path';
 import type { Config } from 'tailwindcss';
+import { xiviTheme } from './xivi-theme'
 
 // 1. Import the Skeleton plugin
 import { skeleton } from '@skeletonlabs/tw-plugin';
@@ -23,8 +24,9 @@ const config = {
 		// 4. Append the Skeleton plugin (after other plugins)
 		skeleton({
 			themes: {
-				// Register each theme within this array:
-				preset: [ "skeleton", "modern", "crimson" ] 
+				custom: [
+					xiviTheme
+				]
 			}
 		})
 	]

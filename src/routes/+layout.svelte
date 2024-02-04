@@ -7,6 +7,7 @@
 	import { initializeStores } from '@skeletonlabs/skeleton';
 	import ChannelSettings from '@xivi/components/modals/ChannelSettings.svelte';
 	import AddGroup from '@xivi/components/modals/AddGroup.svelte';
+	import Player from '@xivi/components/modals/Player.svelte';
 	import xivi from '$lib/assets/xivi.png';
 
 	initializeStores();
@@ -15,6 +16,7 @@
 	// Set a unique modal ID, then pass the component reference
 	modalChannelSettings: { ref: ChannelSettings },
 	modalAddGroup: { ref: AddGroup },
+	modalPlayer: { ref: Player },
 	};
 
 	storePopup.set({ computePosition, autoUpdate, flip, shift, offset, arrow });
@@ -46,6 +48,7 @@
 		<nav class="list-nav">
 			<ul>
 				<li><a href="/">Status</a></li>
+				<li><a href="/viewer">Viewer</a></li>
 				<li><a href="/channels">Channel Management</a></li>
 				<li><a href="/epg">Epg</a></li>
 				<li><a href="/settings">Settings</a></li>

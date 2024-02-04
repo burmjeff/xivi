@@ -1,3 +1,5 @@
+import type { ViewerChannel } from "./viewer_entities";
+
 export interface Template {
 	id: number;
 	name: string;
@@ -14,6 +16,7 @@ export interface TemplateGroup {
 	itemOpen: boolean;
 	isDragged: boolean;
 	channels: TemplateChannel[];
+	viewerChannels: ViewerChannel[];
 }	
 
 export interface TemplateChannel {

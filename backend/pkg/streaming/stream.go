@@ -12,6 +12,7 @@ import (
 	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
 	gstapp "github.com/go-gst/go-gst/gst/app"
+	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
 )
@@ -20,6 +21,7 @@ var Streams []*Stream
 
 type Stream struct {
 	pipeline *gst.Pipeline
+	mimeType string
 	// The settings for the element
 	Settings *Settings
 	// The current stream count
@@ -180,15 +182,19 @@ func (s *Stream) SetHeader(ctx *fasthttp.RequestCtx, writer *bufio.Writer, key s
 	return nil
 }
 
-func (s *Stream) NewSink(ctx *fasthttp.RequestCtx) error {
+func (s *Stream) NewSink(ctx *fiber.Ctx) error {
 	var bin *gst.Bin
 	var writer *bufio.Writer
 	var done chan bool
 
+	s.SetStatusCode(ctx.Context(), writer, 200)
+	s.SetHeader(ctx.Context(), writer, fiber.HeaderContentType, s.mimeType)
+	s.SetHeader(ctx.Context(), writer, fiber.HeaderAcceptRanges, "bytes")
+
 	if writer == nil {
 		done = make(chan bool)
 		ready := make(chan bool)
-		ctx.Response.SetBodyStreamWriter(func(w *bufio.Writer) {
+		ctx.Context().Response.SetBodyStreamWriter(func(w *bufio.Writer) {
 			writer = w
 			ready <- true // Signal that writer is set
 			<-done        // Wait for stream to be closed
@@ -332,7 +338,8 @@ func (s *Stream) createPipeline() (*gst.Pipeline, error) {
 	src.Link(typefind)
 
 	typefind.Connect("have-type", func(self *gst.Element, guint gst.TypeFindProbability, caps *gst.Caps) {
-		//fmt.Println("GST CAPS: %s", caps)
+		//fmt.Println("GST CAPS: ", caps)
+		s.mimeType = "video/mp4"
 		if strings.HasPrefix(caps.String(), "application/x-hls") {
 			demux, err := gst.NewElement("hlsdemux")
 			if err != nil {

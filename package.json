@@ -54,8 +54,12 @@
 	"type": "module",
 	"dependencies": {
 		"@floating-ui/dom": "^1.5.4",
+		"@mux/mux-player": "^2.3.2",
+		"@mux/mux-video": "^0.17.2",
 		"@sveltejs/adapter-static": "^3.0.1",
 		"axios": "^1.6.5",
-		"bootstrap": "^5.3.2"
+		"bootstrap": "^5.3.2",
+		"plyr": "^3.7.8",
+		"shaka-player": "^4.7.9"
 	}
 }
