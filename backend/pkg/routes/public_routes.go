@@ -93,4 +93,8 @@ func PublicRoutes(a *fiber.App) {
 		Root:   http.Dir(settings.EPG_FILEPATH),
 		Browse: false,
 	}))
+	router.Use("/stream", filesystem.New(filesystem.Config{
+		Root:   http.Dir(settings.STREAM_FILEPATH),
+		Browse: false,
+	}))
 }

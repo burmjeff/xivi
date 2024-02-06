@@ -57,9 +57,13 @@
 		"@mux/mux-player": "^2.3.2",
 		"@mux/mux-video": "^0.17.2",
 		"@sveltejs/adapter-static": "^3.0.1",
-		"axios": "^1.6.5",
+		"axios": "^1.6.7",
 		"bootstrap": "^5.3.2",
+		"hls.js": "^1.5.3",
+		"mpegts.js": "^1.7.3",
+		"mux.js": "^6.3.0",
 		"plyr": "^3.7.8",
-		"shaka-player": "^4.7.9"
+		"shaka-player": "^4.7.9",
+		"vidstack": "^1.10.4"
 	}
 }

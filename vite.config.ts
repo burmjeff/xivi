@@ -1,4 +1,5 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import { vite as vidstack } from 'vidstack/plugins';
 import type { UserConfig } from 'vite';
 import Icons from 'unplugin-icons/vite';
 
