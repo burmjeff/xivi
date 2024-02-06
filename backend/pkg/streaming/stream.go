@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
-	"xivi/backend/app/models"
 	"xivi/backend/platform/settings"
 
 	"github.com/go-gst/go-glib/glib"
@@ -14,35 +14,26 @@ import (
 	gstapp "github.com/go-gst/go-gst/gst/app"
 	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog/log"
-	"github.com/valyala/fasthttp"
 )
 
 var Streams []*Stream
 
 type Stream struct {
-	pipeline *gst.Pipeline
-	mimeType string
-	// The settings for the element
-	Settings *Settings
-	// The current stream count
-	count int
+	pipeline   *gst.Pipeline
+	Settings   *Settings // The settings for the element
+	count      int       // The current stream count
+	LastAccess time.Time // Last endpoint hit
 }
 type Settings struct {
+	Uuid      string
 	Src       string
-	buffer    int
-	userAgent string
+	Buffer    int
+	UserAgent string
 }
 
-// Streamer is streaming API
 type Streamer interface {
-	// Write writes bytes to streamer
-	Write(p []byte) (n int, err error)
-	// Flush flushes data to the client
-	Flush() error
-	// SetStatusCode sets the status code. *Must* be called before Write and Flush
-	SetStatusCode(statusCode int) error
-	// SetHeader sets a response header. *Must* be called before Write and Flush
-	SetHeader(key string, value interface{}) error
+	Write(p []byte) (n int, err error) // Write writes bytes to streamer
+	Flush() error                      // Flush flushes data to the client
 }
 
 func NewStreamer() *Stream {
@@ -67,7 +58,7 @@ func RemoveStream(s *Stream) {
 	return
 }
 
-// Close closes the stream
+// Close the stream
 func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 	select {
 	case <-done:
@@ -98,6 +89,12 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 					}
 				}
 				s.pipeline.Clear()
+				if _, err := os.Stat(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid)); err == nil {
+					err := os.RemoveAll(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid))
+					if err != nil {
+						log.Debug().Msgf("Dispose pipeline: %v", err)
+					}
+				}
 				log.Debug().Msg("PIPELINE DISPOSED")
 			}()
 			RemoveStream(s)
@@ -134,41 +131,104 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 
 }
 
-// Write writes bytes to streamer
+// Write bytes to streamer
 func (s *Stream) Write(writer *bufio.Writer, p []byte) (n int, err error) {
 	if writer != nil {
 		return writer.Write(p)
 	}
-
 	return 0, nil
-
 }
 
-// Flush flushes data to the client
+// Flush data to the client
 func (s *Stream) Flush(writer *bufio.Writer) error {
 	if writer != nil {
 		return writer.Flush()
 	}
-
 	return nil
 }
 
-// SetStatusCode sets the status code. *Must* be called before Write and Flush
-func (s *Stream) SetStatusCode(ctx *fasthttp.RequestCtx, writer *bufio.Writer, statusCode int) error {
-	if writer != nil {
-		return errors.New("Streaming started - can't set status")
+func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
+	var bin *gst.Bin
+
+	ctx.Set(fiber.HeaderContentType, "application/x-hls")
+	ctx.Status(fiber.StatusOK)
+
+	buffer, err := gst.NewElement("queue")
+	if err != nil {
+		return err
+	}
+	parser, err := gst.NewElement("h264parse")
+	if err != nil {
+		return err
+	}
+	sink, err := gst.NewElement("hlssink2")
+	if err != nil {
+		return err
 	}
 
-	ctx.SetStatusCode(statusCode)
+	buffer.Set("max-size-buffers", 0)
+	buffer.Set("max-size-bytes", 0)
+	buffer.Set("max-size-time", 15000000000)
+	buffer.Set("min-threshold-time", s.Settings.Buffer*1000000)
+
+	sink.Set("playlist-root", fmt.Sprintf("http://%s:%d/stream/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, s.Settings.Uuid))
+	sink.Set("playlist-location", fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "playlist.m3u8"))
+	sink.Set("location", fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "segment.%%05d.ts"))
+	sink.Set("max-files", 10)
+	sink.Set("playlist-length", 5)
+	sink.Set("target-duration", 5)
+
+	log.Printf(fmt.Sprintf("http://%s:%d/stream/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, s.Settings.Uuid))
+	log.Printf(fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "playlist.m3u8"))
+
+	for i := 0; i <= s.count; i++ {
+		if element, _ := s.pipeline.GetElementByName(fmt.Sprintf("sinkbin%d", i)); element == nil {
+			bin = gst.NewBin(fmt.Sprintf("sinkbin%d", i))
+			break
+		}
+	}
+
+	bin.Add(buffer)
+	bin.Add(parser)
+	bin.Add(sink)
+	buffer.Link(parser)
+	parser.Link(sink)
+
+	queuepad := gst.NewGhostPad("sink", buffer.GetStaticPad("sink"))
+	queuepad.SetActive(true)
+	bin.AddPad(queuepad.Pad)
+
+	tee, err := s.pipeline.GetElementByName("stream")
+	if err != nil {
+		bin.SetState(gst.StateNull)
+		bin.Clear()
+		return err
+	}
+	bin.SetState(gst.StatePaused)
+	s.pipeline.Add(bin.Element)
+
+	if err := tee.Link(bin.Element); err != nil {
+		s.pipeline.Remove(bin.Element)
+		bin.SetState(gst.StateNull)
+		bin.Clear()
+		return err
+	}
+
+	bin.SyncStateWithParent()
+	bin.SetState(gst.StatePlaying)
+	log.Info().Msgf("New Stream started")
+
+	s.count++
+
 	return nil
 }
 
-func (s *Stream) NewSink(ctx *fiber.Ctx) error {
+func (s *Stream) NewMP2TSink(ctx *fiber.Ctx) error {
 	var bin *gst.Bin
 	var writer *bufio.Writer
 	var done chan bool
 
-	ctx.Set(fiber.HeaderContentType, s.mimeType)
+	ctx.Set(fiber.HeaderContentType, "video/MP2T")
 	ctx.Status(fiber.StatusOK)
 
 	if writer == nil {
@@ -195,7 +255,7 @@ func (s *Stream) NewSink(ctx *fiber.Ctx) error {
 	buffer.Set("max-size-buffers", 0)
 	buffer.Set("max-size-bytes", 0)
 	buffer.Set("max-size-time", 15000000000)
-	buffer.Set("min-threshold-time", s.Settings.buffer*1000000)
+	buffer.Set("min-threshold-time", s.Settings.Buffer*1000000)
 
 	sink.Set("max-time", 15000000000)
 	sink.Set("drop", true)
@@ -306,7 +366,7 @@ func (s *Stream) createPipeline() (*gst.Pipeline, error) {
 	}
 
 	src.Set("location", s.Settings.Src)
-	src.Set("user-agent", s.Settings.userAgent)
+	src.Set("user-agent", s.Settings.UserAgent)
 	src.Set("is-live", true)
 
 	tee.Set("name", "stream")
@@ -319,7 +379,6 @@ func (s *Stream) createPipeline() (*gst.Pipeline, error) {
 
 	typefind.Connect("have-type", func(self *gst.Element, guint gst.TypeFindProbability, caps *gst.Caps) {
 		//fmt.Println("GST CAPS: ", caps)
-		s.mimeType = "video/mp4"
 		if strings.HasPrefix(caps.String(), "application/x-hls") {
 			demux, err := gst.NewElement("hlsdemux")
 			if err != nil {
@@ -400,12 +459,24 @@ func RunLoop(f func(*glib.MainLoop) error) {
 	}
 }
 
-func (s *Stream) StartStream(channel models.ChannelUrl) error {
-	var err error
-	s.Settings.userAgent = "Xivi 1.0"
-	s.Settings.buffer = settings.APP_SETTINGS.Streaming.Buffer
+func (s *Stream) CleanupStreams() {
+	cleanupInterval := 15 * time.Second
+	ticker := time.NewTicker(cleanupInterval)
+	defer ticker.Stop()
 
-	s.Settings.Src = channel.Url
+	for {
+		select {
+		case <-ticker.C:
+			if time.Since(s.LastAccess) > cleanupInterval {
+				s.Close(nil, nil)
+				return
+			}
+		}
+	}
+}
+
+func (s *Stream) StartStream() error {
+	var err error
 
 	if s.pipeline, err = s.createPipeline(); err != nil {
 		return err
@@ -417,6 +488,7 @@ func (s *Stream) StartStream(channel models.ChannelUrl) error {
 
 	//TODO GO CHAN TO CHECK FOR GST ERRORS AND RESTART/CLOSE ON ERR
 	s.count = 0
+	s.LastAccess = time.Now()
 
 	return nil
 }

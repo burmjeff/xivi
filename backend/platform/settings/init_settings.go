@@ -112,6 +112,7 @@ func SetDefaults() (*AppSettings, error) {
 			Name_score:  0.95,
 		},
 		Streaming: Streaming{
+			Type:      "hls",
 			Proxy:     true,
 			Buffer:    200,
 			UserAgent: "Xivi 1.0",

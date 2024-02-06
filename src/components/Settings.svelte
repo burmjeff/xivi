@@ -26,6 +26,7 @@
         (document.querySelector('.settings_host input') as HTMLInputElement).value = $settings.server.host;
         (document.querySelector('.settings_port input') as HTMLInputElement).value = $settings.server.port.toString();
         (document.querySelector('.settings_readtimeout input') as HTMLInputElement).value = $settings.server.readtimeout.toString();
+        (document.querySelector('.settings_type select') as HTMLInputElement).value = $settings.streaming.type.toString();
         (document.querySelector('.settings_proxy select') as HTMLInputElement).value = $settings.streaming.proxy.toString();
         (document.querySelector('.settings_buffer input') as HTMLInputElement).value = $settings.streaming.buffer.toString();
         (document.querySelector('.settings_useragent input') as HTMLInputElement).value = $settings.streaming.useragent;
@@ -46,6 +47,7 @@
         const inputHost = (document.querySelector('.settings_host input') as HTMLInputElement).value;
         const inputPort = (document.querySelector('.settings_port input') as HTMLInputElement).value;
         const inputReadTimeout = (document.querySelector('.settings_readtimeout input') as HTMLInputElement).value;
+        const inputType = (document.querySelector('.settings_type select') as HTMLInputElement).value;
         const inputProxy = (document.querySelector('.settings_proxy select') as HTMLInputElement).value;
         const inputBuffer = (document.querySelector('.settings_buffer input') as HTMLInputElement).value;
         const inputUserAgent = (document.querySelector('.settings_useragent input') as HTMLInputElement).value;
@@ -54,7 +56,7 @@
         const inputNameScore = (document.querySelector('.settings_namescore input') as HTMLInputElement).value;
         if (inputAppName !='' &&  inputAppVersion !='' &&  inputTZ !='' &&  inputServePath !=''
         &&  inputModel !='' &&  inputLogLevel !='' &&  inputUpdateCron !='' &&  inputHost !=''
-        &&  inputPort !='' &&  inputReadTimeout !='' &&  inputProxy !='' &&  inputBuffer !=''
+        &&  inputPort !='' &&  inputReadTimeout !='' && inputType !='' &&  inputProxy !='' &&  inputBuffer !=''
         &&  inputUserAgent !='') {
             let newSettings: AppSettings;
             newSettings = {
@@ -79,6 +81,7 @@
                     name_score: Number(inputNameScore),
                 },
                 streaming: {
+                    type: inputType,
                     proxy: (inputProxy === "true"),
                     buffer: Number(inputBuffer),
                     useragent: inputUserAgent,
@@ -180,6 +183,15 @@
                     <span>Score to match Channel Name</span>
                     <input class="input variant-form-material" type="number" step=0.01 placeholder="0" />
                 </label>
+                <div class="w-full space-y-4">
+                    <label class="settings_type">
+                        <span>Stream Type</span>
+                        <select class="select">
+                            <option value="hls">HLS</option>
+                            <option value="mp2t">MPEG-TS</option>
+                        </select>
+                    </label>
+                </div>
                 <div class="w-full space-y-4">
                     <label class="settings_proxy">
                         <span>Proxy Enabled</span>

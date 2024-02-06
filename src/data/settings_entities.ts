@@ -29,6 +29,7 @@ export interface Playlist {
 }
 
 export interface Streaming {
+	type: string;
 	proxy: boolean;
 	buffer: number;
 	useragent: string;

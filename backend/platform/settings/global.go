@@ -50,6 +50,7 @@ type Playlist struct {
 }
 
 type Streaming struct {
+	Type      string `yaml:"type" json:"type"`
 	Proxy     bool   `yaml:"proxy" json:"proxy"`
 	Buffer    int    `yaml:"buffer" json:"buffer"`
 	UserAgent string `yaml:"useragent" json:"useragent"`
