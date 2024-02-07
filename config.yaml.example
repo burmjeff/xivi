@@ -18,7 +18,7 @@ playlist:
   name_score: 0.95
 
 streaming:
-  type: hls
+  type: mp2t
   proxy: true
   buffer: 200
   useragent: Xivi 1.0

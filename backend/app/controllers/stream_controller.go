@@ -130,6 +130,16 @@ func GetStream(c *fiber.Ctx) error {
 	}
 
 	if settings.APP_SETTINGS.Streaming.Type == "hls" {
+		var exists = false
+		var loop = 0
+		for !exists || loop < 60 {
+			if _, err := os.Stat(fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, stream_id, "playlist.m3u8")); err == nil {
+				exists = true
+			} else {
+				time.Sleep(500 * time.Millisecond)
+				loop += 1
+			}
+		}
 		return c.SendFile(fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, stream_id, "playlist.m3u8"))
 	} else {
 		return nil

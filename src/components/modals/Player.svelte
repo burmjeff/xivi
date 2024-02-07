@@ -7,10 +7,10 @@
     import 'vidstack/player/layouts';
     import 'vidstack/player/ui';
 
-    import { onMount, afterUpdate, type SvelteComponent } from 'svelte';
+    import { onMount, type SvelteComponent } from 'svelte';
     import { getModalStore } from '@skeletonlabs/skeleton';
 	  import xivi from '$lib/assets/xivi.png';
-    import Hls from 'hls.js';
+	  import { type MediaProviderSetupEvent, type MediaProviderAdapter, MediaRemoteControl, isGoogleCastProvider } from 'vidstack';
 
     export let parent: SvelteComponent;
 
@@ -18,6 +18,29 @@
     let videoUrl = $modalStore[0].meta.stream
     let name = $modalStore[0].meta.name
     let player: HTMLVideoElement
+    const remote = new MediaRemoteControl();
+
+    remote.disableCaptions();
+
+    onMount(async () => {
+        player.addEventListener('provider-setup', (event) => {
+        const provider = event.detail;
+        if (provider?.type === 'google-cast') {
+          // Google Cast remote player.
+          provider.player;
+          // Google Cast context.
+          provider.cast;
+          // Google Cast session.
+          provider.session;
+          // Google Cast media info.
+          provider.media;
+          // Whether the session belongs to this provider.
+          provider.hasActiveSession;
+        }
+      });
+    });
+    
+
 </script>
 
 <media-player
@@ -33,18 +56,20 @@ autoPlay
 <media-provider>
   <media-poster
     class="vds-poster"
-    src="https://image.mux.com/VZtzUzGRv02OhRnZCxcNg49OilvolTqdnFLEqBsTwaxU/thumbnail.webp?time=268&width=1200"
-    alt="Girl walks into campfire with gnomes surrounding her friend ready for their next meal!"
+    src={xivi}
+    alt={name}
   />
 </media-provider>
 <!-- Layouts -->
-<media-video-layout
-  thumbnails="https://image.mux.com/VZtzUzGRv02OhRnZCxcNg49OilvolTqdnFLEqBsTwaxU/storyboard.vtt"
-/>
+<media-video-layout/>
 </media-player>
 
 <style lang="postcss">
 .player {
+  max-height: 100vh;
+  max-width: 100vh;
+  height: 57vh;
+  width: 100vh;
   --brand-color: #f5f5f5;
   --focus-color: #4e9cf6;
 
