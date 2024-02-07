@@ -157,6 +157,10 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	tsdemux, err := gst.NewElement("tsdemux")
+	if err != nil {
+		return err
+	}
 	parser, err := gst.NewElement("h264parse")
 	if err != nil {
 		return err
@@ -173,13 +177,10 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 
 	sink.Set("playlist-root", fmt.Sprintf("http://%s:%d/stream/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, s.Settings.Uuid))
 	sink.Set("playlist-location", fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "playlist.m3u8"))
-	sink.Set("location", fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "segment.%%05d.ts"))
+	sink.Set("location", fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "segment.%05d.ts"))
 	sink.Set("max-files", 10)
 	sink.Set("playlist-length", 5)
 	sink.Set("target-duration", 5)
-
-	log.Printf(fmt.Sprintf("http://%s:%d/stream/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, s.Settings.Uuid))
-	log.Printf(fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "playlist.m3u8"))
 
 	for i := 0; i <= s.count; i++ {
 		if element, _ := s.pipeline.GetElementByName(fmt.Sprintf("sinkbin%d", i)); element == nil {
@@ -189,9 +190,11 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 	}
 
 	bin.Add(buffer)
+	bin.Add(tsdemux)
 	bin.Add(parser)
 	bin.Add(sink)
-	buffer.Link(parser)
+	buffer.Link(tsdemux)
+	tsdemux.Link(parser)
 	parser.Link(sink)
 
 	queuepad := gst.NewGhostPad("sink", buffer.GetStaticPad("sink"))
@@ -204,7 +207,7 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 		bin.Clear()
 		return err
 	}
-	bin.SetState(gst.StatePaused)
+	bin.SetState(gst.StateReady)
 	s.pipeline.Add(bin.Element)
 
 	if err := tee.Link(bin.Element); err != nil {
@@ -215,6 +218,7 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 	}
 
 	bin.SyncStateWithParent()
+	//s.pipeline.SetState(gst.StatePlaying)
 	bin.SetState(gst.StatePlaying)
 	log.Info().Msgf("New Stream started")
 
@@ -382,7 +386,7 @@ func (s *Stream) createPipeline() (*gst.Pipeline, error) {
 		if strings.HasPrefix(caps.String(), "application/x-hls") {
 			demux, err := gst.NewElement("hlsdemux")
 			if err != nil {
-				log.Err(err) //TODO RETURN ERROR
+				log.Error().Msgf("Demux error: %v", err) //TODO RETURN ERROR
 			}
 			pipeline.Add(demux)
 			typefind.Link(demux)
