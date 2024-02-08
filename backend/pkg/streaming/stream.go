@@ -441,9 +441,6 @@ func (s *Stream) CleanupStreams() {
 		select {
 		case <-ticker.C:
 			if time.Since(s.LastAccess) > cleanupInterval {
-				if !s.pipeline.SendEvent(gst.NewEOSEvent()) {
-					log.Warn().Msg("WARNING: Failed to send EOS to stream branch")
-				}
 				go s.Close(nil, nil)
 				return
 			}
