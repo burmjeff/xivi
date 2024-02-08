@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -35,6 +34,7 @@ func GetStream(c *fiber.Ctx) error {
 	// Catch stream ID from URL.
 	stream_id := c.Params("stream_id")
 	if stream_id == "" {
+		log.Error().Msg("No stream ID found")
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Empty Stream UUID",
@@ -44,6 +44,7 @@ func GetStream(c *fiber.Ctx) error {
 	// Get channels by UUID.
 	channels, err := database.Db.GetChannelsbyUuid(stream_id)
 	if err != nil {
+		log.Error().Msgf("No stream channels found: %v", err)
 		// Return, if no channels found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error":    true,
@@ -60,59 +61,48 @@ func GetStream(c *fiber.Ctx) error {
 			return c.Redirect((*channels)[0].Url, http.StatusTemporaryRedirect)
 
 		case true:
+			var found = false
 			for _, stream := range streaming.Streams {
 				if stream.Settings.Uuid == stream_id {
+					found = true
 					stream.LastAccess = time.Now()
-					if settings.APP_SETTINGS.Streaming.Type == "hls" {
-						return c.SendFile(fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, stream_id, "playlist.m3u8"))
-					} else {
+					if settings.APP_SETTINGS.Streaming.Type != "hls" {
 						if err := stream.NewMP2TSink(c); err != nil {
-							return err
+							log.Error().Msgf("FAILED TO CREATE MP2T SINK: %v", err)
+							return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+								"error": true,
+								"msg":   fmt.Sprintf("FAILED TO CREATE MP2T SINK: %v", err),
+							})
 						}
-						return nil
 					}
 				}
 			}
-
-			s := streaming.NewStreamer()
-			s.Settings.Uuid = stream_id
-			s.Settings.Src = (*channels)[0].Url
-			s.Settings.Buffer = settings.APP_SETTINGS.Streaming.Buffer
-			s.Settings.UserAgent = settings.APP_SETTINGS.Streaming.UserAgent
-
-			if err := s.StartStream(); err != nil {
-				log.Err(err)
-				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-					"error": true,
-					"msg":   err,
-				})
-			}
-			streaming.AddStream(s)
-
-			if settings.APP_SETTINGS.Streaming.Type == "hls" {
-				go s.CleanupStreams()
-				if _, err := os.Stat(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, stream_id)); errors.Is(err, os.ErrNotExist) {
-					err := os.Mkdir(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, stream_id), os.ModePerm)
-					if err != nil {
-						log.Err(err)
+			if !found {
+				if settings.APP_SETTINGS.Streaming.Type == "hls" {
+					if _, err := os.Stat(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, stream_id)); err == nil {
+						if err := os.RemoveAll(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, stream_id)); err != nil {
+							log.Debug().Msgf("FAILED TO REMOVE HLS FOLDER: %v", err)
+						}
+					}
+					if err := os.Mkdir(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, stream_id), os.ModePerm); err != nil {
+						log.Error().Msgf("GST_HLS_MKDIR ERROR: %v", err)
 						return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 							"error": true,
-							"msg":   err,
+							"msg":   fmt.Sprintf("FAILED TO CREATE HLS FOLDER: %v", err),
 						})
 					}
 				}
-				if err := s.NewHLSSink(c); err != nil {
-					log.Err(err)
-					s.Close(nil, nil)
-					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-						"error": true,
-						"msg":   err,
-					})
-				}
-			} else {
-				if err := s.NewMP2TSink(c); err != nil {
-					log.Err(err)
-					s.Close(nil, nil)
+
+				s := streaming.NewStream()
+				streaming.AddStream(s)
+
+				s.Settings.Uuid = stream_id
+				s.Settings.Src = (*channels)[0].Url
+				s.Settings.Buffer = settings.APP_SETTINGS.Streaming.Buffer
+				s.Settings.UserAgent = settings.APP_SETTINGS.Streaming.UserAgent
+
+				if err := s.StartStream(c); err != nil {
+					log.Error().Msgf("FAILED TO START STREAM: %v", err)
 					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 						"error": true,
 						"msg":   err,
@@ -122,21 +112,27 @@ func GetStream(c *fiber.Ctx) error {
 		}
 	} else {
 		// Return, if no channels found.
+		log.Error().Msgf("NO STREAMS FOR CHANNEL FOUND: %v", stream_id)
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error":    true,
-			"msg":      "Stream Error",
-			"channels": nil,
+			"error": true,
+			"msg":   "Stream Error: No streamable channels found",
 		})
 	}
 
 	if settings.APP_SETTINGS.Streaming.Type == "hls" {
 		var exists = false
 		var loop = 0
-		for !exists || loop < 60 {
+		for !exists {
 			if _, err := os.Stat(fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, stream_id, "playlist.m3u8")); err == nil {
 				exists = true
+			} else if loop >= 75 {
+				log.Error().Msg("Stream Error: Playlist M3U8 not found")
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+					"error": true,
+					"msg":   "Stream Error: M3U8 not found",
+				})
 			} else {
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(200 * time.Millisecond)
 				loop += 1
 			}
 		}
