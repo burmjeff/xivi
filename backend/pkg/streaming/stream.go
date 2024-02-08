@@ -70,9 +70,9 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 		}
 		if s.count <= 0 || sinkBin == nil {
 			go func() {
-				if !s.pipeline.SendEvent(gst.NewEOSEvent()) {
-					log.Warn().Msg("WARNING: Failed to send EOS to pipeline")
-				}
+				//if !s.pipeline.SendEvent(gst.NewEOSEvent()) {
+				//	log.Warn().Msg("WARNING: Failed to send EOS to pipeline")
+				//}
 				elements, _ := s.pipeline.GetElementsSorted()
 
 				for _, element := range elements {
@@ -156,7 +156,7 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 	pLocation := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "playlist.m3u8")
 	location := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "segment.%05d.ts")
 
-	bin, _ = gst.NewBinFromString(fmt.Sprintf("queue name=sinkqueue ! tsdemux name=demux ! h264parse ! hlssink2 playlist-root=%s location=%s playlist-location=%s max-files=10 playlist-length=6 target-duration=3 name=sink demux. ! queue ! aacparse ! sink.audio", pRoot, location, pLocation), false)
+	bin, _ = gst.NewBinFromString(fmt.Sprintf("queue name=sinkqueue ! tsdemux name=demux ! h264parse ! queue ! hlssink2 playlist-root=%s location=%s playlist-location=%s max-files=10 playlist-length=6 target-duration=3 name=sink demux. ! aacparse ! queue ! sink.audio", pRoot, location, pLocation), false)
 
 	queue, err := bin.GetElementByName("sinkqueue")
 	if err != nil {
