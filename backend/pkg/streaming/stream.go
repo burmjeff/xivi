@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 	"xivi/backend/platform/settings"
 
@@ -23,6 +24,7 @@ type Stream struct {
 	Settings   *Settings // The settings for the element
 	count      int       // The current stream count
 	LastAccess time.Time // Last endpoint hit
+	Mu         sync.Mutex
 }
 type Settings struct {
 	Uuid      string
@@ -60,6 +62,9 @@ func RemoveStream(s *Stream) {
 
 // Close the stream
 func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+
 	select {
 	case <-done:
 		return gst.FlowEOS
@@ -69,48 +74,50 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 			close(done)
 		}
 		if s.count <= 0 || sinkBin == nil {
-			go func() {
-				//if !s.pipeline.SendEvent(gst.NewEOSEvent()) {
-				//	log.Warn().Msg("WARNING: Failed to send EOS to pipeline")
-				//}
-				elements, _ := s.pipeline.GetElementsSorted()
-
-				for _, element := range elements {
-					log.Debug().Msgf("Disposing GST element: %s", element.GetName())
-					pads, _ := element.GetSrcPads()
-					for _, pad := range pads {
-						pad.PauseTask()
-					}
-					if err := element.SetState(gst.StateNull); err != nil {
-						log.Debug().Msgf("WARNING: Failed to set %s state to Null", element.GetName())
-					}
-					if err := s.pipeline.Remove(element); err != nil {
-						log.Debug().Msgf("WARNING: Failed to remove element from pipeline: %s", element.GetName())
-					}
-				}
-				s.pipeline.Clear()
-				if _, err := os.Stat(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid)); err == nil {
-					err := os.RemoveAll(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid))
-					if err != nil {
-						log.Debug().Msgf("Dispose pipeline: %v", err)
-					}
-				}
-				log.Debug().Msg("PIPELINE DISPOSED")
-			}()
 			RemoveStream(s)
+
+			if s.pipeline != nil {
+				if _, err := s.pipeline.GetElements(); err == nil {
+					if elements, err := s.pipeline.GetElementsSorted(); err != nil {
+						for _, element := range elements {
+							log.Debug().Msgf("Disposing GST element: %s", element.GetName())
+							pads, _ := element.GetSrcPads()
+							for _, pad := range pads {
+								pad.PauseTask()
+							}
+							if err := element.SetState(gst.StateNull); err != nil {
+								log.Debug().Msgf("WARNING: Failed to set %s state to Null", element.GetName())
+							}
+							if err := s.pipeline.Remove(element); err != nil {
+								log.Debug().Msgf("WARNING: Failed to remove element from pipeline: %s", element.GetName())
+							}
+						}
+					}
+				}
+			}
+			s.pipeline.Clear()
+			if _, err := os.Stat(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid)); err == nil {
+				err := os.RemoveAll(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid))
+				if err != nil {
+					log.Debug().Msgf("Dispose pipeline: %v", err)
+				}
+			}
+
+			log.Debug().Msg("PIPELINE DISPOSED")
+
 			return gst.FlowEOS
 		}
 
-		tee, _ := s.pipeline.GetElementByName("stream")
-		tee.Unlink(sinkBin.Element)
+		if tee, err := s.pipeline.GetElementByName("stream"); err != nil {
+			tee.Unlink(sinkBin.Element)
+		}
 		if err := s.pipeline.Remove(sinkBin.Element); err != nil {
 			log.Warn().Msgf("WARNING: Failed to remove stream bin from pipeline: %s", sinkBin.GetName())
 		}
-		go func() {
-			if !sinkBin.SendEvent(gst.NewEOSEvent()) {
-				log.Warn().Msg("WARNING: Failed to send EOS to stream branch")
-			}
-			elements, _ := sinkBin.GetElementsSorted()
+		if !sinkBin.SendEvent(gst.NewEOSEvent()) {
+			log.Warn().Msg("WARNING: Failed to send EOS to stream branch")
+		}
+		if elements, err := sinkBin.GetElementsSorted(); err != nil {
 			for _, element := range elements {
 				log.Debug().Msgf("Disposing GST element: %s with state: %s", element.GetName(), element.GetCurrentState())
 				pads, _ := element.GetPads()
@@ -118,13 +125,13 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 					pad.PauseTask()
 				}
 			}
-			if err := sinkBin.SetState(gst.StateNull); err != nil {
-				log.Warn().Msgf("WARNING: Failed to set %s state to Null", sinkBin.GetName())
-			}
+		}
+		if err := sinkBin.SetState(gst.StateNull); err != nil {
+			log.Warn().Msgf("WARNING: Failed to set %s state to Null", sinkBin.GetName())
+		}
 
-			sinkBin.Clear()
-			log.Info().Msgf("STREAM CLOSED")
-		}()
+		sinkBin.Clear()
+		log.Info().Msgf("STREAM CLOSED")
 	}
 
 	return gst.FlowEOS
@@ -156,7 +163,7 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 	pLocation := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "playlist.m3u8")
 	location := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "segment.%05d.ts")
 
-	bin, _ = gst.NewBinFromString(fmt.Sprintf("queue name=sinkqueue ! tsdemux name=demux ! h264parse ! queue ! hlssink2 playlist-root=%s location=%s playlist-location=%s max-files=10 playlist-length=6 target-duration=3 name=sink demux. ! aacparse ! queue ! sink.audio", pRoot, location, pLocation), false)
+	bin, _ = gst.NewBinFromString(fmt.Sprintf("queue name=sinkqueue ! tsdemux name=demux ! h264parse ! queue ! hlssink2 playlist-root=%s location=%s playlist-location=%s max-files=8 playlist-length=4 target-duration=8 name=sink demux. ! aacparse ! queue ! sink.audio", pRoot, location, pLocation), false)
 
 	queue, err := bin.GetElementByName("sinkqueue")
 	if err != nil {
@@ -434,7 +441,10 @@ func (s *Stream) CleanupStreams() {
 		select {
 		case <-ticker.C:
 			if time.Since(s.LastAccess) > cleanupInterval {
-				s.Close(nil, nil)
+				if !s.pipeline.SendEvent(gst.NewEOSEvent()) {
+					log.Warn().Msg("WARNING: Failed to send EOS to stream branch")
+				}
+				go s.Close(nil, nil)
 				return
 			}
 		}
@@ -469,8 +479,10 @@ func (s *Stream) StartStream(c *fiber.Ctx) error {
 	})
 
 	//TODO GO CHAN TO CHECK FOR GST ERRORS AND RESTART/CLOSE ON ERR
+	s.Mu.Lock()
 	s.count = 0
 	s.LastAccess = time.Now()
+	s.Mu.Unlock()
 
 	return nil
 }

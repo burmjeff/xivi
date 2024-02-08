@@ -48,9 +48,8 @@ bind:this={player}
 title={name}
 src={videoUrl}
 class="player"
-streamType="ll-live"
+streamType="live"
 crossorigin
-playsinline
 autoPlay
 >
 <media-provider>
