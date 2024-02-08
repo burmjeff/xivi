@@ -36,7 +36,7 @@ type Streamer interface {
 	Flush() error                      // Flush flushes data to the client
 }
 
-func NewStreamer() *Stream {
+func NewStream() *Stream {
 	return &Stream{
 		Settings: &Settings{},
 	}
@@ -151,53 +151,20 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 	var bin *gst.Bin
 
 	ctx.Set(fiber.HeaderContentType, "application/x-hls")
-	ctx.Status(fiber.StatusOK)
 
-	buffer, err := gst.NewElement("queue")
+	pRoot := fmt.Sprintf("http://%s:%d/stream/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, s.Settings.Uuid)
+	pLocation := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "playlist.m3u8")
+	location := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "segment.%05d.ts")
+
+	bin, _ = gst.NewBinFromString(fmt.Sprintf("queue name=sinkqueue ! tsdemux name=demux ! h264parse ! hlssink2 playlist-root=%s location=%s playlist-location=%s max-files=10 playlist-length=6 target-duration=3 name=sink demux. ! queue ! aacparse ! sink.audio", pRoot, location, pLocation), false)
+
+	queue, err := bin.GetElementByName("sinkqueue")
 	if err != nil {
+		bin.SetState(gst.StateNull)
+		bin.Clear()
 		return err
 	}
-	tsdemux, err := gst.NewElement("tsdemux")
-	if err != nil {
-		return err
-	}
-	parser, err := gst.NewElement("h264parse")
-	if err != nil {
-		return err
-	}
-	sink, err := gst.NewElement("hlssink2")
-	if err != nil {
-		return err
-	}
-
-	buffer.Set("max-size-buffers", 0)
-	buffer.Set("max-size-bytes", 0)
-	buffer.Set("max-size-time", 15000000000)
-	buffer.Set("min-threshold-time", s.Settings.Buffer*1000000)
-
-	sink.Set("playlist-root", fmt.Sprintf("http://%s:%d/stream/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, s.Settings.Uuid))
-	sink.Set("playlist-location", fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "playlist.m3u8"))
-	sink.Set("location", fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "segment.%05d.ts"))
-	sink.Set("max-files", 10)
-	sink.Set("playlist-length", 5)
-	sink.Set("target-duration", 5)
-
-	for i := 0; i <= s.count; i++ {
-		if element, _ := s.pipeline.GetElementByName(fmt.Sprintf("sinkbin%d", i)); element == nil {
-			bin = gst.NewBin(fmt.Sprintf("sinkbin%d", i))
-			break
-		}
-	}
-
-	bin.Add(buffer)
-	bin.Add(tsdemux)
-	bin.Add(parser)
-	bin.Add(sink)
-	buffer.Link(tsdemux)
-	tsdemux.Link(parser)
-	parser.Link(sink)
-
-	queuepad := gst.NewGhostPad("sink", buffer.GetStaticPad("sink"))
+	queuepad := gst.NewGhostPad("ghost", queue.GetStaticPad("sink"))
 	queuepad.SetActive(true)
 	bin.AddPad(queuepad.Pad)
 
@@ -207,7 +174,7 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 		bin.Clear()
 		return err
 	}
-	bin.SetState(gst.StateReady)
+	bin.SetState(gst.StatePaused)
 	s.pipeline.Add(bin.Element)
 
 	if err := tee.Link(bin.Element); err != nil {
@@ -218,10 +185,6 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 	}
 
 	bin.SyncStateWithParent()
-	//s.pipeline.SetState(gst.StatePlaying)
-	bin.SetState(gst.StatePlaying)
-	log.Info().Msgf("New Stream started")
-
 	s.count++
 
 	return nil
@@ -233,7 +196,6 @@ func (s *Stream) NewMP2TSink(ctx *fiber.Ctx) error {
 	var done chan bool
 
 	ctx.Set(fiber.HeaderContentType, "video/MP2T")
-	ctx.Status(fiber.StatusOK)
 
 	if writer == nil {
 		done = make(chan bool)
@@ -415,7 +377,7 @@ func (s *Stream) mainLoop(loop *glib.MainLoop) error {
 	defer s.pipeline.Unref()
 
 	s.pipeline.GetPipelineBus().AddWatch(func(msg *gst.Message) bool {
-		log.Debug().Msgf("go-gst-debug-message: %v", msg)
+		//log.Debug().Msgf("go-gst-debug-message: %v", msg)
 		switch msg.Type() {
 		case gst.MessageError:
 			// The parsed error implements the error interface, but also
@@ -434,14 +396,14 @@ func (s *Stream) mainLoop(loop *glib.MainLoop) error {
 		case gst.MessageBuffering:
 			bufPercent := msg.ParseBuffering()
 			log.Debug().Msgf("go-gst-debug - stream buffer percent: %v", bufPercent)
-			/* Wait until buffering is complete before start/resume playing */
-			if bufPercent < 100 {
+			// Wait until buffering is complete before start/resume playing
+			if bufPercent < 75 {
 				s.pipeline.SetState(gst.StatePaused)
 			} else {
 				s.pipeline.SetState(gst.StatePlaying)
 			}
 		case gst.MessageClockLost:
-			/* Get a new clock */
+			// Get a new clock
 			log.Debug().Msgf("go-gst-debug - clock lost: %v", msg)
 			s.pipeline.SetState(gst.StatePaused)
 			s.pipeline.SetState(gst.StatePlaying)
@@ -459,7 +421,7 @@ func RunLoop(f func(*glib.MainLoop) error) {
 	mainLoop := glib.NewMainLoop(glib.MainContextDefault(), false)
 
 	if err := f(mainLoop); err != nil {
-		fmt.Println("ERROR!", err)
+		log.Error().Msgf("GST MAINLOOP ERROR!: %v", err)
 	}
 }
 
@@ -479,11 +441,27 @@ func (s *Stream) CleanupStreams() {
 	}
 }
 
-func (s *Stream) StartStream() error {
+func (s *Stream) StartStream(c *fiber.Ctx) error {
 	var err error
 
 	if s.pipeline, err = s.createPipeline(); err != nil {
 		return err
+	}
+
+	if settings.APP_SETTINGS.Streaming.Type == "hls" {
+		go s.CleanupStreams()
+
+		if err := s.NewHLSSink(c); err != nil {
+			log.Error().Msgf("NEWHLSSINK ERROR: %v", err)
+			s.Close(nil, nil)
+			return err
+		}
+	} else {
+		if err := s.NewMP2TSink(c); err != nil {
+			log.Error().Msgf("NEWMP2TSINK ERROR: %v", err)
+			s.Close(nil, nil)
+			return err
+		}
 	}
 
 	go RunLoop(func(loop *glib.MainLoop) error {
