@@ -65,7 +65,9 @@ func GetStream(c *fiber.Ctx) error {
 			for _, stream := range streaming.Streams {
 				if stream.Settings.Uuid == stream_id {
 					found = true
+					stream.Mu.Lock()
 					stream.LastAccess = time.Now()
+					stream.Mu.Unlock()
 					if settings.APP_SETTINGS.Streaming.Type != "hls" {
 						if err := stream.NewMP2TSink(c); err != nil {
 							log.Error().Msgf("FAILED TO CREATE MP2T SINK: %v", err)
