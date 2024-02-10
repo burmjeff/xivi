@@ -273,7 +273,7 @@
 	function handleDndFinalize(e: CustomEvent<DndEvent<TemplateGroup>>) {
 		const {trigger, id} = e.detail.info;
         if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreDndEvents) {
-            name = e.detail.items.filter(item => item.isDragged)[0].name;
+            let name = e.detail.items.filter(item => item.isDragged)[0].name;
             e.detail.items = e.detail.items.filter(item => !item.isDragged);
             $templateGroups = e.detail.items
             convertPrompt(id, name)

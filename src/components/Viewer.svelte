@@ -5,8 +5,6 @@
 	import { onMount } from 'svelte';
 	import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
 	import { templates } from '@xivi/stores/template_store';
-    import { channels } from '@xivi/stores/viewer_store';
-	import Icon from '@iconify/svelte';
 
     let selected = 0;
 

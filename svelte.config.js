@@ -16,7 +16,8 @@ const config = {
 			strict: true
 		}),
 		alias: {
-			'@xivi': './src'
+			'@xivi': './src',
+			'$lib': './src/lib'
 		}
 	}
 };
