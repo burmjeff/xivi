@@ -342,10 +342,13 @@
 										<tr id="animate" animate:flip={{duration:flipDurationMs}}>
 											<td>{channel.title}</td>
 											<td>{channel.tvg_id}</td>
-											<td class="hover:bg-red-900 w-5" on:click={removeChannelItem(channel.id)}>
-												<Icon icon="icon-park-outline:delete" width="18" height="18"/>
+											<td class="items-center hover:bg-red-900 w-5 h-4">
+												<button class="btn w-full h-full max-h-4" on:click={() => removeChannelItem(channel.id)}>
+													<div>
+														<Icon icon="icon-park-outline:delete"/>
+													</div>
+												</button>
 											</td>
-
 											{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
 												<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">{channel.name}</div>
 											{/if}
@@ -411,7 +414,9 @@
 			{#if $logos != null && $logos.length > 0}
 				<section class="grid grid-cols-7 justify-items-center items-center space-x-4 space-y-1">
 					{#each $logos as logo, logoIdx (logo.id)}
-						<img id="chooseImage" class="h-auto w-20" src={logo.image} alt="" on:click={chooseImage(logo)}>
+						<button id="chooseImage" class="btn p-1 items-center h-auto w-20" on:click={() => chooseImage(logo)}>
+							<img src={logo.image} alt=""/>
+						</button>
 					{/each}
 				</section>
 			{/if}

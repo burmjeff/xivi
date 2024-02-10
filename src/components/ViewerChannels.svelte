@@ -4,13 +4,11 @@
 	import { onMount } from 'svelte';
 	import {
         ProgressBar,
-		popup,
 		getModalStore,
 		type ModalSettings,
 		type PopupSettings
 	} from '@skeletonlabs/skeleton';
 	import { templates } from '@xivi/stores/template_store';
-    import { channels } from '@xivi/stores/viewer_store';
     import type { ViewerChannel } from '@xivi/data/viewer_entities';
 	import Icon from '@iconify/svelte';
 

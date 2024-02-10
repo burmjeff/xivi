@@ -6,7 +6,7 @@
     import {playlists} from '@xivi/stores/playlist_store';
     import type { PlaylistGroup } from '@xivi/data/playlist_entities';
 
-    export let parent: SvelteComponent;
+    //export let parent: SvelteComponent;
 
     const modalStore = getModalStore();
     let isNew = $modalStore[0].meta.isNew
@@ -115,7 +115,7 @@
                 formData.dynamic = false
                 formData.dynamicgroup = 0
             } else {
-                const dynamicItem = dynamicOptions[dynamicOptions.findIndex(item => item.label === addedLabels[0])].meta.split(',');
+                const dynamicItem = (<string>dynamicOptions[dynamicOptions.findIndex(item => item.label === addedLabels[0])].meta).split(',');
                 formData.dynamicgroup = playlistItems[playlistItems.findIndex(item => item.playlist_id === Number(dynamicItem[0]) && item.group_id === Number(dynamicItem[1]))].id;
             }
         } else {

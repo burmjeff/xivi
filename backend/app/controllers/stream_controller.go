@@ -16,6 +16,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+var isRunning bool = false
+
 type AppSettings struct {
 	Proxy      bool `json:"proxy,omitempty"`
 	Buffer     bool `json:"buffer,omitempty"`
@@ -31,6 +33,11 @@ type AppSettings struct {
 // @Param stream_id path string true "Stream ID"
 // @Router /stream/{stream_id} [get]
 func GetStream(c *fiber.Ctx) error {
+	if isRunning {
+		raceCheck()
+	}
+	isRunning = true
+
 	// Catch stream ID from URL.
 	stream_id := c.Params("stream_id")
 	if stream_id == "" {
@@ -64,6 +71,7 @@ func GetStream(c *fiber.Ctx) error {
 			var found = false
 			for _, stream := range streaming.Streams {
 				if stream.Settings.Uuid == stream_id {
+					isRunning = false
 					found = true
 					stream.Mu.Lock()
 					stream.LastAccess = time.Now()
@@ -80,6 +88,10 @@ func GetStream(c *fiber.Ctx) error {
 				}
 			}
 			if !found {
+				s := streaming.NewStream(stream_id)
+				streaming.AddStream(s)
+				isRunning = false
+
 				if settings.APP_SETTINGS.Streaming.Type == "hls" {
 					if _, err := os.Stat(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, stream_id)); err == nil {
 						if err := os.RemoveAll(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, stream_id)); err != nil {
@@ -95,10 +107,6 @@ func GetStream(c *fiber.Ctx) error {
 					}
 				}
 
-				s := streaming.NewStream()
-				streaming.AddStream(s)
-
-				s.Settings.Uuid = stream_id
 				s.Settings.Src = (*channels)[0].Url
 				s.Settings.Buffer = settings.APP_SETTINGS.Streaming.Buffer
 				s.Settings.UserAgent = settings.APP_SETTINGS.Streaming.UserAgent
@@ -209,4 +217,20 @@ func GetChannels(c *fiber.Ctx) error {
 		"msg":      nil,
 		"channels": channels,
 	})
+}
+
+func raceCheck() {
+	checkInterval := 50 * time.Millisecond
+	ticker := time.NewTicker(checkInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			log.Debug().Msg("Waiting... Stream start race check...")
+			if !isRunning {
+				return
+			}
+		}
+	}
 }
