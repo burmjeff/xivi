@@ -1,58 +1,67 @@
 <!-- Template.svelte -->
 <script lang="ts">
-    import TemplateGroup from './TemplateGroup.svelte';
-    import { onMount } from 'svelte';
-    import { Accordion, AccordionItem, popup, getModalStore, type PopupSettings, type ModalSettings } from '@skeletonlabs/skeleton';
-    import { templates } from '@xivi/stores/template_store';
-    import Icon from '@iconify/svelte';
+	import TemplateGroup from './TemplateGroup.svelte';
+	import { onMount } from 'svelte';
+	import {
+		Accordion,
+		AccordionItem,
+		popup,
+		getModalStore,
+		type PopupSettings,
+		type ModalSettings
+	} from '@skeletonlabs/skeleton';
+	import { templates } from '@xivi/stores/template_store';
+	import Icon from '@iconify/svelte';
 
-    const modalStore = getModalStore();
+	const modalStore = getModalStore();
 
-    const updateTemplates = async () => {
-        const response = await fetch('/api/templates');
-        const data = await response.json();
-        return data.templates;
-    }
+	const updateTemplates = async () => {
+		const response = await fetch('/api/templates');
+		const data = await response.json();
+		return data.templates;
+	};
 
-    onMount(async () => {
-        templates.set(await updateTemplates());
-        });
-    
-    let templateSettings: PopupSettings = {
-        // Set the event as: click | hover | hover-click
-        event: 'click',
-        // Provide a matching 'data-popup' value.
-        target: 'addTemplatePopup'
-    };
+	onMount(async () => {
+		templates.set(await updateTemplates());
+	});
 
-    const addTemplateTooltip: PopupSettings = {
+	let templateSettings: PopupSettings = {
+		// Set the event as: click | hover | hover-click
+		event: 'click',
+		// Provide a matching 'data-popup' value.
+		target: 'addTemplatePopup'
+	};
+
+	const addTemplateTooltip: PopupSettings = {
 		event: 'hover',
 		target: 'addTemplateTooltip',
 		placement: 'top'
 	};
 
-    async function addTemplate() {
-        const inputName = {name: (document.querySelector('.template_name input') as HTMLInputElement).value};
-        if (inputName !== null) {
-            try {
-                const response = await fetch('/api/template', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(inputName)
-                });
-                const data = await response.json();
-                console.log('Created template', data);
-                $templates.push(data.template);
-                $templates = $templates;
-            } catch (error) {
-                console.log('Error creating template:', error);
-            }
-        }
-    }
+	async function addTemplate() {
+		const inputName = {
+			name: (document.querySelector('.template_name input') as HTMLInputElement).value
+		};
+		if (inputName !== null) {
+			try {
+				const response = await fetch('/api/template', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify(inputName)
+				});
+				const data = await response.json();
+				console.log('Created template', data);
+				$templates.push(data.template);
+				$templates = $templates;
+			} catch (error) {
+				console.log('Error creating template:', error);
+			}
+		}
+	}
 
-    function renamePrompt(templateName: string, templateId: number): void {
+	function renamePrompt(templateName: string, templateId: number): void {
 		const prompt: ModalSettings = {
 			type: 'prompt',
 			title: 'Rename Template',
@@ -62,58 +71,58 @@
 			response: (newName: string) => {
 				if (newName) renameTemplate(newName, templateId);
 			},
-            buttonTextCancel: 'Cancel',
-		    buttonTextSubmit: 'Submit',
+			buttonTextCancel: 'Cancel',
+			buttonTextSubmit: 'Submit'
 		};
 		modalStore.trigger(prompt);
 	}
 
-    async function renameTemplate(templateName: string, templateId: number) {
-        if (templateName !=='') {
-            const newTemplate = {
-                id: templateId,
-                name: templateName
-            };
-            try {
-                const response = await fetch(`/api/template`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(newTemplate)
-                });
-                if (response.ok) {
-                    templates.set(await updateTemplates());
-                } else {
-                    console.error('Error:', response.status, response.statusText);
-                }
-            } catch (error) {
-                console.log('Error updating template:', error);
-            }
-        }
-    }
+	async function renameTemplate(templateName: string, templateId: number) {
+		if (templateName !== '') {
+			const newTemplate = {
+				id: templateId,
+				name: templateName
+			};
+			try {
+				const response = await fetch(`/api/template`, {
+					method: 'PUT',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify(newTemplate)
+				});
+				if (response.ok) {
+					templates.set(await updateTemplates());
+				} else {
+					console.error('Error:', response.status, response.statusText);
+				}
+			} catch (error) {
+				console.log('Error updating template:', error);
+			}
+		}
+	}
 
-    function deletePrompt(templateId: number) {
+	function deletePrompt(templateId: number) {
 		const modal: ModalSettings = {
 			type: 'confirm',
-            title: 'Please Confirm',
-            body: 'Are you sure you wish to delete this template?',
-            // TRUE if confirm pressed, FALSE if cancel pressed
-            response: (r: boolean) => {
+			title: 'Please Confirm',
+			body: 'Are you sure you wish to delete this template?',
+			// TRUE if confirm pressed, FALSE if cancel pressed
+			response: (r: boolean) => {
 				if (r) deleteTemplate(templateId);
-			},
+			}
 		};
 		modalStore.trigger(modal);
 	}
-    
-    async function deleteTemplate(templateId: number) {
+
+	async function deleteTemplate(templateId: number) {
 		try {
 			const response = await fetch(`/api/template/${templateId}`, {
 				method: 'DELETE'
 			});
 			const data = await response.status;
 			console.log('Deleted template:', data);
-			$templates = $templates.filter(t => t.id != templateId)
+			$templates = $templates.filter((t) => t.id != templateId);
 			modalStore.close();
 		} catch (error) {
 			console.log('Error deleting template:', error);
@@ -123,60 +132,68 @@
 </script>
 
 <section class="templates card card-hover p-1">
-    <header class="templates-header flex justify-center items-center">
-        <h3 class="h3 font-bold">Templates</h3>
-        <button class="btn btn-md" use:popup={templateSettings} use:popup={addTemplateTooltip}>
-            <Icon icon="icon-park-twotone:add-one" color="#0a7e85" width="25" height="25" />
-        </button>
-    </header>
-    <div id="accord" class="templates-viewport min-w-full overflow-auto">
-        {#if $templates.length > 0}
-            <Accordion>
-                {#each $templates as template, templateIdx (template.id)}
-                    <AccordionItem class="card mb-1" key={template.id} bind:open={template.itemOpen}>
-                        <svelte:fragment slot="summary">
-                            <div class="flex flex-row item-center">
-                                <h4 class="text-lg">{template.name}</h4>
-                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => renamePrompt(template.name, template.id)}>
-                                    <Icon icon="icon-park-outline:edit-two" width="18" height="18"/>
-                                </button>
-                                <button class="btn-icon btn-icon-sm !bg-transparent inset-y-0" on:click={() => {template.itemOpen = true, deletePrompt(template.id)}}>
-                                    <Icon icon="icon-park-outline:delete" width="18" height="18"/>
-                                </button>
-                            </div>
-                        </svelte:fragment>
-                        <svelte:fragment slot="content">
-                            <TemplateGroup templateId={template.id} templateIdx={templateIdx}/>
-                        </svelte:fragment>
-                    </AccordionItem>
-                {/each}
-            </Accordion>
-        {:else}
-            <p>No templates found</p>
-        {/if}
-    </div>
+	<header class="templates-header flex items-center justify-center">
+		<h3 class="h3 font-bold">Templates</h3>
+		<button class="btn btn-md" use:popup={templateSettings} use:popup={addTemplateTooltip}>
+			<Icon icon="icon-park-twotone:add-one" color="#0a7e85" width="25" height="25" />
+		</button>
+	</header>
+	<div id="accord" class="templates-viewport min-w-full overflow-auto">
+		{#if $templates.length > 0}
+			<Accordion>
+				{#each $templates as template, templateIdx (template.id)}
+					<AccordionItem class="card mb-1" key={template.id} bind:open={template.itemOpen}>
+						<svelte:fragment slot="summary">
+							<div class="item-center flex flex-row">
+								<h4 class="text-lg">{template.name}</h4>
+								<button
+									class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
+									on:click={() => renamePrompt(template.name, template.id)}
+								>
+									<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
+								</button>
+								<button
+									class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
+									on:click={() => {
+										(template.itemOpen = true), deletePrompt(template.id);
+									}}
+								>
+									<Icon icon="icon-park-outline:delete" width="18" height="18" />
+								</button>
+							</div>
+						</svelte:fragment>
+						<svelte:fragment slot="content">
+							<TemplateGroup templateId={template.id} {templateIdx} />
+						</svelte:fragment>
+					</AccordionItem>
+				{/each}
+			</Accordion>
+		{:else}
+			<p>No templates found</p>
+		{/if}
+	</div>
 </section>
-<div class="card p-4 gap-4" data-popup="addTemplatePopup">
+<div class="card gap-4 p-4" data-popup="addTemplatePopup">
 	<h2>Add Template</h2>
-    <div class="space-y-4">
-        <label class="template_name">
-            <span>Template Name</span>
-            <input class="input" type="text" placeholder="Template Name" />
-        </label>
-        <label class="submit_button">
-            <button class="btn bg-primary-500" on:click={addTemplate}>Add Template</button>
-        </label>
-    </div>
+	<div class="space-y-4">
+		<label class="template_name">
+			<span>Template Name</span>
+			<input class="input" type="text" placeholder="Template Name" />
+		</label>
+		<label class="submit_button">
+			<button class="btn bg-primary-500" on:click={addTemplate}>Add Template</button>
+		</label>
+	</div>
 </div>
 
-<div class="card p-2 variant-filled-secondary" data-popup="addTemplateTooltip">
+<div class="card variant-filled-secondary p-2" data-popup="addTemplateTooltip">
 	<p>Add New Template</p>
-	<div class="arrow variant-filled-secondary" />
+	<div class="variant-filled-secondary arrow" />
 </div>
 
 <style>
-    #accord {
-        max-height: 82vh;
-        height: 82vh;
-    }
+	#accord {
+		max-height: 82vh;
+		height: 82vh;
+	}
 </style>

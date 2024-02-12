@@ -75,7 +75,8 @@ func PublicRoutes(a *fiber.App) {
 
 	// Stream Routes
 	router.Get("/stream/:stream_id", controllers.GetStream)
-	api.Get("/live/channels/:group_id", controllers.GetChannels)
+	router.Get("/stream/hls/:stream_id", controllers.GetHlsStream)
+	api.Get("/channels/hls/:group_id", controllers.GetHlsChannels)
 
 	//SSDP Routes
 	//router.Get("/discover.json", controllers.GetSSDPDiscovery)
@@ -93,7 +94,7 @@ func PublicRoutes(a *fiber.App) {
 		Root:   http.Dir(settings.EPG_FILEPATH),
 		Browse: false,
 	}))
-	router.Use("/stream", filesystem.New(filesystem.Config{
+	router.Use("/stream/hls", filesystem.New(filesystem.Config{
 		Root:   http.Dir(settings.STREAM_FILEPATH),
 		Browse: false,
 	}))

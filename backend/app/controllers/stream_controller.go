@@ -68,60 +68,60 @@ func GetStream(c *fiber.Ctx) error {
 			return c.Redirect((*channels)[0].Url, http.StatusTemporaryRedirect)
 
 		case true:
-			var found = false
+			found := false
 			for _, stream := range streaming.Streams {
 				if stream.Settings.Uuid == stream_id {
-					isRunning = false
 					found = true
 					stream.Mu.Lock()
 					stream.LastAccess = time.Now()
 					stream.Mu.Unlock()
 					if settings.APP_SETTINGS.Streaming.Type != "hls" {
 						if err := stream.NewMP2TSink(c); err != nil {
+							isRunning = false
 							log.Error().Msgf("FAILED TO CREATE MP2T SINK: %v", err)
 							return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 								"error": true,
 								"msg":   fmt.Sprintf("FAILED TO CREATE MP2T SINK: %v", err),
 							})
 						}
+					} else if !stream.HlsExists {
+						if err := stream.CreateHlsDir(); err != nil {
+							isRunning = false
+							return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+								"error": true,
+								"msg":   err,
+							})
+						}
+						if err := stream.NewHLSSink(c); err != nil {
+							isRunning = false
+							log.Error().Msgf("FAILED TO CREATE HLS SINK: %v", err)
+							return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+								"error": true,
+								"msg":   fmt.Sprintf("FAILED TO CREATE HLS SINK: %v", err),
+							})
+						}
 					}
+					isRunning = false
 				}
 			}
 			if !found {
-				s := streaming.NewStream(stream_id)
+				s := streaming.NewStream(stream_id, (*channels)[0].Url)
 				streaming.AddStream(s)
-				isRunning = false
-
-				if settings.APP_SETTINGS.Streaming.Type == "hls" {
-					if _, err := os.Stat(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, stream_id)); err == nil {
-						if err := os.RemoveAll(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, stream_id)); err != nil {
-							log.Debug().Msgf("FAILED TO REMOVE HLS FOLDER: %v", err)
-						}
-					}
-					if err := os.Mkdir(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, stream_id), os.ModePerm); err != nil {
-						log.Error().Msgf("GST_HLS_MKDIR ERROR: %v", err)
-						return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-							"error": true,
-							"msg":   fmt.Sprintf("FAILED TO CREATE HLS FOLDER: %v", err),
-						})
-					}
-				}
-
-				s.Settings.Src = (*channels)[0].Url
-				s.Settings.Buffer = settings.APP_SETTINGS.Streaming.Buffer
-				s.Settings.UserAgent = settings.APP_SETTINGS.Streaming.UserAgent
 
 				if err := s.StartStream(c); err != nil {
+					isRunning = false
 					log.Error().Msgf("FAILED TO START STREAM: %v", err)
 					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 						"error": true,
 						"msg":   err,
 					})
 				}
+				isRunning = false
 			}
 		}
 	} else {
 		// Return, if no channels found.
+		isRunning = false
 		log.Error().Msgf("NO STREAMS FOR CHANNEL FOUND: %v", stream_id)
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": true,
@@ -130,8 +130,8 @@ func GetStream(c *fiber.Ctx) error {
 	}
 
 	if settings.APP_SETTINGS.Streaming.Type == "hls" {
-		var exists = false
-		var loop = 0
+		exists := false
+		loop := 0
 		for !exists {
 			if _, err := os.Stat(fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, stream_id, "playlist.m3u8")); err == nil {
 				exists = true
@@ -152,15 +152,133 @@ func GetStream(c *fiber.Ctx) error {
 	}
 }
 
-// GetChannels func gets live channels by group.
-// @Description Get live channels by group.
-// @Summary get live channels by group.
+// GetHlsStream func gets an HLS stream.
+// @Description Get Hls stream by given UUID.
+// @Summary get Hls stream by given UUID
+// @Tags Stream
+// @Accept json
+// @Produce octet-stream
+// @Param stream_id path string true "Stream ID"
+// @Router /stream/hls/{stream_id} [get]
+func GetHlsStream(c *fiber.Ctx) error {
+	if isRunning {
+		raceCheck()
+	}
+	isRunning = true
+
+	// Catch stream ID from URL.
+	stream_id := c.Params("stream_id")
+	if stream_id == "" {
+		isRunning = false
+		log.Error().Msg("No stream ID found")
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Empty Stream UUID",
+		})
+	}
+
+	// Get channels by UUID.
+	channels, err := database.Db.GetChannelsbyUuid(stream_id)
+	if err != nil {
+		isRunning = false
+		log.Error().Msgf("No stream channels found: %v", err)
+		// Return, if no channels found.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":    true,
+			"msg":      "Stream Error",
+			"channels": nil,
+		})
+	}
+
+	if len(*channels) > 0 {
+		switch settings.APP_SETTINGS.Streaming.Proxy {
+
+		case false:
+			//TODO LOOP CHECK STREAM STATUS UNTIL 302
+			return c.Redirect((*channels)[0].Url, http.StatusTemporaryRedirect)
+
+		case true:
+			found := false
+			for _, stream := range streaming.Streams {
+				if stream.Settings.Uuid == stream_id {
+					found = true
+					stream.Mu.Lock()
+					stream.LastAccess = time.Now()
+					stream.Mu.Unlock()
+					if !stream.HlsExists {
+						if err := stream.CreateHlsDir(); err != nil {
+							isRunning = false
+							return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+								"error": true,
+								"msg":   err,
+							})
+						}
+						if err := stream.NewHLSSink(c); err != nil {
+							isRunning = false
+							log.Error().Msgf("FAILED TO CREATE HLS SINK: %v", err)
+							return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+								"error": true,
+								"msg":   fmt.Sprintf("FAILED TO CREATE HLS SINK: %v", err),
+							})
+						}
+					}
+					isRunning = false
+				}
+			}
+			if !found {
+				s := streaming.NewStream(stream_id, (*channels)[0].Url)
+				streaming.AddStream(s)
+				s.HlsExists = true
+
+				if err := s.StartStream(c); err != nil {
+					isRunning = false
+					log.Error().Msgf("FAILED TO START STREAM: %v", err)
+					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+						"error": true,
+						"msg":   err,
+					})
+				}
+				isRunning = false
+			}
+		}
+	} else {
+		isRunning = false
+		// Return, if no channels found.
+		log.Error().Msgf("NO STREAMS FOR CHANNEL FOUND: %v", stream_id)
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Stream Error: No streamable channels found",
+		})
+	}
+
+	exists := false
+	loop := 0
+	for !exists {
+		if _, err := os.Stat(fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, stream_id, "playlist.m3u8")); err == nil {
+			exists = true
+		} else if loop >= 75 {
+			log.Error().Msg("Stream Error: Playlist M3U8 not found")
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": true,
+				"msg":   "Stream Error: M3U8 not found",
+			})
+		} else {
+			time.Sleep(200 * time.Millisecond)
+			loop += 1
+		}
+	}
+	return c.SendFile(fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, stream_id, "playlist.m3u8"))
+}
+
+// GetChannels func gets Hls channels by group.
+// @Description Get Hls channels by group.
+// @Summary get Hls channels by group.
 // @Tags Stream
 // @Accept json
 // @Produce json
 // @Param group_id path string true "Group ID"
-// @Router /live/channels/{group_id} [get]
-func GetChannels(c *fiber.Ctx) error {
+// @Router /channels/hls/{group_id} [get]
+func GetHlsChannels(c *fiber.Ctx) error {
 	group_id, err := strconv.ParseInt(c.Params("group_id"), 10, 64)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -193,7 +311,7 @@ func GetChannels(c *fiber.Ctx) error {
 		}
 		channel.Logo = utils.GetLogoUrl(logo.Name)
 
-		channel.Stream = fmt.Sprintf("http://%s:%d/stream/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, tmplChannel.Uuid)
+		channel.Stream = fmt.Sprintf("http://%s:%d/stream/hls/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, tmplChannel.Uuid)
 
 		if epgProgramme, err := database.Db.GetProgrammeByTime(tmplChannel.TvgID, time.Now()); err != nil {
 			log.Warn().Msgf("LiveChannel: No EPG Programme found")

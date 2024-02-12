@@ -1,11 +1,11 @@
 <script>
-    import TemplateStatus from '@xivi/components/TemplateStatus.svelte';
+	import TemplateStatus from '@xivi/components/TemplateStatus.svelte';
 </script>
 
-<div class="container h-full mx-auto flex justify-center items-center">
+<div class="container mx-auto flex h-full items-center justify-center">
 	<div class="space-y-10 text-center">
-		<div class="status p-4 text-center justify-center items-center h-full w-full">
-				<TemplateStatus/>
+		<div class="status h-full w-full items-center justify-center p-4 text-center">
+			<TemplateStatus />
 		</div>
 	</div>
 </div>

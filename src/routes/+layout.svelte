@@ -13,10 +13,10 @@
 	initializeStores();
 
 	const modalRegistry: Record<string, ModalComponent> = {
-	// Set a unique modal ID, then pass the component reference
-	modalChannelSettings: { ref: ChannelSettings },
-	modalAddGroup: { ref: AddGroup },
-	modalPlayer: { ref: Player },
+		// Set a unique modal ID, then pass the component reference
+		modalChannelSettings: { ref: ChannelSettings },
+		modalAddGroup: { ref: AddGroup },
+		modalPlayer: { ref: Player }
 	};
 
 	storePopup.set({ computePosition, autoUpdate, flip, shift, offset, arrow });
@@ -28,11 +28,11 @@
 		<!-- App Bar -->
 		<AppBar class="h-14 justify-center">
 			<svelte:fragment slot="lead">
-				<img class="h-14 w-auto" src={xivi}  alt=""/>
+				<img class="h-14 w-auto" src={xivi} alt="" />
 			</svelte:fragment>
 			<svelte:fragment slot="trail">
 				<a
-					class="btn btn-sm variant-ghost-surface"
+					class="variant-ghost-surface btn btn-sm"
 					href="https://github.com/burmjeff/xivi"
 					target="_blank"
 					rel="noreferrer"
@@ -42,7 +42,7 @@
 			</svelte:fragment>
 		</AppBar>
 	</svelte:fragment>
-	
+
 	<svelte:fragment slot="sidebarLeft">
 		<!-- Insert the list: -->
 		<nav class="list-nav">

@@ -1,8 +1,8 @@
-export interface AppSettings{
-	application: Application
-	server: Server
-	playlist: Playlist
-	streaming: Streaming
+export interface AppSettings {
+	application: Application;
+	server: Server;
+	playlist: Playlist;
+	streaming: Streaming;
 }
 
 export interface Application {

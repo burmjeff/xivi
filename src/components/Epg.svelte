@@ -94,11 +94,11 @@
 </script>
 
 <section class="epgs card card-hover p-1">
-	<header class="epgs-header flex justify-center items-center space-x-4">
+	<header class="epgs-header flex items-center justify-center space-x-4">
 		<h3 class="h3 font-bold">Epgs</h3>
 		<button class="btn btn-md" use:popup={epgSettings} use:popup={addEpgTooltip}>
-            <Icon icon="icon-park-twotone:add-one" color="#0a7e85" width="25" height="25" />
-        </button>
+			<Icon icon="icon-park-twotone:add-one" color="#0a7e85" width="25" height="25" />
+		</button>
 	</header>
 	<div id="accord" class="epgs-viewport min-w-full overflow-auto">
 		{#if $epgs != null}
@@ -118,32 +118,36 @@
 								<td>
 									{epg.name}
 									<button
-									class="btn-icon btn-icon-sm !bg-transparent inset-y-0"
-									on:click={() => {
-										(epg.itemOpen = true), deletePrompt(epg.id);
-									}}>
-									<Icon icon="icon-park-outline:edit-one" width="18" height="18"/>
+										class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
+										on:click={() => {
+											(epg.itemOpen = true), deletePrompt(epg.id);
+										}}
+									>
+										<Icon icon="icon-park-outline:edit-one" width="18" height="18" />
 									</button>
 								</td>
 								<td>
 									{epg.url}
 									<button
-									class="btn-icon btn-icon-sm !bg-transparent inset-y-0"
-									on:click={() => {
-										(epg.itemOpen = true), deletePrompt(epg.id);
-									}}>
-									<Icon icon="icon-park-outline:edit-one" width="18" height="18"/>
+										class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
+										on:click={() => {
+											(epg.itemOpen = true), deletePrompt(epg.id);
+										}}
+									>
+										<Icon icon="icon-park-outline:edit-one" width="18" height="18" />
 									</button>
 								</td>
 								<td>
 									{epg.updated_at}
 								</td>
-								<td><button
-									class="btn-icon btn-icon-sm !bg-transparent inset-y-0"
-									on:click={() => {
-										(epg.itemOpen = true), deletePrompt(epg.id);
-									}}>
-									<Icon icon="icon-park-outline:delete" width="18" height="18"/>
+								<td
+									><button
+										class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
+										on:click={() => {
+											(epg.itemOpen = true), deletePrompt(epg.id);
+										}}
+									>
+										<Icon icon="icon-park-outline:delete" width="18" height="18" />
 									</button>
 								</td>
 							</tr>
@@ -157,7 +161,7 @@
 	</div>
 </section>
 
-<div class="card p-4 gap-4" data-popup="addEpgPopup">
+<div class="card gap-4 p-4" data-popup="addEpgPopup">
 	<h2>Add Epg</h2>
 	<div class="space-y-4">
 		<label class="epg_name">
@@ -174,9 +178,9 @@
 	</div>
 </div>
 
-<div class="card p-2 variant-filled-secondary" data-popup="addEpgTooltip">
+<div class="card variant-filled-secondary p-2" data-popup="addEpgTooltip">
 	<p>Add New EPG</p>
-	<div class="arrow variant-filled-secondary" />
+	<div class="variant-filled-secondary arrow" />
 </div>
 
 <style>

@@ -1,4 +1,4 @@
-import type { ViewerChannel } from "./viewer_entities";
+import type { ViewerChannel } from './viewer_entities';
 
 export interface Template {
 	id: number;
@@ -17,14 +17,14 @@ export interface TemplateGroup {
 	isDragged: boolean;
 	channels: TemplateChannel[];
 	viewerChannels: ViewerChannel[];
-}	
+}
 
 export interface TemplateChannel {
 	id: string;
 	name: string;
-    tvgid: string;
-    logoid: number;
-    uuid: string;
+	tvgid: string;
+	logoid: number;
+	uuid: string;
 	logo: string;
 	isDndShadowItem: boolean;
 	isDragged: boolean;

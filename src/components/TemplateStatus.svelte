@@ -46,7 +46,7 @@
 </script>
 
 <section class="templates card card-hover p-1">
-	<header class="templates-header flex justify-center items-center space-x-4">
+	<header class="templates-header flex items-center justify-center space-x-4">
 		<h3 class="h3 font-bold">Status List</h3>
 	</header>
 	<div id="accord" class="templates-viewport min-w-full overflow-auto">
@@ -66,15 +66,23 @@
 						{#each $templates as template, templateIdx (template.id)}
 							<tr id="thead">
 								<td>{template.name}</td>
-								<td>http://{$settings.server.host}:{$settings.server.port}/m3u/{template.name}.m3u</td>
-								<td>http://{$settings.server.host}:{$settings.server.port}/xmltv/{template.name}.xml</td>
+								<td
+									>http://{$settings.server.host}:{$settings.server
+										.port}/m3u/{template.name}.m3u</td
+								>
+								<td
+									>http://{$settings.server.host}:{$settings.server
+										.port}/xmltv/{template.name}.xml</td
+								>
 								<td>
-                                    <button class="btn-icon btn-icon-lg !bg-transparent inset-y-0"
-                                    on:click={() => refreshM3U(template.id)}
-									use:popup={refreshTooltip}>
-                                    <Icon icon="icon-park-outline:refresh-one" width="25" height="25"/>
-                                    </button>
-                                </td>
+									<button
+										class="btn-icon btn-icon-lg inset-y-0 !bg-transparent"
+										on:click={() => refreshM3U(template.id)}
+										use:popup={refreshTooltip}
+									>
+										<Icon icon="icon-park-outline:refresh-one" width="25" height="25" />
+									</button>
+								</td>
 							</tr>
 						{/each}
 					</tbody>
@@ -86,9 +94,9 @@
 	</div>
 </section>
 
-<div class="card p-2 variant-filled-secondary" data-popup="refreshTooltip">
+<div class="card variant-filled-secondary p-2" data-popup="refreshTooltip">
 	<p>Regenerate m3u and EPG</p>
-	<div class="arrow variant-filled-secondary" />
+	<div class="variant-filled-secondary arrow" />
 </div>
 
 <style>
