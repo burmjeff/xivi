@@ -18,9 +18,9 @@ export interface PlaylistGroup {
 export interface PlaylistChannel {
 	id: string;
 	title: string;
-    tvg_id: string;
-    tvg_logo: string;
-    enabled: boolean;
+	tvg_id: string;
+	tvg_logo: string;
+	enabled: boolean;
 	isDndShadowItem: boolean;
 	isDragged: boolean;
 }

@@ -1,9 +1,9 @@
 <script>
-    import Settings from '@xivi/components/Settings.svelte';
+	import Settings from '@xivi/components/Settings.svelte';
 </script>
 
-<div class="p-4 gap-4 place-items-stretch h-full w-full">
-    <Settings/>
+<div class="h-full w-full place-items-stretch gap-4 p-4">
+	<Settings />
 </div>
 
 <style lang="postcss">

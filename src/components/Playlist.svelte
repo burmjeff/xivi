@@ -97,11 +97,11 @@
 </script>
 
 <section class="playlists card card-hover p-1">
-	<header class="playlists-header flex justify-center items-center">
+	<header class="playlists-header flex items-center justify-center">
 		<h3 class="h3 font-bold">Playlists</h3>
 		<button class="btn btn-md" use:popup={playlistSettings} use:popup={addPlTooltip}>
-            <Icon icon="icon-park-twotone:add-one" color="#0a7e85" width="25" height="25" />
-        </button>
+			<Icon icon="icon-park-twotone:add-one" color="#0a7e85" width="25" height="25" />
+		</button>
 	</header>
 	<Accordion>
 		<div id="accord" class="playlists-viewport min-w-full overflow-auto">
@@ -112,10 +112,11 @@
 							<div class="flex flex-row items-center">
 								<h4 class="text-lg">{playlist.name}</h4>
 								<button
-									class="btn-icon btn-icon-sm !bg-transparent inset-y-0"
+									class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
 									on:click={() => {
 										(playlist.itemOpen = true), deletePrompt(playlist.id);
-									}}><Icon icon="icon-park-outline:delete" width="18" height="18"/>
+									}}
+									><Icon icon="icon-park-outline:delete" width="18" height="18" />
 								</button>
 							</div>
 						</svelte:fragment>
@@ -131,7 +132,7 @@
 	</Accordion>
 </section>
 
-<div class="card p-4 gap-4" data-popup="addPlaylistPopup">
+<div class="card gap-4 p-4" data-popup="addPlaylistPopup">
 	<h2>Add Playlist</h2>
 	<div class="space-y-4">
 		<label class="playlist_name">
@@ -148,9 +149,9 @@
 	</div>
 </div>
 
-<div class="card p-2 variant-filled-secondary" data-popup="addPlTooltip">
+<div class="card variant-filled-secondary p-2" data-popup="addPlTooltip">
 	<p>Add New Playlist</p>
-	<div class="arrow variant-filled-secondary" />
+	<div class="variant-filled-secondary arrow" />
 </div>
 
 <style>

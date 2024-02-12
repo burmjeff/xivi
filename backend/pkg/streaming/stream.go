@@ -21,6 +21,7 @@ var Streams []*Stream
 
 type Stream struct {
 	pipeline   *gst.Pipeline
+	HlsExists  bool
 	Settings   *Settings // The settings for the element
 	count      int       // The current stream count
 	LastAccess time.Time // Last endpoint hit
@@ -38,10 +39,15 @@ type Streamer interface {
 	Flush() error                      // Flush flushes data to the client
 }
 
-func NewStream(streamId string) *Stream {
+func NewStream(streamId string, src string) *Stream {
 	return &Stream{
+		HlsExists: false,
+		count:     0,
 		Settings: &Settings{
-			Uuid: streamId,
+			Uuid:      streamId,
+			Src:       src,
+			Buffer:    settings.APP_SETTINGS.Streaming.Buffer,
+			UserAgent: settings.APP_SETTINGS.Streaming.UserAgent,
 		},
 	}
 }
@@ -72,10 +78,12 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 		return gst.FlowEOS
 	default:
 		if done != nil {
-			s.count--
 			close(done)
 		}
+		s.count--
+
 		if s.count <= 0 || sinkBin == nil {
+			RemoveStream(s)
 			go func() {
 				if s.pipeline != nil {
 					if !s.pipeline.SendEvent(gst.NewEOSEvent()) {
@@ -108,21 +116,20 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 				}
 			}()
 			log.Debug().Msg("PIPELINE DISPOSED")
-			RemoveStream(s)
 			return gst.FlowEOS
 		}
 
-		if tee, err := s.pipeline.GetElementByName("stream"); err != nil {
-			tee.Unlink(sinkBin.Element)
-		}
-		if err := s.pipeline.Remove(sinkBin.Element); err != nil {
-			log.Warn().Msgf("WARNING: Failed to remove stream bin from pipeline: %s", sinkBin.GetName())
-		}
 		go func() {
+			if tee, err := s.pipeline.GetElementByName("stream"); err == nil {
+				tee.Unlink(sinkBin.Element)
+			}
+			if err := s.pipeline.Remove(sinkBin.Element); err != nil {
+				log.Warn().Msgf("WARNING: Failed to remove stream bin from pipeline: %s", sinkBin.GetName())
+			}
 			if !sinkBin.SendEvent(gst.NewEOSEvent()) {
 				log.Warn().Msg("WARNING: Failed to send EOS to stream branch")
 			}
-			if elements, err := sinkBin.GetElementsSorted(); err != nil {
+			if elements, _ := sinkBin.GetElementsSorted(); elements != nil {
 				for _, element := range elements {
 					log.Debug().Msgf("Disposing GST element: %s with state: %s", element.GetName(), element.GetCurrentState())
 					pads, _ := element.GetPads()
@@ -161,24 +168,24 @@ func (s *Stream) Flush(writer *bufio.Writer) error {
 }
 
 func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
-	var bin *gst.Bin
+	s.HlsExists = true
 
-	//ctx.Set(fiber.HeaderContentType, "application/x-hls")
+	ctx.Set(fiber.HeaderContentType, "application/x-hls")
 
-	pRoot := fmt.Sprintf("http://%s:%d/stream/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, s.Settings.Uuid)
+	pRoot := fmt.Sprintf("http://%s:%d/stream/hls/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, s.Settings.Uuid)
 	pLocation := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "playlist.m3u8")
 	location := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "segment.%05d.ts")
 
 	//max-files=8 playlist-length=4 target-duration=8
-	bin, _ = gst.NewBinFromString(fmt.Sprintf("queue name=sinkqueue ! tsdemux name=demux ! h264parse ! queue ! hlssink2 playlist-root=%s location=%s playlist-location=%s max-files=8 playlist-length=5 target-duration=7 name=sink demux. ! aacparse ! queue ! sink.audio", pRoot, location, pLocation), false)
+	bin, _ := gst.NewBinFromString(fmt.Sprintf("queue name=hlsqueue ! tsdemux name=demux ! h264parse ! queue ! hlssink2 playlist-root=%s location=%s playlist-location=%s max-files=10 playlist-length=5 target-duration=2 name=hlssink demux. ! aacparse ! queue ! hlssink.audio", pRoot, location, pLocation), false)
 
-	queue, err := bin.GetElementByName("sinkqueue")
+	queue, err := bin.GetElementByName("hlsqueue")
 	if err != nil {
 		bin.SetState(gst.StateNull)
 		bin.Clear()
 		return err
 	}
-	queuepad := gst.NewGhostPad("ghost", queue.GetStaticPad("sink"))
+	queuepad := gst.NewGhostPad("hlsghost", queue.GetStaticPad("sink"))
 	queuepad.SetActive(true)
 	bin.AddPad(queuepad.Pad)
 
@@ -310,12 +317,12 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 				}
 			}
 		})
-
-		elements, _ := bin.GetElements()
-		for _, e := range elements {
-			e.SyncStateWithParent()
-		}
 	*/
+
+	elements, _ := bin.GetElements()
+	for _, e := range elements {
+		e.SyncStateWithParent()
+	}
 
 	tee, err := s.pipeline.GetElementByName("stream")
 	if err != nil {
@@ -335,16 +342,18 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 
 	bin.SyncStateWithParent()
 	s.count++
+	go s.CleanupStreams(bin)
+
+	log.Info().Msgf("New Stream started")
 
 	return nil
 }
 
 func (s *Stream) NewMP2TSink(ctx *fiber.Ctx) error {
-	var bin *gst.Bin
 	var writer *bufio.Writer
 	var done chan bool
 
-	//ctx.Set(fiber.HeaderContentType, "video/MP2T")
+	ctx.Set(fiber.HeaderContentType, "video/MP2T")
 
 	if writer == nil {
 		done = make(chan bool)
@@ -357,6 +366,8 @@ func (s *Stream) NewMP2TSink(ctx *fiber.Ctx) error {
 
 		<-ready // Wait until writer is set
 	}
+
+	bin := gst.NewBin(fmt.Sprintf("sinkbin%d", s.count))
 
 	buffer, err := gst.NewElement("queue")
 	if err != nil {
@@ -377,18 +388,11 @@ func (s *Stream) NewMP2TSink(ctx *fiber.Ctx) error {
 	sink.Set("emit-signals", true)
 	sink.Set("sync", false)
 
-	for i := 0; i <= s.count; i++ {
-		if element, _ := s.pipeline.GetElementByName(fmt.Sprintf("sinkbin%d", i)); element == nil {
-			bin = gst.NewBin(fmt.Sprintf("sinkbin%d", i))
-			break
-		}
-	}
-
 	bin.Add(buffer)
 	bin.Add(sink.Element)
 	buffer.Link(sink.Element)
 
-	bufPad := gst.NewGhostPad("sink", buffer.GetStaticPad("sink"))
+	bufPad := gst.NewGhostPad("mp2tghost", buffer.GetStaticPad("sink"))
 	bufPad.SetActive(true)
 	bin.AddPad(bufPad.Pad)
 
@@ -448,10 +452,9 @@ func (s *Stream) NewMP2TSink(ctx *fiber.Ctx) error {
 	}
 
 	bin.SyncStateWithParent()
+	s.count++
 
 	log.Info().Msgf("New Stream started")
-
-	s.count++
 
 	return nil
 }
@@ -588,23 +591,36 @@ func RunLoop(f func(*glib.MainLoop) error) {
 	}
 }
 
-func (s *Stream) CleanupStreams() {
-	cleanupInterval := 12 * time.Second
+func (s *Stream) CleanupStreams(sinkbin *gst.Bin) {
+	idleTime := 15 * time.Second
+	cleanupInterval := 1 * time.Second
 	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			if time.Since(s.LastAccess) > cleanupInterval {
-				s.Close(nil, nil)
-				//if !s.pipeline.SendEvent(gst.NewEOSEvent()) {
-				//	log.Warn().Msg("WARNING: Failed to send EOS to stream branch")
-				//}
+			if time.Since(s.LastAccess) > idleTime {
+				s.HlsExists = false
+				s.Close(sinkbin, nil)
 				return
 			}
 		}
 	}
+}
+
+func (s *Stream) CreateHlsDir() error {
+	if _, err := os.Stat(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid)); err == nil {
+		if err := os.RemoveAll(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid)); err != nil {
+			log.Debug().Msgf("FAILED TO REMOVE HLS FOLDER: %v", err)
+		}
+	}
+	if err := os.Mkdir(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid), os.ModePerm); err != nil {
+		log.Error().Msgf("GST_HLS_MKDIR ERROR: %v", err)
+		return errors.New(fmt.Sprintf("FAILED TO CREATE HLS FOLDER: %v", err))
+
+	}
+	return nil
 }
 
 func (s *Stream) StartStream(c *fiber.Ctx) error {
@@ -614,8 +630,10 @@ func (s *Stream) StartStream(c *fiber.Ctx) error {
 		return err
 	}
 
-	if settings.APP_SETTINGS.Streaming.Type == "hls" {
-		go s.CleanupStreams()
+	if settings.APP_SETTINGS.Streaming.Type == "hls" || s.HlsExists {
+		if err := s.CreateHlsDir(); err != nil {
+			return err
+		}
 
 		if err := s.NewHLSSink(c); err != nil {
 			log.Error().Msgf("NEWHLSSINK ERROR: %v", err)
@@ -636,7 +654,6 @@ func (s *Stream) StartStream(c *fiber.Ctx) error {
 
 	//TODO GO CHAN TO CHECK FOR GST ERRORS AND RESTART/CLOSE ON ERR
 	s.Mu.Lock()
-	s.count = 0
 	s.LastAccess = time.Now()
 	s.Mu.Unlock()
 

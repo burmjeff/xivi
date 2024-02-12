@@ -1,6 +1,6 @@
 import { join } from 'path';
 import type { Config } from 'tailwindcss';
-import { xiviTheme } from './xivi-theme'
+import { xiviTheme } from './xivi-theme';
 
 // 1. Import the Skeleton plugin
 import { skeleton } from '@skeletonlabs/tw-plugin';
@@ -11,22 +11,17 @@ const config = {
 	content: [
 		'./src/**/*.{html,js,svelte,ts}',
 		// 3. Append the path to the Skeleton package
-		join(require.resolve(
-			'@skeletonlabs/skeleton'),
-			'../**/*.{html,js,svelte,ts}'
-		)
+		join(require.resolve('@skeletonlabs/skeleton'), '../**/*.{html,js,svelte,ts}')
 	],
 	theme: {
-		extend: {},
+		extend: {}
 	},
 	plugins: [
 		require('@tailwindcss/forms'),
 		// 4. Append the Skeleton plugin (after other plugins)
 		skeleton({
 			themes: {
-				custom: [
-					xiviTheme
-				]
+				custom: [xiviTheme]
 			}
 		})
 	]
