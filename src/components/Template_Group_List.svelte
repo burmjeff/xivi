@@ -348,7 +348,7 @@
 									<div class="flex flex-row items-center">
 										<h4 class="text-lg">{group.name}</h4>
 										<button
-											class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
+											class="btn-icon btn-icon-sm inset-y-0 !bg-transparent ml-auto"
 											on:click={() => {
 												(group.itemOpen = true), modalTemplateGroup(false, groupIdx, group);
 											}}

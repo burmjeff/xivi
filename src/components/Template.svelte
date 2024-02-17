@@ -65,7 +65,7 @@
 		const prompt: ModalSettings = {
 			type: 'prompt',
 			title: 'Rename Template',
-			body: 'Enter new template template name in field below.',
+			body: 'Enter new template name in field below.',
 			value: templateName,
 			valueAttr: { type: 'text', minlength: 1, maxlength: 20, required: true },
 			response: (newName: string) => {
@@ -147,7 +147,7 @@
 							<div class="item-center flex flex-row">
 								<h4 class="text-lg">{template.name}</h4>
 								<button
-									class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
+									class="btn-icon btn-icon-sm inset-y-0 !bg-transparent ml-auto"
 									on:click={() => renamePrompt(template.name, template.id)}
 								>
 									<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
@@ -174,7 +174,7 @@
 	</div>
 </section>
 <div class="card gap-4 p-4" data-popup="addTemplatePopup">
-	<h2>Add Template</h2>
+	<header class="justify-center text-center text-2xl font-bold">Add Template</header>
 	<div class="space-y-4">
 		<label class="template_name">
 			<span>Template Name</span>

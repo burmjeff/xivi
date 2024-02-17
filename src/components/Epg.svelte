@@ -64,6 +64,57 @@
 		}
 	}
 
+	function editPrompt(epgIdx: number, type: string): void {
+		let initialValue;
+		if (type == "name") {
+			initialValue =  $epgs[epgIdx].name
+		} else if (type == "url") {
+			initialValue =  $epgs[epgIdx].url
+		}
+		
+		const prompt: ModalSettings = {
+			type: 'prompt',
+			title: 'Edit EPG',
+			body: `Enter new EPG ${type} in field below.`,
+			value: initialValue,
+			valueAttr: { type: 'text', minlength: 1, maxlength: 50, required: true },
+			response: (newValue: string) => {
+				if (newValue) editEpg(epgIdx, type, newValue);
+			},
+			buttonTextCancel: 'Cancel',
+			buttonTextSubmit: 'Submit'
+		};
+		modalStore.trigger(prompt);
+	}
+
+	async function editEpg(epgIdx: number, type: string, newValue: string) {
+		if (type == "name") {
+			$epgs[epgIdx].name = newValue
+		} else if (type == "url") {
+			$epgs[epgIdx].url = newValue
+		}
+
+		try {
+			const response = await fetch('/api/epg', {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify($epgs[epgIdx])
+			});
+
+			if (response.ok) {
+				console.log('Updated epg: ', newValue);
+				$epgs = [...$epgs];
+			} else {
+				console.error('Error:', response.status, response.statusText);
+			}
+			
+		} catch (error) {
+			console.log('Error updating epg:', error);
+		}
+	}
+
 	function deletePrompt(epgId: number): void {
 		const modal: ModalSettings = {
 			type: 'confirm',
@@ -93,7 +144,7 @@
 	}
 </script>
 
-<section class="epgs card card-hover p-1">
+<section class="epgs card p-1">
 	<header class="epgs-header flex items-center justify-center space-x-4">
 		<h3 class="h3 font-bold">Epgs</h3>
 		<button class="btn btn-md" use:popup={epgSettings} use:popup={addEpgTooltip}>
@@ -113,14 +164,14 @@
 				</thead>
 				<tbody class="items-center">
 					{#if $epgs.length > 0}
-						{#each $epgs as epg, index (epg.id)}
+						{#each $epgs as epg, epgIdx (epg.id)}
 							<tr>
 								<td>
 									{epg.name}
 									<button
 										class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
 										on:click={() => {
-											(epg.itemOpen = true), deletePrompt(epg.id);
+											(epg.itemOpen = true), editPrompt(epgIdx, "name");
 										}}
 									>
 										<Icon icon="icon-park-outline:edit-one" width="18" height="18" />
@@ -131,7 +182,7 @@
 									<button
 										class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
 										on:click={() => {
-											(epg.itemOpen = true), deletePrompt(epg.id);
+											(epg.itemOpen = true), editPrompt(epgIdx, "url");
 										}}
 									>
 										<Icon icon="icon-park-outline:edit-one" width="18" height="18" />

@@ -152,10 +152,11 @@
 	}
 </script>
 
-<div class="card card-hover p-2">
-	<h1 class="h1 justify-center text-center">Settings</h1>
-	<div class="items-center space-x-4">
-		<div class="previewer-viewport space-y-4 bg-white/10 p-4 dark:bg-black/10 md:p-10">
+<div class="card p-2">
+	<h1 class="h1 justify-center text-center mb-4">Settings</h1>
+	<div class="items-center space-y-4">
+		<div class="application-viewport card drop-shadow-lg space-y-4 p-4">
+			<h1 class="h3 justify-center text-start mb-2">Application</h1>
 			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<label class="settings_appname">
 					<span>App Name</span>
@@ -198,6 +199,11 @@
 						</select>
 					</label>
 				</div>
+			</div>
+		</div>
+		<div class="application-viewport card drop-shadow-lg space-y-4 p-4">
+			<h1 class="h3 justify-center text-start mb-2">Server</h1>
+			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<label class="settings_host">
 					<span>Server Host</span>
 					<input class="input variant-form-material" type="text" placeholder="0.0.0.0" />
@@ -210,6 +216,11 @@
 					<span>Server Read Timeout</span>
 					<input class="input variant-form-material" type="number" placeholder="60" />
 				</label>
+			</div>
+		</div>
+		<div class="application-viewport card drop-shadow-lg space-y-4 p-4">
+			<h1 class="h3 justify-center text-start mb-2">Playlist</h1>
+			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<div class="w-full space-y-4">
 					<label class="settings_tvgmatch">
 						<span>Auto-Match by Tvg-Id</span>
@@ -232,6 +243,11 @@
 					<span>Score to match Channel Name</span>
 					<input class="input variant-form-material" type="number" step="0.01" placeholder="0" />
 				</label>
+			</div>
+		</div>
+		<div class="application-viewport card drop-shadow-lg space-y-4 p-4">
+			<h1 class="h3 justify-center text-start mb-2">Streaming</h1>
+			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<div class="w-full space-y-4">
 					<label class="settings_type">
 						<span>Stream Type</span>
