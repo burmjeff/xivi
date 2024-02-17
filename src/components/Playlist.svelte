@@ -39,6 +39,14 @@
 		placement: 'top'
 	};
 
+	function getDate(dateStr: string) {
+		const date = new Date(dateStr);
+		let year = date.getFullYear();
+		let month = String(date.getMonth() + 1).padStart(2, '0');
+		let day = String(date.getDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
+	}
+
 	async function addPlaylist() {
 		const inputName = (document.querySelector('.playlist_name input') as HTMLInputElement).value;
 		const inputUrl = (document.querySelector('.playlist_url input') as HTMLInputElement).value;
@@ -111,6 +119,7 @@
 						<svelte:fragment slot="summary">
 							<div class="flex flex-row items-center">
 								<h4 class="text-lg">{playlist.name}</h4>
+								<span class="text-green-600 text-xs ml-auto p-1">Updated at: {(getDate(playlist.updated_at))}</span>
 								<button
 									class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
 									on:click={() => {
@@ -133,7 +142,7 @@
 </section>
 
 <div class="card gap-4 p-4" data-popup="addPlaylistPopup">
-	<h2>Add Playlist</h2>
+	<header class="justify-center text-center text-2xl font-bold">Add Playlist</header>
 	<div class="space-y-4">
 		<label class="playlist_name">
 			<span>Playlist Name</span>

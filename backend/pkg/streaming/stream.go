@@ -22,6 +22,7 @@ var Streams []*Stream
 type Stream struct {
 	pipeline   *gst.Pipeline
 	HlsExists  bool
+	hlsCleanup chan struct{}
 	Settings   *Settings // The settings for the element
 	count      int       // The current stream count
 	LastAccess time.Time // Last endpoint hit
@@ -41,8 +42,9 @@ type Streamer interface {
 
 func NewStream(streamId string, src string) *Stream {
 	return &Stream{
-		HlsExists: false,
-		count:     0,
+		HlsExists:  false,
+		hlsCleanup: make(chan struct{}),
+		count:      0,
 		Settings: &Settings{
 			Uuid:      streamId,
 			Src:       src,
@@ -106,8 +108,8 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 							}
 						}
 					}
+					s.pipeline.Clear()
 				}
-				s.pipeline.Clear()
 				if _, err := os.Stat(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid)); err == nil {
 					err := os.RemoveAll(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid))
 					if err != nil {
@@ -177,7 +179,7 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 	location := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "segment.%05d.ts")
 
 	//max-files=8 playlist-length=4 target-duration=8
-	bin, _ := gst.NewBinFromString(fmt.Sprintf("queue name=hlsqueue ! tsdemux name=demux ! h264parse ! queue ! hlssink2 playlist-root=%s location=%s playlist-location=%s max-files=10 playlist-length=5 target-duration=2 name=hlssink demux. ! aacparse ! queue ! hlssink.audio", pRoot, location, pLocation), false)
+	bin, _ := gst.NewBinFromString(fmt.Sprintf("queue name=hlsqueue ! tsdemux name=demux ! h264parse ! queue ! hlssink2 playlist-root=%s location=%s playlist-location=%s max-files=10 playlist-length=5 target-duration=8 name=hlssink demux. ! aacparse ! queue ! hlssink.audio", pRoot, location, pLocation), false)
 
 	queue, err := bin.GetElementByName("hlsqueue")
 	if err != nil {
@@ -342,7 +344,27 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 
 	bin.SyncStateWithParent()
 	s.count++
-	go s.CleanupStreams(bin)
+
+	go func(stop chan struct{}, sinkbin *gst.Bin) {
+		idleTime := 15 * time.Second
+		cleanupInterval := 1 * time.Second
+		ticker := time.NewTicker(cleanupInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-stop:
+				s.HlsExists = false
+				return
+			case <-ticker.C:
+				if time.Since(s.LastAccess) > idleTime {
+					s.HlsExists = false
+					s.Close(sinkbin, nil)
+					return
+				}
+			}
+		}
+	}(s.hlsCleanup, bin)
 
 	log.Info().Msgf("New Stream started")
 
@@ -531,6 +553,7 @@ func (s *Stream) createPipeline() (*gst.Pipeline, error) {
 }
 
 func (s *Stream) mainLoop(loop *glib.MainLoop) error {
+	defer close(s.hlsCleanup)
 	// Start the pipeline
 
 	s.pipeline.SetState(gst.StatePlaying)
@@ -573,6 +596,13 @@ func (s *Stream) mainLoop(loop *glib.MainLoop) error {
 		// If either condition triggered an error, log and quit
 		if err != nil {
 			log.Error().Msgf("go-gst-error-message: %v", err.Error())
+			select {
+			case _, ok := <-s.hlsCleanup:
+				if ok {
+					close(s.hlsCleanup)
+				}
+			default:
+			}
 			loop.Quit()
 			go s.Close(nil, nil)
 			return false
@@ -588,24 +618,6 @@ func RunLoop(f func(*glib.MainLoop) error) {
 
 	if err := f(mainLoop); err != nil {
 		log.Error().Msgf("GST MAINLOOP ERROR!: %v", err)
-	}
-}
-
-func (s *Stream) CleanupStreams(sinkbin *gst.Bin) {
-	idleTime := 15 * time.Second
-	cleanupInterval := 1 * time.Second
-	ticker := time.NewTicker(cleanupInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			if time.Since(s.LastAccess) > idleTime {
-				s.HlsExists = false
-				s.Close(sinkbin, nil)
-				return
-			}
-		}
 	}
 }
 

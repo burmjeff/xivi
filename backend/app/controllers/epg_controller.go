@@ -8,6 +8,7 @@ import (
 	"xivi/backend/platform/database"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/rs/zerolog/log"
 )
 
 // GetEpgs func gets all epgs.
@@ -154,30 +155,19 @@ func UpdateEpg(c *fiber.Ctx) error {
 	// Check, if received JSON data is valid.
 	if err := c.BodyParser(epg); err != nil {
 		// Return status 400 and error message.
+		log.Error().Msgf("UpdateEpg Error: %v", err.Error())
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
 		})
 	}
 
-	// Checking, if epg with given ID is exists.
-	foundEpg, err := database.Db.GetEpg(epg.ID)
-	if err != nil {
-		// Return status 404 and epg not found error.
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": true,
-			"msg":   "epg with this ID not found",
-		})
-	}
-
-	// Set initialized default data for epg:
-	epg.UpdatedAt = time.Now()
-
 	// Create a new validator for a Epg model.
 	validate := utils.NewValidator()
 
 	// Validate epg fields.
 	if err := validate.Struct(epg); err != nil {
+		log.Error().Msgf("UpdateEpg Error: %v", err)
 		// Return, if some fields are not valid.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -185,13 +175,29 @@ func UpdateEpg(c *fiber.Ctx) error {
 		})
 	}
 
+	// Checking, if epg with given ID is exists.
+	foundEpg, err := database.Db.GetEpg(epg.ID)
+	if err != nil {
+		log.Error().Msgf("UpdateEpg Error: %v", err)
+		// Return status 404 and epg not found error.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "epg with this ID not found",
+		})
+	}
+
 	// Update epg by given ID.
 	if err := database.Db.UpdateEpg(foundEpg.ID, epg); err != nil {
+		log.Error().Msgf("UpdateEpg Error: %v", err)
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
 		})
+	}
+
+	if epg.URL != foundEpg.URL {
+		go utils.ParseEpg(epg)
 	}
 
 	// Return status 201.

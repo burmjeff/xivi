@@ -85,23 +85,11 @@ func UpdateEpgs() {
 		return
 	}
 
-	// get templates.
-	templates, err := database.Db.GetTemplates()
-	if err != nil {
-		log.Err(err)
-		return
-	}
-
 	for _, epg := range *epgs {
 		log.Log().Msgf("Updating EPG: %s", epg.Name)
 		utils.ParseEpg(&epg)
 		log.Log().Msgf("Finished Updating EPG: %s", epg.Name)
 	}
-
-	for _, template := range *templates {
-		go utils.CreateEpgXML(template)
-	}
-
 }
 
 func cleanPlaylists(playlists []models.Playlist) {

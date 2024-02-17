@@ -60,6 +60,7 @@ func PublicRoutes(a *fiber.App) {
 	// EPG Routes
 	api.Get("/epgs", controllers.GetEpgs)                  // Get all Epgs
 	api.Post("/epg", controllers.AddEpg)                   // Add a new Epg
+	api.Put("/epg", controllers.UpdateEpg)                 // Modify Epg
 	api.Post("/epg/create/:epg_id", controllers.CreateEpg) // Generate a new Epg xmltv xml
 	api.Delete("/epg/:epg_id", controllers.DeleteEpg)      // Delete epg
 
