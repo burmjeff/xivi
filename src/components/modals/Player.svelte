@@ -24,6 +24,7 @@
 	let name = $modalStore[0].meta.name;
 	let player: HTMLElement;
 	const remote = new MediaRemoteControl();
+	let boolTrue = true
 
 	remote.disableCaptions();
 
@@ -51,9 +52,11 @@
 	title={name}
 	src={videoUrl}
 	class="player"
-	streamType="live"
-	crossorigin
-	autoPlay
+	streamType="ll-live"
+	viewType="video"
+	crossorigin=""
+	autoPlay={boolTrue}
+	playsInline={boolTrue}
 >
 	<media-provider>
 		<media-poster class="vds-poster" src={xivi} alt={name} />
