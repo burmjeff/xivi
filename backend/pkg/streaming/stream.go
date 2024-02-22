@@ -179,7 +179,7 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 	location := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "segment.%05d.ts")
 
 	//max-files=8 playlist-length=4 target-duration=8
-	bin, _ := gst.NewBinFromString(fmt.Sprintf("queue2 max-size-buffers=0 max-size-bytes=0 max-size-time=%d use-buffering=true low-watermark=0.01 high-watermark=0.99 name=hlsqueue ! tsdemux name=demux ! h264parse ! queue ! hlssink2 playlist-root=%s location=%s playlist-location=%s max-files=5 playlist-length=5 target-duration=5 name=hlssink demux. ! aacparse ! queue ! hlssink.audio", s.Settings.Buffer, pRoot, location, pLocation), false)
+	bin, _ := gst.NewBinFromString(fmt.Sprintf("queue2 max-size-buffers=0 max-size-bytes=0 max-size-time=%d use-buffering=true low-watermark=0.01 high-watermark=0.99 name=hlsqueue ! tsdemux name=demux ! h264parse ! queue ! hlssink2 playlist-root=%s location=%s playlist-location=%s max-files=3 playlist-length=3 target-duration=10 name=hlssink demux. ! aacparse ! queue ! hlssink.audio", s.Settings.Buffer, pRoot, location, pLocation), false)
 
 	queue, err := bin.GetElementByName("hlsqueue")
 	if err != nil {
