@@ -20,5 +20,5 @@ playlist:
 streaming:
   type: mp2t
   proxy: true
-  buffer: 200
+  buffer: 1
   useragent: Xivi 1.0

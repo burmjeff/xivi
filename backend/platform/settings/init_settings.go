@@ -114,7 +114,7 @@ func SetDefaults() (*AppSettings, error) {
 		Streaming: Streaming{
 			Type:      "mp2t",
 			Proxy:     true,
-			Buffer:    200,
+			Buffer:    1,
 			UserAgent: "Xivi 1.0",
 		},
 	}

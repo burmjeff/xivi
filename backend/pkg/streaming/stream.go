@@ -48,7 +48,7 @@ func NewStream(streamId string, src string) *Stream {
 		Settings: &Settings{
 			Uuid:      streamId,
 			Src:       src,
-			Buffer:    settings.APP_SETTINGS.Streaming.Buffer,
+			Buffer:    (settings.APP_SETTINGS.Streaming.Buffer * 1000000000),
 			UserAgent: settings.APP_SETTINGS.Streaming.UserAgent,
 		},
 	}
@@ -179,7 +179,7 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 	location := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "segment.%05d.ts")
 
 	//max-files=8 playlist-length=4 target-duration=8
-	bin, _ := gst.NewBinFromString(fmt.Sprintf("queue name=hlsqueue ! tsdemux name=demux ! h264parse ! queue ! hlssink2 playlist-root=%s location=%s playlist-location=%s max-files=10 playlist-length=5 target-duration=8 name=hlssink demux. ! aacparse ! queue ! hlssink.audio", pRoot, location, pLocation), false)
+	bin, _ := gst.NewBinFromString(fmt.Sprintf("queue2 max-size-buffers=0 max-size-bytes=0 max-size-time=%d use-buffering=true low-watermark=0.01 high-watermark=0.99 name=hlsqueue ! tsdemux name=demux ! h264parse ! queue ! hlssink2 playlist-root=%s location=%s playlist-location=%s max-files=5 playlist-length=5 target-duration=5 name=hlssink demux. ! aacparse ! queue ! hlssink.audio", s.Settings.Buffer, pRoot, location, pLocation), false)
 
 	queue, err := bin.GetElementByName("hlsqueue")
 	if err != nil {
@@ -207,8 +207,11 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 
 		buffer.Set("max-size-buffers", 0)
 		buffer.Set("max-size-bytes", 0)
-		buffer.Set("max-size-time", 15000000000)
-		buffer.Set("min-threshold-time", s.Settings.Buffer*1000000)
+		buffer.Set("max-size-time", s.Settings.Buffer)
+		//buffer.Set("min-threshold-time", s.Settings.Buffer)
+		buffer.Set("use-buffering", true)
+		buffer.Set("low-watermark", 0.01)
+		buffer.Set("high-watermark", 0.99)
 
 		demux.Set("name", "demux")
 
@@ -391,7 +394,7 @@ func (s *Stream) NewMP2TSink(ctx *fiber.Ctx) error {
 
 	bin := gst.NewBin(fmt.Sprintf("sinkbin%d", s.count))
 
-	buffer, err := gst.NewElement("queue")
+	buffer, err := gst.NewElement("queue2")
 	if err != nil {
 		return err
 	}
@@ -402,8 +405,11 @@ func (s *Stream) NewMP2TSink(ctx *fiber.Ctx) error {
 
 	buffer.Set("max-size-buffers", 0)
 	buffer.Set("max-size-bytes", 0)
-	buffer.Set("max-size-time", 15000000000)
-	buffer.Set("min-threshold-time", s.Settings.Buffer*1000000)
+	buffer.Set("max-size-time", s.Settings.Buffer)
+	//buffer.Set("min-threshold-time", s.Settings.Buffer)
+	buffer.Set("use-buffering", true)
+	buffer.Set("low-watermark", 0.01)
+	buffer.Set("high-watermark", 0.99)
 
 	sink.Set("max-time", 15000000000)
 	sink.Set("drop", true)
@@ -581,11 +587,11 @@ func (s *Stream) mainLoop(loop *glib.MainLoop) error {
 			bufPercent := msg.ParseBuffering()
 			log.Debug().Msgf("go-gst-debug - stream buffer percent: %v", bufPercent)
 			// Wait until buffering is complete before start/resume playing
-			if bufPercent < 75 {
+			/*if bufPercent < 75 {
 				s.pipeline.SetState(gst.StatePaused)
 			} else {
 				s.pipeline.SetState(gst.StatePlaying)
-			}
+			}*/
 		case gst.MessageClockLost:
 			// Get a new clock
 			log.Debug().Msgf("go-gst-debug - clock lost: %v", msg)
@@ -613,14 +619,6 @@ func (s *Stream) mainLoop(loop *glib.MainLoop) error {
 	return loop.RunError()
 }
 
-func RunLoop(f func(*glib.MainLoop) error) {
-	mainLoop := glib.NewMainLoop(glib.MainContextDefault(), false)
-
-	if err := f(mainLoop); err != nil {
-		log.Error().Msgf("GST MAINLOOP ERROR!: %v", err)
-	}
-}
-
 func (s *Stream) CreateHlsDir() error {
 	if _, err := os.Stat(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid)); err == nil {
 		if err := os.RemoveAll(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid)); err != nil {
@@ -637,6 +635,7 @@ func (s *Stream) CreateHlsDir() error {
 
 func (s *Stream) StartStream(c *fiber.Ctx) error {
 	var err error
+	mainLoop := glib.NewMainLoop(glib.MainContextDefault(), false)
 
 	if s.pipeline, err = s.createPipeline(); err != nil {
 		return err
@@ -660,9 +659,11 @@ func (s *Stream) StartStream(c *fiber.Ctx) error {
 		}
 	}
 
-	go RunLoop(func(loop *glib.MainLoop) error {
-		return s.mainLoop(loop)
-	})
+	go func() {
+		if err := s.mainLoop(mainLoop); err != nil {
+			log.Error().Msgf("GST MAINLOOP ERROR!: %v", err)
+		}
+	}()
 
 	//TODO GO CHAN TO CHECK FOR GST ERRORS AND RESTART/CLOSE ON ERR
 	s.Mu.Lock()

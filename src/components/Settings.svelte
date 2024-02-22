@@ -267,7 +267,7 @@
 					</label>
 				</div>
 				<label class="settings_buffer">
-					<span>Stream Buffer</span>
+					<span>Stream Buffer (Seconds)</span>
 					<input class="input variant-form-material" type="number" placeholder="0" />
 				</label>
 				<label class="settings_useragent">
