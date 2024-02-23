@@ -1,4 +1,4 @@
-<!-- TemplateGroup.svelte -->
+<!-- TemplateGroupList.svelte -->
 <script lang="ts">
 	import TemplateChannel from './TemplateChannel.svelte';
 	import { onMount } from 'svelte';
@@ -182,7 +182,7 @@
 		new Promise<boolean>((resolve) => {
 			const modal: ModalSettings = {
 				type: 'component',
-				component: 'modalAddGroup',
+				component: 'modalGroupSettings',
 				meta: {
 					isNew: isNew,
 					name: group?.name,

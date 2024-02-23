@@ -63,6 +63,7 @@ func PublicRoutes(a *fiber.App) {
 	api.Put("/epg", controllers.UpdateEpg)                 // Modify Epg
 	api.Post("/epg/create/:epg_id", controllers.CreateEpg) // Generate a new Epg xmltv xml
 	api.Delete("/epg/:epg_id", controllers.DeleteEpg)      // Delete epg
+	api.Get("/epg/tvgids", controllers.GetEpgTvgids)       // get epg channel ids
 
 	// Logo Routes
 	api.Get("/logos", controllers.GetLogos)             // get list of all logos

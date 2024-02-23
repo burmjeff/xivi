@@ -452,3 +452,17 @@ func (q *EpgQueries) DeleteEpgChannelItem(id int64) error {
 
 	return nil
 }
+
+// Get epgchannel tvgids
+func (q *EpgQueries) GetEpgTvgids() ([]string, error) {
+	var items []string
+
+	query := `SELECT channelid FROM epgchannel WHERE channelid is NOT NULL`
+
+	err := q.Select(&items, query)
+	if err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
