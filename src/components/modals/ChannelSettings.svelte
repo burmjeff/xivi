@@ -1,11 +1,11 @@
-<!-- Settings.svelte -->
+<!-- ChannelSettings.svelte -->
 
 <script lang="ts">
 	import { onMount, type SvelteComponent } from 'svelte';
 	import { templateGroups } from '@xivi/stores/template_store';
 	import Icon from '@iconify/svelte';
 	import { writable } from 'svelte/store';
-	import { getModalStore, FileButton, popup, type PopupSettings } from '@skeletonlabs/skeleton';
+	import { getModalStore, FileButton, popup, InputChip, Autocomplete, type AutocompleteOption, type PopupSettings } from '@skeletonlabs/skeleton';
 	import xivi from '$lib/assets/xivi.png';
 	import type { Match, PlaylistChannel } from '@xivi/data/playlist_entities';
 	import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
@@ -26,6 +26,11 @@
 	let channelIdx = $modalStore[0].meta.channelIdx;
 	let isNew = $modalStore[0].meta.isNew;
 	let newImg = false;
+
+	let tvgidList: string[];
+	let tvgidInputList: string[];
+	let inputTvgid: string;
+	let tvgidOptions: AutocompleteOption<string>[];
 
 	let dndTypeChannels = 'channelSettings';
 	let shouldIgnoreMatchEvents = false;
@@ -67,7 +72,6 @@
 			`/api/template/channel/${$templateGroups[groupIdx].channels[channelIdx].id}/items`
 		);
 		const data = await response.json();
-		console.log(data);
 		return data.playlistchannels;
 	};
 
@@ -76,20 +80,47 @@
 			`/api/template/channel/${$templateGroups[groupIdx].channels[channelIdx].id}/matches`
 		);
 		const data = await response.json();
-		console.log(data);
 		return data.vectormatches;
 	};
 
 	const updateLogos = async () => {
 		const response = await fetch(`/api/logos`);
 		const data = await response.json();
-		console.log(data);
 		if (typeof data.logos !== 'undefined') {
 			logos.set(data.logos);
 		}
 	};
 
+	const updateTvgids = async () => {
+		const response = await fetch(
+			`/api/epg/tvgids`
+		);
+		const data = await response.json();
+		return data.tvgids;
+	};
+
+	let popupTvgid: PopupSettings = {
+		event: 'focus-click',
+		target: 'popupTvgid',
+		placement: 'bottom'
+	};
+
 	onMount(async () => {
+		const fetchedTvgids = await updateTvgids();
+		if (typeof fetchedTvgids !== 'undefined') {
+			tvgidList = fetchedTvgids;
+			tvgidOptions = tvgidList.map((tvgid) => {
+				return {
+					label: `${tvgid}`,
+					value: `${tvgid}`,
+					meta: `${tvgid}`
+				};
+			});
+		}
+		if (formData.tvgid != "") {
+			tvgidInputList[0] = formData.tvgid
+		}
+
 		if (!isNew) {
 			const fetchedItems = await updateChannelItems();
 			if (typeof fetchedItems !== 'undefined') {
@@ -148,12 +179,20 @@
 		formData.logo = logo.image;
 	}
 
+	function onInputChipSelect(event: CustomEvent<AutocompleteOption<string>>): void {
+		if (tvgidInputList.length === 0) {
+			tvgidInputList.push(event.detail.label);
+			tvgidInputList = [...tvgidInputList];
+		}
+	}
+
 	async function onFormSubmit(): Promise<void> {
 		if (newImg) {
 			const fetchedData = await uploadImage();
 			formData.logoid = fetchedData.id;
 			formData.logo = fetchedData.image;
 		}
+		formData.tvgid = tvgidInputList[0]
 		if ($modalStore[0].response) $modalStore[0].response(formData);
 		modalStore.close();
 	}
@@ -296,45 +335,48 @@
 </script>
 
 {#if $modalStore[0]}
-	<div class="modal-channel-settings max-w-screen card max-h-screen space-y-4 p-4 shadow-xl">
+	<div class="modal-channel-settings max-w-screen card max-h-screen space-y-2 p-2 shadow-xl">
 		{#if isNew}
 			<header class="justify-center text-center text-2xl font-bold">Add Channel</header>
 		{:else}
 			<header class="justify-center text-center text-2xl font-bold">Channel Settings</header>
 		{/if}
 		<form class="modal-form space-y-4 border border-surface-500 p-4 rounded-container-token">
-			<label class="channel_name">
-				<span>Channel Name</span>
-				<input
-					class="input variant-form-material"
-					type="text"
-					bind:value={formData.name}
-					placeholder=""
-				/>
-			</label>
-			<label class="channel_tvgid">
-				<span>Channel tvgid</span>
-				<input
-					class="input variant-form-material"
-					type="text"
-					bind:value={formData.tvgid}
-					placeholder=""
-				/>
-			</label>
-			<div class="channel_logo">
-				<span>Channel Logo</span>
-				<div class="grid w-64 grid-cols-2 items-center space-x-10 p-1">
-					<img class="w-fit" src={formData.logo} alt="Logo" />
-					<button
-						class="variant-filled-primary btn h-fit w-fit"
-						on:click={updateLogos}
-						use:popup={popupLogo}>Choose Logo</button
-					>
+			<div class="playlist_ch_items grid grid-cols-5 space-x-6">
+				<div class="form col-span-2">
+					<label class="channel_name">
+						<span>Channel Name</span>
+						<input
+							class="input variant-form-material"
+							type="text"
+							bind:value={formData.name}
+							placeholder=""
+						/>
+					</label>
+					<div class="channel_tvgid" use:popup={popupTvgid}>
+						<span>Channel tvgid</span>
+						<InputChip
+								bind:input={inputTvgid}
+								bind:value={tvgidInputList}
+								max={1}
+								placeholder="Add a tvg_id..."
+								name="chips"
+						/>
+					</div>
+					<div class="channel_logo">
+						<div class="grid w-64 grid-cols-2 items-center space-x-10 p-1">
+							<img class="w-fit" src={formData.logo} alt="Logo" />
+							<button
+								class="variant-filled-primary btn h-fit w-fit"
+								on:click={updateLogos}
+								use:popup={popupLogo}>Choose Logo</button
+							>
+						</div>
+					</div>
 				</div>
-			</div>
-			{#if !isNew}
-				<div class="playlist_ch_items grid grid-cols-2 space-x-2">
-					<div class="max-h-80 overflow-y-scroll">
+				<div class="max-h-72 col-span-3">
+					<header class="justify-center text-center font-bold mb-2">Current Playlist Channels</header>
+					<div class="max-h-72 overflow-y-scroll">
 						<table class="table table-hover justify-center text-center shadow-md">
 							<thead>
 								<tr id="thead">
@@ -384,50 +426,62 @@
 							</tbody>
 						</table>
 					</div>
-					<div class="max-h-80 overflow-y-scroll">
-						<table class="table table-hover justify-center text-center shadow-md">
-							<thead>
-								<tr id="thead">
-									<th>Title</th>
-									<th>tvg-id</th>
-									<th>Score</th>
-								</tr>
-							</thead>
-							{#if $playlistMatches != null && $playlistMatches.length > 0}
-								<tbody
-									use:dndzone={{
-										items: $playlistMatches,
-										flipDurationMs,
-										type: dndTypeChannels,
-										dropFromOthersDisabled
-									}}
-									on:consider={handleDndConsiderMatch}
-									on:finalize={handleDndFinalizeMatch}
-								>
-									{#each $playlistMatches as channel, channelIdx (channel.id)}
-										<tr id="animate" animate:flip={{ duration: flipDurationMs }}>
-											<td>{channel.name}</td>
-											<td>{channel.tvgid}</td>
-											<td>{channel.score}</td>
+				</div>
+			</div>
+			{#if !isNew}
+				<hr class="!border-t-2" />
+				<div class="max-h-80 overflow-y-scroll">
+					<table class="table table-hover justify-center text-center shadow-md">
+						<thead>
+							<tr id="thead">
+								<th>Title</th>
+								<th>tvg-id</th>
+								<th>Score</th>
+							</tr>
+						</thead>
+						{#if $playlistMatches != null && $playlistMatches.length > 0}
+							<tbody
+								use:dndzone={{
+									items: $playlistMatches,
+									flipDurationMs,
+									type: dndTypeChannels,
+									dropFromOthersDisabled
+								}}
+								on:consider={handleDndConsiderMatch}
+								on:finalize={handleDndFinalizeMatch}
+							>
+								{#each $playlistMatches as channel, channelIdx (channel.id)}
+									<tr id="animate" animate:flip={{ duration: flipDurationMs }}>
+										<td>{channel.name}</td>
+										<td>{channel.tvgid}</td>
+										<td>{channel.score}</td>
 
-											{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-												<div
-													in:fade={{ duration: 200, easing: cubicIn }}
-													class="custom-shadow-item"
-												>
-													{channel.name}
-												</div>
-											{/if}
-										</tr>
-									{/each}
-								</tbody>
-							{:else}
-								<p>No channels found</p>
-							{/if}
-						</table>
-					</div>
+										{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+											<div
+												in:fade={{ duration: 200, easing: cubicIn }}
+												class="custom-shadow-item"
+											>
+												{channel.name}
+											</div>
+										{/if}
+									</tr>
+								{/each}
+							</tbody>
+						{:else}
+							<p>No channels found</p>
+						{/if}
+					</table>
 				</div>
 			{/if}
+			<div data-popup="popupTvgid" class="card max-h-52 w-fit p-4 shadow-xl overflow-y-scroll">
+				<Autocomplete
+					bind:input={inputTvgid}
+					options={tvgidOptions}
+					allowlist={tvgidList}
+					on:selection={onInputChipSelect}
+				/>
+				<div class="arrow bg-surface-100-800-token" />
+			</div>
 		</form>
 		<footer class="modal-footer {parent.regionFooter}">
 			{#if !isNew}

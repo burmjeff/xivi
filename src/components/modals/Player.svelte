@@ -1,3 +1,5 @@
+<!-- Player.svelte -->
+
 <script lang="ts">
 	// Import styles.
 	import 'vidstack/player/styles/default/theme.css';

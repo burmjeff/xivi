@@ -245,3 +245,30 @@ func DeleteEpg(c *fiber.Ctx) error {
 	// Return status 204 no content.
 	return c.SendStatus(fiber.StatusNoContent)
 }
+
+// GetEpgTvgids
+// @Description Get all epgchannel tvgids
+// @Summary get all epgchannel tvgids
+// @Tags Epg
+// @Produce json
+// @Success 200 {array} string
+// @Router /epg/tvgids [get]
+func GetEpgTvgids(c *fiber.Ctx) error {
+
+	tvgids, err := database.Db.GetEpgTvgids()
+	if err != nil {
+		log.Warn().Msgf("GetEpgTvgids: %v", err)
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":  true,
+			"msg":    "No Epg tvgids found",
+			"tvgids": nil,
+		})
+	}
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error":  false,
+		"msg":    nil,
+		"tvgids": tvgids,
+	})
+}

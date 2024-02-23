@@ -1,7 +1,7 @@
-<!-- AddGroup.svelte -->
+<!-- GroupSettings.svelte -->
 
 <script lang="ts">
-	import { onMount, type SvelteComponent } from 'svelte';
+	import { onMount } from 'svelte';
 	import {
 		popup,
 		getModalStore,

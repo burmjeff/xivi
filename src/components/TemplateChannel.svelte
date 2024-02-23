@@ -67,6 +67,8 @@
 				});
 				const data = await response.status;
 				console.log('Updated template channel:', data);
+				$templateGroups[groupIdx].channels[channelIdx].name = formData.name;
+				$templateGroups[groupIdx].channels[channelIdx].tvgid = formData.tvgid;
 				$templateGroups[groupIdx].channels[channelIdx].logoid = formData.logoid;
 				$templateGroups[groupIdx].channels[channelIdx].logo = formData.logo;
 			} catch (error) {
