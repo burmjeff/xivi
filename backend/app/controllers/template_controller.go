@@ -326,6 +326,7 @@ func GetTemplateGroupChannels(c *fiber.Ctx) error {
 	// Get Template channels by group.
 	channels, err := database.Db.GetTmplChannelsByGroup(group_id)
 	if err != nil {
+		log.Error().Msgf("GetTmplChannelsByGrou: %v", err)
 		// Return, if template not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error":            true,
@@ -335,7 +336,7 @@ func GetTemplateGroupChannels(c *fiber.Ctx) error {
 	}
 
 	channelLogos := []models.TemplateChannelLogo{}
-	for _, channel := range *channels {
+	for _, channel := range channels {
 		channelLogo := models.TemplateChannelLogo{}
 		channelLogo.TemplateChannel = channel
 		// Get logo.
@@ -1053,7 +1054,9 @@ func GetTemplateChannelMatches(c *fiber.Ctx) error {
 			})
 		} else {
 			vectorMatches[idx].Name = channel.Title
-			vectorMatches[idx].Tvgid = channel.TvgID
+			if channel.TvgID != nil {
+				vectorMatches[idx].Tvgid = *channel.TvgID
+			}
 		}
 
 	}

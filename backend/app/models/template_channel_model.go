@@ -2,11 +2,11 @@ package models
 
 // Channel struct to describe Template Channel object.
 type TemplateChannel struct {
-	ID     int64  `db:"id" json:"id"`
-	Name   string `db:"name" json:"name" validate:"required,lte=255"`
-	TvgID  string `db:"tvgid" json:"tvgid" validate:"lte=255"`
-	LogoId int64  `db:"logoid" json:"logoid"`
-	Uuid   string `db:"uuid" json:"uuid" validate:"required"`
+	ID     int64   `db:"id" json:"id"`
+	Name   string  `db:"name" json:"name" validate:"required,lte=255"`
+	TvgID  *string `db:"tvgid" json:"tvgid"`
+	LogoId int64   `db:"logoid" json:"logoid"`
+	Uuid   string  `db:"uuid" json:"uuid" validate:"required"`
 }
 
 type TemplateChannelItem struct {

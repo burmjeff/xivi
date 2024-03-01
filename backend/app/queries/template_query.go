@@ -3,7 +3,6 @@ package queries
 import (
 	"database/sql"
 	"xivi/backend/app/models"
-	utils "xivi/backend/pkg/dbutils"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
@@ -131,15 +130,15 @@ func (q *TemplateQueries) GetAllTmplGroups() (*[]models.TemplateGroup, error) {
 }
 
 // Get Template Groups by template id
-func (q *TemplateQueries) GetTmplGroups(templateId int64) (*[]models.TemplateGroup, error) {
-	templategroups := &[]models.TemplateGroup{}
+func (q *TemplateQueries) GetTmplGroups(templateId int64) ([]models.TemplateGroup, error) {
+	templategroups := []models.TemplateGroup{}
 
 	query := `SELECT templategroup.* FROM templategroup
 	JOIN template_group_item ON templategroup.id = template_group_item.group_id
 	WHERE template_group_item.template_id = ?
 	ORDER BY template_group_item.orderr ASC`
 
-	err := q.Select(templategroups, query, templateId)
+	err := q.Select(&templategroups, query, templateId)
 	if err != nil {
 		return nil, err
 	}
@@ -264,15 +263,15 @@ func (q *TemplateQueries) GetTmplGroupChannelsByTmpl(template_id int64) (*[]mode
 	return tmplGroupChannels, nil
 }
 
-func (q *TemplateQueries) GetTmplChannelsByGroup(groupId int64) (*[]models.TemplateChannel, error) {
-	channels := &[]models.TemplateChannel{}
+func (q *TemplateQueries) GetTmplChannelsByGroup(groupId int64) ([]models.TemplateChannel, error) {
+	channels := []models.TemplateChannel{}
 
 	query := `SELECT templatechannel.* FROM templatechannel 
 		JOIN template_group_channel ON templatechannel.id = template_group_channel.channel_id
 		WHERE template_group_channel.group_id = ? 
 		ORDER BY template_group_channel.orderr ASC`
 
-	err := q.Select(channels, query, groupId)
+	err := q.Select(&channels, query, groupId)
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +355,7 @@ func (q *TemplateQueries) GetTmplChannelByName(name string) (*models.TemplateCha
 }
 
 // Get template channels by tvgid.
-func (q *TemplateQueries) GetTmplChannelsBytvgid(tvgid string) (*[]models.TemplateChannel, error) {
+func (q *TemplateQueries) GetTmplChannelsBytvgid(tvgid *string) (*[]models.TemplateChannel, error) {
 	channels := &[]models.TemplateChannel{}
 
 	query := `SELECT * FROM templatechannel WHERE tvgid = ?`
@@ -373,7 +372,7 @@ func (q *TemplateQueries) GetTmplChannelsBytvgid(tvgid string) (*[]models.Templa
 func (q *TemplateQueries) CreateTmplChannel(p *models.TemplateChannel) (int64, error) {
 	query := `INSERT INTO templatechannel VALUES (null, ?, ?, ?, ?)`
 
-	res, err := q.Exec(query, p.Name, utils.NewNullString(p.TvgID), p.LogoId, p.Uuid)
+	res, err := q.Exec(query, p.Name, p.TvgID, p.LogoId, p.Uuid)
 	if err != sql.ErrNoRows && err != nil {
 		return 0, err
 	}

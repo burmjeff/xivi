@@ -107,7 +107,7 @@
 
 	onMount(async () => {
 		const fetchedTvgids = await updateTvgids();
-		if (typeof fetchedTvgids !== 'undefined') {
+		if (fetchedTvgids !== null && typeof fetchedTvgids !== 'undefined') {
 			tvgidList = fetchedTvgids;
 			tvgidOptions = tvgidList.map((tvgid) => {
 				return {

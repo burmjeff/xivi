@@ -173,6 +173,7 @@ func GetPlaylistGroupChannels(c *fiber.Ctx) error {
 	// Get playlist channels by playlist group.
 	channels, err := database.Db.GetPlGroupChannels(playlist_id, group_id)
 	if err != nil {
+		log.Error().Msgf("GetPLGroupChannels: %v", err)
 		// Return, if playlist not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error":          true,

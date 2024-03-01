@@ -124,14 +124,14 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan models.PlaylistChann
 		title := GetByRegex(m.regexes["title"], lineInfo)
 
 		if tvgID != "" {
-			playlistChannel.TvgID = tvgID
+			playlistChannel.TvgID = &tvgID
 			//Add new channel vectors
 		}
 		if tvgName != "" {
 			playlistChannel.TvgName = tvgName
 		}
 		if tvgLogo != "" {
-			playlistChannel.Logo = tvgLogo
+			playlistChannel.Logo = &tvgLogo
 		}
 
 		if title != "" {

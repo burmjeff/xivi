@@ -271,7 +271,7 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 		return err
 	}
 
-	for _, group := range *groups {
+	for _, group := range groups {
 		log.Info().Msgf("M3U Creation: Found Template Group: %s", group.Name)
 		channels, err := database.Db.GetTmplChannelsByGroup(group.ID)
 		if err != nil {
@@ -279,7 +279,7 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 			continue
 		}
 
-		for _, channel := range *channels {
+		for _, channel := range channels {
 			logo, err := database.Db.GetLogo(channel.LogoId)
 			if err != nil {
 				log.Warn().Msg(err.Error())
