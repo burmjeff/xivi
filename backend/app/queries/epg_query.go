@@ -120,7 +120,7 @@ func (q *EpgQueries) GetEpgChannel(id int64) (*models.EpgChannel, error) {
 }
 
 // Get a epgchannel by channel id.
-func (q *EpgQueries) GetEpgChannelByChannelId(channelID string) (*models.EpgChannel, error) {
+func (q *EpgQueries) GetEpgChannelByChannelId(channelID *string) (*models.EpgChannel, error) {
 	epgchannel := &models.EpgChannel{}
 
 	query := `SELECT * FROM epgchannel WHERE channelid = ? LIMIT 1`

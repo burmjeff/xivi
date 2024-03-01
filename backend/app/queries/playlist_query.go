@@ -3,7 +3,6 @@ package queries
 import (
 	"database/sql"
 	"xivi/backend/app/models"
-	utils "xivi/backend/pkg/dbutils"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
@@ -343,7 +342,7 @@ func (q *PlaylistQueries) GetPlChannelsByName(name string) (*[]models.PlaylistCh
 }
 
 // Get channels by TvgID.
-func (q *PlaylistQueries) GetPlChannelsByTvgID(tvgid string) (*[]models.PlaylistChannel, error) {
+func (q *PlaylistQueries) GetPlChannelsByTvgID(tvgid *string) (*[]models.PlaylistChannel, error) {
 	channels := &[]models.PlaylistChannel{}
 
 	query := `SELECT * FROM playlistchannel WHERE tvg_id LIKE ?`
@@ -400,7 +399,7 @@ func (q *PlaylistQueries) CleanPlaylistChannels(id int64) error {
 func (q *PlaylistQueries) CreatePlChannel(p models.PlaylistChannel) (int64, error) {
 	query := `INSERT INTO playlistchannel VALUES (null, ?, ?, ?, ?, ?, ?, ?)`
 
-	res, err := q.Exec(query, utils.NewNullString(p.TvgID), p.TvgName, utils.NewNullString(p.Logo), p.Title, p.Enabled, p.CreatedAt, p.UpdatedAt)
+	res, err := q.Exec(query, p.TvgID, p.TvgName, p.Logo, p.Title, p.Enabled, p.CreatedAt, p.UpdatedAt)
 	if err != sql.ErrNoRows && err != nil {
 		return 0, err
 	}

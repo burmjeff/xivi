@@ -31,15 +31,15 @@ func ConvertPlChannel(playlistChannel models.PlaylistChannel) int64 {
 	if playlistChannel.Title != "" {
 		templateChannel.Name = playlistChannel.Title
 	}
-	if playlistChannel.TvgID != "" {
+	if playlistChannel.TvgID != nil {
 		templateChannel.TvgID = playlistChannel.TvgID
 	}
-	if playlistChannel.Logo != "" {
-		logoName := strings.Split(path.Base(playlistChannel.Logo), ".")[0]
+	if playlistChannel.Logo != nil {
+		logoName := strings.Split(path.Base(*playlistChannel.Logo), ".")[0]
 		if logo := logoExists(logoName); logo != nil {
 			templateChannel.LogoId = logo.ID
 		} else {
-			templateChannel.LogoId, _ = CreateLogo(playlistChannel.Logo)
+			templateChannel.LogoId, _ = CreateLogo(*playlistChannel.Logo)
 
 		}
 	}
@@ -106,7 +106,7 @@ func UpdateDynamicGroup(group models.TemplateGroup) {
 	for _, plChannel := range *plChannels {
 		foundChannel := false
 
-		for _, tmplChannel := range *tmplChannels {
+		for _, tmplChannel := range tmplChannels {
 			if plChannel.TvgID == tmplChannel.TvgID {
 				tmplChannel.Name = plChannel.Title
 				if err := database.Db.UpdateTmplChannel(tmplChannel); err != nil {
@@ -126,7 +126,7 @@ func UpdateDynamicGroup(group models.TemplateGroup) {
 			}
 		}
 	}
-	for _, tmplChannel := range *tmplChannels {
+	for _, tmplChannel := range tmplChannels {
 		if !(slices.Contains(foundChannels, tmplChannel)) {
 			if err := database.Db.DeleteTmplChannel(tmplChannel.ID); err != nil {
 				log.Err(err)

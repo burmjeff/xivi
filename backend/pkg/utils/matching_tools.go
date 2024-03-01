@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"sort"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
@@ -45,6 +46,9 @@ func MatchTemplateChannel(templateCh *models.TemplateChannel) {
 
 // Search if tvgid matches for playlist channel and add to template if match
 func matchPlaylistTvgid(playlistCh models.PlaylistChannel) error {
+	if playlistCh.TvgID == nil {
+		return errors.New("tvgid is nil")
+	}
 	playlistChUrl, err := database.Db.GetChannelUrlByPlChannelID(playlistCh.ID)
 	if err != nil {
 		log.Debug().Msgf("matchChannels:, %v", err)

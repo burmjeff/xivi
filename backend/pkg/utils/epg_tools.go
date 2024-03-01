@@ -46,7 +46,7 @@ func CreateEpgXML(template models.Template) {
 		if err != nil {
 			log.Warn().Msgf("No EPG channel found for %s: %v", channel, err)
 			epgChannel = &models.EpgChannel{
-				ChannelId:   channel.TvgID,
+				ChannelId:   *channel.TvgID,
 				DisplayName: channel.Name,
 			}
 		}
