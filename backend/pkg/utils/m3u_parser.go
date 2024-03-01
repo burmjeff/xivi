@@ -180,7 +180,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan models.PlaylistChann
 			log.Error().Err(err)
 		}
 
-		if len(*foundChannels) == 0 {
+		if len(foundChannels) == 0 {
 			log.Info().Msgf("Channel not found. Creating Channel: %s", playlistChannel.Title)
 			playlistChannel.CreatedAt = time.Now()
 			playlistChannelID, err := database.Db.CreatePlChannel(playlistChannel)
@@ -203,7 +203,7 @@ func (m *M3uParser) parseLine(lineNumber int, vectorIn chan models.PlaylistChann
 				return
 			}
 		} else {
-			for _, foundChannel := range *foundChannels {
+			for _, foundChannel := range foundChannels {
 				log.Info().Msgf("Channel found. Adding url to Channel: %s", playlistChannel.Title)
 				playlistChannel.UpdatedAt = time.Now()
 				err = database.Db.UpdatePlChannel(foundChannel.ID, playlistChannel)
