@@ -3,12 +3,18 @@ package utils
 import (
 	"errors"
 	"sort"
+	"sync"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
 	"xivi/backend/platform/settings"
 
 	"github.com/rs/zerolog/log"
 )
+
+type vectorMatches struct {
+	matches []models.VectorMatch
+	Mu      sync.Mutex
+}
 
 func MatchPlaylistChannel(playlistCh models.PlaylistChannel) {
 	if settings.APP_SETTINGS.Playlist.Tvgid_match {
@@ -75,7 +81,8 @@ func matchPlaylistTvgid(playlistCh models.PlaylistChannel) error {
 }
 
 func matchPlaylistChannelName(playlistCh models.PlaylistChannel) error {
-	//var channelVector models.ChannelVector
+	var wg sync.WaitGroup
+	chunkSize := 100
 	var err error
 	var chMatch int64
 	var score float64
@@ -100,18 +107,35 @@ func matchPlaylistChannelName(playlistCh models.PlaylistChannel) error {
 		log.Debug().Msgf("matchChannelName:, %v", err)
 		return err
 	}
-	for _, templateVector := range *templateVectors {
-		vector, err := database.Db.GetChannelVector(templateVector.VectorId)
-		if err != nil {
-			continue
+
+	var chunks [][]models.TemplateChannelVector
+	for i := 0; i < len(templateVectors); i += chunkSize {
+		end := i + chunkSize
+		if end > len(templateVectors) {
+			end = len(templateVectors)
 		}
-		if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
-			if cosine >= settings.APP_SETTINGS.Playlist.Name_score && cosine > score {
-				score = cosine
-				chMatch = templateVector.ChannelId
-			}
-		}
+		chunks = append(chunks, templateVectors[i:end])
 	}
+
+	for _, chunk := range chunks {
+		wg.Add(1)
+		go func(chunk []models.TemplateChannelVector) {
+			defer wg.Done()
+			for _, vec := range chunk {
+				vector, err := database.Db.GetChannelVector(vec.VectorId)
+				if err == nil {
+					if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
+						if cosine >= settings.APP_SETTINGS.Playlist.Name_score && cosine > score {
+							score = cosine
+							chMatch = vec.ChannelId
+						}
+					}
+				}
+			}
+		}(chunk)
+	}
+	wg.Wait()
+
 	if chMatch != 0 {
 		if !itemExists(chMatch, playlistChUrl.Url) {
 			channelItem := &models.TemplateChannelItem{
@@ -158,7 +182,8 @@ func matchTemplateTvgid(templateCh *models.TemplateChannel) (*[]models.PlaylistC
 }
 
 func matchTemplateChannelName(templateCh *models.TemplateChannel, addedChannels *[]models.PlaylistChannel) error {
-	//var channelVector models.ChannelVector
+	var wg sync.WaitGroup
+	chunkSize := 100
 	var err error
 
 	channelVector, err := database.Db.GetChannelVectorByName(templateCh.Name)
@@ -176,40 +201,57 @@ func matchTemplateChannelName(templateCh *models.TemplateChannel, addedChannels 
 		log.Debug().Msgf("matchChannelName:, %v", err)
 		return err
 	}
-	for _, playlistVector := range *playlistVectors {
-		isMatch := false
-		for _, channel := range *addedChannels {
-			if playlistVector.ChannelId == channel.ID {
-				isMatch = true
-				break
-			}
-		}
-		if isMatch {
-			continue
-		}
 
-		vector, err := database.Db.GetChannelVector(playlistVector.VectorId)
-		if err != nil {
-			continue
+	var chunks [][]models.PlaylistChannelVector
+	for i := 0; i < len(playlistVectors); i += chunkSize {
+		end := i + chunkSize
+		if end > len(playlistVectors) {
+			end = len(playlistVectors)
 		}
-		if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
-			if cosine >= settings.APP_SETTINGS.Playlist.Name_score {
-				playlistChUrl, err := database.Db.GetChannelUrlByPlChannelID(playlistVector.ChannelId)
-				if err != nil {
-					log.Debug().Msgf("matchChannels:, %v", err)
-				} else if itemExists(templateCh.ID, playlistChUrl.Url) {
+		chunks = append(chunks, playlistVectors[i:end])
+	}
+
+	for _, chunk := range chunks {
+		wg.Add(1)
+		go func(chunk []models.PlaylistChannelVector) {
+			defer wg.Done()
+			for _, vec := range chunk {
+				isMatch := false
+				for _, channel := range *addedChannels {
+					if vec.ChannelId == channel.ID {
+						isMatch = true
+						break
+					}
+				}
+				if isMatch {
 					continue
 				}
-				channelItem := &models.TemplateChannelItem{
-					ChannelId:         templateCh.ID,
-					PlaylistChannelId: playlistVector.ChannelId,
+
+				vector, err := database.Db.GetChannelVector(vec.VectorId)
+				if err != nil {
+					continue
 				}
-				if _, err := database.Db.CreateTmplChannelItem(channelItem); err != nil {
-					log.Debug().Msgf("matchChannels:, %v", err)
+				if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
+					if cosine >= settings.APP_SETTINGS.Playlist.Name_score {
+						playlistChUrl, err := database.Db.GetChannelUrlByPlChannelID(vec.ChannelId)
+						if err != nil {
+							log.Debug().Msgf("matchChannels:, %v", err)
+						} else if itemExists(templateCh.ID, playlistChUrl.Url) {
+							continue
+						}
+						channelItem := &models.TemplateChannelItem{
+							ChannelId:         templateCh.ID,
+							PlaylistChannelId: vec.ChannelId,
+						}
+						if _, err := database.Db.CreateTmplChannelItem(channelItem); err != nil {
+							log.Debug().Msgf("matchChannels:, %v", err)
+						}
+					}
 				}
 			}
-		}
+		}(chunk)
 	}
+	wg.Wait()
 
 	return nil
 }
@@ -230,11 +272,10 @@ func itemExists(tmplId int64, plUrl string) bool {
 }
 
 func TopChannelMatches(templateCh *models.TemplateChannel) ([]models.VectorMatch, error) {
-	//var channelVector models.ChannelVector
+	vectorMatches := vectorMatches{}
+	var wg sync.WaitGroup
+	chunkSize := 100
 	var err error
-	var vectorMatches []models.VectorMatch
-	lowestIdx := 0
-	lowestValue := 2.0
 
 	channelVector, err := database.Db.GetChannelVectorByName(templateCh.Name)
 	if err != nil {
@@ -251,38 +292,43 @@ func TopChannelMatches(templateCh *models.TemplateChannel) ([]models.VectorMatch
 		log.Debug().Msgf("matchChannelName:, %v", err)
 		return nil, err
 	}
-	for _, playlistVector := range *playlistVectors {
 
-		vector, err := database.Db.GetChannelVector(playlistVector.VectorId)
-		if err != nil {
-			continue
+	var chunks [][]models.PlaylistChannelVector
+	for i := 0; i < len(playlistVectors); i += chunkSize {
+		end := i + chunkSize
+		if end > len(playlistVectors) {
+			end = len(playlistVectors)
 		}
-		if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
-			if len(vectorMatches) < 5 {
-				vectorMatches = append(vectorMatches, models.VectorMatch{Id: playlistVector.ChannelId, Score: cosine})
-				if cosine < lowestValue {
-					lowestIdx = len(vectorMatches) - 1
-					lowestValue = cosine
-				}
-			} else {
-				if cosine > lowestValue {
-					lowestValue = 2.0
-					vectorMatches[lowestIdx] = models.VectorMatch{Id: playlistVector.ChannelId, Score: cosine}
-					for i := 0; i < len(vectorMatches); i++ {
-						if vectorMatches[i].Score < lowestValue {
-							lowestIdx = i
-							lowestValue = vectorMatches[i].Score
+		chunks = append(chunks, playlistVectors[i:end])
+	}
+
+	for _, chunk := range chunks {
+		wg.Add(1)
+		go func(chunk []models.PlaylistChannelVector) {
+			defer wg.Done()
+			for _, vec := range chunk {
+				if vector, err := database.Db.GetChannelVector(vec.VectorId); err == nil {
+					if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
+						//vectorMatches.Mu.Lock()
+						if len(vectorMatches.matches) < 5 {
+							vectorMatches.matches = append(vectorMatches.matches, models.VectorMatch{Id: vec.ChannelId, Score: cosine})
+						} else {
+							if cosine > vectorMatches.matches[len(vectorMatches.matches)-1].Score {
+								vectorMatches.matches[len(vectorMatches.matches)-1] = models.VectorMatch{Id: vec.ChannelId, Score: cosine}
+							}
 						}
+
+						sort.SliceStable(vectorMatches.matches, func(i, j int) bool {
+							return vectorMatches.matches[i].Score > vectorMatches.matches[j].Score
+						})
+						//vectorMatches.Mu.Unlock()
+
 					}
 				}
 			}
-
-			sort.Slice(vectorMatches, func(i, j int) bool {
-				return vectorMatches[i].Score > vectorMatches[j].Score
-			})
-
-		}
+		}(chunk)
 	}
+	wg.Wait()
 
-	return vectorMatches, nil
+	return vectorMatches.matches, nil
 }

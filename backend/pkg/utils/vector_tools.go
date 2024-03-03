@@ -19,12 +19,20 @@ import (
 )
 
 func PlaylistVectorQueue(in <-chan models.PlaylistChannel) {
+	bufChan := make(chan struct{}, 10)
 	for playlistCh := range in {
-		_ = UpdatePlaylistVector(playlistCh)
+		bufChan <- struct{}{}
+		go func(playlistCh models.PlaylistChannel) {
+			defer func() {
+				<-bufChan
+			}()
 
-		//try to match template channel only if auto-match=true
-		//TODO: IS THIS A PROBLEM HERE??
-		go MatchPlaylistChannel(playlistCh)
+			UpdatePlaylistVector(playlistCh)
+
+			// Try to match template channel only if auto-match=true
+			// TODO: IS THIS A PROBLEM HERE??
+			MatchPlaylistChannel(playlistCh)
+		}(playlistCh)
 	}
 }
 
