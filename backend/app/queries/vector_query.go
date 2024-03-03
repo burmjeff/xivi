@@ -25,12 +25,12 @@ func (q *VectorQueries) GetTemplateChannelVector(channel_id int64) (*models.Temp
 	return vectorChannel, nil
 }
 
-func (q *VectorQueries) GetTemplateChannelVectors() (*[]models.TemplateChannelVector, error) {
-	vectorChannels := &[]models.TemplateChannelVector{}
+func (q *VectorQueries) GetTemplateChannelVectors() ([]models.TemplateChannelVector, error) {
+	vectorChannels := []models.TemplateChannelVector{}
 
 	query := `SELECT * FROM templatechannelvectors`
 
-	err := q.Select(vectorChannels, query)
+	err := q.Select(&vectorChannels, query)
 	if err != nil {
 		return nil, err
 	}
@@ -65,12 +65,12 @@ func (q *VectorQueries) UpdateTemplateChannelVector(channelVector *models.Templa
 	return nil
 }
 
-func (q *VectorQueries) GetPlaylistChannelVectors() (*[]models.PlaylistChannelVector, error) {
-	vectorChannels := &[]models.PlaylistChannelVector{}
+func (q *VectorQueries) GetPlaylistChannelVectors() ([]models.PlaylistChannelVector, error) {
+	vectorChannels := []models.PlaylistChannelVector{}
 
 	query := `SELECT * FROM playlistchannelvectors`
 
-	if err := q.Select(vectorChannels, query); err != nil {
+	if err := q.Select(&vectorChannels, query); err != nil {
 		return nil, err
 	}
 

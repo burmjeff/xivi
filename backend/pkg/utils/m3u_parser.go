@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
@@ -83,45 +84,60 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 }
 
 func (m *M3uParser) parseLines() {
+	var wg sync.WaitGroup
+	chunkSize := 100
 	vectorIn := make(chan models.PlaylistChannel)
 	go PlaylistVectorQueue(vectorIn)
 
 	re := CompileRegex("#EXTINF")
 
-	for lineNumber := range m.lines {
-		if re.Match([]byte(m.lines[lineNumber])) {
-			m.parseLine(lineNumber, vectorIn)
+	var chunks [][]string
+	for i := 0; i < len(m.lines); i += chunkSize {
+		end := i + chunkSize
+
+		if end > len(m.lines) {
+			end = len(m.lines)
+		} else if re.Match([]byte(m.lines[end])) {
+			end += 1
 		}
+
+		chunks = append(chunks, m.lines[i:end])
 	}
+
+	for _, chunk := range chunks {
+		wg.Add(1)
+		go func(chunk []string) {
+			defer wg.Done()
+			for i := 0; i < len(chunk); i += 1 {
+				if re.Match([]byte(chunk[i])) {
+					if i+1 < len(chunk) && isValidURL(chunk[i+1]) {
+						m.parseLine(chunk[i], chunk[i+1], vectorIn)
+					}
+				}
+			}
+		}(chunk)
+	}
+
+	wg.Wait()
 	close(vectorIn)
 }
 
-func (m *M3uParser) parseLine(lineNumber int, vectorIn chan models.PlaylistChannel) {
+func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan models.PlaylistChannel) {
 	validate := NewValidator()
 	playlistGroup := models.PlaylistGroup{}
 	playlistChannel := models.PlaylistChannel{}
 	channelURL := models.ChannelUrl{}
 
-	var streamLink string
 	//channel := make(Channel)
-	lineInfo := m.lines[lineNumber]
 
-	for i := range [2]int{1, 2} {
-		isUrl := isValidURL(m.lines[lineNumber+i])
-		if isUrl {
-			streamLink = m.lines[lineNumber+i]
-			break
-		}
-	}
-
-	if lineInfo != "" && streamLink != "" {
+	if line != "" && streamLink != "" {
 
 		//xuiID := GetByRegex(m.regexes["xuiID"], lineInfo)
-		tvgID := GetByRegex(m.regexes["tvgID"], lineInfo)
-		tvgName := GetByRegex(m.regexes["tvgName"], lineInfo)
-		tvgLogo := GetByRegex(m.regexes["tvgLogo"], lineInfo)
-		group := GetByRegex(m.regexes["group"], lineInfo)
-		title := GetByRegex(m.regexes["title"], lineInfo)
+		tvgID := GetByRegex(m.regexes["tvgID"], line)
+		tvgName := GetByRegex(m.regexes["tvgName"], line)
+		tvgLogo := GetByRegex(m.regexes["tvgLogo"], line)
+		group := GetByRegex(m.regexes["group"], line)
+		title := GetByRegex(m.regexes["title"], line)
 
 		if tvgID != "" {
 			playlistChannel.TvgID = &tvgID
