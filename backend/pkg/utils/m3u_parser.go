@@ -2,6 +2,7 @@ package utils
 
 import (
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -85,13 +86,13 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 
 func (m *M3uParser) parseLines() {
 	var wg sync.WaitGroup
-	chunkSize := 100
 	vectorIn := make(chan models.PlaylistChannel)
 	go PlaylistVectorQueue(vectorIn)
 
 	re := CompileRegex("#EXTINF")
 
 	var chunks [][]string
+	chunkSize := int(math.RoundToEven(float64(len(m.lines)/10))) + 1
 	for i := 0; i < len(m.lines); i += chunkSize {
 		end := i + chunkSize
 

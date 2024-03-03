@@ -2,6 +2,7 @@ package utils
 
 import (
 	"errors"
+	"math"
 	"sort"
 	"sync"
 	"xivi/backend/app/models"
@@ -82,7 +83,6 @@ func matchPlaylistTvgid(playlistCh models.PlaylistChannel) error {
 
 func matchPlaylistChannelName(playlistCh models.PlaylistChannel) error {
 	var wg sync.WaitGroup
-	chunkSize := 100
 	var err error
 	var chMatch int64
 	var score float64
@@ -109,6 +109,7 @@ func matchPlaylistChannelName(playlistCh models.PlaylistChannel) error {
 	}
 
 	var chunks [][]models.TemplateChannelVector
+	chunkSize := int(math.RoundToEven(float64(len(templateVectors)/10))) + 1
 	for i := 0; i < len(templateVectors); i += chunkSize {
 		end := i + chunkSize
 		if end > len(templateVectors) {
@@ -183,7 +184,6 @@ func matchTemplateTvgid(templateCh *models.TemplateChannel) (*[]models.PlaylistC
 
 func matchTemplateChannelName(templateCh *models.TemplateChannel, addedChannels *[]models.PlaylistChannel) error {
 	var wg sync.WaitGroup
-	chunkSize := 100
 	var err error
 
 	channelVector, err := database.Db.GetChannelVectorByName(templateCh.Name)
@@ -203,6 +203,7 @@ func matchTemplateChannelName(templateCh *models.TemplateChannel, addedChannels 
 	}
 
 	var chunks [][]models.PlaylistChannelVector
+	chunkSize := int(math.RoundToEven(float64(len(playlistVectors)/10))) + 1
 	for i := 0; i < len(playlistVectors); i += chunkSize {
 		end := i + chunkSize
 		if end > len(playlistVectors) {
@@ -274,7 +275,6 @@ func itemExists(tmplId int64, plUrl string) bool {
 func TopChannelMatches(templateCh *models.TemplateChannel) ([]models.VectorMatch, error) {
 	vectorMatches := vectorMatches{}
 	var wg sync.WaitGroup
-	chunkSize := 100
 	var err error
 
 	channelVector, err := database.Db.GetChannelVectorByName(templateCh.Name)
@@ -294,6 +294,7 @@ func TopChannelMatches(templateCh *models.TemplateChannel) ([]models.VectorMatch
 	}
 
 	var chunks [][]models.PlaylistChannelVector
+	chunkSize := int(math.RoundToEven(float64(len(playlistVectors)/10))) + 1
 	for i := 0; i < len(playlistVectors); i += chunkSize {
 		end := i + chunkSize
 		if end > len(playlistVectors) {
