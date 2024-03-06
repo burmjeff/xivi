@@ -18,20 +18,22 @@ type vectorMatches struct {
 }
 
 func MatchPlaylistChannel(playlistCh models.PlaylistChannel) {
-	if settings.APP_SETTINGS.Playlist.Tvgid_match {
-		if err := matchPlaylistTvgid(playlistCh); err == nil {
-			return
-		} else {
-			log.Debug().Err(err)
+	//TODO SHOULD I ONLY MATCH IF ONE DOESN'T ALREADY EXIST??
+	if playlistCh.Enabled {
+		if settings.APP_SETTINGS.Playlist.Tvgid_match {
+			if err := matchPlaylistTvgid(playlistCh); err == nil {
+				return
+			} else {
+				log.Debug().Err(err)
+			}
+		}
+
+		if settings.APP_SETTINGS.Playlist.Name_match {
+			if err := matchPlaylistChannelName(playlistCh); err != nil {
+				log.Debug().Err(err)
+			}
 		}
 	}
-
-	if settings.APP_SETTINGS.Playlist.Name_match {
-		if err := matchPlaylistChannelName(playlistCh); err != nil {
-			log.Debug().Err(err)
-		}
-	}
-
 }
 
 func MatchTemplateChannel(templateCh *models.TemplateChannel) {
@@ -56,7 +58,7 @@ func matchPlaylistTvgid(playlistCh models.PlaylistChannel) error {
 	if playlistCh.TvgID == nil {
 		return errors.New("tvgid is nil")
 	}
-	playlistChUrl, err := database.Db.GetChannelUrlByPlChannelID(playlistCh.ID)
+	playlistChUrl, err := database.Db.GetChannelUrl(playlistCh.ID)
 	if err != nil {
 		log.Debug().Msgf("matchChannels:, %v", err)
 	}
@@ -87,7 +89,7 @@ func matchPlaylistChannelName(playlistCh models.PlaylistChannel) error {
 	var chMatch int64
 	var score float64
 
-	playlistChUrl, err := database.Db.GetChannelUrlByPlChannelID(playlistCh.ID)
+	playlistChUrl, err := database.Db.GetChannelUrl(playlistCh.ID)
 	if err != nil {
 		log.Debug().Msgf("matchChannels:, %v", err)
 	}
@@ -155,14 +157,14 @@ func matchPlaylistChannelName(playlistCh models.PlaylistChannel) error {
 
 // Search if tvgid matches for template channel and add to template if match
 func matchTemplateTvgid(templateCh *models.TemplateChannel) (*[]models.PlaylistChannel, error) {
-	channels, err := database.Db.GetPlChannelsByTvgID(templateCh.TvgID)
+	channels, err := database.Db.GetPlChannelsByTvgID(*templateCh.TvgID)
 	if err != nil {
 		log.Debug().Msgf("matchChannels:, %v", err)
 		return nil, err
 	}
 
 	for _, channel := range *channels {
-		playlistChUrl, err := database.Db.GetChannelUrlByPlChannelID(channel.ID)
+		playlistChUrl, err := database.Db.GetChannelUrl(channel.ID)
 		if err != nil {
 			log.Debug().Msgf("matchChannels:, %v", err)
 		} else if itemExists(channel.ID, playlistChUrl.Url) {
@@ -234,7 +236,7 @@ func matchTemplateChannelName(templateCh *models.TemplateChannel, addedChannels 
 				}
 				if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
 					if cosine >= settings.APP_SETTINGS.Playlist.Name_score {
-						playlistChUrl, err := database.Db.GetChannelUrlByPlChannelID(vec.ChannelId)
+						playlistChUrl, err := database.Db.GetChannelUrl(vec.ChannelId)
 						if err != nil {
 							log.Debug().Msgf("matchChannels:, %v", err)
 						} else if itemExists(templateCh.ID, playlistChUrl.Url) {
@@ -260,7 +262,7 @@ func matchTemplateChannelName(templateCh *models.TemplateChannel, addedChannels 
 func itemExists(tmplId int64, plUrl string) bool {
 	if items, _ := database.Db.GetTmplChannelItemsByCh(tmplId); len(*items) > 0 {
 		for _, item := range *items {
-			if itemUrl, err := database.Db.GetChannelUrlByPlChannelID(item.PlaylistChannelId); err != nil {
+			if itemUrl, err := database.Db.GetChannelUrl(item.PlaylistChannelId); err != nil {
 				log.Debug().Msgf("matchChannels:, %v", err)
 			} else {
 				if itemUrl.Url == plUrl {
@@ -279,17 +281,17 @@ func TopChannelMatches(templateCh *models.TemplateChannel) ([]models.VectorMatch
 
 	channelVector, err := database.Db.GetChannelVectorByName(templateCh.Name)
 	if err != nil {
-		log.Debug().Msgf("matchChannelName:, %v", err)
+		log.Debug().Msgf("GetChannelVectorByName:, %v", err)
 		vectorId := UpdateTemplateVector(templateCh)
 		if channelVector, err = database.Db.GetChannelVector(vectorId); err != nil {
-			log.Debug().Msgf("matchChannelName:, %v", err)
+			log.Debug().Msgf("GetChannelVector:, %v", err)
 			return nil, err
 		}
 	}
 
 	playlistVectors, err := database.Db.GetPlaylistChannelVectors()
 	if err != nil {
-		log.Debug().Msgf("matchChannelName:, %v", err)
+		log.Debug().Msgf("GetPlaylistChannelVectors:, %v", err)
 		return nil, err
 	}
 
@@ -310,7 +312,7 @@ func TopChannelMatches(templateCh *models.TemplateChannel) ([]models.VectorMatch
 			for _, vec := range chunk {
 				if vector, err := database.Db.GetChannelVector(vec.VectorId); err == nil {
 					if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
-						//vectorMatches.Mu.Lock()
+						vectorMatches.Mu.Lock()
 						if len(vectorMatches.matches) < 5 {
 							vectorMatches.matches = append(vectorMatches.matches, models.VectorMatch{Id: vec.ChannelId, Score: cosine})
 						} else {
@@ -322,7 +324,7 @@ func TopChannelMatches(templateCh *models.TemplateChannel) ([]models.VectorMatch
 						sort.SliceStable(vectorMatches.matches, func(i, j int) bool {
 							return vectorMatches.matches[i].Score > vectorMatches.matches[j].Score
 						})
-						//vectorMatches.Mu.Unlock()
+						vectorMatches.Mu.Unlock()
 
 					}
 				}

@@ -310,7 +310,7 @@
 	) {
 		if (!shouldIgnoreDndEvents) {
 			data!.isDragged = true;
-			dndPlaylistId = data!.playlistId;
+			dndPlaylistId = data!.playlist_id;
 		}
 	}
 </script>
@@ -398,8 +398,8 @@
 
 <style>
 	#accord {
-		max-height: 82vh;
-		height: 82vh;
+		max-height: 76vh;
+		height: 76vh;
 	}
 	.custom-shadow-item {
 		position: absolute;

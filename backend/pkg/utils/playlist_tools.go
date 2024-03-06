@@ -50,7 +50,7 @@ func ConvertPlChannel(playlistChannel models.PlaylistChannel) int64 {
 		//Some fields are not valid.
 		log.Warn().Msg(err.Error())
 	} else {
-		channelID, err := database.Db.CreateTmplChannel(templateChannel)
+		channelID, err := database.Db.CreateTmplChannel(*templateChannel)
 		if err != nil {
 			log.Warn().Msg(err.Error())
 		} else {
@@ -97,7 +97,7 @@ func UpdateDynamicGroup(group models.TemplateGroup) {
 		log.Debug().Msg(err.Error())
 	}
 
-	plChannels, err := database.Db.GetPlDynamicGroupChannels(group.DynamicGroup)
+	plChannels, err := database.Db.GetPlGroupChannels(group.DynamicGroup)
 	if err != nil {
 		log.Warn().Msg(err.Error())
 	}

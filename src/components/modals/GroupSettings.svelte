@@ -29,13 +29,6 @@
 		dynamicgroup: number;
 	};
 
-	interface playlistItem {
-		id: number;
-		playlist_id: number;
-		group_id: number;
-	}
-	const playlistItems = [] as Array<playlistItem>;
-
 	if (!isNew) {
 		formData = {
 			name: $modalStore[0].meta.name,
@@ -62,12 +55,6 @@
 		return data.playlistgroups;
 	};
 
-	const getPlaylistGroupItems = async () => {
-		const response = await fetch(`/api/playlist/group/items`);
-		const data = await response.json();
-		return data.items;
-	};
-
 	let popupDynamic: PopupSettings = {
 		event: 'focus-click',
 		target: 'popupAutocomplete',
@@ -75,13 +62,6 @@
 	};
 
 	onMount(async () => {
-		const fetchedItems = await getPlaylistGroupItems();
-		if (typeof fetchedItems !== 'undefined') {
-			fetchedItems.forEach(function (item: playlistItem) {
-				playlistItems.push(item);
-			});
-		}
-
 		if ($playlists.length == 0) {
 			playlists.set(await updatePlaylists());
 		}
@@ -93,31 +73,30 @@
 					fetchedData.forEach(function (group: PlaylistGroup) {
 						$playlists[i].groups.push(group);
 						$playlists[i].groups = $playlists[i].groups;
+						if (!isNew && formData.dynamicgroup !== 0 && formData.dynamicgroup !== undefined && Number(group.id) == formData.dynamicgroup) {
+								addedLabels[0] = `${$playlists[i].name} - ${group.name}`;
+						}
 					});
 				}
 			}
 
-			dynamicNames = $playlists[i].groups.map((group) => {
-				return `${$playlists[i].name} - ${group.name}`;
-			});
-			dynamicOptions = $playlists[i].groups.map((group) => {
-				return {
-					label: `${$playlists[i].name} - ${group.name}`,
-					value: `${$playlists[i].name} - ${group.name}`,
-					meta: `${$playlists[i].id},${group.id}`
-				};
-			});
+			dynamicNames = $playlists[i].groups
+				.filter((group) => group.enabled)
+				.map((group) => {
+					return `${$playlists[i].name} - ${group.name}`;
+				});
+			dynamicOptions = $playlists[i].groups
+				.filter((group) => group.enabled)
+				.map((group) => {
+					return {
+						label: `${$playlists[i].name} - ${group.name}`,
+						value: `${$playlists[i].name} - ${group.name}`,
+						meta: `${$playlists[i].id},${group.id}`
+					};
+				});
 		}
 
-		if (!isNew && formData.dynamicgroup !== 0 && formData.dynamicgroup !== undefined) {
-			let item =
-				playlistItems[playlistItems.findIndex((item) => item.id === formData.dynamicgroup)];
-			let playlistIdx = $playlists.findIndex((playlist) => playlist.id === item.playlist_id);
-			let groupIdx = $playlists[playlistIdx].groups.findIndex(
-				(group) => Number(group.id) === item.group_id
-			);
-			addedLabels[0] = `${$playlists[playlistIdx].name} - ${$playlists[playlistIdx].groups[groupIdx].name}`;
-		}
+		
 	});
 
 	function onInputChipSelect(event: CustomEvent<AutocompleteOption<string>>): void {
@@ -136,14 +115,7 @@
 				const dynamicItem = (<string>(
 					dynamicOptions[dynamicOptions.findIndex((item) => item.label === addedLabels[0])].meta
 				)).split(',');
-				formData.dynamicgroup =
-					playlistItems[
-						playlistItems.findIndex(
-							(item) =>
-								item.playlist_id === Number(dynamicItem[0]) &&
-								item.group_id === Number(dynamicItem[1])
-						)
-					].id;
+				formData.dynamicgroup = Number(dynamicItem[1]);
 			}
 		} else {
 			formData.dynamicgroup = 0;

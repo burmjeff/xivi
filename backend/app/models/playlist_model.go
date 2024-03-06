@@ -10,9 +10,3 @@ type Playlist struct {
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
-
-type PlaylistGroupItem struct {
-	ID         int64 `db:"id" json:"id"`
-	PlaylistId int64 `db:"playlist_id" json:"playlist_id"`
-	GroupId    int64 `db:"group_id" json:"group_id"`
-}

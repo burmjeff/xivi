@@ -155,7 +155,7 @@ func GetAllPlaylistGroups(c *fiber.Ctx) error {
 // @Success 200 {array} models.PlaylistChannel
 // @Router /playlist/{playlist_id}/group/{group_id}/channels [get]
 func GetPlaylistGroupChannels(c *fiber.Ctx) error {
-	playlist_id, err := strconv.ParseInt(c.Params("playlist_id"), 10, 64)
+	_, err := strconv.ParseInt(c.Params("playlist_id"), 10, 64)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -171,7 +171,7 @@ func GetPlaylistGroupChannels(c *fiber.Ctx) error {
 	}
 
 	// Get playlist channels by playlist group.
-	channels, err := database.Db.GetPlGroupChannels(playlist_id, group_id)
+	channels, err := database.Db.GetPlGroupChannels(group_id)
 	if err != nil {
 		log.Error().Msgf("GetPLGroupChannels: %v", err)
 		// Return, if playlist not found.
@@ -187,33 +187,6 @@ func GetPlaylistGroupChannels(c *fiber.Ctx) error {
 		"error":            false,
 		"msg":              nil,
 		"playlistchannels": channels,
-	})
-}
-
-// GetPlaylistGroupItems
-// @Description Get all playlistgroupitems
-// @Summary get all playlistgroupitems
-// @Tags Playlist
-// @Produce json
-// @Success 200 {array} models.PlaylistGroupItem
-// @Router /playlist/group/items [get]
-func GetPlaylistGroupItems(c *fiber.Ctx) error {
-
-	playlistItems, err := database.Db.GetPlGroupItems()
-	if err != nil {
-		log.Warn().Msgf("GetPlaylistGroupItems: %v", err)
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": true,
-			"msg":   "playlistgroupitems not found",
-			"items": nil,
-		})
-	}
-
-	// Return status 200 OK.
-	return c.JSON(fiber.Map{
-		"error": false,
-		"msg":   nil,
-		"items": playlistItems,
 	})
 }
 
@@ -383,7 +356,7 @@ func ConvertPlaylistGroup(c *fiber.Ctx) error {
 	// Create new Template struct
 	templateGroup := &models.TemplateGroup{}
 
-	playlist_id, err := strconv.ParseInt(c.Params("playlist_id"), 10, 64)
+	_, err := strconv.ParseInt(c.Params("playlist_id"), 10, 64)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -420,7 +393,7 @@ func ConvertPlaylistGroup(c *fiber.Ctx) error {
 		})
 	}
 
-	playlistChannels, err := database.Db.GetPlGroupChannels(playlist_id, group_id)
+	playlistChannels, err := database.Db.GetPlGroupChannels(group_id)
 	if err != nil {
 		// Return, if playlistgroup not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -522,4 +495,61 @@ func ConvertPlaylistChannel(c *fiber.Ctx) error {
 		"msg":             nil,
 		"templatechannel": channelLogo,
 	})
+}
+
+// UpdatePlaylistGroup func to update a Playlist group.
+// @Description Update Playlist Group.
+// @Summary update Playlist Group
+// @Tags Playlist Group
+// @Accept json
+// @Param playlistgroup body models.PlaylistGroup true "Playlist group"
+// @Success 201 {string} status "ok"
+// @Router /playlist/group [put]
+func UpdatePlaylistGroup(c *fiber.Ctx) error {
+
+	playlistGroup := &models.PlaylistGroup{}
+
+	// Check, if received JSON data is valid.
+	if err := c.BodyParser(playlistGroup); err != nil {
+		// Return status 400 and error message.
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Create a new validator for a Playlist model.
+	validate := utils.NewValidator()
+
+	// Validate playlist fields.
+	if err := validate.Struct(playlistGroup); err != nil {
+		// Return, if some fields are not valid.
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   utils.ValidatorErrors(err),
+		})
+	}
+
+	_, err := database.Db.GetPlGroup(playlistGroup.ID)
+	if err != nil {
+		log.Err(err)
+		// Return status 500 and error message.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Update template group.
+	if err := database.Db.UpdatePlGroup(playlistGroup); err != nil {
+		log.Err(err)
+		// Return status 500 and error message.
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Return status 201.
+	return c.SendStatus(fiber.StatusCreated)
 }
