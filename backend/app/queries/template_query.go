@@ -369,7 +369,7 @@ func (q *TemplateQueries) GetTmplChannelsBytvgid(tvgid *string) (*[]models.Templ
 }
 
 // Create a template Channel by given Channel object.
-func (q *TemplateQueries) CreateTmplChannel(p *models.TemplateChannel) (int64, error) {
+func (q *TemplateQueries) CreateTmplChannel(p models.TemplateChannel) (int64, error) {
 	query := `INSERT INTO templatechannel VALUES (null, ?, ?, ?, ?)`
 
 	res, err := q.Exec(query, p.Name, p.TvgID, p.LogoId, p.Uuid)
@@ -428,7 +428,8 @@ func (q *TemplateQueries) GetTmplChannelItemsByCh(id int64) (*[]models.TemplateC
 
 	query := `SELECT * FROM templatechannelitem WHERE channel_id = ?`
 
-	if err := q.Select(templatechannelitems, query, id); err != nil {
+	err := q.Select(templatechannelitems, query, id)
+	if err != nil {
 		return nil, err
 	}
 

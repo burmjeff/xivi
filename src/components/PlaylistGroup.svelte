@@ -2,7 +2,7 @@
 <script lang="ts">
 	import PlaylistChannel from './PlaylistChannel.svelte';
 	import { onMount } from 'svelte';
-	import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
+	import { Accordion, AccordionItem, SlideToggle } from '@skeletonlabs/skeleton';
 	import { playlists } from '@xivi/stores/playlist_store';
 	import { getModalStore } from '@skeletonlabs/skeleton';
 	import type { PlaylistGroup } from '@xivi/data/playlist_entities';
@@ -42,6 +42,27 @@
 		}
 	});
 
+	async function disableGroup(group: PlaylistGroup) {
+		if (group !== null) {
+			try {
+				const response = await fetch(`/api/playlist/group`, {
+					method: 'PUT',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify(group)
+				});
+				if (response.ok) {
+					console.error("Updated playlist group: ", group);
+				} else {
+					console.error('Error:', response.status, response.statusText);
+				}
+			} catch (error) {
+				console.log('Error updating playlist group:', error);
+			}
+		}
+	}
+
 	function handleDndConsider(e: CustomEvent<DndEvent<PlaylistGroup>>) {
 		const { trigger, id } = e.detail.info;
 		e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
@@ -49,7 +70,6 @@
 		if (trigger === TRIGGERS.DRAG_STARTED) {
 			dndIdx = $playlists[playlistIdx].groups.findIndex((item) => item.id === id);
 			dndItem = $playlists[playlistIdx].groups[dndIdx];
-			$playlists[playlistIdx].groups[dndIdx].playlistId = playlistId;
 			$playlists[playlistIdx].groups = e.detail.items;
 			shouldIgnoreDndEvents = true;
 		} else if (!shouldIgnoreDndEvents) {
@@ -78,7 +98,7 @@
 		data: Item | undefined,
 		index: number | undefined
 	) {
-		data!.playlistId = playlistId;
+		data!.playlist_id = playlistId;
 	}
 </script>
 
@@ -98,7 +118,12 @@
 			{#each $playlists[playlistIdx].groups as group, groupIdx (group.id)}
 				<div id="animate" animate:flip={{ duration: flipDurationMs }}>
 					<AccordionItem class="card mb-1" key={group.id}>
-						<svelte:fragment slot="summary"><h4>{group.name}</h4></svelte:fragment>
+						<svelte:fragment slot="summary">
+							<div class="flex flex-row items-center">
+								<h4>{group.name}</h4>
+								<SlideToggle class="ml-auto p-1" name="group_slider" bind:checked={group.enabled} active="bg-primary-500" size="sm" on:change={() => {disableGroup(group)}}/>
+							</div>
+						</svelte:fragment>
 						<svelte:fragment slot="content">
 							<PlaylistChannel {playlistId} {playlistIdx} groupId={group.id} {groupIdx} />
 						</svelte:fragment>

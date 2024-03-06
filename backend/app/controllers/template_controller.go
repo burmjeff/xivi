@@ -726,7 +726,7 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 	}
 
 	// Create template channel.
-	id, err := database.Db.CreateTmplChannel(templateChannel)
+	id, err := database.Db.CreateTmplChannel(*templateChannel)
 	if err != nil {
 		log.Err(err)
 		// Return status 500 and error message.

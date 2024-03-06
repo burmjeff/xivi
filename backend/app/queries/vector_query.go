@@ -68,7 +68,10 @@ func (q *VectorQueries) UpdateTemplateChannelVector(channelVector *models.Templa
 func (q *VectorQueries) GetPlaylistChannelVectors() ([]models.PlaylistChannelVector, error) {
 	vectorChannels := []models.PlaylistChannelVector{}
 
-	query := `SELECT * FROM playlistchannelvectors`
+	query := `SELECT playlistchannelvectors.* FROM playlistchannelvectors
+			JOIN playlistchannel ON playlistchannel.id = playlistchannelvectors.channel_id
+			JOIN playlistgroup ON playlistgroup.id = playlistchannel.group_id
+			WHERE playlistgroup.enabled = true`
 
 	if err := q.Select(&vectorChannels, query); err != nil {
 		return nil, err

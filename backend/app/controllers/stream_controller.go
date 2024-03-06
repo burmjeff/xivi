@@ -300,35 +300,39 @@ func GetHlsChannels(c *fiber.Ctx) error {
 
 	channels := []models.LiveChannel{}
 	for _, tmplChannel := range tmplChannels {
-		channel := models.LiveChannel{}
-		channel.ID = tmplChannel.ID
-		channel.Name = tmplChannel.Name
+		if items, err := database.Db.GetTmplChannelItemsByCh(tmplChannel.ID); items != nil && len(*items) > 0 {
+			channel := models.LiveChannel{}
+			channel.ID = tmplChannel.ID
+			channel.Name = tmplChannel.Name
 
-		// Get logo.
-		logo, err := database.Db.GetLogo(tmplChannel.LogoId)
-		if err != nil {
-			log.Warn().Msgf("LiveChannel: No Logo found")
-		}
-		channel.Logo = utils.GetLogoUrl(logo.Name)
-
-		channel.Stream = fmt.Sprintf("http://%s:%d/stream/hls/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, tmplChannel.Uuid)
-
-		if tmplChannel.TvgID != nil {
-			if epgProgramme, err := database.Db.GetProgrammeByTime(*tmplChannel.TvgID, time.Now()); err != nil {
-				log.Warn().Msgf("LiveChannel: No EPG Programme found")
-			} else {
-				channel.Programme = epgProgramme.Title.Value
-				channel.Start = epgProgramme.Start.String()
-				channel.End = epgProgramme.Stop.String()
-
-				epgProgrammeNext, err := database.Db.GetProgrammeByTime(*tmplChannel.TvgID, epgProgramme.Start.Time)
-				if err != nil {
-					log.Warn().Msgf("LiveChannel: No EPG Next Programme found")
-				}
-				channel.Next = epgProgrammeNext.Title.Value
+			// Get logo.
+			logo, err := database.Db.GetLogo(tmplChannel.LogoId)
+			if err != nil {
+				log.Warn().Msgf("LiveChannel: No Logo found")
 			}
+			channel.Logo = utils.GetLogoUrl(logo.Name)
+
+			channel.Stream = fmt.Sprintf("http://%s:%d/stream/hls/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, tmplChannel.Uuid)
+
+			if tmplChannel.TvgID != nil {
+				if epgProgramme, err := database.Db.GetProgrammeByTime(*tmplChannel.TvgID, time.Now()); err != nil {
+					log.Warn().Msgf("LiveChannel: No EPG Programme found")
+				} else {
+					channel.Programme = epgProgramme.Title.Value
+					channel.Start = epgProgramme.Start.String()
+					channel.End = epgProgramme.Stop.String()
+
+					epgProgrammeNext, err := database.Db.GetProgrammeByTime(*tmplChannel.TvgID, epgProgramme.Start.Time)
+					if err != nil {
+						log.Warn().Msgf("LiveChannel: No EPG Next Programme found")
+					}
+					channel.Next = epgProgrammeNext.Title.Value
+				}
+			}
+			channels = append(channels, channel)
+		} else {
+			log.Debug().Msgf("No Channel URL found... Not adding channel to channel list, %v", err)
 		}
-		channels = append(channels, channel)
 	}
 
 	// Return status 200 OK.

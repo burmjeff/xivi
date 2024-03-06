@@ -10,9 +10,10 @@ export interface Playlist {
 export interface PlaylistGroup {
 	id: string;
 	name: string;
+	playlist_id: number;
+	enabled: boolean;
 	isDndShadowItem: boolean;
 	isDragged: boolean;
-	playlistId: number;
 	channels: PlaylistChannel[];
 }
 
@@ -21,6 +22,7 @@ export interface PlaylistChannel {
 	title: string;
 	tvg_id: string;
 	tvg_logo: string;
+	group_id: number;
 	enabled: boolean;
 	isDndShadowItem: boolean;
 	isDragged: boolean;

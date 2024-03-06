@@ -87,7 +87,7 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 		if s.count <= 0 || sinkBin == nil {
 			RemoveStream(s)
 			go func() {
-				if s.pipeline != nil {
+				if s.pipeline != nil && s.pipeline.GstObject() != nil {
 					if !s.pipeline.SendEvent(gst.NewEOSEvent()) {
 						log.Warn().Msg("WARNING: Failed to send EOS to pipeline")
 					}

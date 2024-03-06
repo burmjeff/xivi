@@ -12,7 +12,10 @@ CREATE TABLE playlist (
 -- Create playlistgroup table
 CREATE TABLE playlistgroup (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR (255) UNIQUE NOT NULL
+    name VARCHAR (255) NOT NULL,
+    playlist_id INTEGER NOT NULL,
+    enabled BOOLEAN DEFAULT true NOT NULL,
+    FOREIGN KEY (playlist_id) REFERENCES playlist(id) ON DELETE CASCADE
 );
 
 -- Create playlistchannel table
@@ -22,40 +25,21 @@ CREATE TABLE playlistchannel (
     tvg_name VARCHAR (255) NULL,
     tvg_logo VARCHAR (255) NULL,
     title VARCHAR (255) NOT NULL,
-    enabled BOOLEAN NOT NULL,
+    group_id INTEGER NOT NULL,
+    enabled BOOLEAN DEFAULT true NOT NULL,
     created_at DATETIME DEFAULT (datetime('now','localtime')),
-    updated_at DATETIME DEFAULT (datetime('now','localtime'))
+    updated_at DATETIME DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (group_id) REFERENCES playlistgroup(id) ON DELETE CASCADE
 );
 
 -- Create channelurl table
 CREATE TABLE channelurl (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     url VARCHAR (255) NOT NULL,
-    playlist_id INTEGER NOT NULL,
-    playlist_channel_id INTEGER NOT NULL,
+    channel_id INTEGER NOT NULL,
     orderr INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT (datetime('now','localtime')),
     updated_at DATETIME DEFAULT (datetime('now','localtime')),
-    FOREIGN KEY (playlist_id) REFERENCES playlist(id) ON DELETE CASCADE,
-    FOREIGN KEY (playlist_channel_id) REFERENCES playlistchannel(id) ON DELETE CASCADE
-);
-
--- Create playlist_group_item table
-CREATE TABLE playlist_group_item (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    playlist_id INTEGER NOT NULL,
-    group_id INTEGER NOT NULL,
-    FOREIGN KEY (playlist_id) REFERENCES playlist(id) ON DELETE CASCADE,
-    FOREIGN KEY (group_id) REFERENCES playlistgroup(id) ON DELETE CASCADE,
-    UNIQUE(playlist_id, group_id) ON CONFLICT IGNORE
-);
-
--- Create playlist_group_channel table
-CREATE TABLE playlist_group_channel (
-    group_id INTEGER NOT NULL,
-    channel_id INTEGER NOT NULL,
-    PRIMARY KEY (group_id, channel_id),
-    FOREIGN KEY (group_id) REFERENCES playlistgroup(id) ON DELETE CASCADE,
     FOREIGN KEY (channel_id) REFERENCES playlistchannel(id) ON DELETE CASCADE
 );
 
@@ -71,7 +55,7 @@ CREATE TABLE templategroup (
     name VARCHAR (255) UNIQUE NOT NULL,
     dynamic BOOLEAN,
     dynamicgroup INTEGER DEFAULT 0 NULL,
-    FOREIGN KEY (dynamicgroup) REFERENCES playlist_group_item(id) ON DELETE SET DEFAULT
+    FOREIGN KEY (dynamicgroup) REFERENCES playlistgroup(id) ON DELETE SET DEFAULT
 );
 
 -- Create templatechannel table
@@ -276,89 +260,46 @@ BEGIN
     WHERE id = new.id;
 END;
 
-CREATE TRIGGER delete_playlist_cascade
-AFTER DELETE ON playlist
+CREATE TRIGGER before_delete_playlistgroup
+BEFORE DELETE ON playlistgroup
 FOR EACH ROW
 BEGIN
-    DELETE FROM playlist_group_item WHERE playlist_id = old.id;
-    DELETE FROM playlistgroup WHERE id NOT IN (SELECT group_id FROM playlist_group_item);
-    UPDATE templategroup SET dynamic = false, dynamicgroup = 0 WHERE dynamicgroup NOT IN (SELECT id FROM playlist_group_item);
+    UPDATE templategroup SET dynamic = false, dynamicgroup = 0 WHERE dynamicgroup = old.id;
 END;
 
-CREATE TRIGGER delete_playlistgroup_cascade
-AFTER DELETE ON playlistgroup
-FOR EACH ROW
-BEGIN
-    DELETE FROM playlist_group_item WHERE group_id = old.id;
-    DELETE FROM playlist_group_channel WHERE group_id = old.id;
-    DELETE FROM groupfilters WHERE group_id = old.id;
-    DELETE FROM playlistchannel WHERE id NOT IN (SELECT channel_id FROM playlist_group_channel);
-    UPDATE templategroup SET dynamic = false, dynamicgroup = 0 WHERE dynamicgroup NOT IN (SELECT id FROM playlist_group_item);
-END;
-
-CREATE TRIGGER delete_playlistchannel_cascade
+CREATE TRIGGER delete_playlistchannel
 AFTER DELETE ON playlistchannel
 FOR EACH ROW
 BEGIN
-    DELETE FROM playlist_group_channel WHERE channel_id = old.id;
-    DELETE FROM templatechannelitem WHERE playlist_channel_id = old.id;
-    DELETE FROM channelurl WHERE playlist_channel_id = old.id;
-    DELETE FROM playlistchannelvectors WHERE channel_id = old.id;
-    DELETE FROM playlistgroup WHERE id NOT IN (SELECT group_id FROM playlist_group_channel);
+    DELETE FROM playlistgroup WHERE id NOT IN (SELECT group_id FROM playlistchannel) AND enabled = true;
 END;
 
-CREATE TRIGGER delete_channelurl_cascade
+CREATE TRIGGER delete_channelurl
 AFTER DELETE ON channelurl
 FOR EACH ROW
 BEGIN
-    DELETE FROM playlistchannel WHERE id NOT IN (SELECT playlist_channel_id FROM channelurl);
+    DELETE FROM playlistchannel WHERE id NOT IN (SELECT channel_id FROM channelurl);
 END;
 
-CREATE TRIGGER delete_epg_channel_cascade
+CREATE TRIGGER delete_epg_channel
 AFTER DELETE ON epgprogramme
 FOR EACH ROW
 BEGIN
-    DELETE FROM epgchannelitem WHERE epg_programme_id = old.id;
     DELETE FROM epgchannel WHERE id NOT IN (SELECT epg_channel_id FROM epgchannelitem);
 END;
 
-CREATE TRIGGER delete_template_cascade
-AFTER DELETE ON template
-FOR EACH ROW
-BEGIN
-    DELETE FROM template_group_item WHERE template_id = old.id;
-END;
-
-CREATE TRIGGER delete_template_group_cascade
+CREATE TRIGGER delete_template_group
 AFTER DELETE ON templategroup
 FOR EACH ROW
 BEGIN
-    DELETE FROM template_group_item WHERE group_id = old.id;
-    DELETE FROM template_group_channel WHERE group_id = old.id;
     DELETE FROM templatechannel WHERE id NOT IN (SELECT channel_id FROM template_group_channel);
 END;
 
-CREATE TRIGGER delete_template_channel_cascade
-AFTER DELETE ON templatechannel
-FOR EACH ROW
-BEGIN
-    DELETE FROM templatechannelvectors WHERE channel_id = old.id;
-    DELETE FROM template_group_channel WHERE channel_id = old.id;
-    DELETE FROM templatechannelitem WHERE channel_id = old.id;
-END;
-
-CREATE TRIGGER delete_logo_cascade
-AFTER DELETE ON logo
+CREATE TRIGGER delete_logo
+BEFORE DELETE ON logo
 FOR EACH ROW
 BEGIN
     UPDATE templatechannel SET logoid = 0 WHERE logoid = old.id;
-END;
-
-CREATE TRIGGER delete_regex_filters_cascade
-AFTER DELETE ON regexfilters
-FOR EACH ROW
-BEGIN
-    DELETE FROM groupfilters WHERE filter_id = old.id;
 END;
 
 -- Initial Values

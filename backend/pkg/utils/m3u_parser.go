@@ -126,6 +126,7 @@ func (m *M3uParser) parseLines() {
 func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan models.PlaylistChannel) {
 	validate := NewValidator()
 	playlistGroup := models.PlaylistGroup{}
+	playlistGroup.PlaylistId = m.playlistID
 	playlistChannel := models.PlaylistChannel{}
 	channelURL := models.ChannelUrl{}
 
@@ -137,7 +138,7 @@ func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan mode
 		tvgID := GetByRegex(m.regexes["tvgID"], line)
 		tvgName := GetByRegex(m.regexes["tvgName"], line)
 		tvgLogo := GetByRegex(m.regexes["tvgLogo"], line)
-		group := GetByRegex(m.regexes["group"], line)
+		groupName := GetByRegex(m.regexes["group"], line)
 		title := GetByRegex(m.regexes["title"], line)
 
 		if tvgID != "" {
@@ -162,22 +163,23 @@ func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan mode
 			playlistChannel.Title = tvgID
 		}
 
-		var groupID int64 = 0
-		if group != "" {
+		if groupName != "" {
 			// Checking, if playlist with given ID is exists.
-			if foundId, err := database.Db.GetPlGroupByName(group); foundId == 0 {
+			if group, err := database.Db.GetPlGroupByName(m.playlistID, groupName); group == nil {
 				log.Info().Msgf("Group not found. %v, Creating Group: %s", err, group)
-				playlistGroup.Name = group
-				if groupID, err = database.Db.CreatePlGroup(playlistGroup); groupID == 0 {
+				playlistGroup.Name = groupName
+				if groupId, err := database.Db.CreatePlGroup(playlistGroup); err != nil {
 					log.Error().Msgf("FAILED TO CREATE PLAYLIST GROUP: %v", err)
 					return
 				} else {
-					if _, err := database.Db.CreatePlGroupItem(m.playlistID, groupID); err != nil {
-						log.Error().Msgf("FAILED TO CREATE PLAYLIST_GROUP_ITEM: %v", err)
-					}
+					playlistChannel.GroupId = groupId
 				}
 			} else {
-				groupID = foundId
+				playlistChannel.GroupId = group.ID
+				if group.Enabled == false {
+					return
+				}
+
 			}
 		} else {
 			log.Error().Msgf("M3U PARSER: No Group found for %s", title)
@@ -192,7 +194,7 @@ func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan mode
 		}
 
 		//match playlist channels
-		foundChannels, err := database.Db.GetM3UParseByTvgID(tvgID, groupID, m.playlistID)
+		foundChannels, err := database.Db.GetM3UParseByTvgID(tvgID, playlistChannel.GroupId, m.playlistID)
 		if err != nil {
 			log.Error().Err(err)
 		}
@@ -206,13 +208,11 @@ func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan mode
 				return
 			}
 			playlistChannel.ID = playlistChannelID
-			m.createPlaylistGroupChannel(groupID, playlistChannel)
 			vectorIn <- playlistChannel
 
 			//Set channel URL model
 			channelURL.Url = streamLink
-			channelURL.PlaylistID = m.playlistID
-			channelURL.PlaylistChannelId = playlistChannel.ID
+			channelURL.ChannelId = playlistChannel.ID
 			channelURL.CreatedAt = time.Now()
 			err = database.Db.CreateChannelUrl(channelURL)
 			if err != nil {
@@ -223,20 +223,18 @@ func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan mode
 			for _, foundChannel := range foundChannels {
 				log.Info().Msgf("Channel found. Adding url to Channel: %s", playlistChannel.Title)
 				playlistChannel.UpdatedAt = time.Now()
+				playlistChannel.Enabled = foundChannel.Enabled
 				err = database.Db.UpdatePlChannel(foundChannel.ID, playlistChannel)
 				if err != nil {
 					log.Warn().Msg(err.Error())
 					return
 				}
 				playlistChannel.ID = foundChannel.ID
-				if foundChannel.Title != playlistChannel.Title {
-					vectorIn <- playlistChannel
-				}
+				vectorIn <- playlistChannel
 
 				//Set channel URL model
 				channelURL.Url = streamLink
-				channelURL.PlaylistID = m.playlistID
-				channelURL.PlaylistChannelId = foundChannel.ID
+				channelURL.ChannelId = foundChannel.ID
 
 				channelID, err := database.Db.ChannelUrlExists(m.playlistID, foundChannel.ID)
 				if err != nil {
@@ -257,14 +255,6 @@ func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan mode
 			}
 		}
 	}
-}
-
-func (m *M3uParser) createPlaylistGroupChannel(groupID int64, playlistChannel models.PlaylistChannel) {
-	_, err := database.Db.CreatePlGroupChannel(groupID, playlistChannel.ID)
-	if err != nil {
-		log.Debug().Msgf("FAILED TO CREATE PLAYLIST_GROUP_CHANNEL: %v", err)
-	}
-
 }
 
 func isValidURL(toTest string) bool {

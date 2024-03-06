@@ -280,21 +280,25 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 		}
 
 		for _, channel := range channels {
-			logo, err := database.Db.GetLogo(channel.LogoId)
-			if err != nil {
-				log.Warn().Msg(err.Error())
-				continue
-			}
-			logoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, GetLogoUrl(logo.Name))
-			channelURL := fmt.Sprintf("http://%s:%d/stream/%s", m.host, m.port, channel.Uuid)
+			if items, err := database.Db.GetTmplChannelItemsByCh(channel.ID); items == nil {
+				log.Debug().Msgf("No Channel URL found... Not adding channel to M3U, %v", err)
+			} else {
+				logo, err := database.Db.GetLogo(channel.LogoId)
+				if err != nil {
+					log.Warn().Msg(err.Error())
+					continue
+				}
+				logoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, GetLogoUrl(logo.Name))
+				channelURL := fmt.Sprintf("http://%s:%d/stream/%s", m.host, m.port, channel.Uuid)
 
-			log.Info().Msgf("M3U Creation: Adding Template Channel: %s", channel.Name)
+				log.Info().Msgf("M3U Creation: Adding Template Channel: %s", channel.Name)
 
-			if _, err = writer.WriteString(fmt.Sprintf("#EXTINF:-1 tvg-chno=\"%d\" tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n%s\n", chNo, channel.TvgID, channel.TvgID, logoURL, group.Name, channel.Name, channelURL)); err != nil {
-				log.Err(err)
-				continue
+				if _, err = writer.WriteString(fmt.Sprintf("#EXTINF:-1 tvg-chno=\"%d\" tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n%s\n", chNo, channel.TvgID, channel.TvgID, logoURL, group.Name, channel.Name, channelURL)); err != nil {
+					log.Err(err)
+					continue
+				}
+				chNo++
 			}
-			chNo++
 		}
 	}
 

@@ -165,7 +165,7 @@
 
 <style>
 	#accord {
-		max-height: 82vh;
-		height: 82vh;
+		max-height: 76vh;
+		height: 76vh;
 	}
 </style>
