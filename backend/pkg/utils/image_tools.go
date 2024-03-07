@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
@@ -56,7 +56,7 @@ func CreateLogo(logoUrl string) (int64, error) {
 		log.Warn().Msgf("Failed Image Download: %v", err)
 		return 0, err
 	}
-	logoName := strings.Split(path.Base(logoUrl), ".")[0]
+	logoName := strings.TrimSuffix(filepath.Base(logoUrl), filepath.Ext(logoUrl))
 
 	if err := saveImage(logoName, img); err != nil {
 		log.Warn().Msg(err.Error())
@@ -73,17 +73,23 @@ func CreateLogo(logoUrl string) (int64, error) {
 }
 
 func downloadImage(URL string) ([]byte, error) {
-	//Get the response bytes from the url
-	response, err := http.Get(URL)
+
+	req, err := http.NewRequest("GET", URL, nil)
 	if err != nil {
 		return nil, err
 	}
-	defer response.Body.Close()
+	req.Header.Set("User-Agent", "Mozilla/5.0")
 
-	if response.StatusCode != 200 {
-		return nil, errors.New(fmt.Sprintf("Received non 200 response code of %v", response.StatusCode))
+	resp, err := new(http.Client).Do(req)
+	if err != nil {
+		return nil, err
 	}
-	imgBuf, err := io.ReadAll(response.Body)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, errors.New(fmt.Sprintf("Received non 200 response code of %v", resp.StatusCode))
+	}
+	imgBuf, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}

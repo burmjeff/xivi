@@ -15,7 +15,7 @@ server:
 playlist:
   tvgid_match: true
   name_match: true
-  name_score: 0.95
+  name_score: 0.89
 
 streaming:
   type: mp2t

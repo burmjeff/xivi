@@ -292,8 +292,8 @@ func (q *TemplateQueries) DeleteTmplGroupItem(p *models.TemplateGroupItem) error
 }
 
 // Get template channels by template ID.
-func (q *TemplateQueries) GetTmplChannels(id int64) (*[]models.TemplateChannel, error) {
-	channels := &[]models.TemplateChannel{}
+func (q *TemplateQueries) GetTmplChannels(id int64) ([]models.TemplateChannel, error) {
+	channels := []models.TemplateChannel{}
 
 	query := `SELECT templatechannel.* FROM templatechannel 
 	JOIN template_group_channel ON templatechannel.id = template_group_channel.channel_id 
@@ -301,7 +301,7 @@ func (q *TemplateQueries) GetTmplChannels(id int64) (*[]models.TemplateChannel, 
 	WHERE template_group_item.template_id = ? 
 	ORDER BY template_group_channel.orderr ASC`
 
-	err := q.Select(channels, query, id)
+	err := q.Select(&channels, query, id)
 	if err != nil {
 		return nil, err
 	}

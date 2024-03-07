@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"xivi/backend/app/models"
@@ -35,7 +35,7 @@ func ConvertPlChannel(playlistChannel models.PlaylistChannel) int64 {
 		templateChannel.TvgID = playlistChannel.TvgID
 	}
 	if playlistChannel.Logo != nil {
-		logoName := strings.Split(path.Base(*playlistChannel.Logo), ".")[0]
+		logoName := strings.TrimSuffix(filepath.Base(*playlistChannel.Logo), filepath.Ext(*playlistChannel.Logo))
 		if logo := logoExists(logoName); logo != nil {
 			templateChannel.LogoId = logo.ID
 		} else {
