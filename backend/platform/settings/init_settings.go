@@ -109,7 +109,7 @@ func SetDefaults() (*AppSettings, error) {
 		Playlist: Playlist{
 			Tvgid_match: true,
 			Name_match:  true,
-			Name_score:  0.95,
+			Name_score:  0.89,
 		},
 		Streaming: Streaming{
 			Type:      "mp2t",

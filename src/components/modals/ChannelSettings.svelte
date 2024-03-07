@@ -26,6 +26,7 @@
 	let channelIdx = $modalStore[0].meta.channelIdx;
 	let isNew = $modalStore[0].meta.isNew;
 	let newImg = false;
+	let logoName: string;
 
 	let tvgidList: string[];
 	let tvgidInputList: string[];
@@ -158,7 +159,10 @@
 			headers: {
 				'Content-Type': 'application/json'
 			},
-			body: JSON.stringify({ image: formData.logo })
+			body: JSON.stringify({ 
+				image: formData.logo,
+				name: logoName
+			})
 		});
 		const data = await response.json();
 		return data.logo;
@@ -168,6 +172,7 @@
 		if (files) {
 			const result = String(await toBase64(files[0]));
 			if (result) {
+				logoName = files[0].name.replace(/\.[^/.]+$/, "")
 				formData.logo = result;
 				newImg = true;
 			}

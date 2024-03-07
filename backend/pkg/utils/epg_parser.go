@@ -69,7 +69,7 @@ func ParseEpg(epg *models.Epg) {
 	// Print out the parsed data
 	for _, channel := range epgItem.Channels {
 		if channel.ChannelId != "" {
-			_, err := database.Db.GetEpgChannelByChannelId(&channel.ChannelId)
+			_, err := database.Db.GetEpgChannelByChannelId(channel.ChannelId)
 			if err != nil {
 				log.Info().Msgf("EPG XML PARSER: Creating new channel: %s", channel.DisplayName)
 				if _, err = database.Db.CreateEpgChannel(channel); err != nil {

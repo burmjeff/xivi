@@ -73,11 +73,12 @@
 					fetchedData.forEach(function (group: PlaylistGroup) {
 						$playlists[i].groups.push(group);
 						$playlists[i].groups = $playlists[i].groups;
-						if (!isNew && formData.dynamicgroup !== 0 && formData.dynamicgroup !== undefined && Number(group.id) == formData.dynamicgroup) {
-								addedLabels[0] = `${$playlists[i].name} - ${group.name}`;
-						}
 					});
 				}
+			}
+
+			if (!isNew && formData.dynamicgroup !== 0 && formData.dynamicgroup !== undefined) {
+				addedLabels[0] = `${$playlists[i].name} - ${$playlists[i].groups.filter((group) => Number(group.id) == formData.dynamicgroup)[0].name}`
 			}
 
 			dynamicNames = $playlists[i].groups
