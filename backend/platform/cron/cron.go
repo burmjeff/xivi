@@ -33,7 +33,6 @@ func UpdatePlaylists() {
 
 	// get playlists.
 	playlists, err := database.Db.GetPlaylists()
-	cleanPlaylists(*playlists)
 	if err != nil {
 		log.Err(err)
 		return
@@ -41,18 +40,11 @@ func UpdatePlaylists() {
 
 	for _, playlist := range *playlists {
 		log.Log().Msgf("Updating Playlist: %s", playlist.Name)
+		startTime := time.Now()
 		m3uParser := utils.M3uParser{}
 		m3uParser.ParseM3u(playlist)
 
-		if channels, err := database.Db.GetPlChannels(playlist.ID); err != nil {
-			log.Err(err)
-		} else {
-			for _, channel := range *channels {
-				if channel.UpdatedAt.Before(time.Now().Add(-24*time.Hour)) && channel.CreatedAt.Before(time.Now().Add(-24*time.Hour)) {
-					database.Db.DeletePlChannel(channel.ID)
-				}
-			}
-		}
+		cleanPlaylists(*playlists, startTime)
 		log.Log().Msgf("Finished Updating Playlist: %s", playlist.Name)
 	}
 
@@ -92,7 +84,7 @@ func UpdateEpgs() {
 	}
 }
 
-func cleanPlaylists(playlists []models.Playlist) {
+func cleanPlaylists(playlists []models.Playlist, startTime time.Time) {
 	if len(playlists) == 0 {
 		if err := database.Db.DeletePlGroups(); err != nil {
 			log.Err(err)
@@ -107,6 +99,15 @@ func cleanPlaylists(playlists []models.Playlist) {
 			}
 			if err := database.Db.CleanPlaylistChannels(playlist.ID); err != nil {
 				log.Debug().Msgf("Playlist Clean: %v", err)
+			}
+			if channels, err := database.Db.GetPlChannels(playlist.ID); err != nil {
+				log.Err(err)
+			} else {
+				for _, channel := range *channels {
+					if channel.UpdatedAt.Before(startTime) && channel.CreatedAt.Before(startTime) {
+						database.Db.DeletePlChannel(channel.ID)
+					}
+				}
 			}
 		}
 	}

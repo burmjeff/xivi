@@ -314,6 +314,38 @@ func (q *PlaylistQueries) GetM3UParseByTvgID(tvgId string, groupId int64, playli
 	return channels, nil
 }
 
+func (q *PlaylistQueries) GetM3UParseByTvgName(tvg_name string, groupId int64, playlistId int64) ([]models.PlaylistChannel, error) {
+	channels := []models.PlaylistChannel{}
+
+	query := `SELECT playlistchannel.* FROM playlistchannel
+		JOIN playlistgroup ON playlistchannel.group_id = playlistgroup.id 
+		WHERE playlistgroup.id = ?
+		AND playlistgroup.playlist_id = ?
+		AND playlistchannel.tvg_name LIKE ?;`
+
+	if err := q.Select(&channels, query, groupId, playlistId, tvg_name); err != nil {
+		return nil, err
+	}
+
+	return channels, nil
+}
+
+func (q *PlaylistQueries) GetM3UParseByTitle(title string, groupId int64, playlistId int64) ([]models.PlaylistChannel, error) {
+	channels := []models.PlaylistChannel{}
+
+	query := `SELECT playlistchannel.* FROM playlistchannel
+		JOIN playlistgroup ON playlistchannel.group_id = playlistgroup.id 
+		WHERE playlistgroup.id = ?
+		AND playlistgroup.playlist_id = ?
+		AND playlistchannel.title LIKE ?;`
+
+	if err := q.Select(&channels, query, groupId, playlistId, title); err != nil {
+		return nil, err
+	}
+
+	return channels, nil
+}
+
 func (q *PlaylistQueries) CleanPlaylistGroups(id int64) error {
 	query := `DELETE FROM playlistgroup 
 		WHERE ? NOT IN (SELECT playlist_id FROM playlistgroup)`
