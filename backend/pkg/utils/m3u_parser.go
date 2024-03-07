@@ -35,7 +35,7 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 
 	m.regexes = make(map[string]*regexp.Regexp)
 	m.regexes["file"] = CompileRegex(`(?m)^[a-zA-Z]:\\((?:.*?\\)*).*.[\d\w]{3,5}$|^(/[^/]*)+/?.[\d\w]{3,5}$`)
-	//m.regexes["xuiID"] = CompileRegex(`xui-id="(.*?)"`)
+	m.regexes["xuiID"] = CompileRegex(`xui-id="(.*?)"`)
 	m.regexes["tvgID"] = CompileRegex(`tvg-id="(.*?)"`)
 	m.regexes["tvgName"] = CompileRegex(`tvg-name="(.*?)"`)
 	m.regexes["tvgLogo"] = CompileRegex(`tvg-logo="(.*?)"`)
@@ -144,6 +144,11 @@ func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan mode
 		if tvgID != "" {
 			playlistChannel.TvgID = &tvgID
 			//Add new channel vectors
+		} else {
+			tvgID = GetByRegex(m.regexes["xuiID"], line)
+			if tvgID != "" {
+				playlistChannel.TvgID = &tvgID
+			}
 		}
 		if tvgName != "" {
 			playlistChannel.TvgName = tvgName
@@ -196,12 +201,19 @@ func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan mode
 		//match playlist channels
 		foundChannels, err := database.Db.GetM3UParseByTvgID(tvgID, playlistChannel.GroupId, m.playlistID)
 		if err != nil {
-			log.Error().Err(err)
+			log.Error().Msgf("M3U_PARSER, tvg_id not found: %v", err)
+			if foundChannels, err = database.Db.GetM3UParseByTvgName(tvgName, playlistChannel.GroupId, m.playlistID); err != nil {
+				log.Error().Msgf("M3U_PARSER, tvg_name not found: %v", err)
+				if foundChannels, err = database.Db.GetM3UParseByTitle(title, playlistChannel.GroupId, m.playlistID); err != nil {
+					log.Error().Msgf("M3U_PARSER, title not found: %v", err)
+				}
+			}
 		}
 
 		if len(foundChannels) == 0 {
 			log.Info().Msgf("Channel not found. Creating Channel: %s", playlistChannel.Title)
 			playlistChannel.CreatedAt = time.Now()
+			playlistChannel.UpdatedAt = time.Now()
 			playlistChannelID, err := database.Db.CreatePlChannel(playlistChannel)
 			if err != nil {
 				log.Warn().Msg(err.Error())
@@ -214,6 +226,7 @@ func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan mode
 			channelURL.Url = streamLink
 			channelURL.ChannelId = playlistChannel.ID
 			channelURL.CreatedAt = time.Now()
+			channelURL.UpdatedAt = time.Now()
 			err = database.Db.CreateChannelUrl(channelURL)
 			if err != nil {
 				log.Warn().Msg(err.Error())
@@ -239,6 +252,7 @@ func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan mode
 				channelID, err := database.Db.ChannelUrlExists(m.playlistID, foundChannel.ID)
 				if err != nil {
 					channelURL.CreatedAt = time.Now()
+					channelURL.UpdatedAt = time.Now()
 					err = database.Db.CreateChannelUrl(channelURL)
 					if err != nil {
 						log.Warn().Msg(err.Error())

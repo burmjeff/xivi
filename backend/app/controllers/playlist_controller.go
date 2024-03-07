@@ -217,6 +217,7 @@ func CreatePlaylist(c *fiber.Ctx) error {
 
 	// Set initialized default data for playlist:
 	playlist.CreatedAt = time.Now()
+	playlist.UpdatedAt = time.Now()
 	//TODO IF Enable on new channel add: playlist.Enabled = 1 // 0 == inactive, 1 == active
 
 	// Validate playlist fields.
