@@ -40,7 +40,7 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 	m.regexes["tvgName"] = CompileRegex(`tvg-name="(.*?)"`)
 	m.regexes["tvgLogo"] = CompileRegex(`tvg-logo="(.*?)"`)
 	m.regexes["group"] = CompileRegex(`group-title="(.*?)"`)
-	m.regexes["title"] = CompileRegex(`[,](.*?)$`)
+	m.regexes["title"] = CompileRegex(`(?:",|" ,)(.*?)$`)
 
 	if isValidURL(playlist.URL) {
 		log.Info().Msg("Started parsing m3u URL...")
