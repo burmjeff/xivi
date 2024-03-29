@@ -300,7 +300,8 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 
 				log.Info().Msgf("M3U Creation: Adding Template Channel: %s", channel.Name)
 				if channel.TvgID == nil {
-					*channel.TvgID = "xivi"
+					xgid := "xivi"
+					channel.TvgID = &xgid
 				}
 
 				if _, err = writer.WriteString(fmt.Sprintf("#EXTINF:-1 tvg-chno=\"%d\" tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n%s\n", chNo, *channel.TvgID, *channel.TvgID, logoURL, group.Name, channel.Name, channelURL)); err != nil {
