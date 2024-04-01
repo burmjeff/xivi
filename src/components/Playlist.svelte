@@ -115,7 +115,7 @@
 		<div id="accord" class="playlists-viewport min-w-full overflow-auto">
 			{#if $playlists != null && $playlists.length > 0}
 				{#each $playlists as playlist, index (playlist.id)}
-					<AccordionItem class="card" key={playlist.id} bind:open={playlist.itemOpen}>
+					<AccordionItem class="card shadow-md mb-1" key={playlist.id} bind:open={playlist.itemOpen}>
 						<svelte:fragment slot="summary">
 							<div class="flex flex-row items-center">
 								<h4 class="text-lg">{playlist.name}</h4>

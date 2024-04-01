@@ -103,11 +103,10 @@ func UpdateDynamicGroup(group models.TemplateGroup) {
 	}
 
 	var foundChannels []models.TemplateChannel
-	for _, plChannel := range *plChannels {
+	for _, plChannel := range plChannels {
 		foundChannel := false
-
 		for _, tmplChannel := range tmplChannels {
-			if plChannel.TvgID == tmplChannel.TvgID {
+			if tmplChannel.TvgID != nil && plChannel.TvgID == tmplChannel.TvgID {
 				tmplChannel.Name = plChannel.Title
 				if err := database.Db.UpdateTmplChannel(tmplChannel); err != nil {
 					log.Err(err)

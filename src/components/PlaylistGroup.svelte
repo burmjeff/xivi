@@ -104,6 +104,23 @@
 
 {#if $playlists[playlistIdx].groups != null && $playlists[playlistIdx].groups.length > 0}
 	<Accordion>
+		<AccordionItem class="card shadow-md mb-1">
+			<svelte:fragment slot="summary">
+				<div class="flex flex-row items-center">
+					<h4>DISABLED GROUPS</h4>
+				</div>
+			</svelte:fragment>
+			<svelte:fragment slot="content">
+				{#each $playlists[playlistIdx].groups as group, groupIdx (group.id)}
+					{#if !group.enabled}
+						<div class="card shadow-md p-1 px-4 flex flex-row items-center content-center">
+							<span>{group.name}</span>
+							<SlideToggle class="ml-auto p-1" name="group_slider" bind:checked={group.enabled} active="bg-primary-500" size="sm" on:change={() => {disableGroup(group)}}/>
+						</div>
+					{/if}
+				{/each}
+			</svelte:fragment>
+		</AccordionItem>
 		<section
 			use:dndzone={{
 				items: $playlists[playlistIdx].groups,
@@ -117,21 +134,23 @@
 		>
 			{#each $playlists[playlistIdx].groups as group, groupIdx (group.id)}
 				<div id="animate" animate:flip={{ duration: flipDurationMs }}>
-					<AccordionItem class="card mb-1" key={group.id}>
-						<svelte:fragment slot="summary">
-							<div class="flex flex-row items-center">
-								<h4>{group.name}</h4>
-								<SlideToggle class="ml-auto p-1" name="group_slider" bind:checked={group.enabled} active="bg-primary-500" size="sm" on:change={() => {disableGroup(group)}}/>
+					{#if group.enabled}
+						<AccordionItem class="card shadow-md mb-1" key={group.id}>
+							<svelte:fragment slot="summary">
+								<div class="flex flex-row items-center">
+									<h4>{group.name}</h4>
+									<SlideToggle class="ml-auto p-1" name="group_slider" bind:checked={group.enabled} active="bg-primary-500" size="sm" on:change={() => {disableGroup(group)}}/>
+								</div>
+							</svelte:fragment>
+							<svelte:fragment slot="content">
+								<PlaylistChannel {playlistId} {playlistIdx} groupId={group.id} {groupIdx} />
+							</svelte:fragment>
+						</AccordionItem>
+						{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+							<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
+								{group.name}
 							</div>
-						</svelte:fragment>
-						<svelte:fragment slot="content">
-							<PlaylistChannel {playlistId} {playlistIdx} groupId={group.id} {groupIdx} />
-						</svelte:fragment>
-					</AccordionItem>
-					{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-						<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
-							{group.name}
-						</div>
+						{/if}
 					{/if}
 				</div>
 			{/each}

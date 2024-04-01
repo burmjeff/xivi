@@ -32,5 +32,6 @@ export interface Streaming {
 	type: string;
 	proxy: boolean;
 	buffer: number;
+	retryeos: number;
 	useragent: string;
 }

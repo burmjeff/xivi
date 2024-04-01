@@ -43,6 +43,8 @@
 			$settings.streaming.proxy.toString();
 		(document.querySelector('.settings_buffer input') as HTMLInputElement).value =
 			$settings.streaming.buffer.toString();
+			(document.querySelector('.settings_retryeos input') as HTMLInputElement).value =
+			$settings.streaming.retryeos.toString();
 		(document.querySelector('.settings_useragent input') as HTMLInputElement).value =
 			$settings.streaming.useragent;
 		(document.querySelector('.settings_tvgmatch select') as HTMLInputElement).value =
@@ -76,17 +78,12 @@
 		).value;
 		const inputType = (document.querySelector('.settings_type select') as HTMLInputElement).value;
 		const inputProxy = (document.querySelector('.settings_proxy select') as HTMLInputElement).value;
-		const inputBuffer = (document.querySelector('.settings_buffer input') as HTMLInputElement)
-			.value;
-		const inputUserAgent = (document.querySelector('.settings_useragent input') as HTMLInputElement)
-			.value;
-		const inputTvgMatch = (document.querySelector('.settings_tvgmatch select') as HTMLInputElement)
-			.value;
-		const inputNameMatch = (
-			document.querySelector('.settings_namematch select') as HTMLInputElement
-		).value;
-		const inputNameScore = (document.querySelector('.settings_namescore input') as HTMLInputElement)
-			.value;
+		const inputBuffer = (document.querySelector('.settings_buffer input') as HTMLInputElement).value;
+		const inputRetryEOS = (document.querySelector('.settings_retryeos input') as HTMLInputElement).value;
+		const inputUserAgent = (document.querySelector('.settings_useragent input') as HTMLInputElement).value;
+		const inputTvgMatch = (document.querySelector('.settings_tvgmatch select') as HTMLInputElement).value;
+		const inputNameMatch = (document.querySelector('.settings_namematch select') as HTMLInputElement).value;
+		const inputNameScore = (document.querySelector('.settings_namescore input') as HTMLInputElement).value;
 		if (
 			inputAppName != '' &&
 			inputAppVersion != '' &&
@@ -101,6 +98,7 @@
 			inputType != '' &&
 			inputProxy != '' &&
 			inputBuffer != '' &&
+			inputRetryEOS != '' &&
 			inputUserAgent != ''
 		) {
 			let newSettings: AppSettings;
@@ -129,6 +127,7 @@
 					type: inputType,
 					proxy: inputProxy === 'true',
 					buffer: Number(inputBuffer),
+					retryeos: Number(inputRetryEOS),
 					useragent: inputUserAgent
 				}
 			};
@@ -268,7 +267,11 @@
 				</div>
 				<label class="settings_buffer">
 					<span>Stream Buffer (Seconds)</span>
-					<input class="input variant-form-material" type="number" placeholder="0" />
+					<input class="input variant-form-material" type="number" placeholder="1" />
+				</label>
+				<label class="settings_retryeos">
+					<span>Number of times to retry on end-of-stream received</span>
+					<input class="input variant-form-material" type="number" placeholder="10" />
 				</label>
 				<label class="settings_useragent">
 					<span>Proxy User-Agent</span>

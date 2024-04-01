@@ -242,14 +242,14 @@ func (q *PlaylistQueries) GetChannelsByPl(id int64) (*[]models.PlaylistChannel, 
 }
 
 // Get all channels by Playlist Group.
-func (q *PlaylistQueries) GetPlGroupChannels(groupId int64) (*[]models.PlaylistChannel, error) {
-	channels := &[]models.PlaylistChannel{}
+func (q *PlaylistQueries) GetPlGroupChannels(groupId int64) ([]models.PlaylistChannel, error) {
+	channels := []models.PlaylistChannel{}
 
 	query := `SELECT playlistchannel.* FROM playlistchannel
 	JOIN playlistgroup ON playlistchannel.group_id = playlistgroup.id
 	WHERE playlistgroup.id = ?;`
 
-	err := q.Select(channels, query, groupId)
+	err := q.Select(&channels, query, groupId)
 	if err != nil {
 		log.Err(err)
 		return nil, err
