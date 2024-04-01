@@ -109,12 +109,13 @@ func SetDefaults() (*AppSettings, error) {
 		Playlist: Playlist{
 			Tvgid_match: true,
 			Name_match:  true,
-			Name_score:  0.89,
+			Name_score:  0.87,
 		},
 		Streaming: Streaming{
 			Type:      "mp2t",
 			Proxy:     true,
 			Buffer:    1,
+			RetryEOS:  10,
 			UserAgent: "Xivi 1.0",
 		},
 	}

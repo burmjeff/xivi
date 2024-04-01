@@ -413,7 +413,7 @@ func ConvertPlaylistGroup(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
-	go utils.ConvertPlGroup(tmplGroupID, *playlistChannels)
+	go utils.ConvertPlGroup(tmplGroupID, playlistChannels)
 
 	templateGroup.ID = tmplGroupID
 

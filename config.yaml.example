@@ -15,10 +15,11 @@ server:
 playlist:
   tvgid_match: true
   name_match: true
-  name_score: 0.89
+  name_score: 0.87
 
 streaming:
   type: mp2t
   proxy: true
   buffer: 1
+  retryEOS: 10
   useragent: Xivi 1.0

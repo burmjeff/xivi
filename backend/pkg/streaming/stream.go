@@ -573,6 +573,8 @@ func (s *Stream) mainLoop(loop *glib.MainLoop) error {
 
 	s.pipeline.GetPipelineBus().AddWatch(func(msg *gst.Message) bool {
 		var err error
+		retryEOS := settings.APP_SETTINGS.Streaming.Buffer
+		retry := 0
 		//log.Debug().Msgf("go-gst-debug-message: %v", msg)
 		switch msg.Type() {
 		case gst.MessageError:
@@ -582,7 +584,12 @@ func (s *Stream) mainLoop(loop *glib.MainLoop) error {
 			err = gerr
 			log.Debug().Msgf("go-gst-debug-message: %v", gerr.DebugString())
 		case gst.MessageEOS:
-			err = errors.New(fmt.Sprintf("EOS: %v", msg))
+			if retry < retryEOS {
+				s.pipeline.SetState(gst.StatePaused)
+				s.pipeline.SetState(gst.StatePlaying)
+			} else {
+				err = errors.New(fmt.Sprintf("EOS: %v", msg))
+			}
 		case gst.MessageBuffering:
 			bufPercent := msg.ParseBuffering()
 			log.Debug().Msgf("go-gst-debug - stream buffer percent: %v", bufPercent)

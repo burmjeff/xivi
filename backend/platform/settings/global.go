@@ -53,5 +53,6 @@ type Streaming struct {
 	Type      string `yaml:"type" json:"type"`
 	Proxy     bool   `yaml:"proxy" json:"proxy"`
 	Buffer    int    `yaml:"buffer" json:"buffer"`
+	RetryEOS  int    `yaml:"retryeos" json:"retryeos"`
 	UserAgent string `yaml:"useragent" json:"useragent"`
 }

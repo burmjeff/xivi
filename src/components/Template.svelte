@@ -142,7 +142,7 @@
 		{#if $templates.length > 0}
 			<Accordion>
 				{#each $templates as template, templateIdx (template.id)}
-					<AccordionItem class="card mb-1" key={template.id} bind:open={template.itemOpen}>
+					<AccordionItem class="card shadow-md mb-1" key={template.id} bind:open={template.itemOpen}>
 						<svelte:fragment slot="summary">
 							<div class="item-center flex flex-row">
 								<h4 class="text-lg">{template.name}</h4>

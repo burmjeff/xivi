@@ -73,7 +73,7 @@
 		<Accordion>
 			{#if $templates[selected].groups.length > 0}
 				{#each $templates[selected].groups as group, groupIdx (group.id)}
-					<div class="groups w-content justify-center p-1">
+					<div class="groups w-content justify-center p-1 card shadow-md mb-1">
 						<AccordionItem class="mb-1" key={groupIdx} bind:open={group.itemOpen}>
 							<svelte:fragment slot="summary">
 								<div class="flex flex-row items-center">

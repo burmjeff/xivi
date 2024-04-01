@@ -8,18 +8,12 @@
 	import 'vidstack/player';
 	import 'vidstack/player/layouts';
 	import 'vidstack/player/ui';
+	import { isHLSProvider, MediaRemoteControl, type MediaCanPlayEvent, type MediaProviderChangeEvent } from 'vidstack';
+	import type { MediaPlayerElement } from 'vidstack/elements';
 
 	import { onMount, type SvelteComponent } from 'svelte';
 	import { getModalStore } from '@skeletonlabs/skeleton';
 	import xivi from '$lib/assets/xivi.png';
-	import {
-		type MediaProviderSetupEvent,
-		type MediaProviderAdapter,
-		MediaRemoteControl,
-		isGoogleCastProvider
-	} from 'vidstack';
-
-	//export let parent: SvelteComponent;
 
 	const modalStore = getModalStore();
 	let videoUrl = $modalStore[0].meta.stream;
@@ -30,7 +24,7 @@
 
 	remote.disableCaptions();
 
-	onMount(async () => {
+	onMount(() => {
 		player.addEventListener('provider-setup', (event) => {
 			const provider = (<CustomEvent>event).detail;
 			if (provider?.type === 'google-cast') {
@@ -46,22 +40,46 @@
 				provider.hasActiveSession;
 			}
 		});
+		// Subscribe to state updates.
+		return player.subscribe(({ paused, viewType }) => {
+		// console.log('is paused?', '->', paused);
+		// console.log('is audio view?', '->', viewType === 'audio');
+    	});
 	});
+
+	function onProviderChange(event: MediaProviderChangeEvent) {
+		const provider = event.detail;
+		// We can configure provider's here.
+		if (isHLSProvider(provider)) {
+			provider.config = {};
+		}
+	}
+
+  // We can listen for the `can-play` event to be notified when the player is ready.
+  function onCanPlay(event: MediaCanPlayEvent) {
+    // ...
+  }
 </script>
 
 <media-player
-	bind:this={player}
-	title={name}
-	src={videoUrl}
-	class="player"
-	streamType="ll-live"
-	viewType="video"
-	crossorigin=""
-	autoPlay={boolTrue}
-	playsInline={boolTrue}
+  class="player"
+  title={name}
+  streamType="ll-live"
+  viewType="video"
+  src={videoUrl}
+  crossOrigin
+  playsInline
+  autoPlay
+  on:provider-change={onProviderChange}
+  on:can-play={onCanPlay}
+  bind:this={player}
 >
 	<media-provider>
-		<media-poster class="vds-poster" src={xivi} alt={name} />
+		<media-poster
+			class="vds-poster" 
+			src={xivi}
+			alt={name}
+		/>
 	</media-provider>
 	<!-- Layouts -->
 	<media-video-layout />

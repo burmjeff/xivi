@@ -343,7 +343,7 @@
 				{#if $templateGroups.length > 0}
 					{#each $templateGroups as group, groupIdx (group.id)}
 						<div id="animate" animate:flip={{ duration: flipDurationMs }}>
-							<AccordionItem class="card mb-1" key={groupIdx} bind:open={group.itemOpen}>
+							<AccordionItem class="card shadow-md mb-1" key={groupIdx} bind:open={group.itemOpen}>
 								<svelte:fragment slot="summary">
 									<div class="flex flex-row items-center">
 										<h4 class="text-lg">{group.name}</h4>
