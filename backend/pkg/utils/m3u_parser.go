@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -267,6 +268,16 @@ func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan mode
 					}
 				}
 			}
+		}
+		if playlistChannel.TvgID == nil {
+			tvgid := strconv.Itoa(int(playlistChannel.ID))
+			playlistChannel.TvgID = &tvgid
+			err = database.Db.UpdatePlChannel(playlistChannel.ID, playlistChannel)
+			if err != nil {
+				log.Warn().Msg(err.Error())
+				return
+			}
+
 		}
 	}
 }
