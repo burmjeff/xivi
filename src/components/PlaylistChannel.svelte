@@ -96,7 +96,7 @@
 		>
 			{#each $playlists[playlistIdx].groups[groupIdx].channels as channel, channelIdx (channel.id)}
 				<tr id="animate" animate:flip={{ duration: flipDurationMs }}>
-					<td><img crossorigin="anonymous" class="w-14" src={channel.tvg_logo} alt="Logo" /></td>
+					<td><img class="w-14" src="/proxy-image?url={channel.tvg_logo}" alt="Logo" /></td>
 					<td>{channel.title}</td>
 					<td>{channel.tvg_id}</td>
 

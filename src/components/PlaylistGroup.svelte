@@ -42,8 +42,10 @@
 		}
 	});
 
-	async function disableGroup(group: PlaylistGroup) {
+	async function disableGroup(e: any, group: PlaylistGroup) {
 		if (group !== null) {
+			group.enabled = e.target.checked;
+			
 			try {
 				const response = await fetch(`/api/playlist/group`, {
 					method: 'PUT',
@@ -115,7 +117,7 @@
 					{#if !group.enabled}
 						<div class="card shadow-md p-1 px-4 flex flex-row items-center content-center">
 							<span>{group.name}</span>
-							<SlideToggle class="ml-auto p-1" name="group_slider" bind:checked={group.enabled} active="bg-primary-500" size="sm" on:change={() => {disableGroup(group)}}/>
+							<SlideToggle class="ml-auto p-1" name="group_slider" bind:checked={group.enabled} active="bg-primary-500" size="sm" on:click={(event) => disableGroup(event, group)}/>
 						</div>
 					{/if}
 				{/each}
@@ -139,7 +141,7 @@
 							<svelte:fragment slot="summary">
 								<div class="flex flex-row items-center">
 									<h4>{group.name}</h4>
-									<SlideToggle class="ml-auto p-1" name="group_slider" bind:checked={group.enabled} active="bg-primary-500" size="sm" on:change={() => {disableGroup(group)}}/>
+									<SlideToggle class="ml-auto p-1" name="group_slider" bind:checked={group.enabled} active="bg-primary-500" size="sm" on:click={(event) => disableGroup(event, group)}/>
 								</div>
 							</svelte:fragment>
 							<svelte:fragment slot="content">

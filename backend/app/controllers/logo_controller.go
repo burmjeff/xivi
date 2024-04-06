@@ -1,6 +1,9 @@
 package controllers
 
 import (
+	"io"
+	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -300,4 +303,64 @@ func DeleteLogo(c *fiber.Ctx) error {
 
 	// Return status 204 no content.
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func ProxyImage(c *fiber.Ctx) error {
+	// Get the URL of the image from the query parameter
+	imageURL := c.Query("url")
+	if imageURL == "" {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Missing URL parameter",
+		})
+	}
+
+	// Parse the image URL
+	parsedURL, err := url.Parse(imageURL)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid URL",
+		})
+	}
+
+	// Create a new request to the external server
+	req, err := http.NewRequest("GET", parsedURL.String(), nil)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Error creating request",
+		})
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+
+	resp, err := new(http.Client).Do(req)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Error sending request",
+		})
+	}
+	defer resp.Body.Close()
+
+	// Set the appropriate Content-Type header
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = http.DetectContentType(nil)
+	}
+	c.Set("Content-Type", contentType)
+
+	// Set the response status code
+	c.Status(resp.StatusCode)
+
+	// Serve the image
+	_, err = io.Copy(c, resp.Body)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Error sending request",
+		})
+	}
+
+	return nil
 }

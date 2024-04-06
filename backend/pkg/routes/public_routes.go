@@ -70,6 +70,7 @@ func PublicRoutes(a *fiber.App) {
 	api.Get("/logo/:logoid", controllers.GetLogo)       // get a logo by ID
 	api.Post("/logo", controllers.UploadLogo)           // create a new logo
 	api.Delete("/logo/:logoid", controllers.DeleteLogo) // delete a logo by ID
+	router.Get("/proxy-image", controllers.ProxyImage)  // proxy image urls
 
 	// Settings Routes
 	api.Get("/settings", controllers.GetSettings)    // get settings

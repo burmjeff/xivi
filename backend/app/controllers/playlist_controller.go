@@ -541,7 +541,7 @@ func UpdatePlaylistGroup(c *fiber.Ctx) error {
 		})
 	}
 
-	// Update template group.
+	// Update playlist group.
 	if err := database.Db.UpdatePlGroup(playlistGroup); err != nil {
 		log.Err(err)
 		// Return status 500 and error message.
