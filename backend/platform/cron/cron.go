@@ -38,15 +38,15 @@ func UpdatePlaylists() {
 		return
 	}
 
+	startTime := time.Now()
 	for _, playlist := range *playlists {
 		log.Log().Msgf("Updating Playlist: %s", playlist.Name)
-		startTime := time.Now()
 		m3uParser := utils.M3uParser{}
 		m3uParser.ParseM3u(playlist)
-
-		cleanPlaylists(*playlists, startTime)
 		log.Log().Msgf("Finished Updating Playlist: %s", playlist.Name)
 	}
+
+	cleanPlaylists(*playlists, startTime)
 
 	if groups, err := database.Db.GetAllTmplGroups(); err != nil {
 		log.Err(err)
