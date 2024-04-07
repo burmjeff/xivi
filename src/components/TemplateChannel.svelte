@@ -194,7 +194,7 @@
 						animate:flip={{ duration: flipDurationMs }}
 						on:click={() => modalSettings(channelIdx)}
 					>
-						<td><img class="w-14" src={channel.logo} alt="Logo" /></td>
+						<td><img class="max-w-16 max-h-10" src={channel.logo} alt="Logo" /></td>
 						<td>{channel.name}</td>
 						<td>{channel.tvgid}</td>
 

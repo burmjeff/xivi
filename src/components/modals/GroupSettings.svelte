@@ -65,6 +65,9 @@
 		if ($playlists.length == 0) {
 			playlists.set(await updatePlaylists());
 		}
+		dynamicNames = [];
+		dynamicOptions = [];
+		
 		for (let i = 0; i < $playlists.length; i++) {
 			if ($playlists[i].groups == undefined) {
 				$playlists[i].groups = [];
@@ -77,16 +80,18 @@
 				}
 			}
 
-			if (!isNew && formData.dynamicgroup !== 0 && formData.dynamicgroup !== undefined) {
-				addedLabels[0] = `${$playlists[i].name} - ${$playlists[i].groups.filter((group) => Number(group.id) == formData.dynamicgroup)[0].name}`
-			}
+			
 
-			dynamicNames = $playlists[i].groups
+			dynamicNames.push(...$playlists[i].groups
 				.filter((group) => group.enabled)
 				.map((group) => {
+					if (!isNew && formData.dynamic == true && formData.dynamicgroup == Number(group.id)) {
+						addedLabels[0] = `${$playlists[i].name} - ${$playlists[i].groups.filter((group) => Number(group.id) == formData.dynamicgroup)[0].name}`
+					}
 					return `${$playlists[i].name} - ${group.name}`;
-				});
-			dynamicOptions = $playlists[i].groups
+				})
+			);
+			dynamicOptions.push(...$playlists[i].groups
 				.filter((group) => group.enabled)
 				.map((group) => {
 					return {
@@ -94,7 +99,8 @@
 						value: `${$playlists[i].name} - ${group.name}`,
 						meta: `${$playlists[i].id},${group.id}`
 					};
-				});
+				})
+			);
 		}
 
 		
