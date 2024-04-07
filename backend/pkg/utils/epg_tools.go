@@ -62,7 +62,7 @@ func CreateEpgXML(template models.Template) {
 			log.Warn().Msgf("No EPG programme found for %s: %v", channel.ChannelId, err)
 
 			timeNow := &models.Time{Time: time.Now().Truncate(time.Hour)}
-			timeFrame := 2
+			timeFrame := 4
 
 			for i := 0; i <= 48; i += timeFrame {
 				programme := &models.EpgProgramme{
