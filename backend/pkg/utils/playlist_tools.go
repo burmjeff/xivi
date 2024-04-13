@@ -26,7 +26,6 @@ func ConvertPlGroup(templateGroup int64, playlistChannels []models.PlaylistChann
 func ConvertPlChannel(playlistChannel models.PlaylistChannel) int64 {
 	validate := NewValidator()
 	templateChannel := &models.TemplateChannel{}
-	tmplChannelItem := &models.TemplateChannelItem{}
 
 	if playlistChannel.Title != "" {
 		templateChannel.Name = playlistChannel.Title
@@ -54,12 +53,21 @@ func ConvertPlChannel(playlistChannel models.PlaylistChannel) int64 {
 		if err != nil {
 			log.Warn().Msg(err.Error())
 		} else {
-			tmplChannelItem.ChannelId = channelID
-			tmplChannelItem.PlaylistChannelId = playlistChannel.ID
+			templateChannel.ID = channelID
+			tmplChannelItem := &models.TemplateChannelItem{
+				ChannelId:         channelID,
+				PlaylistChannelId: playlistChannel.ID,
+			}
 			database.Db.CreateTmplChannelItem(tmplChannelItem)
+
+			go func() {
+				UpdateTemplateVector(templateChannel)
+				MatchTemplateChannel(templateChannel)
+			}()
 		}
 		return channelID
 	}
+
 	return 0
 }
 
@@ -97,7 +105,7 @@ func UpdateDynamicGroup(group models.TemplateGroup) {
 		log.Debug().Msg(err.Error())
 	}
 
-	plChannels, err := database.Db.GetPlGroupChannels(group.DynamicGroup)
+	plChannels, err := database.Db.GetPlGroupChannels(*group.DynamicGroup)
 	if err != nil {
 		log.Warn().Msg(err.Error())
 	}

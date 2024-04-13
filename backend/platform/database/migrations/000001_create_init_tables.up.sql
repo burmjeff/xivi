@@ -54,8 +54,8 @@ CREATE TABLE templategroup (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR (255) UNIQUE NOT NULL,
     dynamic BOOLEAN,
-    dynamicgroup INTEGER DEFAULT 0 NULL,
-    FOREIGN KEY (dynamicgroup) REFERENCES playlistgroup(id) ON DELETE SET DEFAULT
+    dynamicgroup INTEGER NULL,
+    FOREIGN KEY (dynamicgroup) REFERENCES playlistgroup(id) ON DELETE SET NULL
 );
 
 -- Create templatechannel table
@@ -264,7 +264,7 @@ CREATE TRIGGER before_delete_playlistgroup
 BEFORE DELETE ON playlistgroup
 FOR EACH ROW
 BEGIN
-    UPDATE templategroup SET dynamic = false, dynamicgroup = 0 WHERE dynamicgroup = old.id;
+    UPDATE templategroup SET dynamic = false WHERE dynamicgroup = old.id;
 END;
 
 CREATE TRIGGER delete_playlistchannel

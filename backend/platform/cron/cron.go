@@ -22,9 +22,11 @@ func RunCronJobs() {
 	s := gocron.NewScheduler(localTime)
 	playlistJob, err := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(UpdatePlaylists)
 	epgJob, err := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(UpdateEpgs)
+	vacuumJob, err := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(VacuumDB)
 
-	log.Printf("Playlist update scheduled at: %s", playlistJob.ScheduledAtTime())
-	log.Printf("Playlist update scheduled at: %s", epgJob.ScheduledAtTime())
+	log.Log().Msgf("Playlist update scheduled at: %s", playlistJob.ScheduledAtTime())
+	log.Log().Msgf("EPG update scheduled at: %s", epgJob.ScheduledAtTime())
+	log.Log().Msgf("Database vacuum scheduled at: %s", vacuumJob.ScheduledAtTime())
 
 	s.StartAsync()
 }
@@ -37,16 +39,14 @@ func UpdatePlaylists() {
 		log.Err(err)
 		return
 	}
-
 	startTime := time.Now()
 	for _, playlist := range *playlists {
 		log.Log().Msgf("Updating Playlist: %s", playlist.Name)
 		m3uParser := utils.M3uParser{}
 		m3uParser.ParseM3u(playlist)
+		cleanPlaylist(playlist, startTime)
 		log.Log().Msgf("Finished Updating Playlist: %s", playlist.Name)
 	}
-
-	cleanPlaylists(*playlists, startTime)
 
 	if groups, err := database.Db.GetAllTmplGroups(); err != nil {
 		log.Err(err)
@@ -84,32 +84,29 @@ func UpdateEpgs() {
 	}
 }
 
-func cleanPlaylists(playlists []models.Playlist, startTime time.Time) {
-	if len(playlists) == 0 {
-		if err := database.Db.DeletePlGroups(); err != nil {
-			log.Err(err)
-		}
-		if err := database.Db.DeletePlChannels(); err != nil {
-			log.Err(err)
-		}
+func cleanPlaylist(playlist models.Playlist, startTime time.Time) {
+	if err := database.Db.CleanPlaylistGroups(playlist.ID); err != nil {
+		log.Debug().Msgf("Playlist Clean: %v", err)
+	}
+	if err := database.Db.CleanPlaylistChannels(playlist.ID); err != nil {
+		log.Debug().Msgf("Playlist Clean: %v", err)
+	}
+	if channels, err := database.Db.GetPlChannels(playlist.ID); err != nil {
+		log.Err(err)
 	} else {
-		for _, playlist := range playlists {
-			if err := database.Db.CleanPlaylistGroups(playlist.ID); err != nil {
-				log.Debug().Msgf("Playlist Clean: %v", err)
-			}
-			if err := database.Db.CleanPlaylistChannels(playlist.ID); err != nil {
-				log.Debug().Msgf("Playlist Clean: %v", err)
-			}
-			if channels, err := database.Db.GetPlChannels(playlist.ID); err != nil {
-				log.Err(err)
-			} else {
-				for _, channel := range *channels {
-					if channel.UpdatedAt.Before(startTime) && channel.CreatedAt.Before(startTime) {
-						database.Db.DeletePlChannel(channel.ID)
-					}
-				}
+		for _, channel := range *channels {
+			if channel.UpdatedAt.Before(startTime) && channel.CreatedAt.Before(startTime) {
+				database.Db.DeletePlChannel(channel.ID)
 			}
 		}
 	}
+}
 
+func VacuumDB() {
+	// Call INCREMENTAL VACUUM
+	err := database.Db.VacuumDB()
+	if err != nil {
+		log.Debug().Msgf("Database vacuum: %v", err)
+	}
+	log.Debug().Msgf("Database vacuum completed")
 }

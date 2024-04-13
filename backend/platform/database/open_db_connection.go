@@ -23,6 +23,7 @@ type Queries struct {
 	*queries.VectorQueries   // load queries from Vector model
 	*queries.LogoQueries     // load queries from Logo model
 	*queries.StreamQueries   // load queries from Stream model
+	*queries.CleanupQueries  // load Cleanup queries
 }
 
 // OpenDBConnection func for opening database connection.
@@ -43,11 +44,12 @@ func OpenDBConnection() (*Queries, error) {
 		VectorQueries:   &queries.VectorQueries{DB: db},   // from Vector model
 		LogoQueries:     &queries.LogoQueries{DB: db},     // from Logo model
 		StreamQueries:   &queries.StreamQueries{DB: db},   // from Stream model
+		CleanupQueries:  &queries.CleanupQueries{DB: db},  // from Cleanup model
 	}, nil
 }
 
 func getDB() (*sqlx.DB, error) {
-	return sqlx.Open("sqlite3", fmt.Sprintf("%s/xivi.db?_journal_mode=WAL", settings.CONFIG_PATH))
+	return sqlx.Open("sqlite3", fmt.Sprintf("%s/xivi.db?_journal_mode=WAL&_foreign_keys=on&_cache_size=-64000&_auto_vacuum=2", settings.CONFIG_PATH))
 }
 
 func InitDB(db *sqlx.DB) error {
