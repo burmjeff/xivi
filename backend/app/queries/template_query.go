@@ -176,6 +176,11 @@ func (q *TemplateQueries) GetTmplGroupByName(name string) (*models.TemplateGroup
 
 // Create a template group by given Group object.
 func (q *TemplateQueries) CreateTmplGroup(t *models.TemplateGroup) (int64, error) {
+
+	if t.DynamicGroup != nil && *t.DynamicGroup == 0 {
+		t.DynamicGroup = nil
+	}
+
 	query := `INSERT INTO templategroup VALUES (null, ?, ?, ?)`
 
 	res, err := q.Exec(query, t.Name, t.Dynamic, t.DynamicGroup)
@@ -193,6 +198,11 @@ func (q *TemplateQueries) CreateTmplGroup(t *models.TemplateGroup) (int64, error
 
 // Update a template group by given Group object.
 func (q *TemplateQueries) UpdateTmplGroup(t *models.TemplateGroup) error {
+
+	if t.DynamicGroup != nil && *t.DynamicGroup == 0 {
+		t.DynamicGroup = nil
+	}
+
 	query := `UPDATE templategroup SET name = ?, dynamic = ?, dynamicgroup = ? WHERE id = ?`
 
 	_, err := q.Exec(query, t.Name, t.Dynamic, t.DynamicGroup, t.ID)

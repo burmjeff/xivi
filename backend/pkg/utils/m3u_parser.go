@@ -86,6 +86,7 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 }
 
 func (m *M3uParser) parseLines() {
+	chunkSize := 10
 	var wg sync.WaitGroup
 	vectorIn := make(chan models.PlaylistChannel)
 	go PlaylistVectorQueue(vectorIn)
@@ -93,11 +94,14 @@ func (m *M3uParser) parseLines() {
 	re := CompileRegex("#EXTINF")
 
 	var chunks [][]string
-	chunkSize := int(math.RoundToEven(float64(len(m.lines)/10))) + 1
+	if len(m.lines) > 100 {
+		chunkSize = int(math.RoundToEven(float64(len(m.lines) / 10)))
+	}
+
 	for i := 0; i < len(m.lines); i += chunkSize {
 		end := i + chunkSize
 
-		if end > len(m.lines) {
+		if end >= len(m.lines) {
 			end = len(m.lines)
 		} else if re.Match([]byte(m.lines[end])) {
 			end += 1
@@ -131,11 +135,8 @@ func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan mode
 	playlistChannel := models.PlaylistChannel{}
 	channelURL := models.ChannelUrl{}
 
-	//channel := make(Channel)
-
 	if line != "" && streamLink != "" {
 
-		//xuiID := GetByRegex(m.regexes["xuiID"], lineInfo)
 		tvgID := GetByRegex(m.regexes["tvgID"], line)
 		tvgName := GetByRegex(m.regexes["tvgName"], line)
 		tvgLogo := GetByRegex(m.regexes["tvgLogo"], line)

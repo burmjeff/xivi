@@ -286,12 +286,12 @@ func (q *PlaylistQueries) GetPlChannelsByName(name string) (*[]models.PlaylistCh
 }
 
 // Get channels by TvgID.
-func (q *PlaylistQueries) GetPlChannelsByTvgID(tvgid string) (*[]models.PlaylistChannel, error) {
-	channels := &[]models.PlaylistChannel{}
+func (q *PlaylistQueries) GetPlChannelsByTvgID(tvgid string) ([]models.PlaylistChannel, error) {
+	channels := []models.PlaylistChannel{}
 
 	query := `SELECT * FROM playlistchannel WHERE tvg_id LIKE ?`
 
-	if err := q.Select(channels, query, tvgid); err != nil {
+	if err := q.Select(&channels, query, tvgid); err != nil {
 		return nil, err
 	}
 
@@ -344,33 +344,6 @@ func (q *PlaylistQueries) GetM3UParseByTitle(title string, groupId int64, playli
 	}
 
 	return channels, nil
-}
-
-func (q *PlaylistQueries) CleanPlaylistGroups(id int64) error {
-	query := `DELETE FROM playlistgroup 
-		WHERE ? NOT IN (SELECT playlist_id FROM playlistgroup)`
-
-	if _, err := q.Exec(query, id); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (q *PlaylistQueries) CleanPlaylistChannels(id int64) error {
-	query := `DELETE FROM playlistchannel
-	WHERE ROWID IN (
-		SELECT playlistchannel.ROWID FROM playlistchannel
-		JOIN playlistgroup ON playlistchannel.group_id = playlistgroup.id
-		WHERE ? NOT IN (SELECT playlist_id FROM playlistgroup)
-		OR playlistgroup.enabled = false
-	)`
-
-	if _, err := q.Exec(query, id); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // CreateChannel method for creating a Channel by given Channel object.

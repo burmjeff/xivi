@@ -5,7 +5,7 @@ type TemplateGroup struct {
 	ID           int64  `db:"id" json:"id"`
 	Name         string `db:"name" json:"name" validate:"required,lte=255"`
 	Dynamic      bool   `db:"dynamic" json:"dynamic"`
-	DynamicGroup int64  `db:"dynamicgroup" json:"dynamicgroup"`
+	DynamicGroup *int64 `db:"dynamicgroup" json:"dynamicgroup"`
 }
 
 type TemplateGroupItem struct {
