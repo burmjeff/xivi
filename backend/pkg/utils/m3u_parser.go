@@ -173,7 +173,7 @@ func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan mode
 		if groupName != "" {
 			// Checking, if playlist with given ID is exists.
 			if group, err := database.Db.GetPlGroupByName(m.playlistID, groupName); group == nil {
-				log.Info().Msgf("Group not found. %v, Creating Group: %s", err, group)
+				log.Info().Msgf("Group not found. %v, Creating Group: %s", err, groupName)
 				playlistGroup.Name = groupName
 				if groupId, err := database.Db.CreatePlGroup(playlistGroup); err != nil {
 					log.Error().Msgf("FAILED TO CREATE PLAYLIST GROUP: %v", err)

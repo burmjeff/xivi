@@ -10,7 +10,6 @@ export interface Application {
 	appversion: string;
 	tz: string;
 	servepath: string;
-	model: string;
 	loglevel: number;
 	updatecron: string;
 	ssdp: boolean;

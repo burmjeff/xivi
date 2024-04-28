@@ -69,9 +69,6 @@ func InitSettings() error {
 				appSettings.Server.ReadTimeout = timeout
 			}
 		}
-		if env, exists := os.LookupEnv("MODEL_NAME"); exists {
-			appSettings.Application.Model = env
-		}
 		if env, exists := os.LookupEnv("LOG_LEVEL"); exists {
 			level, err := strconv.Atoi(env)
 			if err != nil {
@@ -96,7 +93,6 @@ func SetDefaults() (*AppSettings, error) {
 			AppVersion: "1.0",
 			TZ:         "America/New_York",
 			ServePath:  "./serve",
-			Model:      "sentence-transformers/all-MiniLM-L6-v2",
 			LogLevel:   3,
 			UpdateCron: "0 0 * * *",
 			Ssdp:       true,
@@ -147,7 +143,6 @@ func InitPaths() error {
 		EPG_FILEPATH = fmt.Sprintf("%s/epg", SERVE_PATH)
 		LOGO_FILEPATH = fmt.Sprintf("%s/logo", SERVE_PATH)
 		STREAM_FILEPATH = fmt.Sprintf("%s/stream", SERVE_PATH)
-		MODEL_PATH = fmt.Sprintf("%s/models", CONFIG_PATH)
 	}
 	if _, err := os.Stat(CONFIG_PATH); errors.Is(err, os.ErrNotExist) {
 		err := os.Mkdir(CONFIG_PATH, os.ModePerm)
@@ -181,12 +176,6 @@ func InitPaths() error {
 	}
 	if _, err := os.Stat(STREAM_FILEPATH); errors.Is(err, os.ErrNotExist) {
 		err := os.Mkdir(STREAM_FILEPATH, os.ModePerm)
-		if err != nil {
-			return err
-		}
-	}
-	if _, err := os.Stat(MODEL_PATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(MODEL_PATH, os.ModePerm)
 		if err != nil {
 			return err
 		}

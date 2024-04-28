@@ -15,7 +15,9 @@ func FiberMiddleware(a *fiber.App) {
 			AllowOrigins:     "*",
 			AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
 			AllowMethods:     "GET, HEAD, PUT, PATCH, POST, DELETE",
-			AllowCredentials: true,
+			AllowCredentials: false,
+			ExposeHeaders:    "",
+			MaxAge:           0,
 		}),
 		// Add simple logger.
 		logger.New(),

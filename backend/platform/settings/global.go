@@ -17,7 +17,6 @@ var M3U_FILEPATH = fmt.Sprintf("%s/m3u", SERVE_PATH)
 var EPG_FILEPATH = fmt.Sprintf("%s/epg", SERVE_PATH)
 var LOGO_FILEPATH = fmt.Sprintf("%s/logo", SERVE_PATH)
 var STREAM_FILEPATH = fmt.Sprintf("%s/stream", SERVE_PATH)
-var MODEL_PATH = fmt.Sprintf("%s/models", CONFIG_PATH)
 
 type AppSettings struct {
 	Application `yaml:"application" json:"application"`
@@ -31,7 +30,6 @@ type Application struct {
 	AppVersion string `yaml:"appversion" json:"appversion"`
 	TZ         string `yaml:"tz" json:"tz"`
 	ServePath  string `yaml:"servepath" json:"servepath"`
-	Model      string `yaml:"model" json:"model"`
 	LogLevel   int    `yaml:"loglevel" json:"loglevel"`
 	UpdateCron string `yaml:"updatecron" json:"updatecron"`
 	Ssdp       bool   `yaml:"ssdp" json:"ssdp"`
