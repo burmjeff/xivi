@@ -23,8 +23,6 @@
 			$settings.application.tz;
 		(document.querySelector('.settings_servepath input') as HTMLInputElement).value =
 			$settings.application.servepath;
-		(document.querySelector('.settings_model input') as HTMLInputElement).value =
-			$settings.application.model;
 		(document.querySelector('.settings_loglevel input') as HTMLInputElement).value =
 			$settings.application.loglevel.toString();
 		(document.querySelector('.settings_updatecron input') as HTMLInputElement).value =
@@ -64,7 +62,6 @@
 		const inputTZ = (document.querySelector('.settings_tz input') as HTMLInputElement).value;
 		const inputServePath = (document.querySelector('.settings_servepath input') as HTMLInputElement)
 			.value;
-		const inputModel = (document.querySelector('.settings_model input') as HTMLInputElement).value;
 		const inputLogLevel = (document.querySelector('.settings_loglevel input') as HTMLInputElement)
 			.value;
 		const inputUpdateCron = (
@@ -108,7 +105,6 @@
 					appversion: inputAppVersion,
 					tz: inputTZ,
 					servepath: inputServePath,
-					model: inputModel,
 					loglevel: Number(inputLogLevel),
 					updatecron: inputUpdateCron,
 					ssdp: inputSsdp === 'true'
@@ -172,14 +168,6 @@
 				<label class="settings_servepath">
 					<span>File Serve Path (m3u/xml)</span>
 					<input class="input variant-form-material" type="text" placeholder="./serve" />
-				</label>
-				<label class="settings_model">
-					<span>Text Matching Model</span>
-					<input
-						class="input variant-form-material"
-						type="text"
-						placeholder="sentence-transformers/all-MiniLM-L6-v2"
-					/>
 				</label>
 				<label class="settings_loglevel">
 					<span>Log Level</span>

@@ -25,3 +25,6 @@ xivi.exe
 
 #node
 node_modules/
+
+#rust
+target/

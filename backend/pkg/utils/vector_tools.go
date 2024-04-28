@@ -1,20 +1,20 @@
-// Copyright 2022 The NLP Odyssey Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package utils
 
+/*
+#cgo CFLAGS: -I/build/
+#cgo LDFLAGS: /build/libcandle_embeddings.a
+
+#include "candle-embeddings.h"
+*/
+import "C"
+
 import (
-	"context"
-	"errors"
+	"encoding/json"
 	"math"
+	"unsafe"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
-	"xivi/backend/platform/settings"
 
-	"github.com/nlpodyssey/cybertron/pkg/models/bert"
-	"github.com/nlpodyssey/cybertron/pkg/tasks"
-	"github.com/nlpodyssey/cybertron/pkg/tasks/textencoding"
 	"github.com/rs/zerolog/log"
 )
 
@@ -39,7 +39,7 @@ func PlaylistVectorQueue(in <-chan models.PlaylistChannel) {
 // returns vector id
 func UpdatePlaylistVector(playlistCh models.PlaylistChannel) int64 {
 	if vectorId, err := getChannelVector(playlistCh.Title); err != nil {
-		log.Warn().Msgf("VECTORIZE_STRING: %v", err)
+		log.Warn().Msgf("VECTORIZE_PLAYLIST_STRING: %v", err)
 	} else {
 		if channelVector, err := database.Db.GetPlaylistChannelVector(playlistCh.ID); err != nil {
 			log.Debug().Msgf("matchChannels:, %v", err)
@@ -65,7 +65,7 @@ func UpdatePlaylistVector(playlistCh models.PlaylistChannel) int64 {
 // returns vector id
 func UpdateTemplateVector(templateCh *models.TemplateChannel) int64 {
 	if vectorId, err := getChannelVector(templateCh.Name); err != nil {
-		log.Warn().Msgf("VECTORIZE_STRING: %v", err)
+		log.Warn().Msgf("VECTORIZE_TEMPLATE_STRING: %v", err)
 	} else {
 		if channelVector, err := database.Db.GetTemplateChannelVector(templateCh.ID); err != nil {
 			log.Debug().Msgf("matchChannels:, %v", err)
@@ -106,54 +106,31 @@ func getChannelVector(name string) (int64, error) {
 }
 
 func vectorizeString(text string) ([]float64, error) {
-	//TODO: NEW MODELS
-	modelName := settings.APP_SETTINGS.Application.Model
+	cInput := C.CString(text)
+	defer C.free(unsafe.Pointer(cInput))
 
-	m, err := tasks.Load[textencoding.Interface](&tasks.Config{
-		ModelsDir: settings.MODEL_PATH,
-		ModelName: modelName,
-	})
+	output := C.create_embedding(cInput)
+	jsonStr := C.GoString(output)
+
+	var tensorVec []float64
+	err := json.Unmarshal([]byte(jsonStr), &tensorVec)
 	if err != nil {
 		return nil, err
 	}
 
-	fn, err := m.Encode(context.Background(), text, int(bert.MeanPooling))
-	if err != nil {
-		return nil, err
-	}
-
-	return fn.Vector.Data().F64(), nil
-
-	//fmt.Println(Cosine(r1.Vector.Data().F64(), r2.Vector.Data().F64()))
+	return tensorVec, nil
 }
 
-func CosineMatch(a []float64, b []float64) (cosine float64, err error) {
-	count := 0
-	length_a := len(a)
-	length_b := len(b)
-	if length_a > length_b {
-		count = length_a
-	} else {
-		count = length_b
+func CosineMatch(a, b []float64) (cosine float64, err error) {
+	dotProduct := 0.0
+	aSquared := 0.0
+	bSquared := 0.0
+
+	for i := 0; i < len(a) && i < len(b); i++ {
+		dotProduct += a[i] * b[i]
+		aSquared += a[i] * a[i]
+		bSquared += b[i] * b[i]
 	}
-	sumA := 0.0
-	s1 := 0.0
-	s2 := 0.0
-	for k := 0; k < count; k++ {
-		if k >= length_a {
-			s2 += math.Pow(b[k], 2)
-			continue
-		}
-		if k >= length_b {
-			s1 += math.Pow(a[k], 2)
-			continue
-		}
-		sumA += a[k] * b[k]
-		s1 += math.Pow(a[k], 2)
-		s2 += math.Pow(b[k], 2)
-	}
-	if s1 == 0 || s2 == 0 {
-		return 0.0, errors.New("vectors should not be null (all zeros)")
-	}
-	return math.Round((sumA/(math.Sqrt(s1)*math.Sqrt(s2)))*100) / 100, nil
+
+	return math.Round(dotProduct/(math.Sqrt(aSquared*bSquared))*100) / 100, nil
 }

@@ -2,7 +2,6 @@ application:
   appname: Xivi
   appversion: 1.0
   tz: America/New_York
-  model: sentence-transformers/all-MiniLM-L6-v2
   loglevel: 3
   updatecron: "0 0 * * *"
   ssdp: true

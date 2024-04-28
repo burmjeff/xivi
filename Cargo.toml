@@ -1,0 +1,34 @@
+[package]
+name = "candle-embeddings"
+version = "0.0.1"
+edition = "2021"
+build = "./lib/build.rs"
+
+[dependencies]
+candle-core = "0.4.1"
+candle-nn = "0.4.1"
+candle-transformers = "0.4.1"
+libc = "0.2.151"
+hf-hub = "0.3.2"
+tokenizers = "0.15.2"
+serde_json = "1.0.115"
+serde = "1.0.198"
+anyhow = "1.0.82"
+
+[dev-dependencies]
+clap = "4.5.4"
+
+[lib]
+path = "./lib/embedding.rs"
+crate_type = ["staticlib"]
+
+[build-dependencies]
+anyhow = "1.0.82"
+cbindgen = "0.26.0"
+
+[target.x86_64-unknown-linux-musl]
+linker = "rust-lld"
+rustflags = ["-C", "target-feature=-crt-static"]
+
+[features]
+musl-libc = []
