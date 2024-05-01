@@ -472,6 +472,27 @@ func (q *TemplateQueries) GetTmplChannelItems(id int64) (*[]models.TemplateChann
 	return channelitems, nil
 }
 
+// Check if a channelurl exists.
+func (q *TemplateQueries) TmplChannelExists(channelId int64, playlistId int64) (bool, error) {
+	channel := models.TemplateChannelItem{}
+
+	query := `SELECT templatechannelitem.* FROM templatechannelitem
+		JOIN templatechannel ON templatechannel.id = templatechannelitem.channel_id
+		JOIN playlistchannel ON playlistchannel.id = templatechannelitem.playlist_channel_id
+		JOIN playlistgroup ON playlistgroup.id = playlistchannel.group_id
+		JOIN playlist ON playlist.id = playlistgroup.playlist_id
+		WHERE templatechannelitem.channel_id = ? AND playlist.id = ?`
+
+	err := q.Get(&channel, query, channelId, playlistId)
+	if err != sql.ErrNoRows && err != nil {
+		return false, err
+	} else if err == sql.ErrNoRows || channel.ID == 0 {
+		return false, nil
+	}
+
+	return true, nil
+}
+
 // Create a TemplateChannelItem by given object.
 func (q *TemplateQueries) CreateTmplChannelItem(p *models.TemplateChannelItem) (int64, error) {
 	query := `INSERT INTO templatechannelitem VALUES (null, ?, ?, ?)`

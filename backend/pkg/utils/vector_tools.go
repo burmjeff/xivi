@@ -1,8 +1,8 @@
 package utils
 
 /*
-#cgo CFLAGS: -I/build/
-#cgo LDFLAGS: /build/libcandle_embeddings.a
+#cgo CFLAGS: -I/lib_build/
+#cgo LDFLAGS: /lib_build/libcandle_embeddings.a
 
 #include "candle-embeddings.h"
 */
@@ -19,7 +19,7 @@ import (
 )
 
 func PlaylistVectorQueue(in <-chan models.PlaylistChannel) {
-	bufChan := make(chan struct{}, 10)
+	bufChan := make(chan struct{}, 5)
 	for playlistCh := range in {
 		bufChan <- struct{}{}
 		go func(playlistCh models.PlaylistChannel) {
@@ -28,11 +28,23 @@ func PlaylistVectorQueue(in <-chan models.PlaylistChannel) {
 			}()
 
 			UpdatePlaylistVector(playlistCh)
-
-			// Try to match template channel only if auto-match=true
-			// TODO: IS THIS A PROBLEM HERE??
 			MatchPlaylistChannel(playlistCh)
 		}(playlistCh)
+	}
+}
+
+func TemplateVectorQueue(in <-chan models.TemplateChannel) {
+	bufChan := make(chan struct{}, 5)
+	for templateCh := range in {
+		bufChan <- struct{}{}
+		go func(templateCh models.TemplateChannel) {
+			defer func() {
+				<-bufChan
+			}()
+
+			UpdateTemplateVector(&templateCh)
+			MatchTemplateChannel(&templateCh)
+		}(templateCh)
 	}
 }
 
@@ -132,5 +144,5 @@ func CosineMatch(a, b []float64) (cosine float64, err error) {
 		bSquared += b[i] * b[i]
 	}
 
-	return math.Round(dotProduct/(math.Sqrt(aSquared*bSquared))*100) / 100, nil
+	return math.Round(dotProduct/(math.Sqrt(aSquared*bSquared))*10000) / 10000, nil
 }

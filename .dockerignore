@@ -13,4 +13,5 @@ LICENSE
 .git/
 .github/
 build/
+lib_build/
 node_modules/

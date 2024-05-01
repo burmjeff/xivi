@@ -80,6 +80,23 @@ func (q *VectorQueries) GetPlaylistChannelVectors() ([]models.PlaylistChannelVec
 	return vectorChannels, nil
 }
 
+func (q *VectorQueries) GetPlChVectorsByPlaylist(playlistId int64) ([]models.PlaylistChannelVector, error) {
+	vectorChannels := []models.PlaylistChannelVector{}
+
+	query := `SELECT playlistchannelvectors.* FROM playlistchannelvectors
+			JOIN playlistchannel ON playlistchannel.id = playlistchannelvectors.channel_id
+			JOIN playlistgroup ON playlistgroup.id = playlistchannel.group_id
+			JOIN playlist ON playlist.id = playlistgroup.playlist_id
+			WHERE playlistgroup.enabled = true
+			AND playlist.id = ?`
+
+	if err := q.Select(&vectorChannels, query, playlistId); err != nil {
+		return nil, err
+	}
+
+	return vectorChannels, nil
+}
+
 func (q *VectorQueries) GetPlaylistChannelVector(channel_id int64) (*models.PlaylistChannelVector, error) {
 	vectorChannel := &models.PlaylistChannelVector{}
 
