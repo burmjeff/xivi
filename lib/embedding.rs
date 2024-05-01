@@ -1,7 +1,7 @@
 extern crate libc;
 extern crate alloc;
 
-use candle_transformers::models::distilbert::{Config, DistilBertModel, DTYPE};
+use candle_transformers::models::bert::{Config, BertModel, DTYPE};
 use candle_core::{Device, NdArray, Tensor};
 use candle_nn::VarBuilder;
 use hf_hub::{api::sync::Api, Repo, RepoType};
@@ -12,14 +12,14 @@ use alloc::{ffi::CString, vec::Vec, string::ToString};
 
 #[derive()]
 pub struct EmbeddingsModel {
-    model: DistilBertModel,
+    model: BertModel,
     tokenizer: Tokenizer,
 }
 
 impl EmbeddingsModel {
     pub fn new() -> Result<Self> {
         let device = Device::Cpu;
-        let model_id = "sentence-transformers/msmarco-distilbert-base-tas-b".to_string();
+        let model_id = "avsolatorio/GIST-small-Embedding-v0".to_string();
         let revision = "main".to_string();
 
         let repo = Repo::with_revision(model_id.clone(), RepoType::Model, revision.clone());
@@ -36,7 +36,7 @@ impl EmbeddingsModel {
         let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
 
         let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[weights_filename], DTYPE, &device)? };
-        let model = DistilBertModel::load(vb, &config)?;
+        let model = BertModel::load(vb, &config)?;
 
         Ok(Self {
             model,

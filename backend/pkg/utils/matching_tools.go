@@ -12,11 +12,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type vectorMatches struct {
-	matches []models.VectorMatch
-	Mu      sync.Mutex
-}
-
 func MatchPlaylistChannel(playlistCh models.PlaylistChannel) {
 	//TODO SHOULD I ONLY MATCH IF ONE DOESN'T ALREADY EXIST??
 	if playlistCh.Enabled {
@@ -37,16 +32,15 @@ func MatchPlaylistChannel(playlistCh models.PlaylistChannel) {
 }
 
 func MatchTemplateChannel(templateCh *models.TemplateChannel) {
-	addedChannels := []models.PlaylistChannel{}
 	var err error
 	if settings.APP_SETTINGS.Playlist.Tvgid_match {
-		if addedChannels, err = matchTemplateTvgid(templateCh); err != nil {
+		if _, err = matchTemplateTvgid(templateCh); err != nil {
 			log.Debug().Err(err)
 		}
 	}
 
 	if settings.APP_SETTINGS.Playlist.Name_match {
-		if err := matchTemplateChannelName(templateCh, addedChannels); err != nil {
+		if err := matchTemplateChannelName(templateCh); err != nil {
 			log.Debug().Err(err)
 		}
 	}
@@ -88,6 +82,7 @@ func matchPlaylistChannelName(playlistCh models.PlaylistChannel) error {
 	var err error
 	var chMatch int64
 	var score float64
+	chunkSize := 10
 
 	playlistChUrl, err := database.Db.GetChannelUrl(playlistCh.ID)
 	if err != nil {
@@ -111,7 +106,10 @@ func matchPlaylistChannelName(playlistCh models.PlaylistChannel) error {
 	}
 
 	var chunks [][]models.TemplateChannelVector
-	chunkSize := int(math.RoundToEven(float64(len(templateVectors)/10))) + 1
+	if len(templateVectors) > 100 {
+		chunkSize = int(math.RoundToEven(float64(len(templateVectors) / 10)))
+	}
+
 	for i := 0; i < len(templateVectors); i += chunkSize {
 		end := i + chunkSize
 		if end > len(templateVectors) {
@@ -188,7 +186,11 @@ func matchTemplateTvgid(templateCh *models.TemplateChannel) ([]models.PlaylistCh
 	}
 }
 
-func matchTemplateChannelName(templateCh *models.TemplateChannel, addedChannels []models.PlaylistChannel) error {
+func matchTemplateChannelName(templateCh *models.TemplateChannel) error {
+	vectorMatch := struct {
+		match models.VectorMatch
+		Mu    sync.Mutex
+	}{}
 	var wg sync.WaitGroup
 	var err error
 	chunkSize := 10
@@ -203,66 +205,66 @@ func matchTemplateChannelName(templateCh *models.TemplateChannel, addedChannels 
 		}
 	}
 
-	playlistVectors, err := database.Db.GetPlaylistChannelVectors()
+	playlists, err := database.Db.GetPlaylists()
 	if err != nil {
 		log.Debug().Msgf("matchTemplateChannelName: %v", err)
 		return err
 	}
+	for _, playlist := range *playlists {
 
-	var chunks [][]models.PlaylistChannelVector
-	if len(playlistVectors) > 100 {
-		chunkSize = int(math.RoundToEven(float64(len(playlistVectors) / 10)))
-	}
-
-	for i := 0; i < len(playlistVectors); i += chunkSize {
-		end := i + chunkSize
-		if end > len(playlistVectors) {
-			end = len(playlistVectors)
+		if exists, err := database.Db.TmplChannelExists(templateCh.ID, playlist.ID); err != nil || exists {
+			continue
 		}
-		chunks = append(chunks, playlistVectors[i:end])
-	}
 
-	for _, chunk := range chunks {
-		wg.Add(1)
-		go func(chunk []models.PlaylistChannelVector) {
-			defer wg.Done()
-			for _, vec := range chunk {
-				isMatch := false
-				for _, channel := range addedChannels {
-					if vec.ChannelId == channel.ID {
-						isMatch = true
-						break
-					}
-				}
-				if isMatch {
-					continue
-				}
+		playlistVectors, err := database.Db.GetPlChVectorsByPlaylist(playlist.ID)
+		if err != nil {
+			log.Debug().Msgf("matchTemplateChannelName: %v", err)
+			continue
+		}
 
-				vector, err := database.Db.GetChannelVector(vec.VectorId)
-				if err != nil {
-					continue
-				}
-				if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
-					if cosine >= settings.APP_SETTINGS.Playlist.Name_score {
-						playlistChUrl, err := database.Db.GetChannelUrl(vec.ChannelId)
-						if err != nil {
-							log.Debug().Msgf("matchTemplateChannelName: %v", err)
-						} else if itemExists(templateCh.ID, playlistChUrl.Url) {
-							continue
-						}
-						channelItem := &models.TemplateChannelItem{
-							ChannelId:         templateCh.ID,
-							PlaylistChannelId: vec.ChannelId,
-						}
-						if _, err := database.Db.CreateTmplChannelItem(channelItem); err != nil {
-							log.Debug().Msgf("matchTemplateChannelName: %v", err)
-						}
-					}
-				}
+		var chunks [][]models.PlaylistChannelVector
+		if len(playlistVectors) > 100 {
+			chunkSize = int(math.RoundToEven(float64(len(playlistVectors) / 10)))
+		}
+
+		for i := 0; i < len(playlistVectors); i += chunkSize {
+			end := i + chunkSize
+			if end > len(playlistVectors) {
+				end = len(playlistVectors)
 			}
-		}(chunk)
+			chunks = append(chunks, playlistVectors[i:end])
+		}
+
+		for _, chunk := range chunks {
+			wg.Add(1)
+			go func(chunk []models.PlaylistChannelVector) {
+				defer wg.Done()
+				for _, vec := range chunk {
+					if vector, err := database.Db.GetChannelVector(vec.VectorId); err == nil {
+						if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
+							vectorMatch.Mu.Lock()
+							if cosine >= settings.APP_SETTINGS.Playlist.Name_score && cosine > vectorMatch.match.Score {
+								vectorMatch.match = models.VectorMatch{Id: vec.ChannelId, Score: cosine}
+							}
+							vectorMatch.Mu.Unlock()
+						}
+					}
+				}
+			}(chunk)
+		}
+		wg.Wait()
+
+		if vectorMatch.match.Id != 0 {
+			channelItem := &models.TemplateChannelItem{
+				ChannelId:         templateCh.ID,
+				PlaylistChannelId: vectorMatch.match.Id,
+			}
+			if _, err := database.Db.CreateTmplChannelItem(channelItem); err != nil {
+				log.Debug().Msgf("matchTemplateChannelName: %v", err)
+				return err
+			}
+		}
 	}
-	wg.Wait()
 
 	return nil
 }
@@ -283,9 +285,13 @@ func itemExists(tmplId int64, plUrl string) bool {
 }
 
 func TopChannelMatches(templateCh *models.TemplateChannel) ([]models.VectorMatch, error) {
-	vectorMatches := vectorMatches{}
+	vectorMatches := struct {
+		matches []models.VectorMatch
+		Mu      sync.Mutex
+	}{}
 	var wg sync.WaitGroup
 	var err error
+	chunkSize := 10
 
 	channelVector, err := database.Db.GetChannelVectorByName(templateCh.Name)
 	if err != nil {
@@ -304,7 +310,10 @@ func TopChannelMatches(templateCh *models.TemplateChannel) ([]models.VectorMatch
 	}
 
 	var chunks [][]models.PlaylistChannelVector
-	chunkSize := int(math.RoundToEven(float64(len(playlistVectors)/10))) + 1
+	if len(playlistVectors) > 100 {
+		chunkSize = int(math.RoundToEven(float64(len(playlistVectors) / 10)))
+	}
+
 	for i := 0; i < len(playlistVectors); i += chunkSize {
 		end := i + chunkSize
 		if end > len(playlistVectors) {

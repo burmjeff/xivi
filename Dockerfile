@@ -53,7 +53,7 @@ WORKDIR /build
 COPY backend/ /build/backend
 COPY go.* .
 COPY *.go .
-COPY --from=lib-builder /usr/src/target/x86_64-unknown-linux-musl/release/libcandle_embeddings.a /usr/src/target/candle-embeddings.h /build/
+COPY --from=lib-builder /usr/src/target/x86_64-unknown-linux-musl/release/libcandle_embeddings.a /usr/src/target/candle-embeddings.h /lib_build/
 RUN go mod download
 
 ENV CGO_ENABLED=1 GOOS=linux GOARCH=amd64

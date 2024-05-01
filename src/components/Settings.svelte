@@ -86,7 +86,6 @@
 			inputAppVersion != '' &&
 			inputTZ != '' &&
 			inputServePath != '' &&
-			inputModel != '' &&
 			inputLogLevel != '' &&
 			inputUpdateCron != '' &&
 			inputHost != '' &&

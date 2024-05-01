@@ -4,11 +4,16 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
 
 	"github.com/rs/zerolog/log"
 )
+
+var isVectorChannelOpen = false
+var vectorIn chan models.TemplateChannel
+var wg sync.WaitGroup
 
 // Convert all playlist channels in playlist group to template channels attached to given group name.
 func ConvertPlGroup(templateGroup int64, playlistChannels []models.PlaylistChannel) {
@@ -60,15 +65,28 @@ func ConvertPlChannel(playlistChannel models.PlaylistChannel) int64 {
 			}
 			database.Db.CreateTmplChannelItem(tmplChannelItem)
 
+			wg.Add(1)
+			if !isVectorChannelOpen {
+				vectorIn = make(chan models.TemplateChannel)
+				go TemplateVectorQueue(vectorIn)
+				isVectorChannelOpen = true
+				go closeVectorQueue()
+			}
 			go func() {
-				UpdateTemplateVector(templateChannel)
-				MatchTemplateChannel(templateChannel)
+				defer wg.Done()
+				vectorIn <- *templateChannel
 			}()
 		}
 		return channelID
 	}
 
 	return 0
+}
+
+func closeVectorQueue() {
+	wg.Wait() // Wait for all goroutines to finish
+	close(vectorIn)
+	isVectorChannelOpen = false
 }
 
 func MatchDomain(playlistId int64) int64 {
