@@ -253,7 +253,7 @@ func CreatePlaylist(c *fiber.Ctx) error {
 	})
 }
 
-// UpdatePlaylist func for updates playlist by given ID.
+// UpdatePlaylist func to update a playlist by given ID.
 // @Description Update playlist.
 // @Summary update playlist
 // @Tags Playlist

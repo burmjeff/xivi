@@ -16,7 +16,7 @@
 		"format": "prettier --write . && go fmt ./...",
 		"build": "npx vite build",
 		"build-cargo": "cargo zigbuild --release && mkdir -p ./lib_build && cp ./target/release/libcandle_embeddings.a ./target/candle-embeddings.h ./lib_build",
-		"build-all":  "npm run build-cargo && swag init && npm run build && echo \"Building Golang binary...\" && CGO_ENABLED=1 go build",
+		"build-all": "npm run build-cargo && swag init && npm run build && echo \"Building Golang binary...\" && CGO_ENABLED=1 go build",
 		"build-all-win": "npm run build-cargo && swag init && npm run build && echo \"Building Golang binary...\" && go build",
 		"serve": "open-cli http://localhost:8080 && ./xivi",
 		"serve-win": "open-cli http://localhost:8080 && xivi",

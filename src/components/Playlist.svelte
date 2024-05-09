@@ -26,13 +26,6 @@
 		playlists.set(await updatePlaylists());
 	});
 
-	let playlistSettings: PopupSettings = {
-		// Set the event as: click | hover | hover-click
-		event: 'click',
-		// Provide a matching 'data-popup' value.
-		target: 'addPlaylistPopup'
-	};
-
 	const addPlTooltip: PopupSettings = {
 		event: 'hover',
 		target: 'addPlTooltip',
@@ -47,28 +40,75 @@
 		return `${year}-${month}-${day}`;
 	}
 
-	async function addPlaylist() {
-		const inputName = (document.querySelector('.playlist_name input') as HTMLInputElement).value;
-		const inputUrl = (document.querySelector('.playlist_url input') as HTMLInputElement).value;
-		if (inputName !== '' && inputUrl !== '') {
-			const newPlaylist = {
-				name: inputName,
-				url: inputUrl
+	function modalPlaylist(isNew: boolean, id: number, name: string, url: string) {
+		new Promise<boolean>((resolve) => {
+			const modal: ModalSettings = {
+				type: 'component',
+				component: 'modalPlaylistSettings',
+				meta: {
+					isNew: isNew,
+					id: id,
+					name: name,
+					url: url
+				},
+				response: (r: boolean) => {
+					resolve(r);
+				}
 			};
-			window.console.log('PLAYLIST: ', newPlaylist);
+			modalStore.trigger(modal);
+		}).then((r: any) => {
+			if (r) {
+				addPlaylist(r, isNew, id);
+			}
+		});
+	}
+
+	async function addPlaylist(formData: any, isNew:boolean, id: number) {
+		let method: string;
+		if (formData.name && formData.url) {
+			let newGroup = {
+				id: id,
+				name: formData.name,
+				url: formData.url
+			};
+
+			if (isNew) {
+				method = 'POST';
+			} else {
+				method = 'PUT';
+			}
 
 			try {
 				const response = await fetch('/api/playlist', {
-					method: 'POST',
+					method: method,
 					headers: {
 						'Content-Type': 'application/json'
 					},
-					body: JSON.stringify(newPlaylist)
+					body: JSON.stringify(newGroup)
 				});
-				const data = await response.json();
-				console.log('Created playlist:', data);
-				$playlists.push(data.playlist);
-				$playlists = [...$playlists];
+				if (response.ok) {
+					if (isNew) {
+						const data = await response.json();
+						console.log('Created playlist:', data);
+						$playlists.push(data.playlist);
+						$playlists = [...$playlists];
+					} else {
+						console.log('Updated playlist: ', newGroup.name);
+						$playlists = $playlists.map((playlist) => {
+							if (playlist.id === id) {
+								return {
+									...playlist,
+									name: name,
+									url: url
+								};
+							}
+							return playlist;
+						});
+						$playlists = [...$playlists];
+					}
+				} else {
+					console.error('Error:', response.status, response.statusText);
+				}
 			} catch (error) {
 				console.log('Error creating playlist:', error);
 			}
@@ -107,7 +147,11 @@
 <section class="playlists card card-hover p-1">
 	<header class="playlists-header flex items-center justify-center">
 		<h3 class="h3 font-bold">Playlists</h3>
-		<button class="btn btn-md" use:popup={playlistSettings} use:popup={addPlTooltip}>
+		<button
+			class="btn btn-md"
+			on:click={() => modalPlaylist(true, 0, '', '')}
+			use:popup={addPlTooltip}
+		>
 			<Icon icon="icon-park-twotone:add-one" color="#0a7e85" width="25" height="25" />
 		</button>
 	</header>
@@ -120,6 +164,13 @@
 							<div class="flex flex-row items-center">
 								<h4 class="text-lg">{playlist.name}</h4>
 								<span class="text-green-600 text-xs ml-auto p-1">Updated at: {(getDate(playlist.updated_at))}</span>
+								<button
+									class="btn btn-md"
+									on:click={() => modalPlaylist(false, playlist.id, playlist.name, playlist.url)}
+									use:popup={addPlTooltip}
+								>
+									<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
+								</button>
 								<button
 									class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
 									on:click={() => {
@@ -140,23 +191,6 @@
 		</div>
 	</Accordion>
 </section>
-
-<div class="card gap-4 p-4" data-popup="addPlaylistPopup">
-	<header class="justify-center text-center text-2xl font-bold">Add Playlist</header>
-	<div class="space-y-4">
-		<label class="playlist_name">
-			<span>Playlist Name</span>
-			<input class="input" type="text" placeholder="Playlist Name" />
-		</label>
-		<label class="playlist_url">
-			<span>Playlist url</span>
-			<input class="input" type="url" placeholder="https://example.com/xivi.m3u" />
-		</label>
-		<label class="submit_button">
-			<button class="btn bg-primary-500" on:click={addPlaylist}>Add Playlist</button>
-		</label>
-	</div>
-</div>
 
 <div class="card variant-filled-secondary p-2" data-popup="addPlTooltip">
 	<p>Add New Playlist</p>

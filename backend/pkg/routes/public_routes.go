@@ -26,7 +26,8 @@ func PublicRoutes(a *fiber.App) {
 	api.Post("/playlist/:playlist_id/group/:group_id/convert", controllers.ConvertPlaylistGroup)     // convert playlistgroup
 	api.Post("/playlist/channel/:channel_id/convert/:group_id", controllers.ConvertPlaylistChannel)  // convert playlistchannel
 	api.Delete("/playlist/:playlist_id", controllers.DeletePlaylist)                                 // delete playlist by ID
-	api.Put("/playlist/group", controllers.UpdatePlaylistGroup)                                      // create a new playlist
+	api.Put("/playlist/group", controllers.UpdatePlaylistGroup)                                      // update playlist group
+	api.Put("/playlist", controllers.UpdatePlaylist)                                                 // update playlist
 
 	// Template Routes
 	api.Get("/templates", controllers.GetTemplates)                                                // get all templates
