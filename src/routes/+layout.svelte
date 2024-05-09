@@ -7,6 +7,7 @@
 	import { initializeStores } from '@skeletonlabs/skeleton';
 	import ChannelSettings from '@xivi/components/modals/ChannelSettings.svelte';
 	import GroupSettings from '@xivi/components/modals/GroupSettings.svelte';
+	import PlaylistSettings from '@xivi/components/modals/PlaylistSettings.svelte';
 	import Player from '@xivi/components/modals/Player.svelte';
 	import xivi from '$lib/assets/xivi.png';
 
@@ -16,6 +17,7 @@
 		// Set a unique modal ID, then pass the component reference
 		modalChannelSettings: { ref: ChannelSettings },
 		modalGroupSettings: { ref: GroupSettings },
+		modalPlaylistSettings: { ref: PlaylistSettings },
 		modalPlayer: { ref: Player }
 	};
 

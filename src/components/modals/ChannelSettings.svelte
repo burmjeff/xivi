@@ -370,7 +370,7 @@
 					</div>
 					<div class="channel_logo">
 						<div class="grid w-64 grid-cols-2 items-center space-x-10 p-1">
-							<img class="w-fit" src={formData.logo} alt="Logo" />
+							<img class="h-auto max-h-32 w-auto" src={formData.logo} alt="Logo" />
 							<button
 								class="variant-filled-primary btn h-fit w-fit"
 								on:click={updateLogos}
