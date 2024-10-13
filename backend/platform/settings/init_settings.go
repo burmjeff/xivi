@@ -135,15 +135,6 @@ func WriteSettings(settings *AppSettings) error {
 }
 
 func InitPaths() error {
-
-	if IsRunningInDockerContainer() {
-		CONFIG_PATH = "/config"
-		SERVE_PATH = "/serve"
-		M3U_FILEPATH = fmt.Sprintf("%s/m3u", SERVE_PATH)
-		EPG_FILEPATH = fmt.Sprintf("%s/epg", SERVE_PATH)
-		LOGO_FILEPATH = fmt.Sprintf("%s/logo", SERVE_PATH)
-		STREAM_FILEPATH = fmt.Sprintf("%s/stream", SERVE_PATH)
-	}
 	if _, err := os.Stat(CONFIG_PATH); errors.Is(err, os.ErrNotExist) {
 		err := os.Mkdir(CONFIG_PATH, os.ModePerm)
 		if err != nil {

@@ -1,8 +1,8 @@
 package utils
 
 /*
-#cgo CFLAGS: -I/lib_build/
-#cgo LDFLAGS: /lib_build/libcandle_embeddings.a
+#cgo CFLAGS: -I../../../lib_build/
+#cgo LDFLAGS: ./lib_build/libcandle_embeddings.a
 
 #include "candle-embeddings.h"
 */

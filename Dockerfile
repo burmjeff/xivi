@@ -2,7 +2,7 @@
 # svelte-builder
 #
 
-FROM node:21.6.0-alpine3.19 as app-builder
+FROM node:lts-bookworm-slim AS app-builder
 
 WORKDIR /app
 COPY . /app
@@ -15,45 +15,45 @@ RUN npx vite build
 # rust_lib-builder
 #
 
-FROM rust:1.77.2-alpine3.19 AS lib-builder
+FROM rust:slim-bookworm AS lib-builder
 VOLUME /usr/src
 WORKDIR /usr/src/
 
-RUN apk add musl-dev openssl-dev g++
-RUN rustup target add x86_64-unknown-linux-musl
+RUN apt-get update && apt-get install -y \
+libssl-dev \
+g++
+
+RUN rustup target add x86_64-unknown-linux-gnu
 
 RUN USER=root cargo new sentence-embed
 COPY Cargo.toml Cargo.lock ./
 COPY lib/ /usr/src/lib
 
-RUN cargo build --release --target=x86_64-unknown-linux-musl --features "musl-libc"
+RUN cargo build --release --target=x86_64-unknown-linux-gnu
 
 #
 # server-builder
 #
 
-FROM golang:1.22.2-alpine3.19 as server-builder
+FROM golang:1.23-bookworm AS server-builder
 
-RUN echo "@main https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories
-RUN echo "@community https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
-
-RUN apk add build-base
-RUN apk add --no-cache vips-dev@community=8.15.0-r0 \
-glib-dev \
-gstreamer-dev \
-gst-plugins-base-dev \
-gst-plugins-good \
-gst-plugins-bad-dev \
-gst-plugins-ugly \
-musl-dev \
-openssl-dev
+RUN apt-get update && apt-get install -y \
+build-essential \
+libvips-dev \
+libglib2.0-dev \
+libgstreamer1.0-dev \
+libgstreamer-plugins-base1.0-dev \
+gstreamer1.0-plugins-good \
+libgstreamer-plugins-bad1.0-dev \
+gstreamer1.0-plugins-ugly \
+libssl-dev
 
 WORKDIR /build
 
 COPY backend/ /build/backend
 COPY go.* .
 COPY *.go .
-COPY --from=lib-builder /usr/src/target/x86_64-unknown-linux-musl/release/libcandle_embeddings.a /usr/src/target/candle-embeddings.h /lib_build/
+COPY --from=lib-builder /usr/src/target/x86_64-unknown-linux-gnu/release/libcandle_embeddings.a /usr/src/target/candle-embeddings.h ./lib_build/
 RUN go mod download
 
 ENV CGO_ENABLED=1 GOOS=linux GOARCH=amd64
@@ -66,25 +66,24 @@ RUN go build -ldflags "-linkmode 'external' -extldflags '-lstdc++ -lssl -lcrypto
 # deploy
 #
 
-FROM alpine:3.19.1 as deployment
+FROM ubuntu:noble AS deployment
 
-RUN echo "@community https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
-
-RUN apk add tzdata \
-vips@community=8.15.0-r0 \
-glib \
-gstreamer \
-gst-plugins-base \
-gst-plugins-good \
-gst-plugins-bad \
-gst-plugins-ugly 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+tzdata \
+libvips42 \
+libglib2.0-0 \
+libgstreamer1.0-0 \
+gstreamer1.0-plugins-base \
+gstreamer1.0-plugins-good \
+gstreamer1.0-plugins-bad \
+gstreamer1.0-plugins-ugly
 
 # environment variables
 ENV APP_NAME="Xivi" \
 APP_VERSION="1.0" \
 TZ="America/New_York" \
 SERVER_HOST="127.0.0.1" \
-SERVER_PORT=8080 \
+SERVER_PORT=3000 \
 SERVER_READ_TIMEOUT=60 \
 JWT_SECRET_KEY="secret" \
 JWT_SECRET_KEY_EXPIRE_MINUTES_COUNT=15 \
@@ -94,12 +93,11 @@ RUN mkdir -p /xivi
 WORKDIR /xivi
 
 COPY --from=app-builder /app/build /xivi/build
-#COPY --from=lib-builder /usr/src/target/x86_64-unknown-linux-musl/release/libcandle_embeddings.so /usr/lib/
 COPY --from=server-builder ["/build/xivi", "/xivi/"]
 COPY backend/platform/database/migrations/ /xivi/database_migrations
 COPY xivi_channel.png /xivi/xivi_channel.png
 
-VOLUME /config /serve
+VOLUME /xivi/config /xivi/serve
 
 EXPOSE $SERVER_PORT
 
