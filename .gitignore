@@ -6,13 +6,16 @@
 .idea/
 xivi.code-workspace
 
-# Dev build
+# Build
 build/
 tmp/
 /config/
 xivi.exe
 /models/
 /docs/
+xivi
+lib_build/
+serve/
 
 # Test
 *.out

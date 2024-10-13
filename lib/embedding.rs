@@ -58,7 +58,8 @@ impl EmbeddingsModel {
         let token_ids = Tensor::new(&tokens[..], &self.model.device)?.unsqueeze(0)?;
         let token_type_ids = token_ids.zeros_like()?;
 
-        let embedding = self.model.forward(&token_ids, &token_type_ids)?;
+        let attention_mask = token_ids.ne(0u32)?;
+        let embedding = self.model.forward(&token_ids, &token_type_ids,  Some(&attention_mask))?;
         let (_n_sentence, n_tokens, _hidden_size) = embedding.dims3()?;
         let embedding = (embedding.sum(1)? / (n_tokens as f64))?;
         let embedding = self.normalize_l2(&embedding)?;

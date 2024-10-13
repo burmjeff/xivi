@@ -5,26 +5,26 @@ edition = "2021"
 build = "./lib/build.rs"
 
 [dependencies]
-candle-core = "0.4.1"
-candle-nn = "0.4.1"
-candle-transformers = "0.4.1"
-libc = "0.2.151"
+candle-core = "0.7.2"
+candle-nn = "0.7.2"
+candle-transformers = "0.7.2"
+libc = "0.2.159"
 hf-hub = { git = "https://github.com/huggingface/hf-hub.git", version = "0.3.2", default-features = false, features = ["rustls-tls", "tokio", "ureq"] }
-tokenizers = "0.15.2"
-serde_json = "1.0.115"
-serde = "1.0.198"
-anyhow = "1.0.82"
+tokenizers = "0.20.1"
+serde_json = "1.0.128"
+serde = "1.0.210"
+anyhow = "1.0.89"
 
 [dev-dependencies]
-clap = "4.5.4"
+clap = "4.5.20"
 
 [lib]
 path = "./lib/embedding.rs"
 crate-type = ["staticlib"]
 
 [build-dependencies]
-anyhow = "1.0.82"
-cbindgen = "0.26.0"
+anyhow = "1.0.89"
+cbindgen = "0.27.0"
 
 [target.x86_64-unknown-linux-musl]
 linker = "rust-lld"

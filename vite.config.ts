@@ -3,7 +3,7 @@ import { vite as vidstack } from 'vidstack/plugins';
 import { defineConfig } from 'vite';
 import Icons from 'unplugin-icons/vite';
 
-const port = process.env.SERVER_PORT || 8080;
+const port = process.env.SERVER_PORT || 3000;
 
 export default defineConfig({
 	plugins: [sveltekit(), vidstack(), Icons({ compiler: 'svelte' })],
