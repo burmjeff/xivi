@@ -26,14 +26,13 @@ func GetSettings(c *fiber.Ctx) error {
 }
 
 // UpdateSettings
-// @Description Update playlist.
-// @Summary update playlist
+// @Description Update Settings.
+// @Summary update Settings
 // @Tags Settings
 // @Accept json
 // @Produce json
 // @Param settings body array true "Settings"
 // @Success 201 {string} status "ok"
-// @Security ApiKeyAuth
 // @Router /settings [put]
 func UpdateSettings(c *fiber.Ctx) error {
 
@@ -61,7 +60,7 @@ func UpdateSettings(c *fiber.Ctx) error {
 		})
 	}
 
-	// Update playlist by given ID.
+	// Update settings
 	if err := settings.WriteSettings(newSettings); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{

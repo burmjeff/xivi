@@ -71,13 +71,13 @@ func ParseEpg(epg *models.Epg) {
 		if channel.ChannelId != "" {
 			_, err := database.Db.GetEpgChannelByChannelId(channel.ChannelId)
 			if err != nil {
-				log.Info().Msgf("EPG XML PARSER: Creating new channel: %s", channel.DisplayName)
+				//log.Info().Msgf("EPG XML PARSER: Creating new channel: %s", channel.DisplayName)
 				if _, err = database.Db.CreateEpgChannel(channel); err != nil {
 					log.Error().Msgf("EPG XML PARSER: Failed to create new EPG channel: %v", err)
 					continue
 				}
 			} else {
-				log.Info().Msgf("EPG XML PARSER: Channel already exists: %s", channel.DisplayName)
+				//log.Info().Msgf("EPG XML PARSER: Channel already exists: %s", channel.DisplayName)
 			}
 		}
 
@@ -90,13 +90,13 @@ func ParseEpg(epg *models.Epg) {
 			if programme.Channel != "" {
 				FoundProg, err := database.Db.GetProgrammeByTime(programme.Channel, programme.Start.Time)
 				if err != nil {
-					log.Info().Msgf("EPG XML PARSER: Creating new Programme: %s", programme.Title.Value)
+					//log.Info().Msgf("EPG XML PARSER: Creating new Programme: %s", programme.Title.Value)
 					if _, err := database.Db.CreateEpgProgramme(programme); err != nil {
 						log.Warn().Msgf("EPG XML PARSER: Failed to create new programme: %v", err)
 						continue
 					}
 				} else {
-					log.Info().Msgf("EPG XML PARSER: Updating Programme: %s", programme.Title.Value)
+					//log.Info().Msgf("EPG XML PARSER: Updating Programme: %s", programme.Title.Value)
 					database.Db.UpdateEpgProgramme(FoundProg.ID, &programme)
 					if err != nil {
 						log.Warn().Msgf("EPG XML PARSER: Failed to update programme: %v", err)

@@ -40,25 +40,41 @@
 				provider.hasActiveSession;
 			}
 		});
-		// Subscribe to state updates.
-		return player.subscribe(({ paused, viewType }) => {
-		// console.log('is paused?', '->', paused);
-		// console.log('is audio view?', '->', viewType === 'audio');
-    	});
+		// Subscribe to state updates
+		const unsubscribe = player.subscribe(({ paused, viewType }) => {
+			// Handle state updates if needed
+		});
+
+		return () => {
+			unsubscribe?.();
+		};
 	});
 
 	function onProviderChange(event: MediaProviderChangeEvent) {
 		const provider = event.detail;
-		// We can configure provider's here.
+		// Configure HLS provider
 		if (isHLSProvider(provider)) {
-			provider.config = {};
+			provider.config = {
+				lowLatencyMode: true,
+				manifestLoadingTimeOut: 10000,
+				manifestLoadingMaxRetry: 3,
+				maxBufferLength: 30,
+				maxMaxBufferLength: 60,
+				liveSyncDurationCount: 3,
+				liveMaxLatencyDurationCount: 10,
+				// Enable debug logs
+				debug: false
+			};
 		}
 	}
 
-  // We can listen for the `can-play` event to be notified when the player is ready.
-  function onCanPlay(event: MediaCanPlayEvent) {
-    // ...
-  }
+	// We can listen for the `can-play` event to be notified when the player is ready.
+	function onCanPlay(event: MediaCanPlayEvent) {
+		// Start playback immediately
+		if (player) {
+			remote.startLoading();
+		}
+	}
 </script>
 
 <media-player
@@ -82,7 +98,13 @@
 		/>
 	</media-provider>
 	<!-- Layouts -->
-	<media-video-layout />
+	<media-video-layout>
+		<media-controls>
+			<media-controls-group class="absolute top-0 right-0 m-2">
+				<media-cast-button />
+			</media-controls-group>
+		</media-controls>
+	</media-video-layout>
 </media-player>
 
 <style lang="postcss">

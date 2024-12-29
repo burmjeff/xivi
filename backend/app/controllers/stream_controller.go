@@ -135,7 +135,7 @@ func GetStream(c *fiber.Ctx) error {
 		for !exists {
 			if _, err := os.Stat(fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, stream_id, "playlist.m3u8")); err == nil {
 				exists = true
-			} else if loop >= 75 {
+			} else if loop >= 100 {
 				log.Error().Msg("Stream Error: Playlist M3U8 not found")
 				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 					"error": true,
@@ -256,7 +256,7 @@ func GetHlsStream(c *fiber.Ctx) error {
 	for !exists {
 		if _, err := os.Stat(fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, stream_id, "playlist.m3u8")); err == nil {
 			exists = true
-		} else if loop >= 75 {
+		} else if loop >= 100 {
 			log.Error().Msg("Stream Error: Playlist M3U8 not found")
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 				"error": true,

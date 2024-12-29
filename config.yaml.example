@@ -4,7 +4,6 @@ application:
   tz: America/New_York
   loglevel: 3
   updatecron: "0 0 * * *"
-  ssdp: true
 
 server:
   host: 127.0.0.1

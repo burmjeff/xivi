@@ -18,7 +18,7 @@
 		"build-cargo": "cargo build --release && mkdir -p ./lib_build && cp ./target/release/libcandle_embeddings.a ./target/candle-embeddings.h ./lib_build",
 		"build-all": "npm run build-cargo && swag init && npm run build && echo \"Building Golang binary...\" && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags \"-linkmode 'external' -extldflags '-lstdc++ -lssl -lcrypto' -s -w\" -buildvcs=false -mod=readonly -v -o xivi .",
 		"build-all-win": "npm run build-cargo && swag init && npm run build && echo \"Building Golang binary...\" && go build -ldflags \"-linkmode 'external' -extldflags '-lstdc++ -lssl -lcrypto' -s -w\" -buildvcs=false -mod=readonly -v -o xivi .",
-		"serve": "open-cli http://localhost:3000 && ./xivi",
+		"serve": "./xivi",
 		"serve-win": "open-cli http://localhost:3000 && xivi",
 		"docker": "docker build . -t xivi -f Dockerfile",
 		"docker-run": "open-cli http://localhost:3000 && docker run -p 3000:3000 -v serve:/xivi/serve -v config:/xivi/config --rm xivi"

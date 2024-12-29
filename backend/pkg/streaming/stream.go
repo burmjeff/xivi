@@ -17,7 +17,36 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var Streams []*Stream
+var (
+	Streams []*Stream
+	// Global cleanup interval
+	cleanupInterval = 30 * time.Second
+	// Maximum time a stream can be idle before cleanup
+	maxIdleTime = 60 * time.Second
+)
+
+func init() {
+	// Start global cleanup goroutine
+	go globalCleanup()
+}
+
+// globalCleanup periodically checks for and removes stale streams
+func globalCleanup() {
+	ticker := time.NewTicker(cleanupInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		now := time.Now()
+		for _, stream := range Streams {
+			stream.Mu.Lock()
+			if now.Sub(stream.LastAccess) > maxIdleTime {
+				log.Info().Msgf("Cleaning up idle stream: %s", stream.Settings.Uuid)
+				go stream.Close(nil, nil)
+			}
+			stream.Mu.Unlock()
+		}
+	}
+}
 
 type Stream struct {
 	pipeline   *gst.Pipeline
@@ -45,16 +74,25 @@ func NewStream(streamId string, src string) *Stream {
 		HlsExists:  false,
 		hlsCleanup: make(chan struct{}),
 		count:      0,
+		LastAccess: time.Now(),
 		Settings: &Settings{
 			Uuid:      streamId,
 			Src:       src,
-			Buffer:    (settings.APP_SETTINGS.Streaming.Buffer * 1000000000),
+			Buffer:    settings.APP_SETTINGS.Streaming.Buffer,
 			UserAgent: settings.APP_SETTINGS.Streaming.UserAgent,
 		},
 	}
 }
 
 func AddStream(s *Stream) {
+	// Check for existing stream with same UUID
+	for _, existing := range Streams {
+		if existing.Settings.Uuid == s.Settings.Uuid {
+			// Close existing stream before adding new one
+			existing.Close(nil, nil)
+			break
+		}
+	}
 	Streams = append(Streams, s)
 }
 
@@ -67,13 +105,17 @@ func RemoveStream(s *Stream) {
 			break
 		}
 	}
-	return
 }
 
 // Close the stream
 func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
+
+	// Prevent multiple closes
+	if s.count < 0 {
+		return gst.FlowEOS
+	}
 
 	select {
 	case <-done:
@@ -84,73 +126,149 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 		}
 		s.count--
 
-		if s.count <= 0 || sinkBin == nil {
+		// Handle HLS cleanup if needed
+		if sinkBin == nil && s.HlsExists {
+			select {
+			case _, ok := <-s.hlsCleanup:
+				if ok {
+					close(s.hlsCleanup)
+				}
+			default:
+			}
+			s.HlsExists = false
+		}
+
+		// Only do full pipeline cleanup if no streams are left
+		if s.count <= 0 {
+			log.Debug().Msgf("Closing last stream, cleaning up pipeline for: %s", s.Settings.Uuid)
 			RemoveStream(s)
 			go func() {
 				if s.pipeline != nil && s.pipeline.GstObject() != nil {
-					if !s.pipeline.SendEvent(gst.NewEOSEvent()) {
-						log.Warn().Msg("WARNING: Failed to send EOS to pipeline")
+					// First set pipeline to NULL state
+					log.Debug().Msg("Setting pipeline to NULL state")
+					if err := s.pipeline.SetState(gst.StateNull); err != nil {
+						log.Warn().Msgf("Failed to set pipeline to NULL state: %v", err)
 					}
-					s.pipeline.SetState(gst.StateNull)
 
+					// Wait a bit for state change to complete
+					time.Sleep(100 * time.Millisecond)
+
+					// Send EOS event with retry
+					for i := 0; i < 3; i++ {
+						if s.pipeline.SendEvent(gst.NewEOSEvent()) {
+							break
+						}
+						log.Warn().Msg("WARNING: Failed to send EOS to pipeline, retrying...")
+						time.Sleep(100 * time.Millisecond)
+					}
+
+					// Set each element to NULL state first
 					if elements, _ := s.pipeline.GetElementsSorted(); elements != nil {
 						for _, element := range elements {
-							log.Debug().Msgf("Disposing GST element: %s", element.GetName())
-							pads, _ := element.GetSrcPads()
-							for _, pad := range pads {
-								pad.PauseTask()
+							log.Debug().Msgf("Setting element to NULL state: %s", element.GetName())
+							// Cleanup all pads first
+							if pads, _ := element.GetPads(); pads != nil {
+								for _, pad := range pads {
+									pad.PauseTask()
+								}
 							}
 							if err := element.SetState(gst.StateNull); err != nil {
 								log.Debug().Msgf("WARNING: Failed to set %s state to Null", element.GetName())
 							}
+						}
+					}
+
+					// Now remove elements
+					if elements, _ := s.pipeline.GetElementsSorted(); elements != nil {
+						for _, element := range elements {
+							log.Debug().Msgf("Removing element: %s", element.GetName())
 							if err := s.pipeline.Remove(element); err != nil {
 								log.Debug().Msgf("WARNING: Failed to remove element from pipeline: %s", element.GetName())
 							}
 						}
 					}
+
+					// Final cleanup
 					s.pipeline.Clear()
+					s.pipeline = nil
 				}
+
+				// Cleanup HLS directory with retry
 				if _, err := os.Stat(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid)); err == nil {
-					err := os.RemoveAll(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid))
-					if err != nil {
-						log.Debug().Msgf("Dispose pipeline: %v", err)
+					for i := 0; i < 3; i++ {
+						err := os.RemoveAll(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid))
+						if err == nil {
+							break
+						}
+						log.Debug().Msgf("Failed to remove HLS directory, attempt %d: %v", i+1, err)
+						time.Sleep(100 * time.Millisecond)
 					}
 				}
 			}()
-			log.Debug().Msg("PIPELINE DISPOSED")
+			log.Info().Msgf("Pipeline disposed for stream: %s", s.Settings.Uuid)
 			return gst.FlowEOS
 		}
 
-		go func() {
-			if tee, err := s.pipeline.GetElementByName("stream"); err == nil {
-				tee.Unlink(sinkBin.Element)
-			}
-			if err := s.pipeline.Remove(sinkBin.Element); err != nil {
-				log.Warn().Msgf("WARNING: Failed to remove stream bin from pipeline: %s", sinkBin.GetName())
-			}
-			if !sinkBin.SendEvent(gst.NewEOSEvent()) {
-				log.Warn().Msg("WARNING: Failed to send EOS to stream branch")
-			}
-			if elements, _ := sinkBin.GetElementsSorted(); elements != nil {
-				for _, element := range elements {
-					log.Debug().Msgf("Disposing GST element: %s with state: %s", element.GetName(), element.GetCurrentState())
-					pads, _ := element.GetPads()
-					for _, pad := range pads {
-						pad.PauseTask()
+		// If we still have active streams, just cleanup the specific sink bin
+		if sinkBin != nil {
+			log.Debug().Msgf("Closing stream branch, %d streams remaining", s.count)
+			go func() {
+				if tee, err := s.pipeline.GetElementByName("stream"); err == nil {
+					// First unlink the bin to isolate it
+					tee.Unlink(sinkBin.Element)
+
+					// Set sink bin to NULL state
+					if err := sinkBin.SetState(gst.StateNull); err != nil {
+						log.Warn().Msgf("WARNING: Failed to set sink bin to NULL state: %v", err)
+					}
+
+					// Remove the bin from pipeline
+					if err := s.pipeline.Remove(sinkBin.Element); err != nil {
+						log.Warn().Msgf("WARNING: Failed to remove stream bin from pipeline: %s", sinkBin.GetName())
+					}
+
+					// Send EOS to the bin we're removing
+					if !sinkBin.SendEvent(gst.NewEOSEvent()) {
+						log.Warn().Msg("WARNING: Failed to send EOS to stream branch")
+					}
+
+					// Clean up the bin's elements
+					if elements, _ := sinkBin.GetElementsSorted(); elements != nil {
+						for _, element := range elements {
+							log.Debug().Msgf("Disposing GST element: %s with state: %s", element.GetName(), element.GetCurrentState())
+							if pads, _ := element.GetPads(); pads != nil {
+								for _, pad := range pads {
+									pad.PauseTask()
+								}
+							}
+						}
+					}
+
+					// Clear the bin
+					sinkBin.Clear()
+
+					// Ensure remaining pipeline elements are in correct state
+					if s.count > 0 {
+						log.Debug().Msg("Ensuring remaining pipeline elements are playing")
+						if elements, _ := s.pipeline.GetElements(); elements != nil {
+							for _, element := range elements {
+								name := element.GetName()
+								// Skip the tee element as it's managed by GStreamer
+								if name != "stream" {
+									if err := element.SetState(gst.StatePlaying); err != nil {
+										log.Warn().Msgf("Failed to set element %s to PLAYING: %v", name, err)
+									}
+								}
+							}
+						}
 					}
 				}
-			}
-			if err := sinkBin.SetState(gst.StateNull); err != nil {
-				log.Warn().Msgf("WARNING: Failed to set %s state to Null", sinkBin.GetName())
-			}
-
-			sinkBin.Clear()
-			log.Info().Msgf("STREAM CLOSED")
-		}()
+				log.Info().Msgf("Stream branch closed, %d streams remaining", s.count)
+			}()
+		}
 	}
 
 	return gst.FlowEOS
-
 }
 
 // Write bytes to streamer
@@ -170,6 +288,7 @@ func (s *Stream) Flush(writer *bufio.Writer) error {
 }
 
 func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
+	var bin *gst.Bin
 	s.HlsExists = true
 
 	ctx.Set(fiber.HeaderContentType, "application/x-hls")
@@ -178,157 +297,177 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 	pLocation := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "playlist.m3u8")
 	location := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "segment.%05d.ts")
 
-	//max-files=8 playlist-length=4 target-duration=8
-	bin, _ := gst.NewBinFromString(fmt.Sprintf("queue2 max-size-buffers=0 max-size-bytes=0 max-size-time=%d use-buffering=true low-watermark=0.01 high-watermark=0.99 name=hlsqueue ! tsdemux name=demux ! h264parse ! queue ! hlssink2 playlist-root=%s location=%s playlist-location=%s max-files=3 playlist-length=3 target-duration=10 name=hlssink demux. ! aacparse ! queue ! hlssink.audio", s.Settings.Buffer, pRoot, location, pLocation), false)
-
-	queue, err := bin.GetElementByName("hlsqueue")
-	if err != nil {
-		bin.SetState(gst.StateNull)
-		bin.Clear()
-		return err
-	}
-	queuepad := gst.NewGhostPad("hlsghost", queue.GetStaticPad("sink"))
-	queuepad.SetActive(true)
-	bin.AddPad(queuepad.Pad)
-
 	/*
-		buffer, err := gst.NewElement("queue")
+		bin, _ = gst.NewBinFromString(fmt.Sprintf("queue2 max-size-buffers=0 max-size-bytes=0 max-size-time=%d use-buffering=true low-watermark=0.01 high-watermark=0.99 name=hlsqueue ! tsdemux name=demux ! h264parse ! queue ! hlssink2 playlist-root=%s location=%s playlist-location=%s max-files=3 playlist-length=3 target-duration=10 name=hlssink demux. ! aacparse ! queue ! hlssink.audio", s.Settings.Buffer, pRoot, location, pLocation), false)
+
+		queue, err := bin.GetElementByName("hlsqueue")
 		if err != nil {
+			bin.SetState(gst.StateNull)
+			bin.Clear()
 			return err
 		}
-		demux, err := gst.NewElement("tsdemux")
-		if err != nil {
-			return err
-		}
-		sink, err := gst.NewElement("hlssink2")
-		if err != nil {
-			return err
-		}
-
-		buffer.Set("max-size-buffers", 0)
-		buffer.Set("max-size-bytes", 0)
-		buffer.Set("max-size-time", s.Settings.Buffer)
-		//buffer.Set("min-threshold-time", s.Settings.Buffer)
-		buffer.Set("use-buffering", true)
-		buffer.Set("low-watermark", 0.01)
-		buffer.Set("high-watermark", 0.99)
-
-		demux.Set("name", "demux")
-
-		sink.Set("name", "sink")
-		sink.Set("playlist-root", pRoot)
-		sink.Set("playlist-location", pLocation)
-		sink.Set("location", location)
-		sink.Set("max-files", 8)
-		sink.Set("playlist-length", 5)
-		sink.Set("target-duration", 7)
-
-		for i := 0; i <= s.count; i++ {
-			if element, _ := s.pipeline.GetElementByName(fmt.Sprintf("sinkbin%d", i)); element == nil {
-				bin = gst.NewBin(fmt.Sprintf("sinkbin%d", i))
-				break
-			}
-		}
-
-		bin.Add(buffer)
-		bin.Add(demux)
-		bin.Add(sink)
-
-		bufPad := gst.NewGhostPad("ghost", buffer.GetStaticPad("sink"))
-		bufPad.SetActive(true)
-		bin.AddPad(bufPad.Pad)
-
-		buffer.Link(demux)
-
-		demux.Connect("pad-added", func(self *gst.Element, srcPad *gst.Pad) {
-			// Try to detect whether this is video or audio
-			var isAudio, isVideo bool
-			var cap string
-			caps := srcPad.GetCurrentCaps()
-			for i := 0; i < caps.GetSize(); i++ {
-				st := caps.GetStructureAt(i)
-				cap = st.Name()
-				if strings.HasPrefix(cap, "audio/") {
-					isAudio = true
-				}
-				if strings.HasPrefix(cap, "video/") {
-					isVideo = true
-				}
-			}
-
-			if !isAudio && !isVideo {
-				err := errors.New("could not detect media stream type")
-				// We can send errors directly to the pipeline bus if they occur.
-				// These will be handled downstream.
-				msg := gst.NewErrorMessage(self, gst.NewGError(1, err), fmt.Sprintf("Received caps: %s", caps.String()), nil)
-				s.pipeline.GetPipelineBus().Post(msg)
-				return
-			}
-
-			if isAudio {
-				log.Debug().Msgf("New audio pad added, is_audio=%v", cap)
-
-				elements, err := gst.NewElementMany("aacparse", "queue")
-				if err != nil {
-					// We can create custom errors (with optional structures) and send them to the pipeline bus.
-					// The first argument reflects the source of the error, the second is the error itself, followed by a debug string.
-					msg := gst.NewErrorMessage(self, gst.NewGError(2, err), "Could not create elements for audio pipeline", nil)
-					s.pipeline.GetPipelineBus().Post(msg)
-					return
-				}
-				bin.AddMany(elements...)
-				gst.ElementLinkMany(elements...)
-
-				elements[1].Connect("pad-added", func(self *gst.Element, queuePad *gst.Pad) {
-					hlsSinkPad := sink.GetStaticPad("audio")
-					queuePad.Link(hlsSinkPad)
-					sink.SyncStateWithParent()
-				})
-
-				//parser := elements[0]
-				//sinkPad := parser.GetStaticPad("sink")
-				//srcPad.Link(sinkPad)
-				self.Link(elements[0])
-
-				for _, e := range elements {
-					e.SyncStateWithParent()
-				}
-
-			} else if isVideo {
-				log.Debug().Msgf("New video pad added, is_video=%v", cap)
-
-				elements, err := gst.NewElementMany("h264parse", "queue")
-				if err != nil {
-					msg := gst.NewErrorMessage(self, gst.NewGError(2, err), "Could not create elements for video pipeline", nil)
-					s.pipeline.GetPipelineBus().Post(msg)
-					return
-				}
-				bin.AddMany(elements...)
-				gst.ElementLinkMany(elements...)
-
-				elements[1].Connect("pad-added", func(self *gst.Element, queuePad *gst.Pad) {
-					hlsSinkPad := sink.GetStaticPad("video")
-					queuePad.Link(hlsSinkPad)
-					sink.SyncStateWithParent()
-				})
-
-				//parser := elements[0]
-				//sinkPad := parser.GetStaticPad("sink")
-				//srcPad.Link(sinkPad)
-				self.Link(elements[0])
-
-				for _, e := range elements {
-					e.SyncStateWithParent()
-				}
-			}
-		})
+		queuepad := gst.NewGhostPad("hlsghost", queue.GetStaticPad("sink"))
+		queuepad.SetActive(true)
+		bin.AddPad(queuepad.Pad)
 	*/
 
+	// Create elements
+	buffer, err := gst.NewElement("queue2")
+	if err != nil {
+		return err
+	}
+	demux, err := gst.NewElement("tsdemux")
+	if err != nil {
+		return err
+	}
+	sink, err := gst.NewElement("hlssink2")
+	if err != nil {
+		return err
+	}
+
+	// Create queues for audio and video
+	videoQueue, err := gst.NewElement("queue")
+	if err != nil {
+		return err
+	}
+	audioQueue, err := gst.NewElement("queue")
+	if err != nil {
+		return err
+	}
+
+	// Convert buffer time from seconds to nanoseconds
+	bufferTimeNs := uint64(s.Settings.Buffer * 1000000000)
+
+	buffer.Set("max-size-buffers", 0)
+	buffer.Set("max-size-bytes", 0)
+	buffer.Set("max-size-time", bufferTimeNs)
+	buffer.Set("use-buffering", true)
+	buffer.Set("low-watermark", 0.01)                // Reduced from 0.05 for faster startup
+	buffer.Set("high-watermark", 0.99)               // Increased from 0.95 for better buffering
+	buffer.Set("min-threshold-time", bufferTimeNs/4) // Reduced from bufferTimeNs/2 for faster startup
+	buffer.Set("ring-buffer-max-size", bufferTimeNs) // Reduced from bufferTimeNs*2 to minimize memory usage
+
+	// Calculate HLS segment duration based on buffer time
+	segmentDuration := 1 // Reduced from 2 to 1 for lower latency
+	if s.Settings.Buffer < 1 {
+		segmentDuration = s.Settings.Buffer
+	}
+	segmentDurationNs := uint64(segmentDuration * 1000000000)
+
+	// Configure HLS sink with optimized settings
+	sink.Set("name", "hlssink")
+	sink.Set("playlist-root", pRoot)
+	sink.Set("playlist-location", pLocation)
+	sink.Set("location", location)
+	sink.Set("max-files", uint64(s.Settings.Buffer/segmentDuration+2))       // Reduced from +3 to +2
+	sink.Set("playlist-length", uint64(s.Settings.Buffer/segmentDuration+1)) // Reduced from +2 to +1
+	sink.Set("target-duration", segmentDuration)
+	sink.Set("streaming", true)
+	sink.Set("send-keyframe-requests", true)
+	sink.Set("max-size-time", segmentDurationNs)
+	sink.Set("splitmux-max-size-time", segmentDurationNs)
+	sink.Set("splitmux-max-size-bytes", uint64(2*1024*1024)) // Reduced from 5MB to 2MB for faster segments
+	sink.Set("fragment-duration", uint64(200*1000000))       // Reduced from 500ms to 200ms for lower latency
+	sink.Set("playlist-type", "event")
+
+	// Create bin
+	for i := 0; i <= s.count; i++ {
+		if element, _ := s.pipeline.GetElementByName(fmt.Sprintf("sinkbin%d", i)); element == nil {
+			bin = gst.NewBin(fmt.Sprintf("sinkbin%d", i))
+			break
+		}
+	}
+
+	// Add elements to bin
+	bin.Add(buffer)
+	bin.Add(demux)
+	bin.Add(videoQueue)
+	bin.Add(audioQueue)
+	bin.Add(sink)
+
+	// Create ghost pad for bin input
+	bufPad := gst.NewGhostPad("ghost", buffer.GetStaticPad("sink"))
+	bufPad.SetActive(true)
+	bin.AddPad(bufPad.Pad)
+
+	// Link initial elements
+	buffer.Link(demux)
+
+	// Handle dynamic pads from demuxer
+	demux.Connect("pad-added", func(self *gst.Element, srcPad *gst.Pad) {
+		var parseElement *gst.Element
+		var queue *gst.Element
+		var sinkPad *gst.Pad
+		var err error
+
+		caps := srcPad.GetCurrentCaps()
+		if caps == nil {
+			log.Error().Msg("No caps on pad")
+			return
+		}
+
+		str := caps.GetStructureAt(0)
+		if str == nil {
+			log.Error().Msg("No structure in caps")
+			return
+		}
+
+		name := str.Name()
+		log.Debug().Msgf("New pad added with caps: %s", name)
+
+		if strings.HasPrefix(name, "audio/mpeg") {
+			parseElement, err = gst.NewElement("aacparse")
+			if err != nil {
+				log.Error().Msgf("Failed to create aacparse: %v", err)
+				return
+			}
+			queue = audioQueue
+			sinkPad = sink.GetRequestPad("audio")
+		} else if strings.HasPrefix(name, "video/x-h264") {
+			parseElement, err = gst.NewElement("h264parse")
+			if err != nil {
+				log.Error().Msgf("Failed to create h264parse: %v", err)
+				return
+			}
+			queue = videoQueue
+			sinkPad = sink.GetRequestPad("video")
+		} else {
+			log.Warn().Msgf("Unknown pad type: %s", name)
+			return
+		}
+
+		bin.Add(parseElement)
+		parseElement.SyncStateWithParent()
+
+		// Link elements
+		if ret := srcPad.Link(parseElement.GetStaticPad("sink")); ret != gst.PadLinkOK {
+			log.Error().Msgf("Failed to link demux to parser: %v", ret)
+			return
+		}
+
+		if err := parseElement.Link(queue); err != nil {
+			log.Error().Msgf("Failed to link parser to queue: %v", err)
+			return
+		}
+
+		queuePad := queue.GetStaticPad("src")
+		if ret := queuePad.Link(sinkPad); ret != gst.PadLinkOK {
+			log.Error().Msgf("Failed to link queuepad to sinkpad: %v", ret)
+			return
+		}
+
+		if sinkPad != nil {
+			log.Debug().Msgf("Successfully linked %s stream with pad %s", name, sinkPad.GetName())
+		}
+	})
+
+	// Sync states
 	elements, _ := bin.GetElements()
 	for _, e := range elements {
 		e.SyncStateWithParent()
 	}
 
+	// Add bin to pipeline
 	tee, err := s.pipeline.GetElementByName("stream")
 	if err != nil {
 		bin.SetState(gst.StateNull)
@@ -348,6 +487,7 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 	bin.SyncStateWithParent()
 	s.count++
 
+	// Start cleanup monitor
 	go func(stop chan struct{}, sinkbin *gst.Bin) {
 		idleTime := 15 * time.Second
 		cleanupInterval := 1 * time.Second
@@ -369,20 +509,29 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 		}
 	}(s.hlsCleanup, bin)
 
-	log.Info().Msgf("New Stream started")
-
+	log.Info().Msgf("New HLS Stream started")
 	return nil
 }
 
 func (s *Stream) NewMP2TSink(ctx *fiber.Ctx) error {
 	var writer *bufio.Writer
 	var done chan bool
+	var writerClosed = make(chan bool)
 
 	ctx.Set(fiber.HeaderContentType, "video/MP2T")
 
 	if writer == nil {
 		done = make(chan bool)
 		ready := make(chan bool)
+
+		// Monitor client connection
+		go func() {
+			<-ctx.Context().Done()
+			log.Info().Msgf("Client disconnected from MP2T stream: %s", s.Settings.Uuid)
+			close(writerClosed)
+			s.Close(nil, done)
+		}()
+
 		ctx.Context().Response.SetBodyStreamWriter(func(w *bufio.Writer) {
 			writer = w
 			ready <- true // Signal that writer is set
@@ -403,15 +552,19 @@ func (s *Stream) NewMP2TSink(ctx *fiber.Ctx) error {
 		return err
 	}
 
+	// Convert buffer time from seconds to nanoseconds
+	bufferTimeNs := uint64(s.Settings.Buffer * 1000000000)
+
 	buffer.Set("max-size-buffers", 0)
 	buffer.Set("max-size-bytes", 0)
-	buffer.Set("max-size-time", s.Settings.Buffer)
-	//buffer.Set("min-threshold-time", s.Settings.Buffer)
+	buffer.Set("max-size-time", bufferTimeNs)
 	buffer.Set("use-buffering", true)
-	buffer.Set("low-watermark", 0.01)
-	buffer.Set("high-watermark", 0.99)
+	buffer.Set("low-watermark", 0.05)  // Consistent with HLS settings
+	buffer.Set("high-watermark", 0.95) // Consistent with HLS settings
+	buffer.Set("min-threshold-time", bufferTimeNs/2)
+	buffer.Set("ring-buffer-max-size", bufferTimeNs*2)
 
-	sink.Set("max-time", 15000000000)
+	sink.Set("max-time", bufferTimeNs) // Match buffer time
 	sink.Set("drop", true)
 	sink.Set("emit-signals", true)
 	sink.Set("sync", false)
@@ -426,6 +579,16 @@ func (s *Stream) NewMP2TSink(ctx *fiber.Ctx) error {
 
 	sink.SetCallbacks(&gstapp.SinkCallbacks{
 		NewSampleFunc: func(appSink *gstapp.Sink) gst.FlowReturn {
+			select {
+			case <-writerClosed:
+				return s.Close(bin, done)
+			default:
+			}
+
+			// Update LastAccess time when processing samples
+			s.Mu.Lock()
+			s.LastAccess = time.Now()
+			s.Mu.Unlock()
 
 			if appSink.IsEOS() {
 				return s.Close(bin, done)
@@ -492,7 +655,7 @@ func (s *Stream) createPipeline() (*gst.Pipeline, error) {
 	var err error
 
 	if s.Settings.Src == "" {
-		err := errors.New("No src location configured on the httpsource")
+		err := errors.New("no src location configured on the httpsource")
 		return nil, err
 	}
 
@@ -519,37 +682,78 @@ func (s *Stream) createPipeline() (*gst.Pipeline, error) {
 	src.Set("location", s.Settings.Src)
 	src.Set("user-agent", s.Settings.UserAgent)
 	src.Set("is-live", true)
+	src.Set("timeout", 5) // Add timeout to detect connection issues faster
 
 	tee.Set("name", "stream")
+	tee.Set("allow-not-linked", true) // Allow tee to work without immediately connected sink
 
 	pipeline.Add(src)
 	pipeline.Add(typefind)
 	pipeline.Add(tee)
 
-	src.Link(typefind)
+	if err := src.Link(typefind); err != nil {
+		return nil, fmt.Errorf("failed to link src to typefind: %v", err)
+	}
 
 	typefind.Connect("have-type", func(self *gst.Element, guint gst.TypeFindProbability, caps *gst.Caps) {
-		//fmt.Println("GST CAPS: ", caps)
+		log.Debug().Msgf("Stream type detected: %s", caps.String())
+
 		if strings.HasPrefix(caps.String(), "application/x-hls") {
 			demux, err := gst.NewElement("hlsdemux")
 			if err != nil {
-				log.Error().Msgf("HlsDemux error: %v", err) //TODO RETURN ERROR
+				log.Error().Msgf("HlsDemux error: %v", err)
+				msg := gst.NewErrorMessage(self, gst.NewGError(1, err), "Failed to create hlsdemux", nil)
+				pipeline.GetPipelineBus().Post(msg)
+				return
 			}
 
 			pipeline.Add(demux)
+			if err := typefind.Link(demux); err != nil {
+				log.Error().Msgf("Failed to link typefind to hlsdemux: %v", err)
+				return
+			}
+
 			demux.Connect("pad-added", func(self *gst.Element, pad *gst.Pad) {
-				self.Link(tee)
+				sinkpad := tee.GetStaticPad("sink")
+				if sinkpad == nil {
+					log.Error().Msg("Failed to get tee sink pad")
+					return
+				}
+
+				if ret := pad.Link(sinkpad); ret != gst.PadLinkOK {
+					log.Error().Msgf("Failed to link demux to tee: %v", ret)
+					return
+				}
 				tee.SyncStateWithParent()
 			})
 
-			typefind.Link(demux)
 			demux.SyncStateWithParent()
 
 		} else if strings.HasPrefix(caps.String(), "video/mpegts") {
-			self.Link(tee)
-		}
+			sinkpad := tee.GetStaticPad("sink")
+			if sinkpad == nil {
+				log.Error().Msg("Failed to get tee sink pad")
+				return
+			}
 
+			srcpad := self.GetStaticPad("src")
+			if srcpad == nil {
+				log.Error().Msg("Failed to get typefind src pad")
+				return
+			}
+
+			if ret := srcpad.Link(sinkpad); ret != gst.PadLinkOK {
+				log.Error().Msgf("Failed to link typefind to tee: %v", ret)
+				return
+			}
+		} else {
+			log.Error().Msgf("Unsupported stream type: %s", caps.String())
+			msg := gst.NewErrorMessage(self, gst.NewGError(1, fmt.Errorf("unsupported stream type")),
+				fmt.Sprintf("Unsupported caps: %s", caps.String()), nil)
+			pipeline.GetPipelineBus().Post(msg)
+		}
 	})
+
 	elements, _ := pipeline.GetElements()
 	for _, e := range elements {
 		e.SyncStateWithParent()
@@ -560,55 +764,65 @@ func (s *Stream) createPipeline() (*gst.Pipeline, error) {
 
 func (s *Stream) mainLoop(loop *glib.MainLoop) error {
 	defer close(s.hlsCleanup)
-	// Start the pipeline
 
-	s.pipeline.SetState(gst.StatePlaying)
-
-	// Due to recent changes in the bindings - the finalizers might fire on the pipeline
-	// prematurely when it's passed between scopes. So when you do this, it is safer to
-	// take a reference that you dispose of when you are done. There is an alternative
-	// to this method in other examples.
-	//s.pipeline.Ref()
-	//defer s.pipeline.Unref()
+	// Start the pipeline with retry logic
+	for i := 0; i < 3; i++ {
+		if err := s.pipeline.SetState(gst.StatePlaying); err == nil {
+			log.Debug().Msg("Pipeline successfully set to PLAYING state")
+			break
+		}
+		log.Warn().Msgf("Failed to set pipeline state to PLAYING, attempt %d", i+1)
+		time.Sleep(time.Second)
+		if i == 2 {
+			return fmt.Errorf("failed to start pipeline after 3 attempts")
+		}
+	}
 
 	s.pipeline.GetPipelineBus().AddWatch(func(msg *gst.Message) bool {
 		var err error
 		retryEOS := settings.APP_SETTINGS.Streaming.Buffer
 		retry := 0
-		//log.Debug().Msgf("go-gst-debug-message: %v", msg)
+
 		switch msg.Type() {
 		case gst.MessageError:
-			// The parsed error implements the error interface, but also
-			// contains additional debug information.
 			gerr := msg.ParseError()
 			err = gerr
-			log.Debug().Msgf("go-gst-debug-message: %v", gerr.DebugString())
+			log.Error().Msgf("Pipeline error: %v, debug: %v", gerr, gerr.DebugString())
+
+			// Get more detailed element state information
+			if elements, _ := s.pipeline.GetElements(); elements != nil {
+				for _, element := range elements {
+					state := element.GetCurrentState()
+					log.Debug().Msgf("Element %s state: %v", element.GetName(), state)
+				}
+			}
+
+		case gst.MessageStateChanged:
+			oldState, newState := msg.ParseStateChanged()
+			log.Debug().Msgf("Pipeline state changed from %v to %v", oldState, newState)
+
 		case gst.MessageEOS:
 			if retry < retryEOS {
+				log.Debug().Msgf("Received EOS, attempting restart (retry %d/%d)", retry, retryEOS)
 				s.pipeline.SetState(gst.StatePaused)
 				s.pipeline.SetState(gst.StatePlaying)
+				retry++
 			} else {
-				err = errors.New(fmt.Sprintf("EOS: %v", msg))
+				err = fmt.Errorf("max retries reached after EOS: %v", msg)
 			}
+
 		case gst.MessageBuffering:
-			bufPercent := msg.ParseBuffering()
-			log.Debug().Msgf("go-gst-debug - stream buffer percent: %v", bufPercent)
-			// Wait until buffering is complete before start/resume playing
-			/*if bufPercent < 75 {
-				s.pipeline.SetState(gst.StatePaused)
-			} else {
-				s.pipeline.SetState(gst.StatePlaying)
-			}*/
+			//percent := msg.ParseBuffering()
+			//log.Debug().Msgf("Buffering: %d%%", percent)
+
 		case gst.MessageClockLost:
-			// Get a new clock
-			log.Debug().Msgf("go-gst-debug - clock lost: %v", msg)
+			log.Warn().Msg("Clock lost, resetting pipeline")
 			s.pipeline.SetState(gst.StatePaused)
 			s.pipeline.SetState(gst.StatePlaying)
 		}
 
-		// If either condition triggered an error, log and quit
 		if err != nil {
-			log.Error().Msgf("go-gst-error-message: %v", err.Error())
+			log.Error().Msgf("Pipeline error: %v", err)
 			select {
 			case _, ok := <-s.hlsCleanup:
 				if ok {
@@ -634,22 +848,27 @@ func (s *Stream) CreateHlsDir() error {
 	}
 	if err := os.Mkdir(fmt.Sprintf("%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid), os.ModePerm); err != nil {
 		log.Error().Msgf("GST_HLS_MKDIR ERROR: %v", err)
-		return errors.New(fmt.Sprintf("FAILED TO CREATE HLS FOLDER: %v", err))
-
+		return fmt.Errorf("FAILED TO CREATE HLS FOLDER: %v", err)
 	}
 	return nil
 }
 
 func (s *Stream) StartStream(c *fiber.Ctx) error {
 	var err error
+	log.Debug().Msgf("Starting stream for UUID: %s, Source: %s", s.Settings.Uuid, s.Settings.Src)
+
 	mainLoop := glib.NewMainLoop(glib.MainContextDefault(), false)
 
 	if s.pipeline, err = s.createPipeline(); err != nil {
+		log.Error().Msgf("Failed to create pipeline: %v", err)
 		return err
 	}
+	log.Debug().Msg("Pipeline created successfully")
 
 	if settings.APP_SETTINGS.Streaming.Type == "hls" || s.HlsExists {
+		log.Debug().Msg("Setting up HLS stream")
 		if err := s.CreateHlsDir(); err != nil {
+			log.Error().Msgf("Failed to create HLS directory: %v", err)
 			return err
 		}
 
@@ -658,21 +877,37 @@ func (s *Stream) StartStream(c *fiber.Ctx) error {
 			s.Close(nil, nil)
 			return err
 		}
+		log.Debug().Msg("HLS sink created successfully")
 	} else {
+		log.Debug().Msg("Setting up MP2T stream")
 		if err := s.NewMP2TSink(c); err != nil {
 			log.Error().Msgf("NEWMP2TSINK ERROR: %v", err)
 			s.Close(nil, nil)
 			return err
 		}
+		log.Debug().Msg("MP2T sink created successfully")
 	}
 
 	go func() {
+		log.Debug().Msg("Starting pipeline main loop")
 		if err := s.mainLoop(mainLoop); err != nil {
 			log.Error().Msgf("GST MAINLOOP ERROR!: %v", err)
 		}
 	}()
 
-	//TODO GO CHAN TO CHECK FOR GST ERRORS AND RESTART/CLOSE ON ERR
+	// Wait a short time to catch immediate startup errors
+	time.Sleep(100 * time.Millisecond)
+
+	// Check if pipeline is still alive
+	if s.pipeline == nil {
+		return fmt.Errorf("pipeline failed to start")
+	}
+
+	// Log current pipeline state
+	currentState := s.pipeline.GetCurrentState()
+	log.Debug().Msgf("Pipeline current state: %v", currentState)
+
+	// Update last access time
 	s.Mu.Lock()
 	s.LastAccess = time.Now()
 	s.Mu.Unlock()
