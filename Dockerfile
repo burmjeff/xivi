@@ -69,6 +69,8 @@ RUN go build -ldflags "-linkmode 'external' -extldflags '-lstdc++ -lssl -lcrypto
 FROM ubuntu:noble AS deployment
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+openssl \
+ca-certificates \
 tzdata \
 libvips42 \
 libglib2.0-0 \
