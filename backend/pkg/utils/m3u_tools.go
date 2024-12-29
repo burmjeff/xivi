@@ -298,7 +298,7 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 				logoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, GetLogoUrl(logo.Name))
 				channelURL := fmt.Sprintf("http://%s:%d/stream/%s", m.host, m.port, channel.Uuid)
 
-				log.Info().Msgf("M3U Creation: Adding Template Channel: %s", channel.Name)
+				//log.Info().Msgf("M3U Creation: Adding Template Channel: %s", channel.Name)
 				if channel.TvgID == nil {
 					xgid := "xivi"
 					channel.TvgID = &xgid

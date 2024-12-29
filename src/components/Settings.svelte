@@ -27,8 +27,6 @@
 			$settings.application.loglevel.toString();
 		(document.querySelector('.settings_updatecron input') as HTMLInputElement).value =
 			$settings.application.updatecron;
-		(document.querySelector('.settings_ssdp select') as HTMLInputElement).value =
-			$settings.application.ssdp.toString();
 		(document.querySelector('.settings_host input') as HTMLInputElement).value =
 			$settings.server.host;
 		(document.querySelector('.settings_port input') as HTMLInputElement).value =
@@ -67,7 +65,6 @@
 		const inputUpdateCron = (
 			document.querySelector('.settings_updatecron input') as HTMLInputElement
 		).value;
-		const inputSsdp = (document.querySelector('.settings_ssdp select') as HTMLInputElement).value;
 		const inputHost = (document.querySelector('.settings_host input') as HTMLInputElement).value;
 		const inputPort = (document.querySelector('.settings_port input') as HTMLInputElement).value;
 		const inputReadTimeout = (
@@ -105,8 +102,7 @@
 					tz: inputTZ,
 					servepath: inputServePath,
 					loglevel: Number(inputLogLevel),
-					updatecron: inputUpdateCron,
-					ssdp: inputSsdp === 'true'
+					updatecron: inputUpdateCron
 				},
 				server: {
 					host: inputHost,
@@ -176,15 +172,6 @@
 					<span>Cron Update Schedule</span>
 					<input class="input variant-form-material" type="text" placeholder="0 0 * * *" />
 				</label>
-				<div class="w-full space-y-4">
-					<label class="settings_ssdp">
-						<span>ssdp Discovery Enabled</span>
-						<select class="select">
-							<option value="true">True</option>
-							<option value="false">False</option>
-						</select>
-					</label>
-				</div>
 			</div>
 		</div>
 		<div class="application-viewport card drop-shadow-lg space-y-4 p-4">

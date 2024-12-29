@@ -20,9 +20,6 @@ func InitSettings() error {
 		if appSettings, err = SetDefaults(); err != nil {
 			return err
 		}
-		if err := WriteSettings(appSettings); err != nil {
-			return err
-		}
 	} else {
 		file, err := os.Open(config)
 		if err != nil {
@@ -75,12 +72,13 @@ func InitSettings() error {
 				log.Error().Msg(fmt.Sprintf("Not a log level: %s", env))
 			} else {
 				appSettings.Application.LogLevel = level
-				zerolog.SetGlobalLevel(zerolog.Level(level))
+				log.Debug().Msgf("Log level set to: %d", level)
 			}
 		}
-		if err := WriteSettings(appSettings); err != nil {
-			log.Fatal().Msg(err.Error())
-		}
+	}
+
+	if err := WriteSettings(appSettings); err != nil {
+		return err
 	}
 
 	return nil
@@ -95,7 +93,6 @@ func SetDefaults() (*AppSettings, error) {
 			ServePath:  "./serve",
 			LogLevel:   3,
 			UpdateCron: "0 0 * * *",
-			Ssdp:       true,
 		},
 		Server: Server{
 			Host:        "127.0.0.1",
@@ -128,6 +125,12 @@ func WriteSettings(settings *AppSettings) error {
 	err = os.WriteFile(config, yamlData, 0644)
 	if err != nil {
 		return fmt.Errorf("unable to write data into the settings file: %v", err)
+	}
+
+	// Update log level if it changed
+	if settings.Application.LogLevel != APP_SETTINGS.Application.LogLevel {
+		zerolog.SetGlobalLevel(zerolog.Level(settings.Application.LogLevel))
+		log.Debug().Msgf("Log level changed to: %d", settings.Application.LogLevel)
 	}
 
 	APP_SETTINGS = settings

@@ -10,7 +10,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	_ "github.com/joho/godotenv/autoload" // load .env file automatically
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -28,7 +27,6 @@ import (
 // @name Authorization
 func main() {
 
-	zerolog.SetGlobalLevel(zerolog.ErrorLevel)
 	var err error
 
 	if err := settings.InitPaths(); err != nil {

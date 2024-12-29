@@ -12,7 +12,6 @@ export interface Application {
 	servepath: string;
 	loglevel: number;
 	updatecron: string;
-	ssdp: boolean;
 }
 
 export interface Server {

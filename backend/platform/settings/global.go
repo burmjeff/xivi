@@ -32,7 +32,6 @@ type Application struct {
 	ServePath  string `yaml:"servepath" json:"servepath"`
 	LogLevel   int    `yaml:"loglevel" json:"loglevel"`
 	UpdateCron string `yaml:"updatecron" json:"updatecron"`
-	Ssdp       bool   `yaml:"ssdp" json:"ssdp"`
 }
 
 type Server struct {

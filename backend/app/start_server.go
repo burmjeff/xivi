@@ -22,9 +22,9 @@ func StartServer(app *fiber.App) {
 		log.Fatal().Msgf("Failed to connect to database: %v", err)
 	}
 
+	vips.LoggingSettings(nil, vips.LogLevelCritical)
 	vips.Startup(nil)
 	defer vips.Shutdown()
-	vips.LoggingSettings(nil, vips.LogLevelError)
 
 	//config values
 	host := flag.String("host", settings.APP_SETTINGS.Host, "Server Host")

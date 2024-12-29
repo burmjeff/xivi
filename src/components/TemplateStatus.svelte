@@ -1,7 +1,11 @@
 <!-- TemplateStatus.svelte -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getModalStore, popup, type PopupSettings } from '@skeletonlabs/skeleton';
+	import { getModalStore, 
+		popup,
+		type PopupSettings,
+		SlideToggle
+	} from '@skeletonlabs/skeleton';
 	import { templates } from '@xivi/stores/template_store';
 	import Icon from '@iconify/svelte';
 	import { settings } from '@xivi/stores/settings_store';
@@ -43,6 +47,7 @@
 			return;
 		}
 	}
+
 </script>
 
 <section class="templates card card-hover p-1">

@@ -154,8 +154,8 @@
 					class="h-fit w-fit"
 					name="slide"
 					active="bg-primary-500"
-					bind:checked={formData.dynamic}>Dynamic</SlideToggle
-				>
+					bind:checked={formData.dynamic}
+				/>
 				<div class="template_group_playlist" use:popup={popupDynamic}>
 					<span>Playlist Group</span>
 					<InputChip
