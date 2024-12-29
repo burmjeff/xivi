@@ -297,20 +297,6 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 	pLocation := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "playlist.m3u8")
 	location := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, s.Settings.Uuid, "segment.%05d.ts")
 
-	/*
-		bin, _ = gst.NewBinFromString(fmt.Sprintf("queue2 max-size-buffers=0 max-size-bytes=0 max-size-time=%d use-buffering=true low-watermark=0.01 high-watermark=0.99 name=hlsqueue ! tsdemux name=demux ! h264parse ! queue ! hlssink2 playlist-root=%s location=%s playlist-location=%s max-files=3 playlist-length=3 target-duration=10 name=hlssink demux. ! aacparse ! queue ! hlssink.audio", s.Settings.Buffer, pRoot, location, pLocation), false)
-
-		queue, err := bin.GetElementByName("hlsqueue")
-		if err != nil {
-			bin.SetState(gst.StateNull)
-			bin.Clear()
-			return err
-		}
-		queuepad := gst.NewGhostPad("hlsghost", queue.GetStaticPad("sink"))
-		queuepad.SetActive(true)
-		bin.AddPad(queuepad.Pad)
-	*/
-
 	// Create elements
 	buffer, err := gst.NewElement("queue2")
 	if err != nil {
@@ -342,32 +328,32 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 	buffer.Set("max-size-bytes", 0)
 	buffer.Set("max-size-time", bufferTimeNs)
 	buffer.Set("use-buffering", true)
-	buffer.Set("low-watermark", 0.01)                // Reduced from 0.05 for faster startup
-	buffer.Set("high-watermark", 0.99)               // Increased from 0.95 for better buffering
-	buffer.Set("min-threshold-time", bufferTimeNs/4) // Reduced from bufferTimeNs/2 for faster startup
-	buffer.Set("ring-buffer-max-size", bufferTimeNs) // Reduced from bufferTimeNs*2 to minimize memory usage
+	buffer.Set("low-watermark", 0.01)
+	buffer.Set("high-watermark", 0.99)
+	buffer.Set("min-threshold-time", bufferTimeNs/4)
+	buffer.Set("ring-buffer-max-size", bufferTimeNs)
 
 	// Calculate HLS segment duration based on buffer time
-	segmentDuration := 1 // Reduced from 2 to 1 for lower latency
+	segmentDuration := 1
 	if s.Settings.Buffer < 1 {
 		segmentDuration = s.Settings.Buffer
 	}
 	segmentDurationNs := uint64(segmentDuration * 1000000000)
 
-	// Configure HLS sink with optimized settings
+	// Configure HLS sink
 	sink.Set("name", "hlssink")
 	sink.Set("playlist-root", pRoot)
 	sink.Set("playlist-location", pLocation)
 	sink.Set("location", location)
-	sink.Set("max-files", uint64(s.Settings.Buffer/segmentDuration+2))       // Reduced from +3 to +2
-	sink.Set("playlist-length", uint64(s.Settings.Buffer/segmentDuration+1)) // Reduced from +2 to +1
+	sink.Set("max-files", uint64(s.Settings.Buffer/segmentDuration+2))
+	sink.Set("playlist-length", uint64(s.Settings.Buffer/segmentDuration+1))
 	sink.Set("target-duration", segmentDuration)
 	sink.Set("streaming", true)
 	sink.Set("send-keyframe-requests", true)
 	sink.Set("max-size-time", segmentDurationNs)
 	sink.Set("splitmux-max-size-time", segmentDurationNs)
-	sink.Set("splitmux-max-size-bytes", uint64(2*1024*1024)) // Reduced from 5MB to 2MB for faster segments
-	sink.Set("fragment-duration", uint64(200*1000000))       // Reduced from 500ms to 200ms for lower latency
+	sink.Set("splitmux-max-size-bytes", uint64(2*1024*1024))
+	sink.Set("fragment-duration", uint64(200*1000000))
 	sink.Set("playlist-type", "event")
 
 	// Create bin
@@ -559,12 +545,12 @@ func (s *Stream) NewMP2TSink(ctx *fiber.Ctx) error {
 	buffer.Set("max-size-bytes", 0)
 	buffer.Set("max-size-time", bufferTimeNs)
 	buffer.Set("use-buffering", true)
-	buffer.Set("low-watermark", 0.05)  // Consistent with HLS settings
-	buffer.Set("high-watermark", 0.95) // Consistent with HLS settings
+	buffer.Set("low-watermark", 0.01)
+	buffer.Set("high-watermark", 0.99)
 	buffer.Set("min-threshold-time", bufferTimeNs/2)
 	buffer.Set("ring-buffer-max-size", bufferTimeNs*2)
 
-	sink.Set("max-time", bufferTimeNs) // Match buffer time
+	sink.Set("max-time", bufferTimeNs)
 	sink.Set("drop", true)
 	sink.Set("emit-signals", true)
 	sink.Set("sync", false)
