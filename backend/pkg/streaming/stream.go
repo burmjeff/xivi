@@ -408,7 +408,7 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 				return
 			}
 			queue = audioQueue
-			sinkPad = sink.GetRequestPad("audio")
+			sinkPad = sink.GetStaticPad("audio")
 		} else if strings.HasPrefix(name, "video/x-h264") {
 			parseElement, err = gst.NewElement("h264parse")
 			if err != nil {
@@ -416,7 +416,7 @@ func (s *Stream) NewHLSSink(ctx *fiber.Ctx) error {
 				return
 			}
 			queue = videoQueue
-			sinkPad = sink.GetRequestPad("video")
+			sinkPad = sink.GetStaticPad("video")
 		} else {
 			log.Warn().Msgf("Unknown pad type: %s", name)
 			return
