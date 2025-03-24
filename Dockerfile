@@ -12,26 +12,6 @@ RUN npm prune
 RUN npx vite build
 
 #
-# rust_lib-builder
-#
-
-FROM rust:slim-bookworm AS lib-builder
-VOLUME /usr/src
-WORKDIR /usr/src/
-
-RUN apt-get update && apt-get install -y \
-libssl-dev \
-g++
-
-RUN rustup target add x86_64-unknown-linux-gnu
-
-RUN USER=root cargo new sentence-embed
-COPY Cargo.toml Cargo.lock ./
-COPY lib/ /usr/src/lib
-
-RUN cargo build --release --target=x86_64-unknown-linux-gnu
-
-#
 # server-builder
 #
 
@@ -53,7 +33,6 @@ WORKDIR /build
 COPY backend/ /build/backend
 COPY go.* .
 COPY *.go .
-COPY --from=lib-builder /usr/src/target/x86_64-unknown-linux-gnu/release/libcandle_embeddings.a /usr/src/target/candle-embeddings.h ./lib_build/
 RUN go mod download
 
 ENV CGO_ENABLED=1 GOOS=linux GOARCH=amd64
@@ -78,7 +57,18 @@ libgstreamer1.0-0 \
 gstreamer1.0-plugins-base \
 gstreamer1.0-plugins-good \
 gstreamer1.0-plugins-bad \
-gstreamer1.0-plugins-ugly
+gstreamer1.0-plugins-ugly \
+curl
+
+# Install ONNX Runtime
+RUN curl -L https://github.com/microsoft/onnxruntime/releases/download/v1.21.0/onnxruntime-linux-x64-1.21.0.tgz -o /tmp/onnxruntime.tgz && \
+    mkdir -p /usr/local/onnxruntime && \
+    tar -xzf /tmp/onnxruntime.tgz -C /usr/local/onnxruntime --strip-components=1 && \
+    rm /tmp/onnxruntime.tgz
+
+# Set up ONNX Runtime environment variables
+ENV LD_LIBRARY_PATH="/usr/local/onnxruntime/lib:${LD_LIBRARY_PATH}" \
+    ONNX_PATH="/usr/local/onnxruntime/lib/libonnxruntime.so"
 
 # environment variables
 ENV APP_NAME="Xivi" \

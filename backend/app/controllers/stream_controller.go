@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -33,6 +34,7 @@ type AppSettings struct {
 // @Param stream_id path string true "Stream ID"
 // @Router /stream/{stream_id} [get]
 func GetStream(c *fiber.Ctx) error {
+	ctx := context.Background()
 	if isRunning {
 		raceCheck()
 	}
@@ -49,7 +51,7 @@ func GetStream(c *fiber.Ctx) error {
 	}
 
 	// Get channels by UUID.
-	channels, err := database.Db.GetChannelsbyUuid(stream_id)
+	channels, err := database.Db.GetChannelsbyUuid(ctx, stream_id)
 	if err != nil {
 		log.Error().Msgf("No stream channels found: %v", err)
 		// Return, if no channels found.
@@ -161,6 +163,7 @@ func GetStream(c *fiber.Ctx) error {
 // @Param stream_id path string true "Stream ID"
 // @Router /stream/hls/{stream_id} [get]
 func GetHlsStream(c *fiber.Ctx) error {
+	ctx := context.Background()
 	if isRunning {
 		raceCheck()
 	}
@@ -178,7 +181,7 @@ func GetHlsStream(c *fiber.Ctx) error {
 	}
 
 	// Get channels by UUID.
-	channels, err := database.Db.GetChannelsbyUuid(stream_id)
+	channels, err := database.Db.GetChannelsbyUuid(ctx, stream_id)
 	if err != nil {
 		isRunning = false
 		log.Error().Msgf("No stream channels found: %v", err)
@@ -279,6 +282,7 @@ func GetHlsStream(c *fiber.Ctx) error {
 // @Param group_id path string true "Group ID"
 // @Router /channels/hls/{group_id} [get]
 func GetHlsChannels(c *fiber.Ctx) error {
+	ctx := context.Background()
 	group_id, err := strconv.ParseInt(c.Params("group_id"), 10, 64)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -306,7 +310,7 @@ func GetHlsChannels(c *fiber.Ctx) error {
 			channel.Name = tmplChannel.Name
 
 			// Get logo.
-			logo, err := database.Db.GetLogo(tmplChannel.LogoId)
+			logo, err := database.Db.GetLogo(ctx, tmplChannel.LogoId)
 			if err != nil {
 				log.Warn().Msgf("LiveChannel: No Logo found")
 			}
@@ -315,14 +319,14 @@ func GetHlsChannels(c *fiber.Ctx) error {
 			channel.Stream = fmt.Sprintf("http://%s:%d/stream/hls/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, tmplChannel.Uuid)
 
 			if tmplChannel.TvgID != nil {
-				if epgProgramme, err := database.Db.GetProgrammeByTime(*tmplChannel.TvgID, time.Now()); err != nil {
+				if epgProgramme, err := database.Db.GetProgrammeByTime(ctx, *tmplChannel.TvgID, time.Now()); err != nil {
 					log.Warn().Msgf("LiveChannel: No EPG Programme found")
 				} else {
 					channel.Programme = epgProgramme.Title.Value
 					channel.Start = epgProgramme.Start.String()
 					channel.End = epgProgramme.Stop.String()
 
-					epgProgrammeNext, err := database.Db.GetProgrammeByTime(*tmplChannel.TvgID, epgProgramme.Start.Time)
+					epgProgrammeNext, err := database.Db.GetProgrammeByTime(ctx, *tmplChannel.TvgID, epgProgramme.Start.Time)
 					if err != nil {
 						log.Warn().Msgf("LiveChannel: No EPG Next Programme found")
 					}

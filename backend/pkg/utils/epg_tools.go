@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"encoding/xml"
 	"fmt"
 	"os"
@@ -13,6 +14,7 @@ import (
 )
 
 func CreateEpgXML(template models.Template) {
+	ctx := context.Background()
 	log.Info().Msg("Create EPG XML: STARTED")
 	epg := models.EpgItem{
 		GeneratorInfo:  settings.APP_SETTINGS.Application.AppName,
@@ -43,7 +45,7 @@ func CreateEpgXML(template models.Template) {
 
 	for _, channel := range channels {
 		if channel.TvgID != nil {
-			epgChannel, err := database.Db.GetEpgChannelByChannelId(*channel.TvgID)
+			epgChannel, err := database.Db.GetEpgChannelByChannelId(ctx, *channel.TvgID)
 			if err != nil {
 				log.Warn().Msgf("No EPG channel found for %s: %v", channel.Name, err)
 				epgChannel = &models.EpgChannel{
@@ -57,7 +59,7 @@ func CreateEpgXML(template models.Template) {
 	}
 
 	for _, channel := range epg.Channels {
-		epgProgrammes, err := database.Db.GetProgrammesBytvgid(channel.ChannelId)
+		epgProgrammes, err := database.Db.GetProgrammesBytvgid(ctx, channel.ChannelId)
 		if epgProgrammes == nil || len(*epgProgrammes) == 0 {
 			log.Warn().Msgf("No EPG programme found for %s: %v", channel.ChannelId, err)
 

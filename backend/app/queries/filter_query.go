@@ -1,6 +1,7 @@
 package queries
 
 import (
+	"context"
 	"database/sql"
 	"xivi/backend/app/models"
 
@@ -8,125 +9,198 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// SQL query constants
+const (
+	selectAllFiltersQuery = `SELECT * FROM regexfilters`
+	selectFilterByIdQuery = `SELECT * FROM regexfilters WHERE id = ?`
+	insertFilterQuery     = `INSERT INTO regexfilters VALUES (null, ?, ?)`
+	updateFilterQuery     = `UPDATE regexfilters SET name = ?, regex = ? WHERE id = ?`
+	deleteFilterQuery     = `DELETE FROM regexfilters WHERE id = ?`
+
+	selectGroupFiltersByGroupIdQuery = `SELECT * FROM groupfilters WHERE group_id = ?`
+	insertGroupFilterQuery           = `INSERT INTO groupfilters VALUES (null, ?, ?, ?)`
+	updateGroupFilterQuery           = `UPDATE groupfilters SET group_id = ?, filter_id = ?, type = ? WHERE id = ?`
+	deleteGroupFilterQuery           = `DELETE FROM groupfilters WHERE id = ?`
+)
+
 type FilterQueries struct {
-	*sqlx.DB
+	BaseQueries
 }
 
-func (q *FilterQueries) GetFilters() (*[]models.RegexFilter, error) {
+// NewFilterQueries creates a new FilterQueries instance
+func NewFilterQueries(db *sqlx.DB) *FilterQueries {
+	return &FilterQueries{
+		BaseQueries: NewBaseQueries(db),
+	}
+}
+
+func (q *FilterQueries) GetFilters(ctx context.Context) (*[]models.RegexFilter, error) {
 	filters := &[]models.RegexFilter{}
 
-	query := `SELECT * FROM regexfilters`
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(selectAllFiltersQuery)
+		if err != nil {
+			return err
+		}
 
-	if err := q.Select(filters, query); err != nil {
+		return stmt.SelectContext(ctx, filters)
+	})
+
+	if err != nil {
+		log.Error().Err(err).Msg("Error retrieving filters")
 		return nil, err
 	}
 
 	return filters, nil
 }
 
-func (q *FilterQueries) GetFilter(id int64) (*models.RegexFilter, error) {
+func (q *FilterQueries) GetFilter(ctx context.Context, id int64) (*models.RegexFilter, error) {
 	filter := &models.RegexFilter{}
 
-	query := `SELECT * FROM regexfilters WHERE id = ?`
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(selectFilterByIdQuery)
+		if err != nil {
+			return err
+		}
 
-	err := q.Get(filter, query, id)
+		return stmt.GetContext(ctx, filter, id)
+	})
+
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		log.Error().Err(err).Int64("id", id).Msg("Error retrieving filter")
 		return nil, err
 	}
 
 	return filter, nil
 }
 
-func (q *FilterQueries) CreateFilter(filter *models.RegexFilter) (int64, error) {
+func (q *FilterQueries) CreateFilter(ctx context.Context, filter *models.RegexFilter) (int64, error) {
+	var id int64
 
-	query := `INSERT INTO regexfilters VALUES (null, ?, ?)`
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(insertFilterQuery)
+		if err != nil {
+			return err
+		}
 
-	res, err := q.Exec(query, filter.Name, filter.Regex)
-	if err != sql.ErrNoRows && err != nil {
-		return 0, err
-	}
-	id, err := res.LastInsertId()
+		res, err := stmt.ExecContext(ctx, filter.Name, filter.Regex)
+		if err != nil {
+			return err
+		}
+
+		id, err = res.LastInsertId()
+		if err != nil {
+			log.Warn().Err(err).Msg("Error retrieving the ID")
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 
 	return id, nil
 }
 
-func (q *FilterQueries) UpdateFilter(filter *models.RegexFilter) error {
+func (q *FilterQueries) UpdateFilter(ctx context.Context, filter *models.RegexFilter) error {
+	return q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(updateFilterQuery)
+		if err != nil {
+			return err
+		}
 
-	query := `UPDATE regexfilters SET name = ?, regex = ? WHERE id = ?`
-
-	_, err := q.Exec(query, filter.Name, filter.Regex, filter.ID)
-	if err != nil {
+		_, err = stmt.ExecContext(ctx, filter.Name, filter.Regex, filter.ID)
 		return err
-	}
-
-	return nil
+	})
 }
 
-func (q *FilterQueries) DeleteFilter(id int64) error {
+func (q *FilterQueries) DeleteFilter(ctx context.Context, id int64) error {
+	return q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(deleteFilterQuery)
+		if err != nil {
+			return err
+		}
 
-	query := `DELETE FROM regexfilters WHERE id = ?`
-
-	_, err := q.Exec(query, id)
-	if err != nil {
+		_, err = stmt.ExecContext(ctx, id)
 		return err
-	}
-
-	return nil
+	})
 }
 
-func (q *FilterQueries) GetGroupFilters(group_id int64) (*[]models.GroupFilter, error) {
+func (q *FilterQueries) GetGroupFilters(ctx context.Context, group_id int64) (*[]models.GroupFilter, error) {
 	filters := &[]models.GroupFilter{}
 
-	query := `SELECT * FROM groupfilters WHERE group_id = ?`
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(selectGroupFiltersByGroupIdQuery)
+		if err != nil {
+			return err
+		}
 
-	if err := q.Select(filters, query, group_id); err != nil {
+		return stmt.SelectContext(ctx, filters, group_id)
+	})
+
+	if err != nil {
+		log.Error().Err(err).Int64("group_id", group_id).Msg("Error retrieving group filters")
 		return nil, err
 	}
 
 	return filters, nil
 }
 
-func (q *FilterQueries) CreateGroupFilter(filter *models.GroupFilter) (int64, error) {
+func (q *FilterQueries) CreateGroupFilter(ctx context.Context, filter *models.GroupFilter) (int64, error) {
+	var id int64
 
-	query := `INSERT INTO groupfilters VALUES (null, ?, ?, ?)`
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(insertGroupFilterQuery)
+		if err != nil {
+			return err
+		}
 
-	res, err := q.Exec(query, filter.GroupId, filter.FilterId, filter.Type)
-	if err != sql.ErrNoRows && err != nil {
-		return 0, err
-	}
-	id, err := res.LastInsertId()
+		res, err := stmt.ExecContext(ctx, filter.GroupId, filter.FilterId, filter.Type)
+		if err != nil {
+			return err
+		}
+
+		id, err = res.LastInsertId()
+		if err != nil {
+			log.Warn().Err(err).Msg("Error retrieving the ID")
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 
 	return id, nil
 }
 
-func (q *FilterQueries) UpdateGroupFilter(filter *models.GroupFilter) error {
+func (q *FilterQueries) UpdateGroupFilter(ctx context.Context, filter *models.GroupFilter) error {
+	return q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(updateGroupFilterQuery)
+		if err != nil {
+			return err
+		}
 
-	query := `UPDATE groupfilters SET group_id = ?, filter_id = ?, type = ? WHERE id = ?`
-
-	_, err := q.Exec(query, filter.GroupId, filter.FilterId, filter.Type, filter.ID)
-	if err != nil {
+		_, err = stmt.ExecContext(ctx, filter.GroupId, filter.FilterId, filter.Type, filter.ID)
 		return err
-	}
-
-	return nil
+	})
 }
 
-func (q *FilterQueries) DeleteGroupFilter(id int64) error {
+func (q *FilterQueries) DeleteGroupFilter(ctx context.Context, id int64) error {
+	return q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(deleteGroupFilterQuery)
+		if err != nil {
+			return err
+		}
 
-	query := `DELETE FROM groupfilters WHERE id = ?`
-
-	_, err := q.Exec(query, id)
-	if err != nil {
+		_, err = stmt.ExecContext(ctx, id)
 		return err
-	}
-
-	return nil
+	})
 }

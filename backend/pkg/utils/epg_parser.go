@@ -3,6 +3,7 @@ package utils
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
 	"encoding/xml"
 	"io"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 
 func ParseEpg(epg *models.Epg) {
 	epgItem := models.EpgItem{}
+	ctx := context.Background()
 
 	log.Info().Msg("EPG Parser started")
 
@@ -30,17 +32,21 @@ func ParseEpg(epg *models.Epg) {
 
 		bufReader := bufio.NewReader(resp.Body)
 		testBytes, err := bufReader.Peek(2)
+		if err != nil {
+			log.Error().Msgf("Unable to peek at epg.xml FILE: %v", err)
+			return
+		}
 		if testBytes[0] == 31 && testBytes[1] == 139 { //Check if gzip
 			gzipReader, err := gzip.NewReader(bufReader)
-			defer gzipReader.Close()
 			if err != nil {
+				log.Error().Msgf("Unable to create gzip reader: %v", err)
 				return
-			} else {
-				epgItem, err = parseXML(gzipReader)
-				if err != nil {
-					log.Error().Msgf("Unable to parse epg.xml.gzip FILE: %v", err)
-					return
-				}
+			}
+			defer gzipReader.Close()
+			epgItem, err = parseXML(gzipReader)
+			if err != nil {
+				log.Error().Msgf("Unable to parse epg.xml.gzip FILE: %v", err)
+				return
 			}
 		} else {
 			epgItem, err = parseXML(bufReader)
@@ -69,10 +75,10 @@ func ParseEpg(epg *models.Epg) {
 	// Print out the parsed data
 	for _, channel := range epgItem.Channels {
 		if channel.ChannelId != "" {
-			_, err := database.Db.GetEpgChannelByChannelId(channel.ChannelId)
+			_, err := database.Db.GetEpgChannelByChannelId(ctx, channel.ChannelId)
 			if err != nil {
 				//log.Info().Msgf("EPG XML PARSER: Creating new channel: %s", channel.DisplayName)
-				if _, err = database.Db.CreateEpgChannel(channel); err != nil {
+				if _, err = database.Db.CreateEpgChannel(ctx, channel); err != nil {
 					log.Error().Msgf("EPG XML PARSER: Failed to create new EPG channel: %v", err)
 					continue
 				}
@@ -88,17 +94,16 @@ func ParseEpg(epg *models.Epg) {
 		if !programme.Start.IsZero() {
 
 			if programme.Channel != "" {
-				FoundProg, err := database.Db.GetProgrammeByTime(programme.Channel, programme.Start.Time)
+				FoundProg, err := database.Db.GetProgrammeByTime(ctx, programme.Channel, programme.Start.Time)
 				if err != nil {
 					//log.Info().Msgf("EPG XML PARSER: Creating new Programme: %s", programme.Title.Value)
-					if _, err := database.Db.CreateEpgProgramme(programme); err != nil {
+					if _, err := database.Db.CreateEpgProgramme(ctx, programme); err != nil {
 						log.Warn().Msgf("EPG XML PARSER: Failed to create new programme: %v", err)
 						continue
 					}
 				} else {
 					//log.Info().Msgf("EPG XML PARSER: Updating Programme: %s", programme.Title.Value)
-					database.Db.UpdateEpgProgramme(FoundProg.ID, &programme)
-					if err != nil {
+					if err := database.Db.UpdateEpgProgramme(ctx, FoundProg.ID, &programme); err != nil {
 						log.Warn().Msgf("EPG XML PARSER: Failed to update programme: %v", err)
 						continue
 					}
@@ -111,7 +116,7 @@ func ParseEpg(epg *models.Epg) {
 	}
 
 	epg.UpdatedAt = time.Now()
-	database.Db.UpdateEpg(epg.ID, epg)
+	database.Db.UpdateEpg(ctx, epg.ID, epg)
 
 	log.Info().Msg("EPG Parser Finished")
 

@@ -44,16 +44,13 @@
 
 	async function updateSettings(channelIdx: number, formData: any) {
 		if (formData.name != '' && formData.tvgid != '' && formData.logo != '') {
-			let newSettings: TemplateChannel;
-			newSettings = {
-				id: $templateGroups[groupIdx].channels[channelIdx].id,
+			let newSettings = {
+				id: parseInt($templateGroups[groupIdx].channels[channelIdx].id),
 				name: formData.name,
 				tvgid: formData.tvgid,
 				logoid: formData.logoid,
 				uuid: $templateGroups[groupIdx].channels[channelIdx].uuid,
-				logo: formData.logo,
-				isDndShadowItem: false,
-				isDragged: false
+				logo: formData.logo
 			};
 			window.console.log('TemplateChannel: ', newSettings);
 
@@ -199,9 +196,9 @@
 						<td>{channel.tvgid}</td>
 
 						{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-							{#if channel.title}
+							{#if channel.name}
 								<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
-									{channel.title}
+									{channel.name}
 								</div>
 							{:else}
 								<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">

@@ -1,10 +1,12 @@
 package utils
 
 import (
+	"context"
 	"errors"
 	"math"
 	"sort"
 	"sync"
+	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
 	"xivi/backend/platform/settings"
@@ -12,39 +14,99 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func MatchPlaylistChannel(playlistCh models.PlaylistChannel) {
-	//TODO SHOULD I ONLY MATCH IF ONE DOESN'T ALREADY EXIST??
-	if playlistCh.Enabled {
-		if settings.APP_SETTINGS.Playlist.Tvgid_match {
-			if err := matchPlaylistTvgid(playlistCh); err == nil {
-				return
-			} else {
-				log.Debug().Err(err)
+// Matching request queue with larger buffer
+var (
+	matchQueue     = make(chan matchRequest, 100)
+	matchInit      sync.Once
+	matchSemaphore = make(chan struct{}, 3)
+)
+
+type matchRequest struct {
+	playlistCh *models.PlaylistChannel
+	templateCh *models.TemplateChannel
+	resultCh   chan<- error
+}
+
+// Initialize the matching worker pool
+func initMatchWorkers() {
+	workerCount := 3
+
+	for i := 0; i < workerCount; i++ {
+		go matchWorker()
+	}
+}
+
+// Worker that processes match requests
+func matchWorker() {
+	for req := range matchQueue {
+		matchSemaphore <- struct{}{}
+
+		var err error
+
+		if req.playlistCh != nil {
+			// Handle playlist channel matching
+			if req.playlistCh.Enabled {
+				if settings.APP_SETTINGS.Playlist.Tvgid_match {
+					if err = matchPlaylistTvgid(*req.playlistCh); err == nil {
+						if req.resultCh != nil {
+							req.resultCh <- nil
+						}
+						<-matchSemaphore
+						continue
+					}
+				}
+
+				if settings.APP_SETTINGS.Playlist.Name_match {
+					err = matchPlaylistChannelName(*req.playlistCh)
+				}
+			}
+		} else if req.templateCh != nil {
+			// Handle template channel matching
+			if settings.APP_SETTINGS.Playlist.Tvgid_match {
+				if _, err = matchTemplateTvgid(req.templateCh); err == nil {
+					if req.resultCh != nil {
+						req.resultCh <- nil
+					}
+					<-matchSemaphore
+					continue
+				}
+			}
+
+			if settings.APP_SETTINGS.Playlist.Name_match {
+				err = matchTemplateChannelName(req.templateCh)
 			}
 		}
 
-		if settings.APP_SETTINGS.Playlist.Name_match {
-			if err := matchPlaylistChannelName(playlistCh); err != nil {
-				log.Debug().Err(err)
-			}
+		if req.resultCh != nil {
+			req.resultCh <- err
 		}
+
+		<-matchSemaphore
+	}
+}
+
+func MatchPlaylistChannel(playlistCh models.PlaylistChannel) {
+	// Initialize workers if not already done
+	matchInit.Do(initMatchWorkers)
+
+	// Submit request to the matching queue
+	matchQueue <- matchRequest{
+		playlistCh: &playlistCh,
+		templateCh: nil,
+		resultCh:   nil, // No need for result in this case
 	}
 }
 
 func MatchTemplateChannel(templateCh *models.TemplateChannel) {
-	var err error
-	if settings.APP_SETTINGS.Playlist.Tvgid_match {
-		if _, err = matchTemplateTvgid(templateCh); err != nil {
-			log.Debug().Err(err)
-		}
-	}
+	// Initialize workers if not already done
+	matchInit.Do(initMatchWorkers)
 
-	if settings.APP_SETTINGS.Playlist.Name_match {
-		if err := matchTemplateChannelName(templateCh); err != nil {
-			log.Debug().Err(err)
-		}
+	// Submit request to the matching queue
+	matchQueue <- matchRequest{
+		playlistCh: nil,
+		templateCh: templateCh,
+		resultCh:   nil, // No need for result in this case
 	}
-
 }
 
 // Search if tvgid matches for playlist channel and add to template if match
@@ -52,37 +114,123 @@ func matchPlaylistTvgid(playlistCh models.PlaylistChannel) error {
 	if playlistCh.TvgID == nil {
 		return errors.New("tvgid is nil")
 	}
+
+	var err error
+	maxRetries := 3
+	retryDelay := 200 * time.Millisecond
+
+	for i := 0; i < maxRetries; i++ {
+		err = executeMatchPlaylistTvgid(playlistCh)
+		if err == nil {
+			return nil
+		}
+
+		if i < maxRetries-1 {
+			log.Warn().Msgf("Retry %d: matchPlaylistTvgid failed: %v", i+1, err)
+			time.Sleep(retryDelay)
+			retryDelay *= 2
+		}
+	}
+
+	return err
+}
+
+func executeMatchPlaylistTvgid(playlistCh models.PlaylistChannel) error {
+	if playlistCh.TvgID == nil {
+		return errors.New("tvgid is nil")
+	}
+
+	// Use transaction for batch operations
+	tx, err := database.Db.VectorQueries.Beginx()
+	if err != nil {
+		log.Error().Msgf("Failed to begin transaction: %v", err)
+		return err
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
+
 	playlistChUrl, err := database.Db.GetChannelUrl(playlistCh.ID)
 	if err != nil {
-		log.Debug().Msgf("matchPlaylistTvgid: %v", err)
+		log.Debug().Msgf("matchPlaylistTvgid GetChannelUrl: %v", err)
+		// Continue even if URL retrieval fails
 	}
 
 	channels, err := database.Db.GetTmplChannelsBytvgid(playlistCh.TvgID)
 	if err != nil {
-		log.Debug().Msgf("matchPlaylistTvgid: %v", err)
+		log.Debug().Msgf("matchPlaylistTvgid GetTmplChannelsBytvgid: %v", err)
 		return err
 	}
+
+	// Check if channels is nil or empty
+	if channels == nil || len(*channels) == 0 {
+		log.Debug().Msgf("matchPlaylistTvgid: No matching template channels found for tvgid %s", *playlistCh.TvgID)
+		return nil // Return nil to indicate processing completed without error
+	}
+
+	// Prepare statement for batch inserts
+	stmt, err := tx.Prepare("INSERT INTO templatechannelitem (channel_id, playlist_channel_id) VALUES (?, ?)")
+	if err != nil {
+		log.Error().Msgf("Failed to prepare statement: %v", err)
+		return err
+	}
+
+	insertCount := 0
 	for _, channel := range *channels {
 		if playlistChUrl == nil || !itemExists(channel.ID, playlistChUrl.Url) {
-			channelItem := &models.TemplateChannelItem{
-				ChannelId:         channel.ID,
-				PlaylistChannelId: playlistCh.ID,
+			_, err = stmt.Exec(channel.ID, playlistCh.ID)
+			if err != nil {
+				log.Debug().Msgf("matchPlaylistTvgid insert: %v", err)
+				continue // Continue with other inserts even if one fails
 			}
-			if _, err := database.Db.CreateTmplChannelItem(channelItem); err != nil {
-				log.Debug().Msgf("matchPlaylistTvgid: %v", err)
-				return err
-			}
+			insertCount++
 		}
 	}
+
+	// Only commit if we have successful inserts
+	if insertCount > 0 {
+		if err = tx.Commit(); err != nil {
+			log.Error().Msgf("Failed to commit transaction: %v", err)
+			return err
+		}
+		log.Debug().Msgf("matchPlaylistTvgid: Successfully inserted %d matches for channel ID %d", insertCount, playlistCh.ID)
+	} else {
+		tx.Rollback() // No need to commit an empty transaction
+		log.Debug().Msgf("matchPlaylistTvgid: No new matches to insert for channel ID %d", playlistCh.ID)
+	}
+
 	return nil
 }
 
 func matchPlaylistChannelName(playlistCh models.PlaylistChannel) error {
+	var err error
+	maxRetries := 3
+	retryDelay := 200 * time.Millisecond
+
+	for i := 0; i < maxRetries; i++ {
+		err = executeMatchPlaylistChannelName(playlistCh)
+		if err == nil {
+			return nil
+		}
+
+		if i < maxRetries-1 {
+			log.Warn().Msgf("Retry %d: matchPlaylistChannelName failed: %v", i+1, err)
+			time.Sleep(retryDelay)
+			retryDelay *= 2
+		}
+	}
+
+	return err
+}
+
+func executeMatchPlaylistChannelName(playlistCh models.PlaylistChannel) error {
 	var wg sync.WaitGroup
 	var err error
 	var chMatch int64
 	var score float64
-	chunkSize := 10
+	chunkSize := 30
 
 	playlistChUrl, err := database.Db.GetChannelUrl(playlistCh.ID)
 	if err != nil {
@@ -105,48 +253,86 @@ func matchPlaylistChannelName(playlistCh models.PlaylistChannel) error {
 		return err
 	}
 
-	var chunks [][]models.TemplateChannelVector
-	if len(templateVectors) > 100 {
-		chunkSize = int(math.RoundToEven(float64(len(templateVectors) / 10)))
-	}
+	// Use a more efficient chunking approach
+	numChunks := int(math.Ceil(float64(len(templateVectors)) / float64(chunkSize)))
+	results := make(chan struct {
+		id    int64
+		score float64
+	}, numChunks)
 
+	// Process chunks in parallel
 	for i := 0; i < len(templateVectors); i += chunkSize {
-		end := i + chunkSize
-		if end > len(templateVectors) {
-			end = len(templateVectors)
-		}
-		chunks = append(chunks, templateVectors[i:end])
-	}
-
-	for _, chunk := range chunks {
 		wg.Add(1)
-		go func(chunk []models.TemplateChannelVector) {
+		go func(start int) {
 			defer wg.Done()
-			for _, vec := range chunk {
-				vector, err := database.Db.GetChannelVector(vec.VectorId)
+
+			end := start + chunkSize
+			if end > len(templateVectors) {
+				end = len(templateVectors)
+			}
+
+			var bestId int64
+			var bestScore float64
+
+			for j := start; j < end; j++ {
+				vector, err := database.Db.GetChannelVector(templateVectors[j].VectorId)
 				if err == nil {
 					if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
-						if cosine >= settings.APP_SETTINGS.Playlist.Name_score && cosine > score {
-							score = cosine
-							chMatch = vec.ChannelId
+						if cosine >= settings.APP_SETTINGS.Playlist.Name_score && cosine > bestScore {
+							bestScore = cosine
+							bestId = templateVectors[j].ChannelId
 						}
 					}
 				}
 			}
-		}(chunk)
-	}
-	wg.Wait()
 
-	if chMatch != 0 {
-		if !itemExists(chMatch, playlistChUrl.Url) {
-			channelItem := &models.TemplateChannelItem{
-				ChannelId:         chMatch,
-				PlaylistChannelId: playlistCh.ID,
+			if bestId != 0 {
+				results <- struct {
+					id    int64
+					score float64
+				}{bestId, bestScore}
 			}
-			if _, err := database.Db.CreateTmplChannelItem(channelItem); err != nil {
-				log.Debug().Msgf("matchPlaylistChannelName: %v", err)
-				return err
-			}
+		}(i)
+	}
+
+	// Collect results
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Find the best match across all chunks
+	for result := range results {
+		if result.score > score {
+			score = result.score
+			chMatch = result.id
+		}
+	}
+
+	if chMatch != 0 && !itemExists(chMatch, playlistChUrl.Url) {
+		tx, err := database.Db.VectorQueries.Beginx()
+		if err != nil {
+			log.Error().Msgf("Failed to begin transaction: %v", err)
+			return err
+		}
+
+		stmt, err := tx.Prepare("INSERT INTO templatechannelitem (channel_id, playlist_channel_id) VALUES (?, ?)")
+		if err != nil {
+			log.Error().Msgf("Failed to prepare statement: %v", err)
+			tx.Rollback()
+			return err
+		}
+
+		_, err = stmt.Exec(chMatch, playlistCh.ID)
+		if err != nil {
+			log.Debug().Msgf("matchPlaylistChannelName: %v", err)
+			tx.Rollback()
+			return err
+		}
+
+		if err = tx.Commit(); err != nil {
+			log.Error().Msgf("Failed to commit transaction: %v", err)
+			return err
 		}
 	}
 
@@ -158,26 +344,59 @@ func matchTemplateTvgid(templateCh *models.TemplateChannel) ([]models.PlaylistCh
 	if templateCh.TvgID != nil {
 		channels, err := database.Db.GetPlChannelsByTvgID(*templateCh.TvgID)
 		if err != nil {
-			log.Debug().Msgf("matchTemplateTvgid: %v", err)
+			log.Debug().Msgf("matchTemplateTvgid GetPlChannelsByTvgID: %v", err)
 			return nil, err
 		}
 
+		// Check if channels is empty
+		if len(channels) == 0 {
+			log.Debug().Msgf("matchTemplateTvgid: No playlist channels found for tvgid %s", *templateCh.TvgID)
+			return channels, nil // Return empty slice but no error
+		}
+
+		// Use transaction for batch operations
+		tx, err := database.Db.VectorQueries.Beginx()
+		if err != nil {
+			log.Error().Msgf("Failed to begin transaction: %v", err)
+			return nil, err
+		}
+
+		stmt, err := tx.Prepare("INSERT INTO templatechannelitem (channel_id, playlist_channel_id) VALUES (?, ?)")
+		if err != nil {
+			log.Error().Msgf("Failed to prepare statement: %v", err)
+			tx.Rollback()
+			return nil, err
+		}
+
+		insertCount := 0
 		for _, channel := range channels {
 			playlistChUrl, err := database.Db.GetChannelUrl(channel.ID)
 			if err != nil {
-				log.Debug().Msgf("matchTemplateTvgid: %v", err)
+				log.Debug().Msgf("matchTemplateTvgid GetChannelUrl: %v", err)
+				continue
 			} else if itemExists(channel.ID, playlistChUrl.Url) {
 				continue
 			}
 
-			channelItem := &models.TemplateChannelItem{
-				ChannelId:         templateCh.ID,
-				PlaylistChannelId: channel.ID,
-			}
-			if _, err := database.Db.CreateTmplChannelItem(channelItem); err != nil {
-				log.Debug().Msgf("matchTemplateTvgid: %v", err)
+			_, err = stmt.Exec(templateCh.ID, channel.ID)
+			if err != nil {
+				log.Debug().Msgf("matchTemplateTvgid insert: %v", err)
 				continue
 			}
+			insertCount++
+		}
+
+		// Only commit if we have successful inserts
+		if insertCount > 0 {
+			if err = tx.Commit(); err != nil {
+				log.Error().Msgf("Failed to commit transaction: %v", err)
+				tx.Rollback()
+				return nil, err
+			}
+			log.Debug().Msgf("matchTemplateTvgid: Successfully inserted %d matches for template channel ID %d", insertCount, templateCh.ID)
+		} else {
+			tx.Rollback()
+			log.Debug().Msgf("matchTemplateTvgid: No new matches to insert for template channel ID %d", templateCh.ID)
 		}
 
 		return channels, nil
@@ -187,13 +406,14 @@ func matchTemplateTvgid(templateCh *models.TemplateChannel) ([]models.PlaylistCh
 }
 
 func matchTemplateChannelName(templateCh *models.TemplateChannel) error {
+	ctx := context.Background()
 	vectorMatch := struct {
 		match models.VectorMatch
 		Mu    sync.Mutex
 	}{}
 	var wg sync.WaitGroup
 	var err error
-	chunkSize := 10
+	chunkSize := 50 // Increased from 10 to 50
 
 	channelVector, err := database.Db.GetChannelVectorByName(templateCh.Name)
 	if err != nil {
@@ -210,8 +430,24 @@ func matchTemplateChannelName(templateCh *models.TemplateChannel) error {
 		log.Debug().Msgf("matchTemplateChannelName: %v", err)
 		return err
 	}
-	for _, playlist := range *playlists {
 
+	// Begin a transaction for batch inserts
+	tx, err := database.Db.VectorQueries.Beginx()
+	if err != nil {
+		log.Error().Msgf("Failed to begin transaction: %v", err)
+		return err
+	}
+
+	stmt, err := tx.Prepare("INSERT INTO templatechannelitem (channel_id, playlist_channel_id) VALUES (?, ?)")
+	if err != nil {
+		log.Error().Msgf("Failed to prepare statement: %v", err)
+		tx.Rollback()
+		return err
+	}
+
+	matchFound := false
+
+	for _, playlist := range *playlists {
 		if exists, err := database.Db.TmplChannelExists(templateCh.ID, playlist.ID); err != nil || exists {
 			continue
 		}
@@ -222,48 +458,94 @@ func matchTemplateChannelName(templateCh *models.TemplateChannel) error {
 			continue
 		}
 
-		var chunks [][]models.PlaylistChannelVector
-		if len(playlistVectors) > 100 {
-			chunkSize = int(math.RoundToEven(float64(len(playlistVectors) / 10)))
-		}
+		// Reset vector match for each playlist
+		vectorMatch.match = models.VectorMatch{Id: 0, Score: 0}
 
+		// Use a more efficient chunking approach
+		numChunks := int(math.Ceil(float64(len(playlistVectors)) / float64(chunkSize)))
+		results := make(chan struct {
+			id    int64
+			score float64
+		}, numChunks)
+
+		// Process chunks in parallel
 		for i := 0; i < len(playlistVectors); i += chunkSize {
-			end := i + chunkSize
-			if end > len(playlistVectors) {
-				end = len(playlistVectors)
-			}
-			chunks = append(chunks, playlistVectors[i:end])
-		}
-
-		for _, chunk := range chunks {
 			wg.Add(1)
-			go func(chunk []models.PlaylistChannelVector) {
+			go func(start int, ctx context.Context) {
 				defer wg.Done()
-				for _, vec := range chunk {
-					if vector, err := database.Db.GetChannelVector(vec.VectorId); err == nil {
+
+				end := start + chunkSize
+				if end > len(playlistVectors) {
+					end = len(playlistVectors)
+				}
+
+				var bestId int64
+				var bestScore float64
+
+				for j := start; j < end; j++ {
+					vector, err := database.Db.GetChannelVector(playlistVectors[j].VectorId)
+					if err == nil {
 						if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
-							vectorMatch.Mu.Lock()
-							if cosine >= settings.APP_SETTINGS.Playlist.Name_score && cosine > vectorMatch.match.Score {
-								vectorMatch.match = models.VectorMatch{Id: vec.ChannelId, Score: cosine}
+							if cosine >= settings.APP_SETTINGS.Playlist.Name_score && cosine > bestScore {
+								bestScore = cosine
+								bestId = playlistVectors[j].ChannelId
 							}
-							vectorMatch.Mu.Unlock()
 						}
 					}
 				}
-			}(chunk)
-		}
-		wg.Wait()
 
-		if vectorMatch.match.Id != 0 {
-			channelItem := &models.TemplateChannelItem{
-				ChannelId:         templateCh.ID,
-				PlaylistChannelId: vectorMatch.match.Id,
-			}
-			if _, err := database.Db.CreateTmplChannelItem(channelItem); err != nil {
-				log.Debug().Msgf("matchTemplateChannelName: %v", err)
-				return err
+				if bestId != 0 {
+					results <- struct {
+						id    int64
+						score float64
+					}{bestId, bestScore}
+				}
+			}(i, ctx)
+		}
+
+		// Collect results
+		done := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(done)
+		}()
+
+		// Find the best match across all chunks
+		for {
+			select {
+			case result, ok := <-results:
+				if !ok {
+					continue
+				}
+				vectorMatch.Mu.Lock()
+				if result.score > vectorMatch.match.Score {
+					vectorMatch.match = models.VectorMatch{Id: result.id, Score: result.score}
+				}
+				vectorMatch.Mu.Unlock()
+			case <-done:
+				goto finishPlaylist
 			}
 		}
+
+	finishPlaylist:
+		if vectorMatch.match.Id != 0 {
+			_, err = stmt.Exec(templateCh.ID, vectorMatch.match.Id)
+			if err != nil {
+				log.Debug().Msgf("matchTemplateChannelName: %v", err)
+				continue
+			}
+			matchFound = true
+		}
+	}
+
+	if matchFound {
+		if err = tx.Commit(); err != nil {
+			log.Error().Msgf("Failed to commit transaction: %v", err)
+			tx.Rollback()
+			return err
+		}
+	} else {
+		tx.Rollback()
 	}
 
 	return nil
@@ -285,13 +567,9 @@ func itemExists(tmplId int64, plUrl string) bool {
 }
 
 func TopChannelMatches(templateCh *models.TemplateChannel) ([]models.VectorMatch, error) {
-	vectorMatches := struct {
-		matches []models.VectorMatch
-		Mu      sync.Mutex
-	}{}
 	var wg sync.WaitGroup
 	var err error
-	chunkSize := 10
+	chunkSize := 50 // Increased from 10 to 50
 
 	channelVector, err := database.Db.GetChannelVectorByName(templateCh.Name)
 	if err != nil {
@@ -309,46 +587,82 @@ func TopChannelMatches(templateCh *models.TemplateChannel) ([]models.VectorMatch
 		return nil, err
 	}
 
-	var chunks [][]models.PlaylistChannelVector
-	if len(playlistVectors) > 100 {
-		chunkSize = int(math.RoundToEven(float64(len(playlistVectors) / 10)))
-	}
+	// Use a more efficient chunking approach
+	numChunks := int(math.Ceil(float64(len(playlistVectors)) / float64(chunkSize)))
+	results := make(chan []models.VectorMatch, numChunks)
 
+	// Process chunks in parallel
 	for i := 0; i < len(playlistVectors); i += chunkSize {
-		end := i + chunkSize
-		if end > len(playlistVectors) {
-			end = len(playlistVectors)
-		}
-		chunks = append(chunks, playlistVectors[i:end])
-	}
-
-	for _, chunk := range chunks {
 		wg.Add(1)
-		go func(chunk []models.PlaylistChannelVector) {
+		go func(start int) {
 			defer wg.Done()
-			for _, vec := range chunk {
-				if vector, err := database.Db.GetChannelVector(vec.VectorId); err == nil {
+
+			end := start + chunkSize
+			if end > len(playlistVectors) {
+				end = len(playlistVectors)
+			}
+
+			localMatches := make([]models.VectorMatch, 0, 5)
+
+			for j := start; j < end; j++ {
+				if vector, err := database.Db.GetChannelVector(playlistVectors[j].VectorId); err == nil {
 					if cosine, err := CosineMatch(channelVector.Vector, vector.Vector); err == nil {
-						vectorMatches.Mu.Lock()
-						if len(vectorMatches.matches) < 5 {
-							vectorMatches.matches = append(vectorMatches.matches, models.VectorMatch{Id: vec.ChannelId, Score: cosine})
-						} else {
-							if cosine > vectorMatches.matches[len(vectorMatches.matches)-1].Score {
-								vectorMatches.matches[len(vectorMatches.matches)-1] = models.VectorMatch{Id: vec.ChannelId, Score: cosine}
-							}
+						if len(localMatches) < 5 {
+							localMatches = append(localMatches, models.VectorMatch{Id: playlistVectors[j].ChannelId, Score: cosine})
+
+							// Sort after adding
+							sort.SliceStable(localMatches, func(i, j int) bool {
+								return localMatches[i].Score > localMatches[j].Score
+							})
+						} else if cosine > localMatches[len(localMatches)-1].Score {
+							// Replace lowest score
+							localMatches[len(localMatches)-1] = models.VectorMatch{Id: playlistVectors[j].ChannelId, Score: cosine}
+
+							// Sort after replacing
+							sort.SliceStable(localMatches, func(i, j int) bool {
+								return localMatches[i].Score > localMatches[j].Score
+							})
 						}
-
-						sort.SliceStable(vectorMatches.matches, func(i, j int) bool {
-							return vectorMatches.matches[i].Score > vectorMatches.matches[j].Score
-						})
-						vectorMatches.Mu.Unlock()
-
 					}
 				}
 			}
-		}(chunk)
-	}
-	wg.Wait()
 
-	return vectorMatches.matches, nil
+			results <- localMatches
+		}(i)
+	}
+
+	// Collect and merge results
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+		close(results)
+	}()
+
+	// Collect all chunk results
+	allMatches := make([]models.VectorMatch, 0, 5)
+	for {
+		select {
+		case chunkMatches, ok := <-results:
+			if !ok {
+				continue
+			}
+			// Merge with main results
+			allMatches = append(allMatches, chunkMatches...)
+
+			// Keep only top 5
+			if len(allMatches) > 5 {
+				sort.SliceStable(allMatches, func(i, j int) bool {
+					return allMatches[i].Score > allMatches[j].Score
+				})
+				allMatches = allMatches[:5]
+			}
+		case <-done:
+			// Ensure sorted
+			sort.SliceStable(allMatches, func(i, j int) bool {
+				return allMatches[i].Score > allMatches[j].Score
+			})
+			return allMatches, nil
+		}
+	}
 }

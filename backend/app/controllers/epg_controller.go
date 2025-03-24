@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"strconv"
 	"time"
 	"xivi/backend/app/models"
@@ -20,9 +21,9 @@ import (
 // @Success 200 {array} models.Epg
 // @Router /epgs [get]
 func GetEpgs(c *fiber.Ctx) error {
-
+	ctx := context.Background()
 	// Get all epgs.
-	epgs, err := database.Db.GetEpgs()
+	epgs, err := database.Db.GetEpgs(ctx)
 	if err != nil {
 		// Return, if epgs not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -91,6 +92,7 @@ func CreateEpg(c *fiber.Ctx) error {
 // @Success 200 {object} models.Epg
 // @Router /epg [post]
 func AddEpg(c *fiber.Ctx) error {
+	ctx := context.Background()
 	// Create new Epg struct
 	epg := &models.Epg{}
 
@@ -118,7 +120,7 @@ func AddEpg(c *fiber.Ctx) error {
 	}
 
 	// Create epg.
-	id, err := database.Db.CreateEpg(epg)
+	id, err := database.Db.CreateEpg(ctx, epg)
 	if err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -149,6 +151,7 @@ func AddEpg(c *fiber.Ctx) error {
 // @Success 201 {string} status "ok"
 // @Router /epg [put]
 func UpdateEpg(c *fiber.Ctx) error {
+	ctx := context.Background()
 	// Create new Epg struct
 	epg := &models.Epg{}
 
@@ -176,7 +179,7 @@ func UpdateEpg(c *fiber.Ctx) error {
 	}
 
 	// Checking, if epg with given ID is exists.
-	foundEpg, err := database.Db.GetEpg(epg.ID)
+	foundEpg, err := database.Db.GetEpg(ctx, epg.ID)
 	if err != nil {
 		log.Error().Msgf("UpdateEpg Error: %v", err)
 		// Return status 404 and epg not found error.
@@ -187,7 +190,7 @@ func UpdateEpg(c *fiber.Ctx) error {
 	}
 
 	// Update epg by given ID.
-	if err := database.Db.UpdateEpg(foundEpg.ID, epg); err != nil {
+	if err := database.Db.UpdateEpg(ctx, foundEpg.ID, epg); err != nil {
 		log.Error().Msgf("UpdateEpg Error: %v", err)
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -212,6 +215,7 @@ func UpdateEpg(c *fiber.Ctx) error {
 // @Success 204 {string} status "ok"
 // @Router /epg/{epg_id} [delete]
 func DeleteEpg(c *fiber.Ctx) error {
+	ctx := context.Background()
 	// Catch epg ID from URL.
 	epg_id, err := strconv.ParseInt(c.Params("epg_id"), 10, 64)
 	if err != nil {
@@ -222,7 +226,7 @@ func DeleteEpg(c *fiber.Ctx) error {
 	}
 
 	// Checking, if epg with given ID is exists.
-	foundEpg, err := database.Db.GetEpg(epg_id)
+	foundEpg, err := database.Db.GetEpg(ctx, epg_id)
 	if err != nil {
 		// Return status 404 and epg not found error.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -234,7 +238,7 @@ func DeleteEpg(c *fiber.Ctx) error {
 	go utils.RemoveEpg(foundEpg)
 
 	// Delete epg by given ID.
-	if err := database.Db.DeleteEpg(foundEpg.ID); err != nil {
+	if err := database.Db.DeleteEpg(ctx, foundEpg.ID); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -254,8 +258,8 @@ func DeleteEpg(c *fiber.Ctx) error {
 // @Success 200 {array} string
 // @Router /epg/tvgids [get]
 func GetEpgTvgids(c *fiber.Ctx) error {
-
-	tvgids, err := database.Db.GetEpgTvgids()
+	ctx := context.Background()
+	tvgids, err := database.Db.GetEpgTvgids(ctx)
 	if err != nil {
 		log.Warn().Msgf("GetEpgTvgids: %v", err)
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{

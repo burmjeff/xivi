@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"strconv"
 	"time"
 
@@ -487,7 +488,7 @@ func ConvertPlaylistChannel(c *fiber.Ctx) error {
 	channelLogo := models.TemplateChannelLogo{}
 	channelLogo.TemplateChannel = *templateChannel
 	// Get logo.
-	logo, _ := database.Db.GetLogo(templateChannel.LogoId)
+	logo, _ := database.Db.GetLogo(context.Background(), templateChannel.LogoId)
 	channelLogo.Logo = utils.GetLogoUrl(logo.Name)
 
 	// Return status 200 OK.
