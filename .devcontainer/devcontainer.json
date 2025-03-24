@@ -9,12 +9,14 @@
 		"ghcr.io/devcontainers/features/node:1": {},
 		"ghcr.io/devcontainers/features/rust:1": {}
 	},
-	"postCreateCommand": "sudo apt-get update && sudo apt-get install -y build-essential libssl-dev libvips-dev libglib2.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-ugly tzdata libvips42 libglib2.0-0 libgstreamer1.0-0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly && npm run setup-all",
+	"postCreateCommand": "sudo apt-get update && sudo apt-get install -y build-essential libssl-dev libvips-dev libglib2.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-ugly tzdata libvips42 libglib2.0-0 libgstreamer1.0-0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly curl && sudo curl -L https://github.com/microsoft/onnxruntime/releases/download/v1.21.0/onnxruntime-linux-x64-1.21.0.tgz -o /tmp/onnxruntime.tgz && sudo mkdir -p /usr/local/onnxruntime && sudo tar -xzf /tmp/onnxruntime.tgz -C /usr/local/onnxruntime --strip-components=1 && sudo rm /tmp/onnxruntime.tgz && sudo ldconfig /usr/local/onnxruntime/lib && npm run setup-all",
 	"containerEnv": {
 		"GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}",
-		"GITHUB_USER": "${localEnv:GITHUB_USER}"
+		"GITHUB_USER": "${localEnv:GITHUB_USER}",
+		"LD_LIBRARY_PATH": "/usr/local/onnxruntime/lib:${LD_LIBRARY_PATH}",
+		"ONNX_PATH": "/usr/local/onnxruntime/lib/libonnxruntime.so"
 	},
-	"runArgs": ["--name=xivi"]
+	"runArgs": ["--name=xivi-dev"]
 
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
 	// "remoteUser": "root"

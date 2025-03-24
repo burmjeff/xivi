@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"strconv"
 
 	"xivi/backend/app/models"
@@ -314,6 +315,7 @@ func GetGroups(c *fiber.Ctx) error {
 // @Success 200 {array} models.TemplateChannel
 // @Router /template/group/{group_id}/channels [get]
 func GetTemplateGroupChannels(c *fiber.Ctx) error {
+	ctx := context.Background()
 	// Catch group ID from URL.
 	group_id, err := strconv.ParseInt(c.Params("group_id"), 10, 64)
 	if err != nil {
@@ -340,7 +342,7 @@ func GetTemplateGroupChannels(c *fiber.Ctx) error {
 		channelLogo := models.TemplateChannelLogo{}
 		channelLogo.TemplateChannel = channel
 		// Get logo.
-		logo, err := database.Db.GetLogo(channel.LogoId)
+		logo, err := database.Db.GetLogo(ctx, channel.LogoId)
 		if err != nil {
 			continue
 		}
@@ -686,6 +688,7 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 // @Success 200 {object} models.TemplateChannel
 // @Router /template/group/{group_id}/channel [post]
 func CreateTemplateChannel(c *fiber.Ctx) error {
+	ctx := context.Background()
 
 	// Catch group ID from URL.
 	group_id, err := strconv.ParseInt(c.Params("group_id"), 10, 64)
@@ -752,7 +755,7 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 		})
 	}
 
-	foundLogo, err := database.Db.GetLogo(templateChannel.LogoId)
+	foundLogo, err := database.Db.GetLogo(ctx, templateChannel.LogoId)
 	if err != nil {
 		log.Err(err)
 		// Return status 404 and logo not found error.

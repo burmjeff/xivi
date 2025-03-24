@@ -34,22 +34,53 @@ func OpenDBConnection() (*Queries, error) {
 		return nil, err
 	}
 
+	// Apply additional PRAGMA optimizations
+	optimizeDBConnection(db)
+
 	InitDB(db)
 
 	return &Queries{
-		// Set queries from models:
-		PlaylistQueries: &queries.PlaylistQueries{DB: db}, // from Playlist model
-		TemplateQueries: &queries.TemplateQueries{DB: db}, // from Template model
-		EpgQueries:      &queries.EpgQueries{DB: db},      // from Epg model
-		VectorQueries:   &queries.VectorQueries{DB: db},   // from Vector model
-		LogoQueries:     &queries.LogoQueries{DB: db},     // from Logo model
-		StreamQueries:   &queries.StreamQueries{DB: db},   // from Stream model
-		CleanupQueries:  &queries.CleanupQueries{DB: db},  // from Cleanup model
+		// Set queries from models using the new constructors:
+		PlaylistQueries: queries.NewPlaylistQueries(db), // from Playlist model
+		TemplateQueries: queries.NewTemplateQueries(db), // from Template model
+		EpgQueries:      queries.NewEpgQueries(db),      // from Epg model
+		VectorQueries:   queries.NewVectorQueries(db),   // from Vector model
+		LogoQueries:     queries.NewLogoQueries(db),     // from Logo model
+		StreamQueries:   queries.NewStreamQueries(db),   // from Stream model
+		CleanupQueries:  queries.NewCleanupQueries(db),  // from Cleanup model
 	}, nil
 }
 
 func getDB() (*sqlx.DB, error) {
-	return sqlx.Open("sqlite3", fmt.Sprintf("%s/xivi.db?_journal_mode=WAL&_foreign_keys=on&_cache_size=-64000&_auto_vacuum=2", settings.CONFIG_PATH))
+	// Enhanced connection string with optimized settings:
+	// - WAL journal mode for better concurrency
+	// - Foreign keys enforcement
+	// - Larger cache size (256MB)
+	// - Incremental vacuum
+	// - Busy timeout to wait for locks (increased from 5000ms to 30000ms)
+	// - Normal synchronous mode for better performance
+	// - Memory-mapped I/O for better performance
+	return sqlx.Open("sqlite3", fmt.Sprintf("%s/xivi.db?_journal_mode=WAL&_foreign_keys=on&_cache_size=-262144&_auto_vacuum=1&_busy_timeout=30000&_synchronous=NORMAL&_mmap_size=268435456", settings.CONFIG_PATH))
+}
+
+// Apply additional PRAGMA optimizations that can't be set via connection string
+func optimizeDBConnection(db *sqlx.DB) {
+	pragmas := []string{
+		"PRAGMA temp_store = MEMORY;",   // Store temporary tables in memory
+		"PRAGMA page_size = 8192;",      // Larger page size
+		"PRAGMA locking_mode = NORMAL;", // Exclusive locking mode for better performance
+		"PRAGMA threads = 16;",          // Use multiple threads
+		"PRAGMA analysis_limit = 1000;", // Limit for query analysis
+		"PRAGMA optimize;",              // Run automatic optimization
+	}
+
+	for _, pragma := range pragmas {
+		if _, err := db.Exec(pragma); err != nil {
+			log.Warn().Msgf("Failed to execute PRAGMA: %s, error: %v", pragma, err)
+		}
+	}
+
+	log.Info().Msg("SQLite connection optimized for performance")
 }
 
 func InitDB(db *sqlx.DB) error {

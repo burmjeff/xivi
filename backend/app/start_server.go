@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 
+	"xivi/backend/pkg/utils"
 	"xivi/backend/platform/cron"
 	"xivi/backend/platform/database"
 	"xivi/backend/platform/settings"
@@ -21,6 +22,9 @@ func StartServer(app *fiber.App) {
 	if err != nil {
 		log.Fatal().Msgf("Failed to connect to database: %v", err)
 	}
+
+	// Now that database is initialized, we can safely initialize the vector cache
+	utils.InitializeCache()
 
 	vips.LoggingSettings(nil, vips.LogLevelCritical)
 	vips.Startup(nil)

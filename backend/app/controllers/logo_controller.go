@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/url"
@@ -23,9 +24,9 @@ import (
 // @Success 200 {array} models.Logo
 // @Router /logos [get]
 func GetLogos(c *fiber.Ctx) error {
-
+	ctx := context.Background()
 	// Get all logos.
-	logos, err := database.Db.GetLogos()
+	logos, err := database.Db.GetLogos(ctx)
 	if err != nil {
 		// Return, if logos not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -60,6 +61,7 @@ func GetLogos(c *fiber.Ctx) error {
 // @Success 200 {object} models.Logo
 // @Router /logo/{logoid} [get]
 func GetLogo(c *fiber.Ctx) error {
+	ctx := context.Background()
 	// Catch logo ID from URL.
 	logoid, err := strconv.ParseInt(c.Params("logoid"), 10, 64)
 	if err != nil {
@@ -70,7 +72,7 @@ func GetLogo(c *fiber.Ctx) error {
 	}
 
 	// Get logo.
-	logo, err := database.Db.GetLogo(logoid)
+	logo, err := database.Db.GetLogo(ctx, logoid)
 	if err != nil {
 		// Return, if logos not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -105,6 +107,7 @@ func GetLogo(c *fiber.Ctx) error {
 // @Success 200 {object} models.Logo
 // @Router /logo [post]
 func UploadLogo(c *fiber.Ctx) error {
+	ctx := context.Background()
 	// Create new Logo struct
 	logo := &models.Logo{}
 
@@ -142,7 +145,7 @@ func UploadLogo(c *fiber.Ctx) error {
 	}
 
 	// Get logo.
-	foundLogo, err := database.Db.GetLogo(logoid)
+	foundLogo, err := database.Db.GetLogo(ctx, logoid)
 	if err != nil {
 		// Return, if logos not found.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -175,6 +178,7 @@ func UploadLogo(c *fiber.Ctx) error {
 // @Success 201 {string} status "ok"
 // @Router /logo [put]
 func UpdateLogo(c *fiber.Ctx) error {
+	ctx := context.Background()
 	// Create new Logo struct
 	logo := &models.Logo{}
 
@@ -188,7 +192,7 @@ func UpdateLogo(c *fiber.Ctx) error {
 	}
 
 	// Checking, if logo with given ID is exists.
-	foundLogo, err := database.Db.GetLogo(logo.ID)
+	foundLogo, err := database.Db.GetLogo(ctx, logo.ID)
 	if err != nil {
 		// Return status 404 and logo not found error.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -210,7 +214,7 @@ func UpdateLogo(c *fiber.Ctx) error {
 	}
 
 	// Update logo by given ID.
-	if err := database.Db.UpdateLogo(foundLogo.ID, logo); err != nil {
+	if err := database.Db.UpdateLogo(ctx, foundLogo.ID, logo); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -233,6 +237,7 @@ func UpdateLogo(c *fiber.Ctx) error {
 // @Security ApiKeyAuth
 // @Router /logo [delete]
 func DeleteLogo(c *fiber.Ctx) error {
+	ctx := context.Background()
 	// Get now time.
 	now := time.Now().Unix()
 
@@ -283,7 +288,7 @@ func DeleteLogo(c *fiber.Ctx) error {
 	}
 
 	// Checking, if logo with given ID is exists.
-	foundedLogo, err := database.Db.GetLogo(logo.ID)
+	foundedLogo, err := database.Db.GetLogo(ctx, logo.ID)
 	if err != nil {
 		// Return status 404 and logo not found error.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -293,7 +298,7 @@ func DeleteLogo(c *fiber.Ctx) error {
 	}
 
 	// Delete logo by given ID.
-	if err := database.Db.DeleteLogo(foundedLogo.ID); err != nil {
+	if err := database.Db.DeleteLogo(ctx, foundedLogo.ID); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,

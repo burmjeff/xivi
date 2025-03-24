@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/pkg/utils"
@@ -71,7 +72,7 @@ func UpdatePlaylists() {
 
 func UpdateEpgs() {
 	// get epgs.
-	epgs, err := database.Db.GetEpgs()
+	epgs, err := database.Db.GetEpgs(context.Background())
 	if err != nil {
 		log.Err(err)
 		return
@@ -85,10 +86,11 @@ func UpdateEpgs() {
 }
 
 func cleanPlaylist(playlist models.Playlist, startTime time.Time) {
-	if err := database.Db.CleanPlaylistGroups(playlist.ID); err != nil {
+	ctx := context.Background()
+	if err := database.Db.CleanPlaylistGroups(ctx, playlist.ID); err != nil {
 		log.Debug().Msgf("Playlist Clean: %v", err)
 	}
-	if err := database.Db.CleanPlaylistChannels(playlist.ID); err != nil {
+	if err := database.Db.CleanPlaylistChannels(ctx, playlist.ID); err != nil {
 		log.Debug().Msgf("Playlist Clean: %v", err)
 	}
 	if channels, err := database.Db.GetPlChannels(playlist.ID); err != nil {
@@ -104,7 +106,8 @@ func cleanPlaylist(playlist models.Playlist, startTime time.Time) {
 
 func VacuumDB() {
 	// Call INCREMENTAL VACUUM
-	err := database.Db.VacuumDB()
+	ctx := context.Background()
+	err := database.Db.VacuumDB(ctx)
 	if err != nil {
 		log.Debug().Msgf("Database vacuum: %v", err)
 	}

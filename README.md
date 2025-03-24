@@ -10,8 +10,9 @@
 
 ### RUN
 
-1. Setup: npm run setup-all
-2. Rename `.env.example` to `.env` and fill it with your environment values.
-3. Build it: npm run build-all
-4. Run it: npm run serve
-5. Go to your API Docs page: [127.0.0.1:3000/swagger/index.html](http://127.0.0.1:3000/swagger/index.html)
+1. Install onnxruntime
+2. Setup: npm run setup-all
+3. Rename `.env.example` to `.env` and fill it with your environment values.
+4. Build it: npm run build-all
+5. Run it: npm run serve
+6. Go to your API Docs page: [127.0.0.1:3000/swagger/index.html](http://127.0.0.1:3000/swagger/index.html)

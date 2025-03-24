@@ -1,8 +1,10 @@
 package utils
 
 import (
+	"database/sql"
 	"io"
 	"math"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -24,12 +26,44 @@ type M3uParser struct {
 	content         string
 	regexes         map[string]*regexp.Regexp
 	matchedPlaylist int64
+	// New fields for batch processing
+	channelBatch    []models.PlaylistChannel
+	channelURLBatch []models.ChannelUrl
+	batchMutex      sync.Mutex
+	batchSize       int
+	// NEW: Channels that need vectorization after commit
+	pendingVectorization []models.PlaylistChannel
+}
+
+// Add a group creation semaphore to limit concurrent group creations
+var (
+	groupCreationSemaphore = make(chan struct{}, 2)
+)
+
+// Create group with limiting concurrency
+func createGroupWithLimit(playlistId int64, groupName string) (int64, error) {
+	groupCreationSemaphore <- struct{}{}        // Acquire semaphore
+	defer func() { <-groupCreationSemaphore }() // Release semaphore
+
+	playlistGroup := models.PlaylistGroup{
+		PlaylistId: playlistId,
+		Name:       groupName,
+	}
+
+	// Create a new group with the playlist ID and group name
+	return database.Db.CreatePlGroup(playlistGroup)
 }
 
 // ParseM3u - Parses the content of local file/URL.
 func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 	m.playlistID = playlist.ID
 	log.Info().Msg("Parser started")
+
+	// Initialize batch processing
+	m.batchSize = 100
+	m.channelBatch = make([]models.PlaylistChannel, 0, m.batchSize)
+	m.channelURLBatch = make([]models.ChannelUrl, 0, m.batchSize)
+	m.pendingVectorization = make([]models.PlaylistChannel, 0, m.batchSize)
 
 	//Check if matching playlist exists
 	m.matchedPlaylist = MatchDomain(playlist.ID)
@@ -73,30 +107,70 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 			}
 		}
 	}
+
+	log.Info().Msgf("Loaded %d lines from m3u content", len(m.lines))
+
 	if len(m.lines) > 0 {
 		m.parseLines()
 	} else {
 		log.Info().Msg("No content to parse!!!")
 	}
 
+	// Check if we have any remaining channels to process
+	m.batchMutex.Lock()
+	remainingChannels := len(m.channelBatch)
+	m.batchMutex.Unlock()
+
+	log.Info().Msgf("Parsing complete, flushing any remaining channels: %d", remainingChannels)
+
+	// Ensure any remaining batched items are processed
+	m.flushBatches()
+
+	// Log summary of processing
+	log.Info().Msgf("M3U parse completed for playlist ID %d", playlist.ID)
+
+	// Update playlist
 	playlist.UpdatedAt = time.Now()
-	database.Db.UpdatePlaylist(playlist.ID, &playlist)
+	if err := database.Db.UpdatePlaylist(playlist.ID, &playlist); err != nil {
+		log.Error().Msgf("Failed to update playlist: %v", err)
+	} else {
+		log.Info().Msgf("Successfully updated playlist: %s (ID: %d)", playlist.Name, playlist.ID)
+	}
 
 	log.Info().Msg("Parser finished")
 }
 
 func (m *M3uParser) parseLines() {
-	chunkSize := 10
+	chunkSize := 100 // Increased from 10 to 100 for better throughput
 	var wg sync.WaitGroup
-	vectorIn := make(chan models.PlaylistChannel)
+
+	// Create a buffered channel for vectorization with limited buffer to control concurrency
+	vectorIn := make(chan models.PlaylistChannel, 100) // Reduced from 500 to 100 to limit concurrency
 	go PlaylistVectorQueue(vectorIn)
 
 	re := CompileRegex("#EXTINF")
+
+	// Check if we have any EXTINF lines in the content
+	extinfoCount := 0
+	for _, line := range m.lines {
+		if re.Match([]byte(line)) {
+			extinfoCount++
+		}
+	}
+
+	log.Info().Msgf("Found %d EXTINF lines in m3u content", extinfoCount)
+
+	if extinfoCount == 0 {
+		log.Warn().Msg("No channel information found in m3u content - check formatting")
+		return
+	}
 
 	var chunks [][]string
 	if len(m.lines) > 100 {
 		chunkSize = int(math.RoundToEven(float64(len(m.lines) / 10)))
 	}
+
+	log.Info().Msgf("Parsing m3u with %d lines, chunking into size %d", len(m.lines), chunkSize)
 
 	for i := 0; i < len(m.lines); i += chunkSize {
 		end := i + chunkSize
@@ -110,25 +184,300 @@ func (m *M3uParser) parseLines() {
 		chunks = append(chunks, m.lines[i:end])
 	}
 
-	for _, chunk := range chunks {
+	log.Info().Msgf("Created %d chunks for processing", len(chunks))
+
+	// Limit maximum concurrent chunk processing to 5
+	concurrencyLimit := make(chan struct{}, 3)
+	for chunkIndex, chunk := range chunks {
 		wg.Add(1)
-		go func(chunk []string) {
-			defer wg.Done()
+		concurrencyLimit <- struct{}{} // Acquire semaphore
+		go func(chunk []string, chunkIndex int) {
+			defer func() {
+				<-concurrencyLimit // Release semaphore
+				wg.Done()
+				log.Info().Msgf("Completed processing chunk %d", chunkIndex)
+			}()
+
+			log.Info().Msgf("Starting to process chunk %d with %d lines", chunkIndex, len(chunk))
+			channelsFound := 0
+
 			for i := 0; i < len(chunk); i += 1 {
 				if re.Match([]byte(chunk[i])) {
+					// Sample part of the line to help debugging
+					lineSample := chunk[i]
+					if len(lineSample) > 50 {
+						lineSample = lineSample[:50] + "..."
+					}
+					log.Debug().Msgf("Found EXTINF line: %s", lineSample)
+
 					if i+1 < len(chunk) && isValidURL(chunk[i+1]) {
-						m.parseLine(chunk[i], chunk[i+1], vectorIn)
+						m.parseLine(chunk[i], chunk[i+1])
+						channelsFound++
+					} else if i+1 < len(chunk) {
+						// Log the invalid URL for debugging
+						if i+1 < len(chunk) {
+							invalidURL := chunk[i+1]
+							if len(invalidURL) > 50 {
+								invalidURL = invalidURL[:50] + "..."
+							}
+							log.Warn().Msgf("Invalid URL following EXTINF: %s", invalidURL)
+						} else {
+							log.Warn().Msg("EXTINF line has no following URL (at end of chunk)")
+						}
 					}
 				}
 			}
-		}(chunk)
+
+			log.Info().Msgf("Chunk %d found %d channels", chunkIndex, channelsFound)
+		}(chunk, chunkIndex)
 	}
 
+	log.Info().Msg("Waiting for all chunks to complete processing")
 	wg.Wait()
+	log.Info().Msg("All chunks processed, closing vector channel")
 	close(vectorIn)
 }
 
-func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan models.PlaylistChannel) {
+// flushBatches commits all pending database operations
+func (m *M3uParser) flushBatches() {
+	m.batchMutex.Lock()
+	defer m.batchMutex.Unlock()
+
+	if len(m.channelBatch) == 0 {
+		log.Debug().Msg("No channels in batch to flush")
+		return
+	}
+
+	log.Info().Msgf("Starting flush of %d channels and %d URLs", len(m.channelBatch), len(m.channelURLBatch))
+
+	// Define retry parameters
+	maxRetries := 5
+	baseDelay := 50 * time.Millisecond
+
+	// Prepare array to store channels with new IDs for vectorization
+	pendingVectors := make([]models.PlaylistChannel, 0, len(m.channelBatch))
+
+	for retry := 0; retry < maxRetries; retry++ {
+		// Only log retries after the first attempt
+		if retry > 0 {
+			log.Warn().Msgf("Retrying batch flush (attempt %d/%d) after delay of %v",
+				retry+1, maxRetries, baseDelay*time.Duration(1<<uint(retry-1)))
+		}
+
+		// Begin transaction for batch insert/update
+		tx, err := database.Db.PlaylistQueries.Beginx()
+		if err != nil {
+			log.Error().Msgf("Failed to begin transaction: %v", err)
+
+			// If we can't even begin the transaction, use exponential backoff
+			if retry < maxRetries-1 && (strings.Contains(err.Error(), "database is locked") ||
+				strings.Contains(err.Error(), "busy")) {
+				delay := baseDelay * time.Duration(1<<uint(retry))
+				jitter := time.Duration(rand.Intn(50)) * time.Millisecond
+				time.Sleep(delay + jitter)
+				continue
+			}
+			return
+		}
+
+		// Process all batched channels first, storing created IDs
+		channelIDMap := make(map[int]int64) // Map to track indices to channel IDs
+
+		log.Info().Msgf("Processing %d channels in batch", len(m.channelBatch))
+
+		success := true
+		for i, channel := range m.channelBatch {
+			var channelID int64
+
+			if channel.ID == 0 {
+				// Insert new channel
+				log.Debug().Msgf("Inserting new channel: %s (GroupId: %d)", channel.Title, channel.GroupId)
+				stmt, err := tx.Prepare("INSERT INTO playlistchannel (tvg_id, tvg_name, tvg_logo, title, group_id, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+				if err != nil {
+					log.Error().Msgf("Failed to prepare statement: %v", err)
+					tx.Rollback()
+					success = false
+					break
+				}
+
+				res, err := stmt.Exec(channel.TvgID, channel.TvgName, channel.Logo, channel.Title,
+					channel.GroupId, channel.Enabled, channel.CreatedAt, channel.UpdatedAt)
+				if err != nil {
+					log.Error().Msgf("Failed to execute statement: %v", err)
+					tx.Rollback()
+					success = false
+					break
+				}
+
+				channelID, err = res.LastInsertId()
+				if err != nil {
+					log.Error().Msgf("Failed to get last insert ID: %v", err)
+					tx.Rollback()
+					success = false
+					break
+				}
+
+				log.Debug().Msgf("Successfully inserted channel: %s with ID %d", channel.Title, channelID)
+				// Store the channel ID for URL processing
+				channelIDMap[i] = channelID
+			} else {
+				// Update existing channel
+				log.Debug().Msgf("Updating existing channel: %s (ID: %d)", channel.Title, channel.ID)
+				stmt, err := tx.Prepare("UPDATE playlistchannel SET tvg_id = ?, tvg_name = ?, tvg_logo = ?, title = ?, enabled = ?, updated_at = ? WHERE id = ?")
+				if err != nil {
+					log.Error().Msgf("Failed to prepare update statement: %v", err)
+					tx.Rollback()
+					success = false
+					break
+				}
+
+				_, err = stmt.Exec(channel.TvgID, channel.TvgName, channel.Logo, channel.Title,
+					channel.Enabled, channel.UpdatedAt, channel.ID)
+				if err != nil {
+					log.Error().Msgf("Failed to execute update statement: %v", err)
+					tx.Rollback()
+					success = false
+					break
+				}
+
+				log.Debug().Msgf("Successfully updated channel: %s (ID: %d)", channel.Title, channel.ID)
+				channelIDMap[i] = channel.ID
+			}
+		}
+
+		// If we failed processing channels, retry or return
+		if !success {
+			log.Warn().Msg("Channel processing failed, retrying or returning")
+			if retry < maxRetries-1 {
+				delay := baseDelay * time.Duration(1<<uint(retry))
+				jitter := time.Duration(rand.Intn(50)) * time.Millisecond
+				time.Sleep(delay + jitter)
+				continue
+			}
+			return
+		}
+
+		// Process all batched URLs after all channels are processed
+		log.Info().Msgf("Processing %d URLs in batch", len(m.channelURLBatch))
+		for i, url := range m.channelURLBatch {
+			var stmt *sql.Stmt
+			var err error
+
+			// Get the correct channel ID from our map
+			if channelID, exists := channelIDMap[i]; exists {
+				url.ChannelId = channelID
+				log.Debug().Msgf("Mapped URL to channel ID: %d", channelID)
+			}
+
+			// Skip URLs with invalid channel IDs (would violate foreign key constraints)
+			if url.ChannelId == 0 {
+				log.Warn().Msg("Skipping URL insert with no valid channel ID")
+				continue
+			}
+
+			// Check if URL exists
+			var urlID int64
+			row := tx.QueryRow("SELECT id FROM channelurl WHERE channel_id = ? LIMIT 1", url.ChannelId)
+			err = row.Scan(&urlID)
+
+			if err == sql.ErrNoRows || err != nil {
+				// Insert new URL
+				log.Debug().Msgf("Inserting new URL for channel ID: %d", url.ChannelId)
+				stmt, err = tx.Prepare("INSERT INTO channelurl (url, channel_id, orderr, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+				if err != nil {
+					log.Error().Msgf("Failed to prepare URL statement: %v", err)
+					tx.Rollback()
+					success = false
+					break
+				}
+
+				_, err = stmt.Exec(url.Url, url.ChannelId, url.Order, url.CreatedAt, url.UpdatedAt)
+			} else {
+				// Update existing URL
+				log.Debug().Msgf("Updating existing URL ID: %d for channel ID: %d", urlID, url.ChannelId)
+				stmt, err = tx.Prepare("UPDATE channelurl SET url = ?, orderr = ?, updated_at = ? WHERE id = ?")
+				if err != nil {
+					log.Error().Msgf("Failed to prepare URL update statement: %v", err)
+					tx.Rollback()
+					success = false
+					break
+				}
+
+				_, err = stmt.Exec(url.Url, url.Order, url.UpdatedAt, urlID)
+			}
+
+			if err != nil {
+				log.Error().Msgf("Failed to execute URL statement: %v", err)
+				tx.Rollback()
+				success = false
+				break
+			}
+		}
+
+		// If we failed processing URLs, retry or return
+		if !success {
+			log.Warn().Msg("URL processing failed, retrying or returning")
+			if retry < maxRetries-1 {
+				delay := baseDelay * time.Duration(1<<uint(retry))
+				jitter := time.Duration(rand.Intn(50)) * time.Millisecond
+				time.Sleep(delay + jitter)
+				continue
+			}
+			return
+		}
+
+		// Commit the transaction
+		log.Info().Msg("All batch items processed, committing transaction")
+		if err := tx.Commit(); err != nil {
+			log.Error().Msgf("Failed to commit transaction: %v", err)
+			tx.Rollback()
+
+			if retry < maxRetries-1 && (strings.Contains(err.Error(), "database is locked") ||
+				strings.Contains(err.Error(), "busy")) {
+				delay := baseDelay * time.Duration(1<<uint(retry))
+				jitter := time.Duration(rand.Intn(50)) * time.Millisecond
+				time.Sleep(delay + jitter)
+				continue
+			}
+			return
+		}
+
+		// Success - log and prepare channels for vectorization
+		log.Info().Msgf("Successfully committed batch of %d channels (attempt %d)", len(m.channelBatch), retry+1)
+
+		// Collect channels with their new IDs for vectorization
+		for i, channel := range m.channelBatch {
+			if id, exists := channelIDMap[i]; exists {
+				// Create a copy of the channel with the new ID
+				channelCopy := channel
+				channelCopy.ID = id
+				pendingVectors = append(pendingVectors, channelCopy)
+				log.Debug().Msgf("Added channel for vectorization: %s (ID: %d)", channelCopy.Title, channelCopy.ID)
+			}
+		}
+
+		// Clear the batches
+		m.channelBatch = make([]models.PlaylistChannel, 0, m.batchSize)
+		m.channelURLBatch = make([]models.ChannelUrl, 0, m.batchSize)
+
+		// Process vectorization in a separate goroutine to avoid holding the mutex
+		if len(pendingVectors) > 0 {
+			log.Info().Msgf("Starting vectorization for %d channels", len(pendingVectors))
+			vectorsToProcess := make([]models.PlaylistChannel, len(pendingVectors))
+			copy(vectorsToProcess, pendingVectors)
+			go m.processVectors(vectorsToProcess)
+		} else {
+			log.Warn().Msg("No channels to vectorize after batch processing")
+		}
+
+		return
+	}
+
+	// If we got here, all retries failed
+	log.Error().Msgf("Failed to flush batch after %d retries", maxRetries)
+}
+
+func (m *M3uParser) parseLine(line string, streamLink string) {
 	validate := NewValidator()
 	playlistGroup := models.PlaylistGroup{}
 	playlistGroup.PlaylistId = m.playlistID
@@ -142,6 +491,14 @@ func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan mode
 		tvgLogo := GetByRegex(m.regexes["tvgLogo"], line)
 		groupName := GetByRegex(m.regexes["group"], line)
 		title := GetByRegex(m.regexes["title"], line)
+
+		// Add diagnostic logging for channel identification
+		log.Debug().
+			Str("tvgID", tvgID).
+			Str("tvgName", tvgName).
+			Str("groupName", groupName).
+			Str("title", title).
+			Msg("Parsing channel line")
 
 		if tvgID != "" {
 			playlistChannel.TvgID = &tvgID
@@ -174,19 +531,22 @@ func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan mode
 			// Checking, if playlist with given ID is exists.
 			if group, err := database.Db.GetPlGroupByName(m.playlistID, groupName); group == nil {
 				log.Info().Msgf("Group not found. %v, Creating Group: %s", err, groupName)
-				playlistGroup.Name = groupName
-				if groupId, err := database.Db.CreatePlGroup(playlistGroup); err != nil {
+
+				// Use the new concurrency-limited group creation function
+				if groupId, err := createGroupWithLimit(m.playlistID, groupName); err != nil {
 					log.Error().Msgf("FAILED TO CREATE PLAYLIST GROUP: %v", err)
 					return
 				} else {
 					playlistChannel.GroupId = groupId
+					log.Info().Msgf("Successfully created group '%s' with ID %d", groupName, groupId)
 				}
 			} else {
 				playlistChannel.GroupId = group.ID
-				if group.Enabled == false {
+				if !group.Enabled {
+					log.Debug().Msgf("Skipping disabled group '%s'", groupName)
 					return
 				}
-
+				log.Debug().Msgf("Using existing group '%s' with ID %d", groupName, group.ID)
 			}
 		} else {
 			log.Error().Msgf("M3U PARSER: No Group found for %s", title)
@@ -200,85 +560,144 @@ func (m *M3uParser) parseLine(line string, streamLink string, vectorIn chan mode
 			return
 		}
 
-		//match playlist channels
-		foundChannels, err := database.Db.GetM3UParseByTvgID(tvgID, playlistChannel.GroupId, m.playlistID)
-		if err != nil {
-			log.Error().Msgf("M3U_PARSER, tvg_id not found: %v", err)
-			if foundChannels, err = database.Db.GetM3UParseByTvgName(tvgName, playlistChannel.GroupId, m.playlistID); err != nil {
-				log.Error().Msgf("M3U_PARSER, tvg_name not found: %v", err)
-				if foundChannels, err = database.Db.GetM3UParseByTitle(title, playlistChannel.GroupId, m.playlistID); err != nil {
+		// Define a function to handle database retries
+		getExistingChannels := func() ([]models.PlaylistChannel, error) {
+			// Apply exponential backoff for database queries
+			maxRetries := 5
+			baseDelay := 50 * time.Millisecond
+
+			for retry := 0; retry < maxRetries; retry++ {
+				// Try to find channels by different identifiers
+				foundChannels, err := database.Db.GetM3UParseByTvgID(tvgID, playlistChannel.GroupId, m.playlistID)
+				if err == nil && len(foundChannels) > 0 {
+					log.Debug().Msgf("Found channel by tvgID: %s", tvgID)
+					return foundChannels, nil
+				}
+
+				if err != nil && !strings.Contains(err.Error(), "database is locked") {
+					log.Error().Msgf("M3U_PARSER, tvg_id not found: %v", err)
+				} else if err != nil {
+					// Log only on first retry for locked database
+					if retry == 0 {
+						log.Warn().Msgf("Database locked when checking tvg_id, will retry: %v", err)
+					}
+					// Apply backoff with jitter
+					delay := baseDelay * time.Duration(1<<uint(retry))
+					jitter := time.Duration(rand.Intn(50)) * time.Millisecond
+					time.Sleep(delay + jitter)
+					continue
+				}
+
+				foundChannels, err = database.Db.GetM3UParseByTvgName(tvgName, playlistChannel.GroupId, m.playlistID)
+				if err == nil && len(foundChannels) > 0 {
+					log.Debug().Msgf("Found channel by tvgName: %s", tvgName)
+					return foundChannels, nil
+				}
+
+				if err != nil && !strings.Contains(err.Error(), "database is locked") {
+					log.Error().Msgf("M3U_PARSER, tvg_name not found: %v", err)
+				} else if err != nil {
+					// Apply backoff with jitter and continue
+					delay := baseDelay * time.Duration(1<<uint(retry))
+					jitter := time.Duration(rand.Intn(50)) * time.Millisecond
+					time.Sleep(delay + jitter)
+					continue
+				}
+
+				foundChannels, err = database.Db.GetM3UParseByTitle(title, playlistChannel.GroupId, m.playlistID)
+				if err == nil {
+					log.Debug().Msgf("Found channel by title: %s", title)
+					return foundChannels, nil
+				} else if !strings.Contains(err.Error(), "database is locked") {
 					log.Error().Msgf("M3U_PARSER, title not found: %v", err)
+					return nil, err
+				} else {
+					// Apply backoff with jitter and continue
+					delay := baseDelay * time.Duration(1<<uint(retry))
+					jitter := time.Duration(rand.Intn(50)) * time.Millisecond
+					time.Sleep(delay + jitter)
+					continue
 				}
 			}
+
+			// If we get here after all retries, return empty result
+			log.Debug().Msgf("No existing channel found for %s/%s/%s", tvgID, tvgName, title)
+			return []models.PlaylistChannel{}, nil
 		}
 
+		foundChannels, _ := getExistingChannels()
+
+		// Set common URL properties
+		channelURL.Url = streamLink
+		channelURL.CreatedAt = time.Now()
+		channelURL.UpdatedAt = time.Now()
+		// Default to 0 for order - will be set properly by the batch process
+		channelURL.Order = 0
+
 		if len(foundChannels) == 0 {
-			//log.Info().Msgf("Channel not found. Creating Channel: %s", playlistChannel.Title)
+			// New channel - add to batch
 			playlistChannel.CreatedAt = time.Now()
 			playlistChannel.UpdatedAt = time.Now()
-			playlistChannelID, err := database.Db.CreatePlChannel(playlistChannel)
-			if err != nil {
-				log.Warn().Msg(err.Error())
-				return
-			}
-			playlistChannel.ID = playlistChannelID
-			vectorIn <- playlistChannel
+			playlistChannel.Enabled = true
 
-			//Set channel URL model
-			channelURL.Url = streamLink
-			channelURL.ChannelId = playlistChannel.ID
-			channelURL.CreatedAt = time.Now()
-			channelURL.UpdatedAt = time.Now()
-			err = database.Db.CreateChannelUrl(channelURL)
-			if err != nil {
-				log.Warn().Msg(err.Error())
-				return
+			// Add to batch for processing
+			m.batchMutex.Lock()
+			preCount := len(m.channelBatch)
+			m.channelBatch = append(m.channelBatch, playlistChannel)
+			m.channelURLBatch = append(m.channelURLBatch, channelURL)
+			log.Debug().Msgf("Added new channel to batch: %s (batch size: %d)", playlistChannel.Title, len(m.channelBatch))
+
+			// If batch is full, process it
+			if len(m.channelBatch) >= m.batchSize {
+				log.Info().Msgf("Batch full (%d channels) - flushing batch", len(m.channelBatch))
+				// Release the lock before flushing to prevent deadlock
+				m.batchMutex.Unlock()
+				// Flush directly instead of in a goroutine
+				m.flushBatches()
+				log.Info().Msgf("Batch flush complete, processed %d channels", preCount)
+			} else {
+				m.batchMutex.Unlock()
 			}
 		} else {
 			for _, foundChannel := range foundChannels {
-				//log.Info().Msgf("Channel found. Adding url to Channel: %s", playlistChannel.Title)
 				playlistChannel.UpdatedAt = time.Now()
 				playlistChannel.Enabled = foundChannel.Enabled
-				err = database.Db.UpdatePlChannel(foundChannel.ID, playlistChannel)
-				if err != nil {
-					log.Warn().Msg(err.Error())
-					return
-				}
 				playlistChannel.ID = foundChannel.ID
-				vectorIn <- playlistChannel
 
-				//Set channel URL model
-				channelURL.Url = streamLink
+				// Add to batch for processing
 				channelURL.ChannelId = foundChannel.ID
 
-				channelID, err := database.Db.ChannelUrlExists(m.playlistID, foundChannel.ID)
-				if err != nil {
-					channelURL.CreatedAt = time.Now()
-					channelURL.UpdatedAt = time.Now()
-					err = database.Db.CreateChannelUrl(channelURL)
-					if err != nil {
-						log.Warn().Msg(err.Error())
-						continue
-					}
+				m.batchMutex.Lock()
+				preCount := len(m.channelBatch)
+				m.channelBatch = append(m.channelBatch, playlistChannel)
+				m.channelURLBatch = append(m.channelURLBatch, channelURL)
+				log.Debug().Msgf("Updated existing channel in batch: %s (ID: %d, batch size: %d)",
+					playlistChannel.Title, playlistChannel.ID, len(m.channelBatch))
+
+				// If batch is full, process it
+				if len(m.channelBatch) >= m.batchSize {
+					log.Info().Msgf("Batch full (%d channels) - flushing batch", len(m.channelBatch))
+					// Release the lock before flushing to prevent deadlock
+					m.batchMutex.Unlock()
+					// Flush directly instead of in a goroutine
+					m.flushBatches()
+					log.Info().Msgf("Batch flush complete, processed %d channels", preCount)
 				} else {
-					channelURL.UpdatedAt = time.Now()
-					err = database.Db.UpdateChannelUrl(channelID, channelURL)
-					if err != nil {
-						log.Warn().Msg(err.Error())
-						continue
-					}
+					m.batchMutex.Unlock()
 				}
 			}
 		}
-		if playlistChannel.TvgID == nil {
+
+		// Update tvgID if needed
+		if playlistChannel.TvgID == nil && playlistChannel.ID != 0 {
 			tvgid := strconv.Itoa(int(playlistChannel.ID))
 			playlistChannel.TvgID = &tvgid
-			err = database.Db.UpdatePlChannel(playlistChannel.ID, playlistChannel)
-			if err != nil {
-				log.Warn().Msg(err.Error())
-				return
-			}
 
+			// Add to update batch
+			m.batchMutex.Lock()
+			m.channelBatch = append(m.channelBatch, playlistChannel)
+			log.Debug().Msgf("Added channel to batch for tvgID update: %s (ID: %d)", playlistChannel.Title, playlistChannel.ID)
+			m.batchMutex.Unlock()
 		}
 	}
 }
@@ -295,4 +714,48 @@ func isValidURL(toTest string) bool {
 	}
 
 	return true
+}
+
+// processVectors handles vectorization for a batch of channels after they've been committed to the database
+func (m *M3uParser) processVectors(channels []models.PlaylistChannel) {
+	if len(channels) == 0 {
+		return
+	}
+
+	log.Info().Msgf("Processing vectors for %d channels", len(channels))
+
+	// Create a semaphore to limit concurrent processing
+	semaphore := make(chan struct{}, 5)
+	var wg sync.WaitGroup
+
+	for _, channel := range channels {
+		// Skip channels with no ID
+		if channel.ID == 0 {
+			log.Warn().Msg("Skipping vectorization for channel with ID 0")
+			continue
+		}
+
+		wg.Add(1)
+		go func(ch models.PlaylistChannel) {
+			defer wg.Done()
+
+			// Acquire semaphore
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+
+			// First update vector
+			vectorId := UpdatePlaylistVector(ch)
+
+			// Only proceed with matching if we got a valid vector ID
+			if vectorId > 0 {
+				// Then do matching with a short delay between operations
+				time.Sleep(50 * time.Millisecond)
+				MatchPlaylistChannel(ch)
+			}
+		}(channel)
+	}
+
+	// Wait for all vectorization to complete
+	wg.Wait()
+	log.Info().Msg("Vector processing completed")
 }

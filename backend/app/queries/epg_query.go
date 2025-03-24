@@ -1,6 +1,7 @@
 package queries
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 	"time"
@@ -11,456 +12,539 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// SQL query constants
+const (
+	selectAllEpgsQuery = `SELECT * FROM epg`
+	selectEpgByIdQuery = `SELECT * FROM epg WHERE id = ?`
+	insertEpgQuery     = `INSERT INTO epg VALUES (null, ?, ?, ?, ?, ?)`
+	updateEpgQuery     = `UPDATE epg SET name = ?, url = ?, orderr = ?, updated_at = ? WHERE id = ?`
+	deleteEpgQuery     = `DELETE FROM epg WHERE id = ?`
+
+	selectAllEpgChannelsQuery        = `SELECT * FROM epgchannel`
+	selectEpgChannelByIdQuery        = `SELECT * FROM epgchannel WHERE id = ?`
+	selectEpgChannelByChannelIdQuery = `SELECT * FROM epgchannel WHERE channelid = ? LIMIT 1`
+	insertEpgChannelQuery            = `INSERT INTO epgchannel VALUES (null, ?, ?, ?)`
+	updateEpgChannelQuery            = `UPDATE epgchannel SET channelid = ?, displayname = ?, icon = ? WHERE id = ?`
+	deleteEpgChannelQuery            = `DELETE FROM epgchannel WHERE id = ?`
+
+	selectAllEpgProgrammesQuery     = `SELECT * FROM epgprogramme`
+	selectEpgProgrammesByTvgidQuery = `SELECT * FROM epgprogramme WHERE channel = ?`
+	selectEpgProgrammeByTimeQuery   = `
+		SELECT * FROM epgprogramme 
+		WHERE channel = ? AND start <= ? AND stop > ? 
+		LIMIT 1
+		-- FORCE INDEX (idx_epgprogramme_channel_time) -- Hint to use index if available
+	`
+	insertEpgProgrammeQuery = `
+		INSERT INTO epgprogramme VALUES (null, ?, ?, ?, ?, ?, ?, ?, ?, 
+		?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`
+	deleteEpgProgrammeQuery = `DELETE FROM epgprogramme WHERE id = ?`
+
+	selectEpgChannelItemsByChannelQuery   = `SELECT * FROM epgchannelitem WHERE channel_id = ?`
+	selectEpgChannelItemsByProgrammeQuery = `SELECT * FROM epgchannelitem WHERE epg_programme_id = ?`
+	selectEpgChannelItemByIdQuery         = `SELECT * FROM epgchannelitem WHERE id = ?`
+	insertEpgChannelItemQuery             = `INSERT INTO epgchannelitem VALUES (null, ?, ?, ?)`
+	updateEpgChannelItemQuery             = `UPDATE epgchannelitem SET epg_channel_id = ?, epg_programme_id = ? WHERE id = ?`
+	deleteEpgChannelItemQuery             = `DELETE FROM epgchannelitem WHERE id = ?`
+
+	selectEpgTvgidsQuery = `SELECT channelid FROM epgchannel WHERE channelid is NOT NULL`
+
+	// Batch insert template for EPG programmes
+	batchInsertEpgProgrammeTemplate = `
+		INSERT INTO epgprogramme 
+		(start, stop, channel, title, lang, subtitle, desc, categories, icon, 
+		directors, presenters, producers, actors, episodesystem, episodenum, 
+		ratingsystem, ratingvalue, videoquality, date)
+		VALUES 
+	`
+)
+
 // EpgQueries struct for queries from Epg model.
 type EpgQueries struct {
-	*sqlx.DB
+	BaseQueries
 }
 
 type Res struct {
 	Data []string
 }
 
-// Get Epgs
-func (q *EpgQueries) GetEpgs() (*[]models.Epg, error) {
+// NewEpgQueries creates a new EpgQueries instance
+func NewEpgQueries(db *sqlx.DB) *EpgQueries {
+	return &EpgQueries{
+		BaseQueries: NewBaseQueries(db),
+	}
+}
+
+// GetEpgs gets all EPG sources
+func (q *EpgQueries) GetEpgs(ctx context.Context) (*[]models.Epg, error) {
 	epgs := &[]models.Epg{}
 
-	query := `SELECT * FROM epg`
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(selectAllEpgsQuery)
+		if err != nil {
+			return err
+		}
 
-	err := q.Select(epgs, query)
+		return stmt.SelectContext(ctx, epgs)
+	})
+
 	if err != nil {
+		log.Error().Err(err).Msg("Error retrieving EPG sources")
 		return nil, err
 	}
 
 	return epgs, nil
 }
 
-// Get a epg by given ID.
-func (q *EpgQueries) GetEpg(id int64) (*models.Epg, error) {
+// GetEpg gets an EPG source by ID
+func (q *EpgQueries) GetEpg(ctx context.Context, id int64) (*models.Epg, error) {
 	epg := &models.Epg{}
 
-	query := `SELECT * FROM epg WHERE id = ?`
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(selectEpgByIdQuery)
+		if err != nil {
+			return err
+		}
 
-	err := q.Get(epg, query, id)
+		return stmt.GetContext(ctx, epg, id)
+	})
+
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		log.Error().Err(err).Int64("id", id).Msg("Error retrieving EPG")
 		return nil, err
 	}
 
 	return epg, nil
 }
 
-// Create a epg by given Epg object.
-func (q *EpgQueries) CreateEpg(p *models.Epg) (int64, error) {
-	query := `INSERT INTO epg VALUES (null, ?, ?, ?, ?, ?)`
+// CreateEpg creates a new EPG source
+func (q *EpgQueries) CreateEpg(ctx context.Context, p *models.Epg) (int64, error) {
+	var id int64
 
-	res, err := q.Exec(query, p.Name, p.URL, p.Order, p.CreatedAt, p.UpdatedAt)
-	if err != sql.ErrNoRows && err != nil {
-		return 0, err
-	}
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(insertEpgQuery)
+		if err != nil {
+			return err
+		}
 
-	id, err := res.LastInsertId()
+		res, err := stmt.ExecContext(ctx, p.Name, p.URL, p.Order, p.CreatedAt, p.UpdatedAt)
+		if err != nil {
+			return err
+		}
+
+		id, err = res.LastInsertId()
+		if err != nil {
+			log.Warn().Err(err).Msg("Error retrieving the ID")
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 
 	return id, nil
 }
 
-// Update a epg by given Epg object.
-func (q *EpgQueries) UpdateEpg(id int64, p *models.Epg) error {
-	query := `UPDATE epg SET name = ?, url = ?, orderr = ?, updated_at = ? WHERE id = ?`
+// UpdateEpg updates an EPG source
+func (q *EpgQueries) UpdateEpg(ctx context.Context, id int64, p *models.Epg) error {
+	return q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(updateEpgQuery)
+		if err != nil {
+			return err
+		}
 
-	_, err := q.Exec(query, p.Name, p.URL, p.Order, p.UpdatedAt, id)
-	if err != nil {
+		_, err = stmt.ExecContext(ctx, p.Name, p.URL, p.Order, p.UpdatedAt, id)
+		if err != nil {
+			log.Error().Err(err).Int64("id", id).Msg("Error updating EPG")
+		}
 		return err
-	}
-
-	return nil
+	})
 }
 
-// Delete a epg by given ID.
-func (q *EpgQueries) DeleteEpg(id int64) error {
-	query := `DELETE FROM epg WHERE id = ?`
+// DeleteEpg deletes an EPG source
+func (q *EpgQueries) DeleteEpg(ctx context.Context, id int64) error {
+	return q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(deleteEpgQuery)
+		if err != nil {
+			return err
+		}
 
-	_, err := q.Exec(query, id)
-	if err != nil {
+		_, err = stmt.ExecContext(ctx, id)
+		if err != nil {
+			log.Error().Err(err).Int64("id", id).Msg("Error deleting EPG")
+		}
 		return err
-	}
-
-	return nil
+	})
 }
 
-// Get Epg Channels
-func (q *EpgQueries) GetEpgChannels() (*[]models.EpgChannel, error) {
+// GetEpgChannels gets all EPG channels
+func (q *EpgQueries) GetEpgChannels(ctx context.Context) (*[]models.EpgChannel, error) {
 	epgchannel := &[]models.EpgChannel{}
 
-	query := `SELECT * FROM epgchannel`
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(selectAllEpgChannelsQuery)
+		if err != nil {
+			return err
+		}
 
-	err := q.Select(epgchannel, query)
+		return stmt.SelectContext(ctx, epgchannel)
+	})
+
 	if err != nil {
+		log.Error().Err(err).Msg("Error retrieving EPG channels")
 		return nil, err
 	}
 
 	return epgchannel, nil
 }
 
-// Get a Epg Channel by given ID.
-func (q *EpgQueries) GetEpgChannel(id int64) (*models.EpgChannel, error) {
+// GetEpgChannel gets an EPG channel by ID
+func (q *EpgQueries) GetEpgChannel(ctx context.Context, id int64) (*models.EpgChannel, error) {
 	epgchannel := &models.EpgChannel{}
 
-	query := `SELECT * FROM epgchannel WHERE id = ?`
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(selectEpgChannelByIdQuery)
+		if err != nil {
+			return err
+		}
 
-	err := q.Get(epgchannel, query, id)
+		return stmt.GetContext(ctx, epgchannel, id)
+	})
+
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		log.Error().Err(err).Int64("id", id).Msg("Error retrieving EPG channel")
 		return nil, err
 	}
 
-	// Return query result.
 	return epgchannel, nil
 }
 
-// Get a epgchannel by channel id.
-func (q *EpgQueries) GetEpgChannelByChannelId(channelID string) (*models.EpgChannel, error) {
+// GetEpgChannelByChannelId gets an EPG channel by channel ID
+func (q *EpgQueries) GetEpgChannelByChannelId(ctx context.Context, channelID string) (*models.EpgChannel, error) {
 	epgchannel := &models.EpgChannel{}
 
-	query := `SELECT * FROM epgchannel WHERE channelid = ? LIMIT 1`
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(selectEpgChannelByChannelIdQuery)
+		if err != nil {
+			return err
+		}
 
-	err := q.Get(epgchannel, query, channelID)
+		return stmt.GetContext(ctx, epgchannel, channelID)
+	})
+
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		log.Error().Err(err).Str("channelID", channelID).Msg("Error retrieving EPG channel by channel ID")
 		return nil, err
 	}
 
 	return epgchannel, nil
 }
 
-// Create a Epg Channel by given Epg Channel object.
-func (q *EpgQueries) CreateEpgChannel(p models.EpgChannel) (int64, error) {
-	query := `INSERT INTO epgchannel VALUES (null, ?, ?, ?)`
+// CreateEpgChannel creates a new EPG channel
+func (q *EpgQueries) CreateEpgChannel(ctx context.Context, p models.EpgChannel) (int64, error) {
+	var id int64
 
-	res, err := q.Exec(query, p.ChannelId, p.DisplayName, p.Icon.Src)
-	if err != sql.ErrNoRows && err != nil {
-		return 0, err
-	}
-	id, err := res.LastInsertId()
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(insertEpgChannelQuery)
+		if err != nil {
+			return err
+		}
+
+		res, err := stmt.ExecContext(ctx, p.ChannelId, p.DisplayName, p.Icon.Src)
+		if err != nil {
+			return err
+		}
+
+		id, err = res.LastInsertId()
+		if err != nil {
+			log.Warn().Err(err).Msg("Error retrieving the ID")
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 
 	return id, nil
 }
 
-// Update a Epg Channel by given Epg Channel object.
-func (q *EpgQueries) UpdateEpgChannel(id int64, p *models.EpgChannel) error {
-	query := `UPDATE epgchannel SET channelid = ?, displayname = ?, icon = ? WHERE id = ?`
+// BatchCreateEpgChannels creates multiple EPG channels in a batch
+func (q *EpgQueries) BatchCreateEpgChannels(ctx context.Context, channels []models.EpgChannel) error {
+	return q.WithTransaction(func(tx *sqlx.Tx) error {
+		stmt, err := tx.PreparexContext(ctx, insertEpgChannelQuery)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
 
-	_, err := q.Exec(query, id, p.ChannelId, p.DisplayName, p.Icon.Src)
-	if err != nil {
-		return err
-	}
+		for _, channel := range channels {
+			_, err := stmt.ExecContext(ctx, channel.ChannelId, channel.DisplayName, channel.Icon.Src)
+			if err != nil {
+				return err
+			}
+		}
 
-	return nil
+		return nil
+	})
 }
 
-// Delete a Epg Channel by given ID.
-func (q *EpgQueries) DeleteEpgChannel(id int64) error {
-	query := `DELETE FROM epgchannel WHERE id = ?`
-
-	_, err := q.Exec(query, id)
-	if err != nil {
-		return err
+// CreateEpgProgrammes creates multiple EPG programmes efficiently
+func (q *EpgQueries) BatchCreateEpgProgrammes(ctx context.Context, programmes []models.EpgProgramme, batchSize int) error {
+	if len(programmes) == 0 {
+		return nil
 	}
 
-	return nil
+	// Default batch size if not specified
+	if batchSize <= 0 {
+		batchSize = 100
+	}
+
+	return q.WithTransaction(func(tx *sqlx.Tx) error {
+		// Process in batches
+		for i := 0; i < len(programmes); i += batchSize {
+			end := i + batchSize
+			if end > len(programmes) {
+				end = len(programmes)
+			}
+
+			batch := programmes[i:end]
+
+			// Build batch query
+			query := batchInsertEpgProgrammeTemplate
+
+			valueStrings := make([]string, 0, len(batch))
+			valueArgs := make([]interface{}, 0, len(batch)*19)
+
+			for _, prog := range batch {
+				valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+
+				valueArgs = append(valueArgs,
+					prog.Start,
+					prog.Stop,
+					prog.Channel,
+					prog.Title.Value,
+					prog.Title.Lang,
+					prog.Subtitle,
+					prog.Desc,
+					strings.Join(prog.Categories, ","),
+					prog.Icon.Src,
+					strings.Join(prog.Directors, ","),
+					strings.Join(prog.Presenters, ","),
+					strings.Join(prog.Producers, ","),
+					strings.Join(prog.Actors, ","),
+					prog.EpisodeNumber.System,
+					prog.EpisodeNumber.Value,
+					prog.Rating.System,
+					prog.Rating.Value,
+					prog.Video.Quality,
+					prog.Date)
+			}
+
+			query += strings.Join(valueStrings, ",")
+
+			// Execute batch insert
+			_, err := tx.ExecContext(ctx, query, valueArgs...)
+			if err != nil {
+				log.Error().Err(err).
+					Int("batch_size", len(batch)).
+					Int("total_size", len(programmes)).
+					Msg("Error batch inserting EPG programmes")
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
-// Get all Epg Programmes.
-func (q *EpgQueries) GetEpgProgrammes() (*[]models.EpgProgramme, error) {
+// GetProgrammesBytvgid gets EPG programmes by tvg ID
+func (q *EpgQueries) GetProgrammesBytvgid(ctx context.Context, tvgid string) (*[]models.EpgProgramme, error) {
 	programmes := &[]models.EpgProgramme{}
 
-	query := `SELECT * FROM epgprogramme`
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(selectEpgProgrammesByTvgidQuery)
+		if err != nil {
+			return err
+		}
 
-	err := q.Select(programmes, query)
+		return stmt.SelectContext(ctx, programmes, tvgid)
+	})
+
 	if err != nil {
+		log.Error().Err(err).Str("tvgid", tvgid).Msg("Error retrieving programmes by tvg ID")
 		return nil, err
 	}
 
 	return programmes, nil
 }
 
-// Get Epg Programmes by channel.
-func (q *EpgQueries) GetProgrammesBytvgid(tvgid string) (*[]models.EpgProgramme, error) {
-	programmes := &[]models.EpgProgramme{}
-
-	query := `SELECT * FROM epgprogramme WHERE channel = ?`
-
-	err := q.Select(programmes, query, tvgid)
-	if err != nil {
-		return nil, err
-	}
-
-	return programmes, nil
-}
-
-// Get the current live Epg Programme by given ID.
-func (q *EpgQueries) GetProgrammeByTime(tvgid string, epgTime time.Time) (*models.EpgProgramme, error) {
+// GetProgrammeByTime gets an EPG programme by time
+func (q *EpgQueries) GetProgrammeByTime(ctx context.Context, tvgid string, epgTime time.Time) (*models.EpgProgramme, error) {
 	programme := &models.EpgProgramme{}
 
-	query := `SELECT * FROM epgprogramme WHERE channel = ? AND start <= ? AND stop > ? LIMIT 1`
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(selectEpgProgrammeByTimeQuery)
+		if err != nil {
+			return err
+		}
 
-	err := q.Get(programme, query, tvgid, epgTime, epgTime)
+		start := time.Now()
+		err = stmt.GetContext(ctx, programme, tvgid, epgTime, epgTime)
+		duration := time.Since(start)
+
+		if duration > 100*time.Millisecond {
+			log.Debug().
+				Str("tvgid", tvgid).
+				Time("epgTime", epgTime).
+				Float64("duration_ms", float64(duration.Milliseconds())).
+				Msg("slow GetProgrammeByTime query")
+		}
+
+		return err
+	})
+
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		log.Error().Err(err).Str("tvgid", tvgid).Time("epgTime", epgTime).Msg("Error retrieving programme by time")
 		return nil, err
 	}
 
 	return programme, nil
 }
 
-// Create Epg Programme by given object.
-func (q *EpgQueries) CreateEpgProgramme(p models.EpgProgramme) (int64, error) {
+// CreateEpgProgramme creates a new EPG programme
+func (q *EpgQueries) CreateEpgProgramme(ctx context.Context, p models.EpgProgramme) (int64, error) {
+	var id int64
 
-	q.MapperFunc(utils.CustomMapper)
-	query := `INSERT INTO epgprogramme VALUES (null, ?, ?, ?, ?, ?, ?, ?, ?, 
-		?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		q.MapperFunc(utils.CustomMapper)
+		stmt, err := q.GetPreparedStmt(insertEpgProgrammeQuery)
+		if err != nil {
+			return err
+		}
 
-	res, err := q.Exec(query,
-		p.Start,
-		p.Stop,
-		p.Channel,
-		p.Title.Value,
-		p.Title.Lang,
-		p.Subtitle,
-		p.Desc,
-		strings.Join(p.Categories, ","),
-		p.Icon.Src,
-		strings.Join(p.Directors, ","),
-		strings.Join(p.Presenters, ","),
-		strings.Join(p.Producers, ","),
-		strings.Join(p.Actors, ","),
-		p.EpisodeNumber.System,
-		p.EpisodeNumber.Value,
-		p.Rating.System,
-		p.Rating.Value,
-		p.Video.Quality,
-		p.Date)
+		res, err := stmt.ExecContext(ctx,
+			p.Start,
+			p.Stop,
+			p.Channel,
+			p.Title.Value,
+			p.Title.Lang,
+			p.Subtitle,
+			p.Desc,
+			strings.Join(p.Categories, ","),
+			p.Icon.Src,
+			strings.Join(p.Directors, ","),
+			strings.Join(p.Presenters, ","),
+			strings.Join(p.Producers, ","),
+			strings.Join(p.Actors, ","),
+			p.EpisodeNumber.System,
+			p.EpisodeNumber.Value,
+			p.Rating.System,
+			p.Rating.Value,
+			p.Video.Quality,
+			p.Date)
 
-	if err != sql.ErrNoRows && err != nil {
-		return 0, err
-	}
+		if err != nil {
+			return err
+		}
 
-	id, err := res.LastInsertId()
+		id, err = res.LastInsertId()
+		if err != nil {
+			log.Warn().Err(err).Msg("Error retrieving the ID")
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		log.Warn().Msgf("Error retrieving the ID: %v", err)
-		return 0, err
-	}
-
-	return id, nil
-}
-
-// Update a Epg Programme by given Channel object.
-func (q *EpgQueries) UpdateEpgProgramme(id int64, p *models.EpgProgramme) error {
-
-	query := `UPDATE epgprogramme SET `
-
-	if p.Title.Value != "" {
-		query += `title = COALESCE(title, ?), `
-	}
-
-	if p.Subtitle != "" {
-		query += `subtitle = COALESCE(subtitle, ?), `
-	}
-
-	if p.Desc != "" {
-		query += `desc = COALESCE(desc, ?), `
-	}
-
-	if len(p.Directors) > 0 {
-		query += `directors = COALESCE(directors, ?), `
-	}
-
-	if len(p.Presenters) > 0 {
-		query += `presenters = COALESCE(presenters, ?), `
-	}
-
-	if len(p.Producers) > 0 {
-		query += `producers = COALESCE(producers, ?), `
-	}
-
-	if len(p.Actors) > 0 {
-		query += `actors = COALESCE(actors, ?), `
-	}
-
-	if p.Date != "" {
-		query += `date = COALESCE(date, ?), `
-	}
-
-	if len(p.Categories) > 0 {
-		query += `categories = COALESCE(categories, ?), `
-	}
-
-	if p.Icon.Src != "" {
-		query += `icon = COALESCE(icon, ?), `
-	}
-
-	if p.EpisodeNumber.System != "" {
-		query += `episodesystem = COALESCE(episodesystem, ?), `
-	}
-
-	if p.EpisodeNumber.Value != "" {
-		query += `episodenum = COALESCE(episodenum, ?), `
-	}
-
-	if p.Rating.System != "" {
-		query += `ratingsystem = COALESCE(ratingsystem, ?), `
-	}
-
-	if p.Rating.Value != "" {
-		query += `ratingvalue = COALESCE(ratingvalue, ?), `
-	}
-
-	if p.Video.Quality != "" {
-		query += `video.quality = COALESCE(video.quality, ?), `
-	}
-
-	if p.Title.Lang != "" {
-		query += `lang = COALESCE(lang, ?), `
-	}
-
-	// Trim the trailing comma and space from the query
-	query = strings.TrimSuffix(query, ", ")
-
-	// Add the WHERE clause to match the ID
-	query += " WHERE id = ?"
-
-	_, err := q.Exec(query, id,
-		p.Title.Value,
-		p.Title.Lang,
-		p.Subtitle,
-		p.Desc,
-		p.Icon.Src,
-		strings.Join(p.Categories, ","),
-		strings.Join(p.Directors, ","),
-		strings.Join(p.Presenters, ","),
-		strings.Join(p.Producers, ","),
-		strings.Join(p.Actors, ","),
-		p.EpisodeNumber.System,
-		p.EpisodeNumber.Value,
-		p.Rating.System,
-		p.Rating.Value,
-		p.Video.Quality,
-		p.Date)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// Delete a Epg Programme by given ID.
-func (q *EpgQueries) DeleteEpgProgramme(id int64) error {
-	query := `DELETE FROM epgprogramme WHERE id = ?`
-
-	_, err := q.Exec(query, id)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// GetEpgChannelItems method
-func (q *EpgQueries) GetEpgChannelItemsByCh(id int64) (*[]models.EpgChannelItem, error) {
-	epgchannelitems := &[]models.EpgChannelItem{}
-
-	query := `SELECT * FROM epgchannelitem WHERE channel_id = ?`
-
-	err := q.Select(epgchannelitems, query, id)
-	if err != nil {
-		return nil, err
-	}
-
-	return epgchannelitems, nil
-}
-
-// GetEpgChannelItems by programme id
-func (q *EpgQueries) GetEpgChannelItemsByProgramme(id int64) (*[]models.EpgChannelItem, error) {
-	epgchannelitems := &[]models.EpgChannelItem{}
-
-	query := `SELECT * FROM epgchannelitem WHERE epg_programme_id = ?`
-
-	err := q.Select(epgchannelitems, query, id)
-	if err != nil {
-		return nil, err
-	}
-
-	return epgchannelitems, nil
-}
-
-// Get a EpgChannelItem by given ID.
-func (q *EpgQueries) GetEpgChannelItem(id int64) (*models.EpgChannelItem, error) {
-	channelitem := &models.EpgChannelItem{}
-
-	query := `SELECT * FROM epgchannelitem WHERE id = ?`
-
-	err := q.Get(channelitem, query, id)
-	if err != nil {
-		return nil, err
-	}
-
-	// Return query result.
-	return channelitem, nil
-}
-
-// Create EpgChannelItem method by given EpgChannelItem object.
-func (q *EpgQueries) CreateEpgChannelItem(p *models.EpgChannelItem) (int64, error) {
-	query := `INSERT INTO epgchannelitem VALUES (null, ?, ?, ?)`
-
-	res, err := q.Exec(query, p.EpgChannelId, p.EpgProgrammeId)
-	if err != sql.ErrNoRows && err != nil {
-		return 0, err
-	}
-
-	id, err := res.LastInsertId()
-	if err != nil {
-		log.Warn().Msgf("Error retrieving the ID: %v", err)
 		return 0, err
 	}
 
 	return id, nil
 }
 
-// Update EpgChannelItem by given EpgChannelItem object.
-func (q *EpgQueries) UpdateEpgChannelItem(id int64, p *models.EpgChannelItem) error {
-	query := `UPDATE epgchannelitem SET epg_channel_id = ?, epg_programme_id = ? WHERE id = ?`
+// UpdateEpgProgramme updates an existing EPG programme
+func (q *EpgQueries) UpdateEpgProgramme(ctx context.Context, id int64, p *models.EpgProgramme) error {
+	updateEpgProgrammeQuery := `
+		UPDATE epgprogramme SET 
+		start = ?, stop = ?, channel = ?, title = ?, lang = ?, 
+		subtitle = ?, desc = ?, categories = ?, icon = ?, 
+		directors = ?, presenters = ?, producers = ?, actors = ?, 
+		episodesystem = ?, episodenum = ?, ratingsystem = ?, 
+		ratingvalue = ?, videoquality = ?, date = ?
+		WHERE id = ?
+	`
 
-	_, err := q.Exec(query, id, p.EpgChannelId, p.EpgProgrammeId)
-	if err != nil {
-		return err
-	}
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		q.MapperFunc(utils.CustomMapper)
 
-	return nil
+		_, err := q.ExecContext(ctx, updateEpgProgrammeQuery,
+			p.Start,
+			p.Stop,
+			p.Channel,
+			p.Title.Value,
+			p.Title.Lang,
+			p.Subtitle,
+			p.Desc,
+			strings.Join(p.Categories, ","),
+			p.Icon.Src,
+			strings.Join(p.Directors, ","),
+			strings.Join(p.Presenters, ","),
+			strings.Join(p.Producers, ","),
+			strings.Join(p.Actors, ","),
+			p.EpisodeNumber.System,
+			p.EpisodeNumber.Value,
+			p.Rating.System,
+			p.Rating.Value,
+			p.Video.Quality,
+			p.Date,
+			id)
+
+		if err != nil {
+			log.Error().Err(err).Int64("id", id).Msg("Error updating EPG programme")
+			return err
+		}
+
+		return nil
+	})
+
+	return err
 }
 
-// Delete EpgChannelItem by given ID.
-func (q *EpgQueries) DeleteEpgChannelItem(id int64) error {
-	query := `DELETE FROM epgchannelitem WHERE id = ?`
-
-	_, err := q.Exec(query, id)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// Get epgchannel tvgids
-func (q *EpgQueries) GetEpgTvgids() ([]string, error) {
+// GetEpgTvgids gets all EPG TVG IDs
+func (q *EpgQueries) GetEpgTvgids(ctx context.Context) ([]string, error) {
 	var items []string
 
-	query := `SELECT channelid FROM epgchannel WHERE channelid is NOT NULL`
+	err := q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(selectEpgTvgidsQuery)
+		if err != nil {
+			return err
+		}
 
-	err := q.Select(&items, query)
+		return stmt.SelectContext(ctx, &items)
+	})
+
 	if err != nil {
+		log.Error().Err(err).Msg("Error retrieving EPG tvg IDs")
 		return nil, err
 	}
 

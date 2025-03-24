@@ -1,8 +1,8 @@
 package utils
 
 import (
+	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +18,7 @@ import (
 )
 
 func UploadLogo(logo *models.Logo) (int64, error) {
+	ctx := context.Background()
 	image, err := base64Decode(logo.Image)
 
 	if err != nil {
@@ -30,7 +31,7 @@ func UploadLogo(logo *models.Logo) (int64, error) {
 		return 0, err
 	}
 
-	logoID, err := database.Db.CreateLogo(logo.Name)
+	logoID, err := database.Db.CreateLogo(ctx, logo.Name)
 	if err != nil {
 		log.Warn().Msg(err.Error())
 		return 0, err
@@ -41,7 +42,7 @@ func UploadLogo(logo *models.Logo) (int64, error) {
 func base64Decode(str string) ([]byte, error) {
 	i := strings.Index(str, ",")
 	if i < 0 {
-		return nil, errors.New(fmt.Sprintf("invalid b64 image: %s", str))
+		return nil, fmt.Errorf("invalid b64 image: %s", str)
 	}
 	data, err := base64.StdEncoding.DecodeString(str[i+1:])
 	if err != nil {
@@ -51,6 +52,7 @@ func base64Decode(str string) ([]byte, error) {
 }
 
 func CreateLogo(logoUrl string) (int64, error) {
+	ctx := context.Background()
 	img, err := downloadImage(logoUrl)
 	if err != nil {
 		log.Warn().Msgf("Failed Image Download: %v", err)
@@ -63,7 +65,7 @@ func CreateLogo(logoUrl string) (int64, error) {
 		return 0, err
 	}
 
-	logoID, err := database.Db.CreateLogo(logoName)
+	logoID, err := database.Db.CreateLogo(ctx, logoName)
 	if err != nil {
 		log.Warn().Msg(err.Error())
 		return 0, err
@@ -87,7 +89,7 @@ func downloadImage(URL string) ([]byte, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, errors.New(fmt.Sprintf("Received non 200 response code of %v", resp.StatusCode))
+		return nil, fmt.Errorf("received non 200 response code of %v", resp.StatusCode)
 	}
 	imgBuf, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -107,7 +109,7 @@ func saveImage(name string, img []byte) error {
 	//image.Resize(imageScale, vips.KernelAuto)
 	image.ThumbnailWithSize(256, 256, vips.InterestingNone, vips.SizeBoth)
 	ep := vips.NewDefaultPNGExportParams()
-	imageBytes, _, err := image.Export(ep)
+	imageBytes, _, _ := image.Export(ep)
 
 	imgPath := GetLogoPath(name)
 
@@ -131,7 +133,8 @@ func GetLogoPath(name string) string {
 }
 
 func logoExists(logoName string) *models.Logo {
-	if logo, err := database.Db.GetLogoByName(logoName); err != nil {
+	ctx := context.Background()
+	if logo, err := database.Db.GetLogoByName(ctx, logoName); err != nil {
 		log.Debug().Msgf("logoExists: %v", err.Error())
 		return nil
 	} else {
