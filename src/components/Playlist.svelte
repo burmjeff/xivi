@@ -63,7 +63,7 @@
 		});
 	}
 
-	async function addPlaylist(formData: any, isNew:boolean, id: number) {
+	async function addPlaylist(formData: any, isNew: boolean, id: number) {
 		let method: string;
 		if (formData.name && formData.url) {
 			let newGroup = {
@@ -98,8 +98,8 @@
 							if (playlist.id === id) {
 								return {
 									...playlist,
-									name: name,
-									url: url
+									name: formData.name,
+									url: formData.url
 								};
 							}
 							return playlist;

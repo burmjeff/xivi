@@ -6,7 +6,7 @@
 	import Icon from '@iconify/svelte';
 	import { writable } from 'svelte/store';
 	import { getModalStore, FileButton, popup, InputChip, Autocomplete, type AutocompleteOption, type PopupSettings } from '@skeletonlabs/skeleton';
-	import xivi from '$lib/assets/xivi.png';
+	import xivi from '@xivi/lib/assets/xivi.png';
 	import type { Match, PlaylistChannel } from '@xivi/data/playlist_entities';
 	import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
 	import { flip } from 'svelte/animate';
@@ -420,7 +420,7 @@
 													in:fade={{ duration: 200, easing: cubicIn }}
 													class="custom-shadow-item"
 												>
-													{channel.name}
+													{channel.title}
 												</div>
 											{/if}
 										</tr>

@@ -9,7 +9,7 @@
 	import GroupSettings from '@xivi/components/modals/GroupSettings.svelte';
 	import PlaylistSettings from '@xivi/components/modals/PlaylistSettings.svelte';
 	import Player from '@xivi/components/modals/Player.svelte';
-	import xivi from '$lib/assets/xivi.png';
+	import xivi from '@xivi/lib/assets/xivi.png';
 
 	initializeStores();
 

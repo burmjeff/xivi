@@ -6,3 +6,8 @@ declare namespace svelteHTML {
 		'on:finalize'?: (event: CustomEvent<DndEvent<ItemType>> & { target: EventTarget & T }) => void;
 	}
 }
+
+declare module '*.png' {
+    const value: string;
+    export default value;
+}

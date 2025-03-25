@@ -13,7 +13,7 @@
 
 	import { onMount, type SvelteComponent } from 'svelte';
 	import { getModalStore } from '@skeletonlabs/skeleton';
-	import xivi from '$lib/assets/xivi.png';
+	import xivi from '@xivi/lib/assets/xivi.png';
 
 	const modalStore = getModalStore();
 	let videoUrl = $modalStore[0].meta.stream;
