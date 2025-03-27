@@ -2,20 +2,29 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte';
-	const modalStore = getModalStore();
-	let isNew = $modalStore[0].meta.isNew;
-	let inputName: string;
-	let inputUrl: string;
+	import { Modal } from '@skeletonlabs/skeleton-svelte';
+
+	let { modalOpen = $bindable(), parent, isNew, id, name, url } = $props<{
+		modalOpen: boolean;
+		parent: any;
+		isNew: boolean;
+		id: number;
+		name: string;
+		url: string;
+	}>();
 
 	let formData: {
 		name: string;
 		url: string;
-	} = $state();
+	} = $state({
+		name: '',
+		url: ''
+	});
 
 	if (!isNew) {
 		formData = {
-			name: $modalStore[0].meta.name,
-			url: $modalStore[0].meta.url
+			name: name,
+			url: url
 		};
 	} else {
 		formData = {
@@ -25,12 +34,21 @@
 	}
 
 	async function onFormSubmit(): Promise<void> {
-		if ($modalStore[0].response) $modalStore[0].response(formData);
-		modalStore.close();
+		parent.onClose(formData);
+		modalClose();
+	}
+
+	function modalClose() {
+		modalOpen = false;
 	}
 </script>
 
-{#if $modalStore[0]}
+<Modal
+	open={modalOpen}
+	onOpenChange={(e) => (modalOpen = e.open)}
+	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet content()}
 	<div class="modal-playlist max-w-screen card max-h-screen w-fit space-y-4 p-4 shadow-xl">
 		{#if isNew}
 			<header class="justify-center text-center text-2xl font-bold">Add Playlist</header>
@@ -63,4 +81,5 @@
 			</div>
 		</div>
 	</div>
-{/if}
+	{/snippet}
+</Modal>

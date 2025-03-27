@@ -3,21 +3,23 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import {
-		type ModalSettings,
-		type PopupSettings, Progress } from '@skeletonlabs/skeleton-svelte';
+		Progress} from '@skeletonlabs/skeleton-svelte';
+	import Player from './modals/Player.svelte';
 	import { templates } from '@xivi/stores/template_store';
 	import type { ViewerChannel } from '@xivi/data/viewer_entities';
 	import Icon from '@iconify/svelte';
 
 	interface Props {
 		templateIdx: number;
-		groupId: string;
+		groupId: number;
 		groupIdx: number;
 	}
 
 	let { templateIdx, groupId, groupIdx }: Props = $props();
 
-	const modalStore = getModalStore();
+	let playerModalOpen = $state(false);
+	let currentPlayerName = $state('');
+	let currentPlayerStream = $state('');
 
 	const updateChannels = async () => {
 		const response = await fetch(`/api/channels/hls/${groupId}`);
@@ -43,22 +45,22 @@
 	}
 
 	function modalPlayer(name: string, stream: string) {
-		new Promise<boolean>((resolve) => {
-			const modal: ModalSettings = {
-				type: 'component',
-				component: 'modalPlayer',
-				meta: {
-					name: name,
-					stream: stream
-				},
-				response: (r: boolean) => {
-					resolve(r);
-				}
-			};
-			modalStore.trigger(modal);
-		}).then((r: any) => {});
+		currentPlayerName = name;
+		currentPlayerStream = stream;
+		playerModalOpen = true;
+	}
+
+	function handlePlayerClose() {
+		playerModalOpen = false;
 	}
 </script>
+
+<Player
+	modalOpen={playerModalOpen}
+	parent={{ onClose: handlePlayerClose }}
+	name={currentPlayerName}
+	stream={currentPlayerStream}
+/>
 
 {#if $templates[templateIdx].groups[groupIdx].viewerChannels != null}
 	<section class="channels grid grid-cols-2 gap-2 p-1">
@@ -75,12 +77,12 @@
 						{channel.programme}
 					</div>
 					{#if channel.start != '' && channel.end != ''}
-						<Progress
-							label="Progress Bar"
-							class="mt-2 drop-shadow-md"
-							value={getProgress(channel.start, channel.end)}
-							max={100}
-						/>
+						<div class="mt-2 drop-shadow-md">
+							<Progress
+								value={getProgress(channel.start, channel.end)}
+								max={100}
+							/>
+						</div>
 					{/if}
 				</div>
 				<button

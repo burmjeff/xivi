@@ -375,7 +375,7 @@
 					{#each $templateGroups as group, groupIdx (group.id)}
 						<div id="animate" class="card shadow-md mb-1" animate:flipAnimation={{ duration: flipDurationMs }}>
 							<Accordion.Item value={group.name}>
-								{#snippet control()}					
+								{#snippet control()}
 									<div class="flex flex-row items-center">
 										<h4 class="text-lg">{group.name}</h4>
 										<button
@@ -402,7 +402,7 @@
 										</button>
 									</div>
 								{/snippet}
-								{#snippet panel()}					
+								{#snippet panel()}
 										<TemplateChannel groupId={group.id} {groupIdx} />
 								{/snippet}
 							</Accordion.Item>
@@ -460,6 +460,7 @@
 >
     {#snippet content()}
         <ChannelSettings
+            modalOpen={modalChannelOpen}
             isNew={true}
             channelIdx={null}
             groupIdx={groupToAddChannel.idx}

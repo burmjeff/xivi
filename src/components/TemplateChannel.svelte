@@ -3,7 +3,8 @@
 	import { onMount } from 'svelte';
 	import { templateGroups } from '@xivi/stores/template_store';
 	import type { TemplateChannel } from '@xivi/data/template_entities';
-	import type { ModalSettings } from '@skeletonlabs/skeleton-svelte';
+	import { Modal } from '@skeletonlabs/skeleton-svelte';
+	import ChannelSettings from './modals/ChannelSettings.svelte';
 	import {
 		dndzone,
 		TRIGGERS,
@@ -21,7 +22,8 @@
 
 	let { groupId, groupIdx }: Props = $props();
 
-	const modalStore = getModalStore();
+	let modalChannelOpen = $state(false);
+	let currentChannelIdx = $state(0);
 	let dndTypeChannels = 'channels';
 	let dndItem: TemplateChannel;
 	let dndIdx: number;
@@ -79,25 +81,15 @@
 	}
 
 	function modalSettings(channelIdx: number) {
-		new Promise<boolean>((resolve) => {
-			const modal: ModalSettings = {
-				type: 'component',
-				component: 'modalChannelSettings',
-				meta: {
-					isNew: false,
-					channelIdx: channelIdx,
-					groupIdx: groupIdx
-				},
-				response: (r: boolean) => {
-					resolve(r);
-				}
-			};
-			modalStore.trigger(modal);
-		}).then((r: any) => {
-			if (r) {
-				updateSettings(channelIdx, r);
-			}
-		});
+		currentChannelIdx = channelIdx;
+		modalChannelOpen = true;
+	}
+
+	function handleChannelClose(formData: any = null) {
+		if (formData) {
+			updateSettings(currentChannelIdx, formData);
+		}
+		modalChannelOpen = false;
 	}
 
 	async function convertChannel(channelId: string) {
@@ -217,6 +209,22 @@
 		</tbody>
 	</table>
 {/if}
+
+<Modal
+	open={modalChannelOpen}
+	onOpenChange={(e) => (modalChannelOpen = e.open)}
+	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet content()}
+		<ChannelSettings
+			modalOpen={modalChannelOpen}
+			isNew={false}
+			channelIdx={currentChannelIdx}
+			{groupIdx}
+			parent={{ onClose: handleChannelClose }}
+		/>
+	{/snippet}
+</Modal>
 
 <style>
 	#animate {

@@ -166,12 +166,12 @@
 					/>
 				</label>
 				<div class="grid h-fit w-fit grid-cols-2 items-center gap-4 p-2">
-					<div class="template_group_dynamic h-fit w-fit">
-						bind:this={tooltipFloating.elements.reference}
+					<div class="template_group_dynamic h-fit w-fit" bind:this={tooltipFloating.elements.reference}>
 						<Switch
 							name="slide"
 							checked={formData.dynamic}
 							onCheckedChange={(e) => (formData.dynamic = e.checked)}
+							
 							{...tooltipInteractions.getReferenceProps()}
 						/>
 					</div>

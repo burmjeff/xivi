@@ -5,13 +5,31 @@
 	import { onMount } from 'svelte';
 	import {
 		Accordion,
-		type ModalSettings,
-		type PopupSettings
+		Modal
 	} from '@skeletonlabs/skeleton-svelte';
+	import {
+		FloatingArrow,
+		arrow,
+		autoUpdate,
+		flip,
+		offset,
+		useDismiss,
+		useFloating,
+		useHover,
+		useInteractions,
+		useRole,
+	} from "@skeletonlabs/floating-ui-svelte";
+	import PlaylistSettings from './modals/PlaylistSettings.svelte';
 	import { playlists } from '@xivi/stores/playlist_store';
 	import Icon from '@iconify/svelte';
+	import { fade } from 'svelte/transition';
 
-	const modalStore = getModalStore();
+	let playlistModalOpen = $state(false);
+	let deleteModalOpen = $state(false);
+	let currentPlaylistId = $state(0);
+	let currentPlaylistName = $state('');
+	let currentPlaylistUrl = $state('');
+	let isNewPlaylist = $state(false);
 
 	const updatePlaylists = async () => {
 		const response = await fetch('/api/playlists');
@@ -23,11 +41,30 @@
 		playlists.set(await updatePlaylists());
 	});
 
-	const addPlTooltip: PopupSettings = {
-		event: 'hover',
-		target: 'addPlTooltip',
-		placement: 'top'
-	};
+	// Floating UI state
+	let addPlTooltipOpen = $state(false);
+	let elemArrow: HTMLElement | null = $state(null);
+
+	// Floating UI setup for add playlist tooltip
+	const addPlTooltipFloating = useFloating({
+		whileElementsMounted: autoUpdate,
+		get open() {
+			return addPlTooltipOpen;
+		},
+		onOpenChange: (v) => {
+			addPlTooltipOpen = v;
+		},
+		placement: "top",
+		get middleware() {
+			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+		},
+	});
+
+	// Interactions for add playlist tooltip
+	const addPlTooltipRole = useRole(addPlTooltipFloating.context, { role: "tooltip" });
+	const addPlTooltipHover = useHover(addPlTooltipFloating.context, { move: false });
+	const addPlTooltipDismiss = useDismiss(addPlTooltipFloating.context);
+	const addPlTooltipInteractions = useInteractions([addPlTooltipRole, addPlTooltipHover, addPlTooltipDismiss]);
 
 	function getDate(dateStr: string) {
 		const date = new Date(dateStr);
@@ -38,26 +75,18 @@
 	}
 
 	function modalPlaylist(isNew: boolean, id: number, name: string, url: string) {
-		new Promise<boolean>((resolve) => {
-			const modal: ModalSettings = {
-				type: 'component',
-				component: 'modalPlaylistSettings',
-				meta: {
-					isNew: isNew,
-					id: id,
-					name: name,
-					url: url
-				},
-				response: (r: boolean) => {
-					resolve(r);
-				}
-			};
-			modalStore.trigger(modal);
-		}).then((r: any) => {
-			if (r) {
-				addPlaylist(r, isNew, id);
-			}
-		});
+		isNewPlaylist = isNew;
+		currentPlaylistId = id;
+		currentPlaylistName = name;
+		currentPlaylistUrl = url;
+		playlistModalOpen = true;
+	}
+
+	function handlePlaylistClose(formData: any = null) {
+		if (formData) {
+			addPlaylist(formData, isNewPlaylist, currentPlaylistId);
+		}
+		playlistModalOpen = false;
 	}
 
 	async function addPlaylist(formData: any, isNew: boolean, id: number) {
@@ -113,16 +142,15 @@
 	}
 
 	function deletePrompt(playlistId: number): void {
-		const modal: ModalSettings = {
-			type: 'confirm',
-			title: 'Please Confirm',
-			body: 'Are you sure you wish to delete this playlist?',
-			// TRUE if confirm pressed, FALSE if cancel pressed
-			response: (r: boolean) => {
-				if (r) deletePlaylist(playlistId);
-			}
-		};
-		modalStore.trigger(modal);
+		currentPlaylistId = playlistId;
+		deleteModalOpen = true;
+	}
+
+	function handleDeleteClose(confirm: boolean) {
+		if (confirm) {
+			deletePlaylist(currentPlaylistId);
+		}
+		deleteModalOpen = false;
 	}
 
 	async function deletePlaylist(playlistId: number) {
@@ -133,7 +161,6 @@
 			const data = await response.status;
 			console.log('Deleted playlist:', data);
 			$playlists = $playlists.filter((t) => t.id != playlistId);
-			modalStore.close();
 		} catch (error) {
 			console.log('Error deleting playlist:', error);
 			return;
@@ -141,50 +168,87 @@
 	}
 </script>
 
+<PlaylistSettings
+	modalOpen={playlistModalOpen}
+	parent={{ onClose: handlePlaylistClose }}
+	isNew={isNewPlaylist}
+	id={currentPlaylistId}
+	name={currentPlaylistName}
+	url={currentPlaylistUrl}
+/>
+
+<Modal
+	open={deleteModalOpen}
+	onOpenChange={(e) => (deleteModalOpen = e.open)}
+	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet content()}
+	<div class="card p-4 w-modal shadow-xl space-y-4">
+		<header class="text-2xl font-bold">Please Confirm</header>
+		<article>Are you sure you wish to delete this playlist?</article>
+		<footer class="flex justify-end space-x-2">
+			<button class="btn variant-filled" onclick={() => handleDeleteClose(false)}>Cancel</button>
+			<button class="btn variant-filled-error" onclick={() => handleDeleteClose(true)}>Delete</button>
+		</footer>
+	</div>
+	{/snippet}
+</Modal>
+
 <section class="playlists card card-hover p-1">
 	<header class="playlists-header flex items-center justify-center">
 		<h3 class="h3 font-bold">Playlists</h3>
 		<button
 			class="btn btn-md"
 			onclick={() => modalPlaylist(true, 0, '', '')}
-			use:popup={addPlTooltip}
+			bind:this={addPlTooltipFloating.elements.reference}
+			{...addPlTooltipInteractions.getReferenceProps()}
 		>
 			<Icon icon="icon-park-twotone:add-one" color="#0a7e85" width="25" height="25" />
+			{#if addPlTooltipOpen}
+				<div
+					bind:this={addPlTooltipFloating.elements.floating}
+					style={addPlTooltipFloating.floatingStyles}
+					{...addPlTooltipInteractions.getFloatingProps()}
+					class="floating popover-neutral card p-2"
+					transition:fade={{ duration: 200 }}
+				>
+					<p>Add New Playlist</p>
+					<FloatingArrow bind:ref={elemArrow} context={addPlTooltipFloating.context} fill="#575969" />
+				</div>
+			{/if}
 		</button>
 	</header>
 	<Accordion>
 		<div id="accord" class="playlists-viewport min-w-full overflow-auto">
 			{#if $playlists != null && $playlists.length > 0}
 				{#each $playlists as playlist, index (playlist.id)}
-					<Accordion.Item class="card shadow-md mb-1" key={playlist.id} bind:open={playlist.itemOpen}>
-						{#snippet summary()}
-											
-								<div class="flex flex-row items-center">
-									<h4 class="text-lg">{playlist.name}</h4>
-									<span class="text-green-600 text-xs ml-auto p-1">Updated at: {(getDate(playlist.updated_at))}</span>
-									<button
-										class="btn btn-md"
-										onclick={() => modalPlaylist(false, playlist.id, playlist.name, playlist.url)}
-										use:popup={addPlTooltip}
-									>
-										<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
-									</button>
-									<button
-										class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
-										onclick={() => {
-										(playlist.itemOpen = true), deletePrompt(playlist.id);
-									}}
-										><Icon icon="icon-park-outline:delete" width="18" height="18" />
-									</button>
-								</div>
-							
-											{/snippet}
-						{#snippet content()}
-											
+					<div class="card shadow-md mb-1">
+						<Accordion.Item value={playlist.name}>
+							{#snippet control()}
+
+									<div class="flex flex-row items-center">
+										<h4 class="text-lg">{playlist.name}</h4>
+										<span class="text-green-600 text-xs ml-auto p-1">Updated at: {(getDate(playlist.updated_at))}</span>
+										<button
+											class="btn btn-md"
+											onclick={() => modalPlaylist(false, playlist.id, playlist.name, playlist.url)}
+										>
+											<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
+										</button>
+										<button
+											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+											onclick={() => {
+											(playlist.itemOpen = true), deletePrompt(playlist.id);
+										}}
+											><Icon icon="icon-park-outline:delete" width="18" height="18" />
+										</button>
+									</div>
+							{/snippet}
+							{#snippet panel()}
 								<PlaylistGroup playlistId={playlist.id} playlistIdx={index} />
-							
-											{/snippet}
-					</Accordion.Item>
+							{/snippet}
+						</Accordion.Item>
+					</div>
 				{/each}
 			{:else}
 				<p>No playlists found</p>
@@ -193,10 +257,7 @@
 	</Accordion>
 </section>
 
-<div class="card preset-filled-secondary-500 p-2" data-popup="addPlTooltip">
-	<p>Add New Playlist</p>
-	<div class="preset-filled-secondary-500 arrow"></div>
-</div>
+
 
 <style>
 	#accord {
