@@ -1,11 +1,11 @@
 <!-- ChannelSettings.svelte -->
 
 <script lang="ts">
-	import { onMount, type SvelteComponent } from 'svelte';
+	import { onMount } from 'svelte';
 	import { templateGroups } from '@xivi/stores/template_store';
 	import Icon from '@iconify/svelte';
 	import { writable } from 'svelte/store';
-	import { type AutocompleteOption, type PopupSettings, FileUpload, TagsInput } from '@skeletonlabs/skeleton-svelte';
+	import { FileUpload, Modal, Combobox } from '@skeletonlabs/skeleton-svelte';
 	import xivi from '@xivi/lib/assets/xivi.png';
 	import type { Match, PlaylistChannel } from '@xivi/data/playlist_entities';
 	import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
@@ -15,27 +15,35 @@
 	import { playlistMatches } from '@xivi/stores/playlist_store';
 	import { logos } from '@xivi/stores/logo_store';
 	import type { Logo } from '@xivi/data/logo_entities';
+	import {
+		FloatingArrow,
+		arrow,
+		autoUpdate,
+		flip as floatingFlip,
+		offset,
+		useDismiss,
+		useFloating,
+		useClick,
+		useInteractions,
+		useRole,
+	} from "@skeletonlabs/floating-ui-svelte";
 
-	interface Props {
-		parent: SvelteComponent;
-	}
-
-	let { parent }: Props = $props();
+	let { modalOpen = $bindable(), parent, isNew, groupIdx, channelIdx } = $props<{
+		modalOpen: boolean;
+		parent: any;
+		isNew: boolean;
+		groupIdx: number;
+		channelIdx: number | null;
+	}>();
 
 	const playlist_ch_items = writable<PlaylistChannel[]>([]);
 
-	const modalStore = getModalStore();
-	let files: FileList = $state();
-	let groupIdx = $modalStore[0].meta.groupIdx;
-	let channelIdx = $modalStore[0].meta.channelIdx;
-	let isNew = $modalStore[0].meta.isNew;
 	let newImg = false;
 	let logoName: string;
 
-	let tvgidList = $state([""]);
-	let tvgidInputList = $state([""]);
-	let inputTvgid = $state("");
-	let tvgidOptions: AutocompleteOption<string>[] = $state();
+	let tvgidList = $state<string[]>([]);
+	let selectedTvgid = $state([""]); // For Combobox
+	let tvgidOptions = $state<{label: string; value: string}[]>([]);
 
 	let dndTypeChannels = 'channelSettings';
 	let shouldIgnoreMatchEvents = false;
@@ -112,11 +120,9 @@
 		return data.tvgids;
 	};
 
-	let popupTvgid: PopupSettings = {
-		event: 'focus-click',
-		target: 'popupTvgid',
-		placement: 'bottom'
-	};
+	// Floating UI state for logo popup
+	let logoPopupOpen = $state(false);
+	let elemArrow: HTMLElement | null = $state(null);
 
 	onMount(async () => {
 		const fetchedTvgids = await updateTvgids();
@@ -125,13 +131,12 @@
 			tvgidOptions = tvgidList.map((tvgid) => {
 				return {
 					label: `${tvgid}`,
-					value: `${tvgid}`,
-					meta: `${tvgid}`
+					value: `${tvgid}`
 				};
 			});
 		}
 		if (formData.tvgid != "") {
-			tvgidInputList[0] = formData.tvgid
+			selectedTvgid[0] = formData.tvgid;
 		}
 
 		if (!isNew) {
@@ -147,23 +152,26 @@
 		}
 	});
 
-	const popupLogo: PopupSettings = {
-		// Represents the type of event that opens/closed the popup
-		event: 'click',
-		// Matches the data-popup value on your popup element
-		target: 'popupLogo',
-		// Defines which side of your trigger the popup will appear
-		placement: 'right',
-		closeQuery: '#chooseImage'
-	};
+	// Floating UI setup for logo popup
+	const logoFloating = useFloating({
+		whileElementsMounted: autoUpdate,
+		get open() {
+			return logoPopupOpen;
+		},
+		onOpenChange: (v) => {
+			logoPopupOpen = v;
+		},
+		placement: "right",
+		get middleware() {
+			return [offset(10), floatingFlip(), elemArrow && arrow({ element: elemArrow })];
+		},
+	});
 
-	const toBase64 = (file: File) =>
-		new Promise((resolve, reject) => {
-			const reader = new FileReader();
-			reader.readAsDataURL(file);
-			reader.onload = () => resolve(reader.result);
-			reader.onerror = reject;
-		});
+	// Interactions for logo popup
+	const logoRole = useRole(logoFloating.context);
+	const logoClick = useClick(logoFloating.context);
+	const logoDismiss = useDismiss(logoFloating.context);
+	const logoInteractions = useInteractions([logoRole, logoClick, logoDismiss]);
 
 	const uploadImage = async () => {
 		const response = await fetch(`/api/logo`, {
@@ -171,7 +179,7 @@
 			headers: {
 				'Content-Type': 'application/json'
 			},
-			body: JSON.stringify({ 
+			body: JSON.stringify({
 				image: formData.logo,
 				name: logoName
 			})
@@ -180,14 +188,18 @@
 		return data.logo;
 	};
 
-	async function onUploadHandler(e: Event) {
-		if (files) {
-			const result = String(await toBase64(files[0]));
-			if (result) {
-				logoName = files[0].name.replace(/\.[^/.]+$/, "")
-				formData.logo = result;
-				newImg = true;
-			}
+	function onUploadHandler(event: any) {
+		const reader = new FileReader();
+  		reader.onload = (event) => {
+			const image = event.target!.result;
+		};
+		reader.readAsDataURL(event.details.acceptedFiles[0]);
+		const result = reader.result;
+		if (result) {
+			const file = event.details.acceptedFiles[0];
+			logoName = file.name.replace(/\.[^/.]+$/, "");
+			formData.logo = result.toString();
+			newImg = true;
 		}
 	}
 
@@ -196,12 +208,7 @@
 		formData.logo = logo.image;
 	}
 
-	function onInputChipSelect(event: CustomEvent<AutocompleteOption<string>>): void {
-		if (tvgidInputList.length === 0) {
-			tvgidInputList.push(event.detail.label);
-			tvgidInputList = [...tvgidInputList];
-		}
-	}
+
 
 	async function onFormSubmit(): Promise<void> {
 		if (newImg) {
@@ -209,9 +216,13 @@
 			formData.logoid = fetchedData.id;
 			formData.logo = fetchedData.image;
 		}
-		formData.tvgid = tvgidInputList[0]
-		if ($modalStore[0].response) $modalStore[0].response(formData);
-		modalStore.close();
+		formData.tvgid = selectedTvgid[0];
+		parent.onClose(formData);
+		modalClose();
+	}
+
+	function modalClose() {
+		modalOpen = false;
 	}
 
 	async function deleteChannel() {
@@ -227,7 +238,8 @@
 			$templateGroups[groupIdx].channels = $templateGroups[groupIdx].channels.filter(
 				(t) => Number(t.id) != formData.id
 			);
-			modalStore.close();
+			parent.onClose();
+			modalClose();
 		} catch (error) {
 			console.log('Error deleting template channel:', error);
 			return;
@@ -351,7 +363,12 @@
 	}
 </script>
 
-{#if $modalStore[0]}
+<Modal
+	open={modalOpen}
+	onOpenChange={(e) => (modalOpen = e.open)}
+	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet content()}
 	<div class="modal-channel-settings max-w-screen card max-h-screen space-y-2 p-2 shadow-xl">
 		{#if isNew}
 			<header class="justify-center text-center text-2xl font-bold">Add Channel</header>
@@ -370,15 +387,21 @@
 							placeholder=""
 						/>
 					</label>
-					<div class="channel_tvgid" use:popup={popupTvgid}>
+					<div class="channel_tvgid">
 						<span>Channel tvgid</span>
-						<TagsInput
-								bind:input={inputTvgid}
-								bind:value={tvgidInputList}
-								max={1}
-								placeholder="Add a tvg_id..."
-								name="chips"
-						/>
+						<Combobox
+							data={tvgidOptions}
+							value={selectedTvgid}
+							onValueChange={(e) => (selectedTvgid = e.value)}
+							label="Select TVG ID"
+							placeholder="Select or type..."
+						>
+							{#snippet item(item: {label: string; value: string})}
+								<div class="flex w-full justify-between space-x-2">
+									<span>{item.label}</span>
+								</div>
+							{/snippet}
+						</Combobox>
 					</div>
 					<div class="channel_logo">
 						<div class="grid w-64 grid-cols-2 items-center space-x-10 p-1">
@@ -386,7 +409,9 @@
 							<button
 								class="preset-filled-primary-500 btn h-fit w-fit"
 								onclick={updateLogos}
-								use:popup={popupLogo}>Choose Logo</button
+								bind:this={logoFloating.elements.reference}
+								{...logoInteractions.getReferenceProps()}
+							>Choose Logo</button
 							>
 						</div>
 					</div>
@@ -438,7 +463,7 @@
 										</tr>
 									{/each}
 								{:else}
-									<p class="h-20">No channels found</p>
+									<tr class="h-20"><td>No channels found</td></tr>
 								{/if}
 							</tbody>
 						</table>
@@ -456,49 +481,40 @@
 								<th>Score</th>
 							</tr>
 						</thead>
-						{#if $playlistMatches != null && $playlistMatches.length > 0}
-							<tbody
-								use:dndzone={{
-									items: $playlistMatches,
-									flipDurationMs,
-									type: dndTypeChannels,
-									dropFromOthersDisabled
-								}}
-								onconsider={handleDndConsiderMatch}
-								onfinalize={handleDndFinalizeMatch}
-							>
-								{#each $playlistMatches as channel, channelIdx (channel.id)}
-									<tr id="animate" animate:flip={{ duration: flipDurationMs }}>
-										<td>{channel.name}</td>
-										<td>{channel.tvgid}</td>
-										<td>{channel.score}</td>
+						<tbody use:dndzone={{
+							items: $playlistMatches,
+							flipDurationMs,
+							type: dndTypeChannels,
+							dropFromOthersDisabled
+							}}
+							onconsider={handleDndConsiderMatch}
+							onfinalize={handleDndFinalizeMatch}
+						>
+							{#if $playlistMatches != null && $playlistMatches.length > 0}
+									{#each $playlistMatches as channel, channelIdx (channel.id)}
+										<tr id="animate" animate:flip={{ duration: flipDurationMs }}>
+											<td>{channel.name}</td>
+											<td>{channel.tvgid}</td>
+											<td>{channel.score}</td>
 
-										{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-											<td
-												in:fade={{ duration: 200, easing: cubicIn }}
-												class="custom-shadow-item"
-											>
-												{channel.name}
-											</td>
-										{/if}
-									</tr>
-								{/each}
-							</tbody>
-						{:else}
-							<p>No channels found</p>
-						{/if}
+											{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+												<td
+													in:fade={{ duration: 200, easing: cubicIn }}
+													class="custom-shadow-item"
+												>
+													{channel.name}
+												</td>
+											{/if}
+										</tr>
+									{/each}
+							{:else}
+								<tr class="h-20"><td>No channels found</td></tr>
+							{/if}
+						</tbody>
 					</table>
 				</div>
 			{/if}
-			<div data-popup="popupTvgid" class="card max-h-52 w-fit p-4 shadow-xl overflow-y-scroll">
-				<Autocomplete
-					bind:input={inputTvgid}
-					options={tvgidOptions}
-					allowlist={tvgidList}
-					on:selection={onInputChipSelect}
-				/>
-				<div class="arrow bg-surface-100-900"></div>
-			</div>
+
 		</form>
 		<footer class="modal-footer {parent.regionFooter}">
 			{#if !isNew}
@@ -516,35 +532,48 @@
 			</button>
 		</footer>
 	</div>
+	{/snippet}
+</Modal>
 
-	<section class="logoList card p-2 shadow-2xl" data-popup="popupLogo">
-		<p class="h3 p-1 text-center font-bold">Choose Logo</p>
-		<div
-			class="h-fit max-h-96 w-fit overflow-y-scroll rounded-lg border-transparent bg-cover p-2 shadow-sm ring-4 ring-blue-500/50"
-		>
-			{#if $logos != null && $logos.length > 0}
-				<section class="grid grid-cols-7 items-center justify-items-center space-x-4 space-y-1">
-					{#each $logos as logo, logoIdx (logo.id)}
-						<button
-							id="chooseImage"
-							class="btn h-auto w-20 items-center p-1"
-							onclick={() => chooseImage(logo)}
-						>
-							<img src={logo.image} alt="" />
-						</button>
-					{/each}
-				</section>
-			{/if}
-		</div>
+{#if logoPopupOpen}
+<div
+	bind:this={logoFloating.elements.floating}
+	style={logoFloating.floatingStyles}
+	{...logoInteractions.getFloatingProps()}
+	class="floating popover-neutral logoList card p-2 shadow-2xl"
+	transition:fade={{ duration: 200 }}
+>
+	<p class="h3 p-1 text-center font-bold">Choose Logo</p>
+	<div
+		class="h-fit max-h-96 w-fit overflow-y-scroll rounded-lg border-transparent bg-cover p-2 shadow-sm ring-4 ring-blue-500/50"
+	>
+		{#if $logos != null && $logos.length > 0}
+			<section class="grid grid-cols-7 items-center justify-items-center space-x-4 space-y-1">
+				{#each $logos as logo, logoIdx (logo.id)}
+					<button
+						id="chooseImage"
+						class="btn h-auto w-20 items-center p-1"
+						onclick={() => chooseImage(logo)}
+					>
+						<img src={logo.image} alt="" />
+					</button>
+				{/each}
+			</section>
+		{/if}
+	</div>
+	<div class="mt-2 text-center">
 		<FileUpload
-			class="mt-2 text-center"
 			name="files"
-			bind:files
-			accept=".png,.jpg,.webp,.svg"
-			on:change={onUploadHandler}
-			>Upload New Image
+			accept="image/*"
+			onFileChange={onUploadHandler}
+			>
+			<button class="btn preset-filled">
+				<span>Upload New Image</span>
+			  </button>
 		</FileUpload>
-	</section>
+	</div>
+	<FloatingArrow bind:ref={elemArrow} context={logoFloating.context} fill="#575969" />
+</div>
 {/if}
 
 <style>

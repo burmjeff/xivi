@@ -4,13 +4,30 @@
 	import { onMount } from 'svelte';
 	import {
 		Accordion,
-		type PopupSettings,
-		type ModalSettings
+		Modal
 	} from '@skeletonlabs/skeleton-svelte';
+	import {
+		FloatingArrow,
+		arrow,
+		autoUpdate,
+		flip,
+		offset,
+		useDismiss,
+		useFloating,
+		useHover,
+		useClick,
+		useInteractions,
+		useRole,
+	} from "@skeletonlabs/floating-ui-svelte";
 	import { templates } from '@xivi/stores/template_store';
 	import Icon from '@iconify/svelte';
+	import { fade } from 'svelte/transition';
 
-	const modalStore = getModalStore();
+	let renameModalOpen = $state(false);
+	let deleteModalOpen = $state(false);
+	let currentTemplateId = $state(0);
+	let currentTemplateName = $state('');
+	let renameInputValue = $state('');
 
 	const updateTemplates = async () => {
 		const response = await fetch('/api/templates');
@@ -22,18 +39,52 @@
 		templates.set(await updateTemplates());
 	});
 
-	let templateSettings: PopupSettings = {
-		// Set the event as: click | hover | hover-click
-		event: 'click',
-		// Provide a matching 'data-popup' value.
-		target: 'addTemplatePopup'
-	};
+	// Floating UI state
+	let templateSettingsOpen = $state(false);
+	let addTemplateTooltipOpen = $state(false);
+	let elemArrow: HTMLElement | null = $state(null);
 
-	const addTemplateTooltip: PopupSettings = {
-		event: 'hover',
-		target: 'addTemplateTooltip',
-		placement: 'top'
-	};
+	// Floating UI setup for template settings
+	const templateSettingsFloating = useFloating({
+		whileElementsMounted: autoUpdate,
+		get open() {
+			return templateSettingsOpen;
+		},
+		onOpenChange: (v) => {
+			templateSettingsOpen = v;
+		},
+		placement: "top",
+		get middleware() {
+			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+		},
+	});
+
+	// Floating UI setup for add template tooltip
+	const addTemplateTooltipFloating = useFloating({
+		whileElementsMounted: autoUpdate,
+		get open() {
+			return addTemplateTooltipOpen;
+		},
+		onOpenChange: (v) => {
+			addTemplateTooltipOpen = v;
+		},
+		placement: "top",
+		get middleware() {
+			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+		},
+	});
+
+	// Interactions for template settings
+	const templateSettingsRole = useRole(templateSettingsFloating.context);
+	const templateSettingsClick = useClick(templateSettingsFloating.context);
+	const templateSettingsDismiss = useDismiss(templateSettingsFloating.context);
+	const templateSettingsInteractions = useInteractions([templateSettingsRole, templateSettingsClick, templateSettingsDismiss]);
+
+	// Interactions for add template tooltip
+	const addTemplateTooltipRole = useRole(addTemplateTooltipFloating.context, { role: "tooltip" });
+	const addTemplateTooltipHover = useHover(addTemplateTooltipFloating.context, { move: false });
+	const addTemplateTooltipDismiss = useDismiss(addTemplateTooltipFloating.context);
+	const addTemplateTooltipInteractions = useInteractions([addTemplateTooltipRole, addTemplateTooltipHover, addTemplateTooltipDismiss]);
 
 	async function addTemplate() {
 		const inputName = {
@@ -59,19 +110,17 @@
 	}
 
 	function renamePrompt(templateName: string, templateId: number): void {
-		const prompt: ModalSettings = {
-			type: 'prompt',
-			title: 'Rename Template',
-			body: 'Enter new template name in field below.',
-			value: templateName,
-			valueAttr: { type: 'text', minlength: 1, maxlength: 20, required: true },
-			response: (newName: string) => {
-				if (newName) renameTemplate(newName, templateId);
-			},
-			buttonTextCancel: 'Cancel',
-			buttonTextSubmit: 'Submit'
-		};
-		modalStore.trigger(prompt);
+		currentTemplateId = templateId;
+		currentTemplateName = templateName;
+		renameInputValue = templateName;
+		renameModalOpen = true;
+	}
+
+	function handleRenameClose(confirm: boolean) {
+		if (confirm && renameInputValue) {
+			renameTemplate(renameInputValue, currentTemplateId);
+		}
+		renameModalOpen = false;
 	}
 
 	async function renameTemplate(templateName: string, templateId: number) {
@@ -100,16 +149,15 @@
 	}
 
 	function deletePrompt(templateId: number) {
-		const modal: ModalSettings = {
-			type: 'confirm',
-			title: 'Please Confirm',
-			body: 'Are you sure you wish to delete this template?',
-			// TRUE if confirm pressed, FALSE if cancel pressed
-			response: (r: boolean) => {
-				if (r) deleteTemplate(templateId);
-			}
-		};
-		modalStore.trigger(modal);
+		currentTemplateId = templateId;
+		deleteModalOpen = true;
+	}
+
+	function handleDeleteClose(confirm: boolean) {
+		if (confirm) {
+			deleteTemplate(currentTemplateId);
+		}
+		deleteModalOpen = false;
 	}
 
 	async function deleteTemplate(templateId: number) {
@@ -120,7 +168,6 @@
 			const data = await response.status;
 			console.log('Deleted template:', data);
 			$templates = $templates.filter((t) => t.id != templateId);
-			modalStore.close();
 		} catch (error) {
 			console.log('Error deleting template:', error);
 			return;
@@ -128,45 +175,107 @@
 	}
 </script>
 
+<Modal
+	open={renameModalOpen}
+	onOpenChange={(e) => (renameModalOpen = e.open)}
+	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet content()}
+	<div class="card p-4 w-modal shadow-xl space-y-4">
+		<header class="text-2xl font-bold">Rename Template</header>
+		<article>
+			<label class="label">
+				<span>Enter new template name</span>
+				<input
+					class="input"
+					type="text"
+					bind:value={renameInputValue}
+					minlength="1"
+					maxlength="20"
+					required
+				/>
+			</label>
+		</article>
+		<footer class="flex justify-end gap-4">
+			<button type="button" class="btn variant-ghost" onclick={() => handleRenameClose(false)}>Cancel</button>
+			<button type="button" class="btn variant-filled" onclick={() => handleRenameClose(true)}>Submit</button>
+		</footer>
+	</div>
+	{/snippet}
+</Modal>
+
+<Modal
+	open={deleteModalOpen}
+	onOpenChange={(e) => (deleteModalOpen = e.open)}
+	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet content()}
+	<div class="card p-4 w-modal shadow-xl space-y-4">
+		<header class="text-2xl font-bold">Please Confirm</header>
+		<article>Are you sure you wish to delete this template?</article>
+		<footer class="flex justify-end space-x-2">
+			<button class="btn variant-filled" onclick={() => handleDeleteClose(false)}>Cancel</button>
+			<button class="btn variant-filled-error" onclick={() => handleDeleteClose(true)}>Delete</button>
+		</footer>
+	</div>
+	{/snippet}
+</Modal>
+
 <section class="templates card card-hover p-1">
 	<header class="templates-header flex items-center justify-center">
 		<h3 class="h3 font-bold">Templates</h3>
-		<button class="btn btn-md" use:popup={templateSettings} use:popup={addTemplateTooltip}>
+		<button
+			class="btn btn-md"
+			bind:this={templateSettingsFloating.elements.reference}
+			{...templateSettingsInteractions.getReferenceProps()}
+			bind:this={addTemplateTooltipFloating.elements.reference}
+			{...addTemplateTooltipInteractions.getReferenceProps()}
+		>
 			<Icon icon="icon-park-twotone:add-one" color="#0a7e85" width="25" height="25" />
+			{#if addTemplateTooltipOpen}
+				<div
+					bind:this={addTemplateTooltipFloating.elements.floating}
+					style={addTemplateTooltipFloating.floatingStyles}
+					{...addTemplateTooltipInteractions.getFloatingProps()}
+					class="floating popover-neutral card p-2"
+					transition:fade={{ duration: 200 }}
+				>
+					<p>Add New Template</p>
+					<FloatingArrow bind:ref={elemArrow} context={addTemplateTooltipFloating.context} fill="#575969" />
+				</div>
+			{/if}
 		</button>
 	</header>
 	<div id="accord" class="templates-viewport min-w-full overflow-auto">
 		{#if $templates.length > 0}
 			<Accordion>
 				{#each $templates as template, templateIdx (template.id)}
-					<Accordion.Item class="card shadow-md mb-1" key={template.id} bind:open={template.itemOpen}>
-						{#snippet summary()}
-											
-								<div class="item-center flex flex-row">
-									<h4 class="text-lg">{template.name}</h4>
-									<button
-										class="btn-icon btn-icon-sm inset-y-0 bg-transparent! ml-auto"
-										onclick={() => renamePrompt(template.name, template.id)}
-									>
-										<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
-									</button>
-									<button
-										class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
-										onclick={() => {
-										(template.itemOpen = true), deletePrompt(template.id);
-									}}
-									>
-										<Icon icon="icon-park-outline:delete" width="18" height="18" />
-									</button>
-								</div>
-							
-											{/snippet}
-						{#snippet content()}
-											
+					<div class="card shadow-md mb-1">
+						<Accordion.Item value={template.name} >
+							{#snippet control()}
+									<div class="item-center flex flex-row">
+										<h4 class="text-lg">{template.name}</h4>
+										<button
+											class="btn-icon btn-icon-sm inset-y-0 bg-transparent! ml-auto"
+											onclick={() => renamePrompt(template.name, template.id)}
+										>
+											<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
+										</button>
+										<button
+											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+											onclick={() => {
+											(template.itemOpen = true), deletePrompt(template.id);
+										}}
+										>
+											<Icon icon="icon-park-outline:delete" width="18" height="18" />
+										</button>
+									</div>
+							{/snippet}
+							{#snippet panel()}
 								<TemplateGroup templateId={template.id} {templateIdx} />
-							
-											{/snippet}
-					</Accordion.Item>
+							{/snippet}
+						</Accordion.Item>
+					</div>
 				{/each}
 			</Accordion>
 		{:else}
@@ -174,7 +283,14 @@
 		{/if}
 	</div>
 </section>
-<div class="card gap-4 p-4" data-popup="addTemplatePopup">
+{#if templateSettingsOpen}
+<div
+	bind:this={templateSettingsFloating.elements.floating}
+	style={templateSettingsFloating.floatingStyles}
+	{...templateSettingsInteractions.getFloatingProps()}
+	class="floating popover-neutral card gap-4 p-4"
+	transition:fade={{ duration: 200 }}
+>
 	<header class="justify-center text-center text-2xl font-bold">Add Template</header>
 	<div class="space-y-4">
 		<label class="template_name">
@@ -185,12 +301,9 @@
 			<button class="btn bg-primary-500" onclick={addTemplate}>Add Template</button>
 		</label>
 	</div>
+	<FloatingArrow bind:ref={elemArrow} context={templateSettingsFloating.context} fill="#575969" />
 </div>
-
-<div class="card preset-filled-secondary-500 p-2" data-popup="addTemplateTooltip">
-	<p>Add New Template</p>
-	<div class="preset-filled-secondary-500 arrow"></div>
-</div>
+{/if}
 
 <style>
 	#accord {

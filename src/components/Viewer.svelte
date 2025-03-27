@@ -74,19 +74,15 @@
 			{#if $templates[selected].groups.length > 0}
 				{#each $templates[selected].groups as group, groupIdx (group.id)}
 					<div class="groups w-content justify-center p-1 card shadow-md mb-1">
-						<Accordion.Item class="mb-1" key={groupIdx} bind:open={group.itemOpen}>
-							{#snippet summary()}
-													
+						<Accordion.Item value={group.name}>
+							{#snippet control()}			
 									<div class="flex flex-row items-center">
 										<h4 class="text-lg">{group.name}</h4>
 									</div>
-								
-													{/snippet}
-							{#snippet content()}
-													
-									<ViewerChannels templateIdx={selected} groupId={group.id} {groupIdx} />
-								
-													{/snippet}
+							{/snippet}
+							{#snippet panel()}
+								<ViewerChannels templateIdx={selected} groupId={group.id} {groupIdx} />		
+							{/snippet}
 						</Accordion.Item>
 					</div>
 				{/each}

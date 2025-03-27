@@ -10,20 +10,27 @@
 	import 'vidstack/player/ui';
 	import { isHLSProvider, MediaRemoteControl, type MediaCanPlayEvent, type MediaProviderChangeEvent } from 'vidstack';
 	import type { MediaPlayerElement } from 'vidstack/elements';
-	import { getModalStore } from '@skeletonlabs/skeleton-svelte';
-	import { onMount, type SvelteComponent } from 'svelte';
+	import { Modal } from '@skeletonlabs/skeleton-svelte';
+	import { onMount } from 'svelte';
 	import xivi from '@xivi/lib/assets/xivi.png';
 
-	const modalStore = getModalStore();
-	let videoUrl = $modalStore[0].meta.stream;
-	let name = $modalStore[0].meta.name;
-	let player: HTMLElement = $state();
+	let { modalOpen = $bindable(), parent, name, stream } = $props<{
+		modalOpen: boolean;
+		parent: any;
+		name: string;
+		stream: string;
+	}>();
+
+	let videoUrl = stream;
+	let player: HTMLElement | undefined = $state();
 	const remote = new MediaRemoteControl();
 	let boolTrue = true;
 
 	remote.disableCaptions();
 
 	onMount(() => {
+		if (!player) return;
+
 		player.addEventListener('provider-setup', (event: Event) => {
 			const provider = (event as CustomEvent).detail;
 			if (provider?.type === 'google-cast') {
@@ -69,33 +76,41 @@
 
 </script>
 
-<media-player
-  class="player"
-  title={name}
-  streamType="ll-live"
-  viewType="video"
-  src={videoUrl}
-  crossOrigin
-  playsInline
-  autoPlay
-  bind:this={player}
+<Modal
+	open={modalOpen}
+	onOpenChange={(e) => (modalOpen = e.open)}
+	backdropClasses="backdrop-blur-sm"
 >
-	<media-provider>
-		<media-poster
-			class="vds-poster" 
-			src={xivi}
-			alt={name}
-		></media-poster>
-	</media-provider>
-	<!-- Layouts -->
-	<media-video-layout>
-		<media-controls>
-			<media-controls-group class="absolute top-0 right-0 m-2">
-				<media-cast-button></media-cast-button>
-			</media-controls-group>
-		</media-controls>
-	</media-video-layout>
-</media-player>
+	{#snippet content()}
+	<media-player
+	  class="player"
+	  title={name}
+	  streamType="ll-live"
+	  viewType="video"
+	  src={videoUrl}
+	  crossOrigin
+	  playsInline
+	  autoPlay
+	  bind:this={player}
+	>
+		<media-provider>
+			<media-poster
+				class="vds-poster"
+				src={xivi}
+				alt={name}
+			></media-poster>
+		</media-provider>
+		<!-- Layouts -->
+		<media-video-layout>
+			<media-controls>
+				<media-controls-group class="absolute top-0 right-0 m-2">
+					<media-cast-button></media-cast-button>
+				</media-controls-group>
+			</media-controls>
+		</media-video-layout>
+	</media-player>
+	{/snippet}
+</Modal>
 
 <style lang="postcss">
 	.player {

@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import {
 		Accordion,
-		type ModalSettings
+		Modal
 	} from '@skeletonlabs/skeleton-svelte';
 	import { templates } from '@xivi/stores/template_store';
 	import { templateGroups } from '@xivi/stores/template_store';
@@ -15,13 +15,14 @@
 	import { cubicIn } from 'svelte/easing';
 	import Icon from '@iconify/svelte';
 
-	const modalStore = getModalStore();
 	interface Props {
 		templateId: number;
 		templateIdx: number;
 	}
 
 	let { templateId, templateIdx }: Props = $props();
+	let deleteModalOpen = $state(false);
+	let currentGroupId = $state(0);
 	let dndTypeGroups = 'groups';
 	let shouldIgnoreDndEvents = false;
 	const flipDurationMs = 150;
@@ -63,16 +64,15 @@
 	}
 
 	function deletePrompt(groupId: number) {
-		const modal: ModalSettings = {
-			type: 'confirm',
-			title: 'Please Confirm',
-			body: 'Are you sure you wish to remove this group from template?',
-			// TRUE if confirm pressed, FALSE if cancel pressed
-			response: (r: boolean) => {
-				if (r) deleteTemplateGroup(groupId);
-			}
-		};
-		modalStore.trigger(modal);
+		currentGroupId = groupId;
+		deleteModalOpen = true;
+	}
+
+	function handleDeleteClose(confirm: boolean) {
+		if (confirm) {
+			deleteTemplateGroup(currentGroupId);
+		}
+		deleteModalOpen = false;
 	}
 
 	//TODO COLLAPSE ACCORDIION ITEM BEFORE DELETE
@@ -86,7 +86,6 @@
 			$templates[templateIdx].groups = $templates[templateIdx].groups.filter(
 				(t) => t.id != groupId
 			);
-			modalStore.close();
 		} catch (error) {
 			console.log('Error removing template group:', error);
 			return;
@@ -138,6 +137,23 @@
 	}
 </script>
 
+<Modal
+	open={deleteModalOpen}
+	onOpenChange={(e) => (deleteModalOpen = e.open)}
+	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet content()}
+	<div class="card p-4 w-modal shadow-xl space-y-4">
+		<header class="text-2xl font-bold">Please Confirm</header>
+		<article>Are you sure you wish to remove this group from template?</article>
+		<footer class="flex justify-end space-x-2">
+			<button class="btn variant-filled" onclick={() => handleDeleteClose(false)}>Cancel</button>
+			<button class="btn variant-filled-error" onclick={() => handleDeleteClose(true)}>Delete</button>
+		</footer>
+	</div>
+	{/snippet}
+</Modal>
+
 {#if $templates[templateIdx].groups != null}
 	<Accordion>
 		<section
@@ -155,7 +171,7 @@
 					<div id="animate" class="card shadow-md mb-1" animate:flip={{ duration: flipDurationMs }}>
 						<Accordion.Item  value={group.name}>
 							{#snippet control()}
-													
+
 									<div class="flex flex-row items-center">
 										<h4 class="text-lg">{group.name}</h4>
 										<button
@@ -168,7 +184,7 @@
 										</button>
 									</div>
 							{/snippet}
-							{#snippet panel()}	
+							{#snippet panel()}
 								<TemplateChannel groupId={group.id} {groupIdx} />
 							{/snippet}
 						</Accordion.Item>
