@@ -110,9 +110,9 @@
 					<td>{channel.tvg_id}</td>
 
 					{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-						<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
+						<td in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
 							{channel.title}
-						</div>
+						</td>
 					{/if}
 				</tr>
 			{/each}

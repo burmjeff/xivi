@@ -422,10 +422,11 @@
 	{/if}
 </section>
 
-<div class="card preset-filled-secondary-500 p-2" data-popup="addTooltip">
+<!-- Tooltip popup is now handled by the floating UI -->
+<!-- <div class="card preset-filled-secondary-500 p-2" data-popup="addTooltip">
 	<p>Add New Template Group</p>
 	<div class="preset-filled-secondary-500 arrow"></div>
-</div>
+</div> -->
 
 <GroupSettings
     bind:modalOpen={modalOpen}

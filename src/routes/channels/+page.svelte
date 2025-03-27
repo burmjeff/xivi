@@ -14,18 +14,19 @@
 			<Tabs.Control value="playlists">Playlists</Tabs.Control>
 		{/snippet}
 		{#snippet content()}
-			<Tabs.Panel value="templates">
-				<section class="grid h-full w-full grid-cols-2 gap-4">
+			<section class="grid h-full w-full grid-cols-2 gap-4">
+				<div class="col-span-1">
 					<TemplateGroupList />
-					<Template />
-				</section>
-			</Tabs.Panel>
-			<Tabs.Panel value="playlists">
-				<section class="grid h-full w-full grid-cols-2 gap-4">
-					<TemplateGroupList />
-					<Playlist />
-				</section>
-			</Tabs.Panel>
+				</div>
+				<div class="col-span-1">
+					<Tabs.Panel value="templates">
+						<Template />
+					</Tabs.Panel>
+					<Tabs.Panel value="playlists">
+						<Playlist />
+					</Tabs.Panel>
+				</div>
+			</section>
 		{/snippet}
 	</Tabs>
 </div>

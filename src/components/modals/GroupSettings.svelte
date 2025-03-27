@@ -22,7 +22,7 @@
 	} from "@skeletonlabs/floating-ui-svelte";
 	import { fade } from "svelte/transition";
 
-	let { modalOpen = $bindable(), parent, isNew, name, dynamic, dynamicgroup } = $props<{
+	let { modalOpen = $bindable(false), parent, isNew, name, dynamic, dynamicgroup } = $props<{
 		modalOpen: boolean;
 		parent: any;
 		isNew: boolean;
@@ -91,7 +91,7 @@
 			playlists.set(await updatePlaylists());
 		}
 		dynamicOptions = [];
-		
+
 		for (let i = 0; i < $playlists.length; i++) {
 			if ($playlists[i].groups == undefined) {
 				$playlists[i].groups = [];
@@ -143,11 +143,9 @@
 <Modal
 	open={modalOpen}
 	onOpenChange={(e) => (modalOpen = e.open)}
-	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
 	backdropClasses="backdrop-blur-sm"
 >
-	{#snippet trigger()}Open Modal{/snippet}
 	{#snippet content()}
 		<div class="modal-add-group max-w-screen card max-h-screen w-fit space-y-4 p-4 shadow-xl">
 			{#if isNew}
@@ -171,7 +169,7 @@
 							name="slide"
 							checked={formData.dynamic}
 							onCheckedChange={(e) => (formData.dynamic = e.checked)}
-							
+
 							{...tooltipInteractions.getReferenceProps()}
 						/>
 					</div>
