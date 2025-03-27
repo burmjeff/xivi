@@ -1,11 +1,7 @@
 <!-- TemplateStatus.svelte -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getModalStore, 
-		popup,
-		type PopupSettings,
-		SlideToggle
-	} from '@skeletonlabs/skeleton';
+	import { type PopupSettings, Switch } from '@skeletonlabs/skeleton-svelte';
 	import { templates } from '@xivi/stores/template_store';
 	import Icon from '@iconify/svelte';
 	import { settings } from '@xivi/stores/settings_store';
@@ -58,7 +54,7 @@
 		{#if $templates.length > 0 && $settings != null}
 			<div class="table-container">
 				<!-- Native Table Element -->
-				<table class="table table-hover">
+				<table class="table ">
 					<thead>
 						<tr id="thead">
 							<th>Name</th>
@@ -81,8 +77,8 @@
 								>
 								<td>
 									<button
-										class="btn-icon btn-icon-lg inset-y-0 !bg-transparent"
-										on:click={() => refreshM3U(template.id)}
+										class="btn-icon btn-icon-lg inset-y-0 bg-transparent!"
+										onclick={() => refreshM3U(template.id)}
 										use:popup={refreshTooltip}
 									>
 										<Icon icon="icon-park-outline:refresh-one" width="25" height="25" />
@@ -99,9 +95,9 @@
 	</div>
 </section>
 
-<div class="card variant-filled-secondary p-2" data-popup="refreshTooltip">
+<div class="card preset-filled-secondary-500 p-2" data-popup="refreshTooltip">
 	<p>Regenerate m3u and EPG</p>
-	<div class="variant-filled-secondary arrow" />
+	<div class="preset-filled-secondary-500 arrow"></div>
 </div>
 
 <style>

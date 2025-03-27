@@ -252,8 +252,8 @@
 					<input class="input variant-form-material" type="text" placeholder="Xivi 1.0" />
 				</label>
 			</div>
-			<hr class="!border-t-4" />
-			<button type="button" class="variant-filled btn items-center" on:click={updateSettings}>
+			<hr class="border-t-4!" />
+			<button type="button" class="preset-filled btn items-center" onclick={updateSettings}>
 				<Icon icon="icon-park-outline:save-one" width="18" height="18" />
 				<span>Save Settings</span>
 			</button>

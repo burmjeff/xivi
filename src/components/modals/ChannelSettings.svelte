@@ -5,7 +5,7 @@
 	import { templateGroups } from '@xivi/stores/template_store';
 	import Icon from '@iconify/svelte';
 	import { writable } from 'svelte/store';
-	import { getModalStore, FileButton, popup, InputChip, Autocomplete, type AutocompleteOption, type PopupSettings } from '@skeletonlabs/skeleton';
+	import { type AutocompleteOption, type PopupSettings, FileUpload, TagsInput } from '@skeletonlabs/skeleton-svelte';
 	import xivi from '@xivi/lib/assets/xivi.png';
 	import type { Match, PlaylistChannel } from '@xivi/data/playlist_entities';
 	import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
@@ -16,22 +16,26 @@
 	import { logos } from '@xivi/stores/logo_store';
 	import type { Logo } from '@xivi/data/logo_entities';
 
-	export let parent: SvelteComponent;
+	interface Props {
+		parent: SvelteComponent;
+	}
+
+	let { parent }: Props = $props();
 
 	const playlist_ch_items = writable<PlaylistChannel[]>([]);
 
 	const modalStore = getModalStore();
-	let files: FileList;
+	let files: FileList = $state();
 	let groupIdx = $modalStore[0].meta.groupIdx;
 	let channelIdx = $modalStore[0].meta.channelIdx;
 	let isNew = $modalStore[0].meta.isNew;
 	let newImg = false;
 	let logoName: string;
 
-	let tvgidList: string[];
-	let tvgidInputList: string[];
-	let inputTvgid: string;
-	let tvgidOptions: AutocompleteOption<string>[];
+	let tvgidList = $state([""]);
+	let tvgidInputList = $state([""]);
+	let inputTvgid = $state("");
+	let tvgidOptions: AutocompleteOption<string>[] = $state();
 
 	let dndTypeChannels = 'channelSettings';
 	let shouldIgnoreMatchEvents = false;
@@ -47,7 +51,15 @@
 		tvgid: string;
 		logoid: number;
 		logo: string;
-	};
+	} = $state(
+		{
+			id: 0,
+			name: '',
+			tvgid: '',
+			logoid: 0,
+			logo: xivi
+		}
+	);
 
 	if (!isNew) {
 		formData = {
@@ -346,7 +358,7 @@
 		{:else}
 			<header class="justify-center text-center text-2xl font-bold">Channel Settings</header>
 		{/if}
-		<form class="modal-form space-y-4 border border-surface-500 p-4 rounded-container-token">
+		<form class="modal-form space-y-4 border border-surface-500 p-4 rounded-container">
 			<div class="playlist_ch_items grid grid-cols-5 space-x-6">
 				<div class="form col-span-2">
 					<label class="channel_name">
@@ -360,7 +372,7 @@
 					</label>
 					<div class="channel_tvgid" use:popup={popupTvgid}>
 						<span>Channel tvgid</span>
-						<InputChip
+						<TagsInput
 								bind:input={inputTvgid}
 								bind:value={tvgidInputList}
 								max={1}
@@ -372,8 +384,8 @@
 						<div class="grid w-64 grid-cols-2 items-center space-x-10 p-1">
 							<img class="h-auto max-h-32 w-auto" src={formData.logo} alt="Logo" />
 							<button
-								class="variant-filled-primary btn h-fit w-fit"
-								on:click={updateLogos}
+								class="preset-filled-primary-500 btn h-fit w-fit"
+								onclick={updateLogos}
 								use:popup={popupLogo}>Choose Logo</button
 							>
 						</div>
@@ -382,7 +394,7 @@
 				<div class="max-h-72 col-span-3">
 					<header class="justify-center text-center font-bold mb-2">Current Playlist Channels</header>
 					<div class="max-h-72 overflow-y-scroll">
-						<table class="table table-hover justify-center text-center shadow-md">
+						<table class="table  justify-center text-center shadow-md">
 							<thead>
 								<tr id="thead">
 									<th>Title</th>
@@ -397,8 +409,8 @@
 									type: dndTypeChannels,
 									transformDraggedElement
 								}}
-								on:consider={handleDndConsiderItem}
-								on:finalize={handleDndFinalizeItem}
+								onconsider={handleDndConsiderItem}
+								onfinalize={handleDndFinalizeItem}
 							>
 								{#if $playlist_ch_items != null && $playlist_ch_items.length > 0}
 									{#each $playlist_ch_items as channel, channelIdx (channel.id)}
@@ -408,7 +420,7 @@
 											<td class="h-4 w-5 items-center hover:bg-red-900">
 												<button
 													class="btn h-full max-h-4 w-full"
-													on:click={() => removeChannelItem(channel.id)}
+													onclick={() => removeChannelItem(channel.id)}
 												>
 													<div>
 														<Icon icon="icon-park-outline:delete" />
@@ -416,12 +428,12 @@
 												</button>
 											</td>
 											{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-												<div
+												<td
 													in:fade={{ duration: 200, easing: cubicIn }}
 													class="custom-shadow-item"
 												>
 													{channel.title}
-												</div>
+												</td>
 											{/if}
 										</tr>
 									{/each}
@@ -434,9 +446,9 @@
 				</div>
 			</div>
 			{#if !isNew}
-				<hr class="!border-t-2" />
+				<hr class="border-t-2!" />
 				<div class="max-h-80 overflow-y-scroll">
-					<table class="table table-hover justify-center text-center shadow-md">
+					<table class="table  justify-center text-center shadow-md">
 						<thead>
 							<tr id="thead">
 								<th>Title</th>
@@ -452,8 +464,8 @@
 									type: dndTypeChannels,
 									dropFromOthersDisabled
 								}}
-								on:consider={handleDndConsiderMatch}
-								on:finalize={handleDndFinalizeMatch}
+								onconsider={handleDndConsiderMatch}
+								onfinalize={handleDndFinalizeMatch}
 							>
 								{#each $playlistMatches as channel, channelIdx (channel.id)}
 									<tr id="animate" animate:flip={{ duration: flipDurationMs }}>
@@ -462,12 +474,12 @@
 										<td>{channel.score}</td>
 
 										{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-											<div
+											<td
 												in:fade={{ duration: 200, easing: cubicIn }}
 												class="custom-shadow-item"
 											>
 												{channel.name}
-											</div>
+											</td>
 										{/if}
 									</tr>
 								{/each}
@@ -485,20 +497,20 @@
 					allowlist={tvgidList}
 					on:selection={onInputChipSelect}
 				/>
-				<div class="arrow bg-surface-100-800-token" />
+				<div class="arrow bg-surface-100-900"></div>
 			</div>
 		</form>
 		<footer class="modal-footer {parent.regionFooter}">
 			{#if !isNew}
-				<button class="variant-ghost-error btn items-center" on:click={deleteChannel}>
+				<button class="preset-tonal-error border border-error-500 btn items-center" onclick={deleteChannel}>
 					<Icon icon="icon-park-outline:delete" width="20" height="20" />
 					<span>Delete</span>
 				</button>
 			{/if}
-			<button class="btn items-center {parent.buttonNeutral}" on:click={parent.onClose}>
+			<button class="btn items-center {parent.buttonNeutral}" onclick={parent.onClose}>
 				{parent.buttonTextCancel}</button
 			>
-			<button class="btn items-center {parent.buttonPositive}" on:click={onFormSubmit}>
+			<button class="btn items-center {parent.buttonPositive}" onclick={onFormSubmit}>
 				<Icon icon="icon-park-outline:save-one" width="20" height="20" />
 				<span>Save Changes</span>
 			</button>
@@ -508,7 +520,7 @@
 	<section class="logoList card p-2 shadow-2xl" data-popup="popupLogo">
 		<p class="h3 p-1 text-center font-bold">Choose Logo</p>
 		<div
-			class="h-fit max-h-96 w-fit overflow-y-scroll rounded-lg border-transparent bg-cover p-2 shadow ring-4 ring-blue-500/50"
+			class="h-fit max-h-96 w-fit overflow-y-scroll rounded-lg border-transparent bg-cover p-2 shadow-sm ring-4 ring-blue-500/50"
 		>
 			{#if $logos != null && $logos.length > 0}
 				<section class="grid grid-cols-7 items-center justify-items-center space-x-4 space-y-1">
@@ -516,7 +528,7 @@
 						<button
 							id="chooseImage"
 							class="btn h-auto w-20 items-center p-1"
-							on:click={() => chooseImage(logo)}
+							onclick={() => chooseImage(logo)}
 						>
 							<img src={logo.image} alt="" />
 						</button>
@@ -524,14 +536,14 @@
 				</section>
 			{/if}
 		</div>
-		<FileButton
+		<FileUpload
 			class="mt-2 text-center"
 			name="files"
 			bind:files
 			accept=".png,.jpg,.webp,.svg"
 			on:change={onUploadHandler}
 			>Upload New Image
-		</FileButton>
+		</FileUpload>
 	</section>
 {/if}
 

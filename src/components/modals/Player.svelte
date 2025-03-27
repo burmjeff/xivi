@@ -10,23 +10,22 @@
 	import 'vidstack/player/ui';
 	import { isHLSProvider, MediaRemoteControl, type MediaCanPlayEvent, type MediaProviderChangeEvent } from 'vidstack';
 	import type { MediaPlayerElement } from 'vidstack/elements';
-
+	import { getModalStore } from '@skeletonlabs/skeleton-svelte';
 	import { onMount, type SvelteComponent } from 'svelte';
-	import { getModalStore } from '@skeletonlabs/skeleton';
 	import xivi from '@xivi/lib/assets/xivi.png';
 
 	const modalStore = getModalStore();
 	let videoUrl = $modalStore[0].meta.stream;
 	let name = $modalStore[0].meta.name;
-	let player: HTMLElement;
+	let player: HTMLElement = $state();
 	const remote = new MediaRemoteControl();
-	let boolTrue = true
+	let boolTrue = true;
 
 	remote.disableCaptions();
 
 	onMount(() => {
-		player.addEventListener('provider-setup', (event) => {
-			const provider = (<CustomEvent>event).detail;
+		player.addEventListener('provider-setup', (event: Event) => {
+			const provider = (event as CustomEvent).detail;
 			if (provider?.type === 'google-cast') {
 				// Google Cast remote player.
 				provider.player;
@@ -68,13 +67,6 @@
 		}
 	}
 
-	// We can listen for the `can-play` event to be notified when the player is ready.
-	function onCanPlay(event: MediaCanPlayEvent) {
-		// Start playback immediately
-		if (player) {
-			remote.startLoading();
-		}
-	}
 </script>
 
 <media-player
@@ -86,8 +78,6 @@
   crossOrigin
   playsInline
   autoPlay
-  on:provider-change={onProviderChange}
-  on:can-play={onCanPlay}
   bind:this={player}
 >
 	<media-provider>
@@ -95,13 +85,13 @@
 			class="vds-poster" 
 			src={xivi}
 			alt={name}
-		/>
+		></media-poster>
 	</media-provider>
 	<!-- Layouts -->
 	<media-video-layout>
 		<media-controls>
 			<media-controls-group class="absolute top-0 right-0 m-2">
-				<media-cast-button />
+				<media-cast-button></media-cast-button>
 			</media-controls-group>
 		</media-controls>
 	</media-video-layout>
