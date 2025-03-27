@@ -63,7 +63,7 @@ func UpdatePlaylists() {
 	if templates, err := database.Db.GetTemplates(); err != nil {
 		log.Debug().Err(err)
 	} else {
-		m3uTools := utils.M3uTools{}
+		m3uTools := utils.NewM3uTools()
 		for _, template := range *templates {
 			go m3uTools.CreateM3u(template)
 		}

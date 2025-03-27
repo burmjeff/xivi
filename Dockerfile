@@ -15,7 +15,7 @@ RUN npx vite build
 # server-builder
 #
 
-FROM golang:1.23-bookworm AS server-builder
+FROM golang:1.24.1-bookworm AS server-builder
 
 RUN apt-get update && apt-get install -y \
 build-essential \

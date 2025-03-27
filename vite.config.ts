@@ -19,6 +19,9 @@ export default defineConfig({
     }
   },
   server: {
+    host: true, // Listen on all addresses
+    port: 5173,
+    strictPort: true,
     proxy: {
       '/api': {
         target: `http://127.0.0.1:${port}`,
@@ -27,6 +30,12 @@ export default defineConfig({
         ws: true
       },
       '/images': {
+        target: `http://127.0.0.1:${port}`,
+        changeOrigin: true,
+        secure: false,
+        ws: true
+      },
+      '/proxy-image': {
         target: `http://127.0.0.1:${port}`,
         changeOrigin: true,
         secure: false,

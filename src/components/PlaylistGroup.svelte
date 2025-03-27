@@ -8,8 +8,7 @@
 	import {
 		dndzone,
 		TRIGGERS,
-		SHADOW_ITEM_MARKER_PROPERTY_NAME,
-		DRAGGED_ELEMENT_ID
+		SHADOW_ITEM_MARKER_PROPERTY_NAME
 	} from 'svelte-dnd-action';
 	import { flip } from 'svelte/animate';
 	import { fade } from 'svelte/transition';
@@ -27,6 +26,8 @@
 	let dndTypeGroups = 'groups';
 	let dndItem: PlaylistGroup;
 	let dndIdx: number;
+	// Accordion state for v3
+	let accordionValue = $state<string[]>([]);
 
 	const updatePlaylistGroups = async () => {
 		const response = await fetch(`/api/playlist/${playlistId}/groups`);
@@ -47,7 +48,7 @@
 
 	async function disableGroup(e: any, group: PlaylistGroup) {
 		if (group !== null) {
-			group.enabled = e.target.checked;
+			group.enabled = e.checked;
 			
 			try {
 				const response = await fetch(`/api/playlist/group`, {
@@ -84,7 +85,7 @@
 		}
 	}
 	function handleDndFinalize(e: CustomEvent<DndEvent<PlaylistGroup>>) {
-		const { trigger, id } = e.detail.info;
+		const { trigger } = e.detail.info;
 		if (!shouldIgnoreDndEvents) {
 			$playlists[playlistIdx].groups = e.detail.items;
 		} else if (trigger === TRIGGERS.DROPPED_INTO_ANOTHER) {
@@ -99,36 +100,32 @@
 	}
 
 	function transformDraggedElement(
-		draggedEl: HTMLElement | undefined,
+		_draggedEl: HTMLElement | undefined,
 		data: Item | undefined,
-		index: number | undefined
+		_index: number | undefined
 	) {
 		data!.playlist_id = playlistId;
 	}
 </script>
 
 {#if $playlists[playlistIdx].groups != null && $playlists[playlistIdx].groups.length > 0}
-	<Accordion>
-		<Accordion.Item class="card shadow-md mb-1">
-			{#snippet summary()}
-					
-					<div class="flex flex-row items-center">
-						<h4>DISABLED GROUPS</h4>
-					</div>
-				
-					{/snippet}
-			{#snippet content()}
-					
-					{#each $playlists[playlistIdx].groups as group, groupIdx (group.id)}
-						{#if !group.enabled}
-							<div class="card shadow-md p-1 px-4 flex flex-row items-center content-center">
-								<span>{group.name}</span>
-								<Switch class="ml-auto p-1" name="group_slider" bind:checked={group.enabled} active="bg-primary-500" size="sm" on:click={(event) => disableGroup(event, group)}/>
-							</div>
-						{/if}
-					{/each}
-				
-					{/snippet}
+	<Accordion value={accordionValue} onValueChange={(e) => (accordionValue = e.value)} multiple>
+		<Accordion.Item value="disabled-groups" base="card shadow-md mb-1">
+			{#snippet control()}
+				<div class="flex flex-row items-center">
+					<h4>DISABLED GROUPS</h4>
+				</div>
+			{/snippet}
+			{#snippet panel()}
+				{#each $playlists[playlistIdx].groups as group (group.id)}
+					{#if !group.enabled}
+						<div class="card shadow-md p-1 px-4 flex flex-row items-center content-center">
+							<span>{group.name}</span>
+							<Switch classes="ml-auto p-1" name="group_slider" checked={group.enabled} onCheckedChange={(e) => disableGroup(e, group)}/>
+						</div>
+					{/if}
+				{/each}
+			{/snippet}
 		</Accordion.Item>
 		<section
 			use:dndzone={{
@@ -144,20 +141,16 @@
 			{#each $playlists[playlistIdx].groups as group, groupIdx (group.id)}
 				<div id="animate" animate:flip={{ duration: flipDurationMs }}>
 					{#if group.enabled}
-						<Accordion.Item class="card shadow-md mb-1" key={group.id}>
-							{#snippet summary()}
-													
-									<div class="flex flex-row items-center">
-										<h4>{group.name}</h4>
-										<Switch class="ml-auto p-1" name="group_slider" bind:checked={group.enabled} active="bg-primary-500" size="sm" on:click={(event) => disableGroup(event, group)}/>
-									</div>
-								
-													{/snippet}
-							{#snippet content()}
-													
-									<PlaylistChannel {playlistId} {playlistIdx} groupId={group.id} {groupIdx} />
-								
-													{/snippet}
+						<Accordion.Item value={group.id.toString()} base="card shadow-md mb-1">
+							{#snippet control()}
+								<div class="flex flex-row items-center">
+									<h4>{group.name}</h4>
+									<Switch classes="ml-auto p-1" name="group_slider" checked={group.enabled} onCheckedChange={(e) => disableGroup(e, group)}/>
+								</div>
+							{/snippet}
+							{#snippet panel()}
+								<PlaylistChannel {playlistId} {playlistIdx} groupId={group.id} {groupIdx} />
+							{/snippet}
 						</Accordion.Item>
 						{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
 							<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">

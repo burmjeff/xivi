@@ -178,7 +178,7 @@ func UpdateTemplate(c *fiber.Ctx) error {
 			"msg":   "template with this ID not found",
 		})
 	}
-	m3uTools := utils.M3uTools{}
+	m3uTools := utils.NewM3uTools()
 	go m3uTools.RenameTemplate(template, oldTemplate.Name)
 
 	// Update template by given ID.
@@ -213,7 +213,7 @@ func DeleteTemplate(c *fiber.Ctx) error {
 		})
 	}
 
-	m3uTools := utils.M3uTools{}
+	m3uTools := utils.NewM3uTools()
 
 	// Get template
 	template, err := database.Db.GetTemplate(template_id)
@@ -456,7 +456,7 @@ func CreateTemplateGroupItem(c *fiber.Ctx) error {
 		})
 	}
 
-	m3uTools := utils.M3uTools{}
+	m3uTools := utils.NewM3uTools()
 	template, err := database.Db.GetTemplate(template_id)
 	if err != nil {
 		log.Error().Msgf("Failed to find template: %s", err)
@@ -530,7 +530,7 @@ func DeleteTemplateGroupItem(c *fiber.Ctx) error {
 		})
 	}
 
-	m3uTools := utils.M3uTools{}
+	m3uTools := utils.NewM3uTools()
 	go m3uTools.RemoveGroup(template, group)
 
 	// Return status 204 no content.
@@ -569,7 +569,7 @@ func DeleteTemplateGroup(c *fiber.Ctx) error {
 				})
 			}
 
-			m3uTools := utils.M3uTools{}
+			m3uTools := utils.NewM3uTools()
 			// Get Group
 			group, err := database.Db.GetTmplGroup(templateGroupItem.GroupId)
 			if err != nil {
@@ -654,7 +654,7 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 		utils.UpdateDynamicGroup(*templateGroup)
 	}
 
-	m3uTools := utils.M3uTools{}
+	m3uTools := utils.NewM3uTools()
 	if templateGroupItems, err := database.Db.GetTmplGroupItemsByGroup(templateGroup.ID); err == nil {
 		go func() {
 			for _, templateGroupItem := range *templateGroupItems {
@@ -770,7 +770,7 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 		Logo:            utils.GetLogoUrl(foundLogo.Name),
 	}
 
-	m3uTools := utils.M3uTools{}
+	m3uTools := utils.NewM3uTools()
 	go m3uTools.AddChannel(templateChannel, group_id)
 
 	go func() {
@@ -820,7 +820,7 @@ func UpdateTemplateChannel(c *fiber.Ctx) error {
 		})
 	}
 
-	m3uTools := utils.M3uTools{}
+	m3uTools := utils.NewM3uTools()
 	if templateGroupChannels, err := database.Db.GetTmplGroupChannelsByChannel(templateChannelLogo.ID); err == nil {
 		oldChannel, err := database.Db.GetTmplChannel(templateChannelLogo.ID)
 		if err != nil {
@@ -889,7 +889,7 @@ func DeleteTemplateChannel(c *fiber.Ctx) error {
 			})
 		}
 
-		m3uTools := utils.M3uTools{}
+		m3uTools := utils.NewM3uTools()
 		go func() {
 			for _, item := range *templateGroupChannels {
 				if templateGroupItems, err := database.Db.GetTmplGroupItemsByGroup(item.GroupId); err == nil {

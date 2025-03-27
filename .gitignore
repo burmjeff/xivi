@@ -16,6 +16,7 @@ xivi.exe
 xivi
 lib_build/
 serve/
+local_cache/
 
 # Test
 *.out
