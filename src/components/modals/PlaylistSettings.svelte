@@ -2,11 +2,6 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import {
-		popup,
-		getModalStore
-	} from '@skeletonlabs/skeleton';
-
 	const modalStore = getModalStore();
 	let isNew = $modalStore[0].meta.isNew;
 	let inputName: string;
@@ -15,7 +10,7 @@
 	let formData: {
 		name: string;
 		url: string;
-	};
+	} = $state();
 
 	if (!isNew) {
 		formData = {
@@ -62,7 +57,7 @@
 				/>
 			</label>
 			<div class="submit_button justify-center p-2 text-center">
-				<button class="btn h-fit w-fit bg-primary-500" on:click={onFormSubmit}
+				<button class="btn h-fit w-fit bg-primary-500" onclick={onFormSubmit}
 					>Save Playlist</button
 				>
 			</div>

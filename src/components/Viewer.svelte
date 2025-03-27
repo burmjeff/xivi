@@ -3,10 +3,10 @@
 <script lang="ts">
 	import ViewerChannels from './ViewerChannels.svelte';
 	import { onMount } from 'svelte';
-	import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
+	import { Accordion } from '@skeletonlabs/skeleton-svelte';
 	import { templates } from '@xivi/stores/template_store';
 
-	let selected = 0;
+	let selected = $state(0);
 
 	const updateTemplates = async () => {
 		const response = await fetch('/api/templates');
@@ -56,7 +56,7 @@
 			<select
 				class="select"
 				bind:value={selected}
-				on:change={() => {
+				onchange={() => {
 					getGroups();
 				}}
 			>
@@ -68,22 +68,26 @@
 			<p>No templates found</p>
 		{/if}
 	</div>
-	<hr class="m-4 !border-t-8 !border-double" />
+	<hr class="m-4 border-t-8! border-double!" />
 	{#if $templates[selected] != null && $templates[selected].groups != null}
 		<Accordion>
 			{#if $templates[selected].groups.length > 0}
 				{#each $templates[selected].groups as group, groupIdx (group.id)}
 					<div class="groups w-content justify-center p-1 card shadow-md mb-1">
-						<AccordionItem class="mb-1" key={groupIdx} bind:open={group.itemOpen}>
-							<svelte:fragment slot="summary">
-								<div class="flex flex-row items-center">
-									<h4 class="text-lg">{group.name}</h4>
-								</div>
-							</svelte:fragment>
-							<svelte:fragment slot="content">
-								<ViewerChannels templateIdx={selected} groupId={group.id} {groupIdx} />
-							</svelte:fragment>
-						</AccordionItem>
+						<Accordion.Item class="mb-1" key={groupIdx} bind:open={group.itemOpen}>
+							{#snippet summary()}
+													
+									<div class="flex flex-row items-center">
+										<h4 class="text-lg">{group.name}</h4>
+									</div>
+								
+													{/snippet}
+							{#snippet content()}
+													
+									<ViewerChannels templateIdx={selected} groupId={group.id} {groupIdx} />
+								
+													{/snippet}
+						</Accordion.Item>
 					</div>
 				{/each}
 			{:else}

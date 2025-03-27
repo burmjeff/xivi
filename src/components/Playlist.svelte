@@ -5,12 +5,9 @@
 	import { onMount } from 'svelte';
 	import {
 		Accordion,
-		AccordionItem,
-		popup,
-		getModalStore,
 		type ModalSettings,
 		type PopupSettings
-	} from '@skeletonlabs/skeleton';
+	} from '@skeletonlabs/skeleton-svelte';
 	import { playlists } from '@xivi/stores/playlist_store';
 	import Icon from '@iconify/svelte';
 
@@ -149,7 +146,7 @@
 		<h3 class="h3 font-bold">Playlists</h3>
 		<button
 			class="btn btn-md"
-			on:click={() => modalPlaylist(true, 0, '', '')}
+			onclick={() => modalPlaylist(true, 0, '', '')}
 			use:popup={addPlTooltip}
 		>
 			<Icon icon="icon-park-twotone:add-one" color="#0a7e85" width="25" height="25" />
@@ -159,31 +156,35 @@
 		<div id="accord" class="playlists-viewport min-w-full overflow-auto">
 			{#if $playlists != null && $playlists.length > 0}
 				{#each $playlists as playlist, index (playlist.id)}
-					<AccordionItem class="card shadow-md mb-1" key={playlist.id} bind:open={playlist.itemOpen}>
-						<svelte:fragment slot="summary">
-							<div class="flex flex-row items-center">
-								<h4 class="text-lg">{playlist.name}</h4>
-								<span class="text-green-600 text-xs ml-auto p-1">Updated at: {(getDate(playlist.updated_at))}</span>
-								<button
-									class="btn btn-md"
-									on:click={() => modalPlaylist(false, playlist.id, playlist.name, playlist.url)}
-									use:popup={addPlTooltip}
-								>
-									<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
-								</button>
-								<button
-									class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
-									on:click={() => {
+					<Accordion.Item class="card shadow-md mb-1" key={playlist.id} bind:open={playlist.itemOpen}>
+						{#snippet summary()}
+											
+								<div class="flex flex-row items-center">
+									<h4 class="text-lg">{playlist.name}</h4>
+									<span class="text-green-600 text-xs ml-auto p-1">Updated at: {(getDate(playlist.updated_at))}</span>
+									<button
+										class="btn btn-md"
+										onclick={() => modalPlaylist(false, playlist.id, playlist.name, playlist.url)}
+										use:popup={addPlTooltip}
+									>
+										<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
+									</button>
+									<button
+										class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+										onclick={() => {
 										(playlist.itemOpen = true), deletePrompt(playlist.id);
 									}}
-									><Icon icon="icon-park-outline:delete" width="18" height="18" />
-								</button>
-							</div>
-						</svelte:fragment>
-						<svelte:fragment slot="content">
-							<PlaylistGroup playlistId={playlist.id} playlistIdx={index} />
-						</svelte:fragment>
-					</AccordionItem>
+										><Icon icon="icon-park-outline:delete" width="18" height="18" />
+									</button>
+								</div>
+							
+											{/snippet}
+						{#snippet content()}
+											
+								<PlaylistGroup playlistId={playlist.id} playlistIdx={index} />
+							
+											{/snippet}
+					</Accordion.Item>
 				{/each}
 			{:else}
 				<p>No playlists found</p>
@@ -192,9 +193,9 @@
 	</Accordion>
 </section>
 
-<div class="card variant-filled-secondary p-2" data-popup="addPlTooltip">
+<div class="card preset-filled-secondary-500 p-2" data-popup="addPlTooltip">
 	<p>Add New Playlist</p>
-	<div class="variant-filled-secondary arrow" />
+	<div class="preset-filled-secondary-500 arrow"></div>
 </div>
 
 <style>

@@ -4,19 +4,29 @@
 	import { onMount } from 'svelte';
 	import {
 		Accordion,
-		AccordionItem,
-		popup,
-		getModalStore,
-		type PopupSettings,
-		type ModalSettings
-	} from '@skeletonlabs/skeleton';
+		Modal
+	} from '@skeletonlabs/skeleton-svelte';
 	import { templateGroups } from '@xivi/stores/template_store';
 	import type { TemplateGroup } from '@xivi/data/template_entities';
 	import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
-	import { flip } from 'svelte/animate';
-	import { fade } from 'svelte/transition';
 	import { cubicIn } from 'svelte/easing';
 	import Icon from '@iconify/svelte';
+	import GroupSettings from './modals/GroupSettings.svelte';
+	import {
+		FloatingArrow,
+		arrow,
+		autoUpdate,
+		flip,
+		offset,
+		useDismiss,
+		useFloating,
+		useHover,
+		useInteractions,
+		useRole,
+	} from "@skeletonlabs/floating-ui-svelte";
+	import { flip as flipAnimation } from 'svelte/animate';
+	import { fade } from "svelte/transition";
+	import ChannelSettings from './modals/ChannelSettings.svelte';
 
 	let dndPlaylistId: number;
 	let dndTypeGroups = 'groups';
@@ -24,7 +34,9 @@
 	const flipDurationMs = 150;
 	let dndItem: TemplateGroup;
 	let dndIdx: number;
-	const modalStore = getModalStore();
+
+	let tooltipAdd = $state(false);
+	let elemArrow: HTMLElement | null = $state(null);
 
 	const updateTemplateGroups = async () => {
 		const response = await fetch('/api/template/groups/all');
@@ -36,11 +48,24 @@
 		templateGroups.set(await updateTemplateGroups());
 	});
 
-	const addTooltip: PopupSettings = {
-		event: 'hover',
-		target: 'addTooltip',
-		placement: 'top'
-	};
+	// Floating UI setup
+	const tooltipFloatingAdd = useFloating({
+		whileElementsMounted: autoUpdate,
+		get open() {
+			return tooltipAdd;
+		},
+		onOpenChange: (v) => {
+			tooltipAdd = v;
+		},
+		placement: "top",
+		get middleware() {
+			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+		},
+	});
+	const tooltipRole = useRole(tooltipFloatingAdd.context, { role: "tooltip" });
+	const tooltipHover = useHover(tooltipFloatingAdd.context, { move: false });
+	const tooltipDismiss = useDismiss(tooltipFloatingAdd.context);
+	const tooltipInteractions = useInteractions([tooltipRole, tooltipHover, tooltipDismiss]);
 
 	async function renameGroup(groupIdx: number, groupName: string, groupId: string) {
 		if (groupName !== '') {
@@ -67,22 +92,28 @@
 		}
 	}
 
-	function deletePrompt(groupId: string): void {
-		$templateGroups = [...$templateGroups];
-		const modal: ModalSettings = {
-			type: 'confirm',
-			title: 'Please Confirm',
-			body: 'Are you sure you wish to delete this group?',
-			// TRUE if confirm pressed, FALSE if cancel pressed
-			response: (r: boolean) => {
-				if (r) deleteGroup(groupId);
-			}
-		};
-		modalStore.trigger(modal);
+	let modalDeleteOpen = $state(false);
+	let modalChannelOpen = $state(false);
+	let modalConvertOpen = $state(false);
+	let groupToDelete = $state<number>(0);
+	let groupToAddChannel = $state({ id: 0, idx: 0 });
+	let convertGroupData = $state({ id: 0, name: '' });
+	let convertGroupNameInput = $state('');
+
+	function deletePrompt(groupId: number): void {
+		groupToDelete = groupId;
+		modalDeleteOpen = true;
+	}
+
+	function handleDeleteClose(confirmed: boolean) {
+		if (confirmed) {
+			deleteGroup(groupToDelete);
+		}
+		modalDeleteOpen = false;
 	}
 
 	//TODO COLLAPSE ACCORDIION ITEM BEFORE DELETE
-	async function deleteGroup(groupId: string) {
+	async function deleteGroup(groupId: number) {
 		try {
 			const response = await fetch(`/api/template/group/${groupId}`, {
 				method: 'DELETE'
@@ -90,14 +121,13 @@
 			const data = await response.status;
 			console.log('Deleted template group:', data);
 			$templateGroups = $templateGroups.filter((t) => t.id != groupId);
-			modalStore.close();
 		} catch (error) {
 			console.log('Error deleting template group:', error);
 			return;
 		}
 	}
 
-	async function addChannel(formData: any, groupId: string, groupIdx: number) {
+	async function addChannel(formData: any, groupId: number, groupIdx: number) {
 		if (formData.name != '' && formData.tvgid != '' && formData.logo != '') {
 			let newChannel = {
 				name: formData.name,
@@ -126,6 +156,31 @@
 				return;
 			}
 		}
+	}
+
+	function modalAddChannel(groupId: number, groupIdx: number) {
+		groupToAddChannel = { id: groupId, idx: groupIdx };
+		modalChannelOpen = true;
+	}
+
+	function handleChannelClose(formData: any) {
+		if (formData) {
+			addChannel(formData, groupToAddChannel.id, groupToAddChannel.idx);
+		}
+		modalChannelOpen = false;
+	}
+
+	function convertPrompt(groupId: number, name: string): void {
+		convertGroupData = { id: groupId, name: name };
+		convertGroupNameInput = name;
+		modalConvertOpen = true;
+	}
+
+	function handleConvertClose(confirmed: boolean) {
+		if (confirmed && convertGroupNameInput) {
+			convertGroup(convertGroupNameInput, convertGroupData.id);
+		}
+		modalConvertOpen = false;
 	}
 
 	async function addTemplateGroup(
@@ -178,68 +233,29 @@
 		}
 	}
 
-	function modalTemplateGroup(isNew: boolean, groupIdx: number, group: TemplateGroup | undefined) {
-		new Promise<boolean>((resolve) => {
-			const modal: ModalSettings = {
-				type: 'component',
-				component: 'modalGroupSettings',
-				meta: {
-					isNew: isNew,
-					name: group?.name,
-					dynamic: group?.dynamic,
-					dynamicgroup: group?.dynamicgroup
-				},
-				response: (r: boolean) => {
-					resolve(r);
-				}
-			};
-			modalStore.trigger(modal);
-		}).then((r: any) => {
-			if (r) {
-				addTemplateGroup(r, groupIdx, isNew, group);
-			}
-		});
-	}
+	let modalOpen = $state(false);
+	let currentGroupData = $state({
+		isNew: false,
+		groupIdx: 0,
+		group: undefined as TemplateGroup | undefined
+	});
 
-	function modalAddChannel(groupId: string, groupIdx: number) {
-		new Promise<boolean>((resolve) => {
-			const modal: ModalSettings = {
-				type: 'component',
-				component: 'modalChannelSettings',
-				meta: {
-					isNew: true,
-					channelIdx: null,
-					groupIdx: groupIdx
-				},
-				response: (r: boolean) => {
-					resolve(r);
-				}
-			};
-			modalStore.trigger(modal);
-		}).then((r: any) => {
-			if (r) {
-				addChannel(r, groupId, groupIdx);
-			}
-		});
-	}
-
-	function convertPrompt(groupId: string, name: string): void {
-		const prompt: ModalSettings = {
-			type: 'prompt',
-			title: 'Convert Playlist Group to Template Group',
-			body: 'Enter new template group name in field below.',
-			value: name,
-			valueAttr: { type: 'text', minlength: 1, maxlength: 20, required: true },
-			response: (groupName: string) => {
-				if (groupName) convertGroup(groupName, groupId);
-			},
-			buttonTextCancel: 'Cancel',
-			buttonTextSubmit: 'Submit'
+	function modalGroupSettings(isNew: boolean, groupIdx: number, group: TemplateGroup | undefined) {
+		currentGroupData = {
+			isNew,
+			groupIdx,
+			group
 		};
-		modalStore.trigger(prompt);
+		modalOpen = true;
+	}
+	function handleGroupSettingsClose(formData?: any) {
+		if (formData) {
+			addTemplateGroup(formData, currentGroupData.groupIdx, currentGroupData.isNew, currentGroupData.group);
+		}
+		modalOpen = false;
 	}
 
-	async function convertGroup(groupName: string, groupId: string) {
+	async function convertGroup(groupName: string, groupId: number) {
 		if (groupName !== '' && dndPlaylistId !== 0) {
 			const newGroup = {
 				name: groupName
@@ -268,10 +284,10 @@
 
 	function handleDndConsider(e: CustomEvent<DndEvent<TemplateGroup>>) {
 		const { trigger, id } = e.detail.info;
-		e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
+		e.detail.items.sort((itemA, itemB) => itemA.id - itemB.id);
 
 		if (trigger === TRIGGERS.DRAG_STARTED) {
-			dndIdx = $templateGroups.findIndex((item) => item.id === id);
+			dndIdx = $templateGroups.findIndex((item) => item.id === Number(id));
 			dndItem = $templateGroups[dndIdx];
 			e.detail.items[dndIdx].itemOpen = false;
 			$templateGroups[dndIdx].itemOpen = false;
@@ -289,7 +305,7 @@
 			let name = e.detail.items.filter((item) => item.isDragged)[0].name;
 			e.detail.items = e.detail.items.filter((item) => !item.isDragged);
 			$templateGroups = e.detail.items;
-			convertPrompt(id, name);
+			convertPrompt(Number(id), name);
 			shouldIgnoreDndEvents = false;
 		} else if (!shouldIgnoreDndEvents) {
 			$templateGroups = e.detail.items;
@@ -320,14 +336,29 @@
 		<h3 class="h3 font-bold">Template Groups</h3>
 		<button
 			class="btn btn-md"
-			on:click={() => modalTemplateGroup(true, 0, undefined)}
-			use:popup={addTooltip}
+			onclick={() => modalGroupSettings(true, 0, undefined)}
+			bind:this={tooltipFloatingAdd.elements.reference}
+			{...tooltipInteractions.getReferenceProps()}
 		>
 			<Icon icon="icon-park-twotone:add-one" color="#0a7e85" width="25" height="25" />
 		</button>
+		{#if tooltipAdd}
+					<div
+						bind:this={tooltipFloatingAdd.elements.floating}
+						style={tooltipFloatingAdd.floatingStyles}
+						{...tooltipInteractions.getFloatingProps()}
+						class="floating popover-neutral"
+						transition:fade={{ duration: 200 }}
+					>
+						<p>
+							<strong>Add Group</strong>
+						</p>
+						<FloatingArrow bind:ref={elemArrow} context={tooltipFloatingAdd.context} fill="#575969" />
+					</div>
+				{/if}
 	</header>
 	{#if $templateGroups != null}
-		<Accordion>
+		<Accordion collapsible>
 			<section
 				id="accord"
 				class="templategroups-viewport min-w-full overflow-auto"
@@ -337,44 +368,44 @@
 					type: dndTypeGroups,
 					transformDraggedElement
 				}}
-				on:consider={handleDndConsider}
-				on:finalize={handleDndFinalize}
+				onconsider={handleDndConsider}
+				onfinalize={handleDndFinalize}
 			>
 				{#if $templateGroups.length > 0}
 					{#each $templateGroups as group, groupIdx (group.id)}
-						<div id="animate" animate:flip={{ duration: flipDurationMs }}>
-							<AccordionItem class="card shadow-md mb-1" key={groupIdx} bind:open={group.itemOpen}>
-								<svelte:fragment slot="summary">
+						<div id="animate" class="card shadow-md mb-1" animate:flipAnimation={{ duration: flipDurationMs }}>
+							<Accordion.Item value={group.name}>
+								{#snippet control()}					
 									<div class="flex flex-row items-center">
 										<h4 class="text-lg">{group.name}</h4>
 										<button
-											class="btn-icon btn-icon-sm inset-y-0 !bg-transparent ml-auto"
-											on:click={() => {
-												(group.itemOpen = true), modalTemplateGroup(false, groupIdx, group);
-											}}
+											class="btn-icon btn-icon-sm inset-y-0 bg-transparent! ml-auto"
+											onclick={() => {
+											(group.itemOpen = true), modalGroupSettings(false, groupIdx, group);
+										}}
 										>
 											<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
 										</button>
 										<button
-											class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
-											on:click={() => {
-												(group.itemOpen = true), deletePrompt(group.id);
-											}}
+											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+											onclick={() => {
+											(group.itemOpen = true), deletePrompt(group.id);
+										}}
 										>
 											<Icon icon="icon-park-outline:delete" width="18" height="18" />
 										</button>
 										<button
-											class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
-											on:click={() => modalAddChannel(group.id, groupIdx)}
+											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+											onclick={() => modalAddChannel(group.id, groupIdx)}
 										>
 											<Icon icon="icon-park-outline:add" width="18" height="18" />
 										</button>
 									</div>
-								</svelte:fragment>
-								<svelte:fragment slot="content">
-									<TemplateChannel groupId={group.id} {groupIdx} />
-								</svelte:fragment>
-							</AccordionItem>
+								{/snippet}
+								{#snippet panel()}					
+										<TemplateChannel groupId={group.id} {groupIdx} />
+								{/snippet}
+							</Accordion.Item>
 
 							{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
 								<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
@@ -391,10 +422,80 @@
 	{/if}
 </section>
 
-<div class="card variant-filled-secondary p-2" data-popup="addTooltip">
+<div class="card preset-filled-secondary-500 p-2" data-popup="addTooltip">
 	<p>Add New Template Group</p>
-	<div class="variant-filled-secondary arrow" />
+	<div class="preset-filled-secondary-500 arrow"></div>
 </div>
+
+<GroupSettings
+    bind:modalOpen={modalOpen}
+    parent={{ onClose: handleGroupSettingsClose }}
+    isNew={currentGroupData.isNew}
+    name={currentGroupData.group?.name ?? ''}
+    dynamic={currentGroupData.group?.dynamic ?? false}
+    dynamicgroup={currentGroupData.group?.dynamicgroup ?? 0}
+/>
+
+<Modal
+    open={modalDeleteOpen}
+    onOpenChange={(e) => (modalDeleteOpen = e.open)}
+    backdropClasses="backdrop-blur-sm"
+>
+    {#snippet content()}
+        <div class="card p-4 w-modal shadow-xl space-y-4">
+            <header class="text-2xl font-bold">Please Confirm</header>
+            <article>Are you sure you wish to delete this group?</article>
+            <footer class="flex justify-end space-x-2">
+                <button class="btn variant-filled" onclick={() => handleDeleteClose(false)}>Cancel</button>
+                <button class="btn variant-filled-error" onclick={() => handleDeleteClose(true)}>Delete</button>
+            </footer>
+        </div>
+    {/snippet}
+</Modal>
+
+<Modal
+    open={modalChannelOpen}
+    onOpenChange={(e) => (modalChannelOpen = e.open)}
+    backdropClasses="backdrop-blur-sm"
+>
+    {#snippet content()}
+        <ChannelSettings
+            isNew={true}
+            channelIdx={null}
+            groupIdx={groupToAddChannel.idx}
+            parent={{ onClose: handleChannelClose }}
+        />
+    {/snippet}
+</Modal>
+
+<Modal
+    open={modalConvertOpen}
+    onOpenChange={(e) => (modalConvertOpen = e.open)}
+    backdropClasses="backdrop-blur-sm"
+>
+    {#snippet content()}
+        <div class="card p-4 w-modal shadow-xl space-y-4">
+            <header class="text-2xl font-bold">Convert Playlist Group to Template Group</header>
+            <article>
+                <label class="label">
+                    <span>Enter new template group name</span>
+                    <input
+                        class="input"
+                        type="text"
+                        bind:value={convertGroupNameInput}
+                        minlength="1"
+                        maxlength="20"
+                        required
+                    />
+                </label>
+            </article>
+            <footer class="flex justify-end space-x-2">
+                <button class="btn variant-filled" onclick={() => handleConvertClose(false)}>Cancel</button>
+                <button class="btn variant-filled-primary" onclick={() => handleConvertClose(true)}>Submit</button>
+            </footer>
+        </div>
+    {/snippet}
+</Modal>
 
 <style>
 	#accord {

@@ -4,12 +4,9 @@
 	import { onMount } from 'svelte';
 	import {
 		Accordion,
-		AccordionItem,
-		popup,
-		getModalStore,
 		type PopupSettings,
 		type ModalSettings
-	} from '@skeletonlabs/skeleton';
+	} from '@skeletonlabs/skeleton-svelte';
 	import { templates } from '@xivi/stores/template_store';
 	import Icon from '@iconify/svelte';
 
@@ -142,30 +139,34 @@
 		{#if $templates.length > 0}
 			<Accordion>
 				{#each $templates as template, templateIdx (template.id)}
-					<AccordionItem class="card shadow-md mb-1" key={template.id} bind:open={template.itemOpen}>
-						<svelte:fragment slot="summary">
-							<div class="item-center flex flex-row">
-								<h4 class="text-lg">{template.name}</h4>
-								<button
-									class="btn-icon btn-icon-sm inset-y-0 !bg-transparent ml-auto"
-									on:click={() => renamePrompt(template.name, template.id)}
-								>
-									<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
-								</button>
-								<button
-									class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
-									on:click={() => {
+					<Accordion.Item class="card shadow-md mb-1" key={template.id} bind:open={template.itemOpen}>
+						{#snippet summary()}
+											
+								<div class="item-center flex flex-row">
+									<h4 class="text-lg">{template.name}</h4>
+									<button
+										class="btn-icon btn-icon-sm inset-y-0 bg-transparent! ml-auto"
+										onclick={() => renamePrompt(template.name, template.id)}
+									>
+										<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
+									</button>
+									<button
+										class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+										onclick={() => {
 										(template.itemOpen = true), deletePrompt(template.id);
 									}}
-								>
-									<Icon icon="icon-park-outline:delete" width="18" height="18" />
-								</button>
-							</div>
-						</svelte:fragment>
-						<svelte:fragment slot="content">
-							<TemplateGroup templateId={template.id} {templateIdx} />
-						</svelte:fragment>
-					</AccordionItem>
+									>
+										<Icon icon="icon-park-outline:delete" width="18" height="18" />
+									</button>
+								</div>
+							
+											{/snippet}
+						{#snippet content()}
+											
+								<TemplateGroup templateId={template.id} {templateIdx} />
+							
+											{/snippet}
+					</Accordion.Item>
 				{/each}
 			</Accordion>
 		{:else}
@@ -181,14 +182,14 @@
 			<input class="input" type="text" placeholder="Template Name" />
 		</label>
 		<label class="submit_button">
-			<button class="btn bg-primary-500" on:click={addTemplate}>Add Template</button>
+			<button class="btn bg-primary-500" onclick={addTemplate}>Add Template</button>
 		</label>
 	</div>
 </div>
 
-<div class="card variant-filled-secondary p-2" data-popup="addTemplateTooltip">
+<div class="card preset-filled-secondary-500 p-2" data-popup="addTemplateTooltip">
 	<p>Add New Template</p>
-	<div class="variant-filled-secondary arrow" />
+	<div class="preset-filled-secondary-500 arrow"></div>
 </div>
 
 <style>

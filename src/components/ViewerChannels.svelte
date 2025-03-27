@@ -3,18 +3,19 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import {
-		ProgressBar,
-		getModalStore,
 		type ModalSettings,
-		type PopupSettings
-	} from '@skeletonlabs/skeleton';
+		type PopupSettings, Progress } from '@skeletonlabs/skeleton-svelte';
 	import { templates } from '@xivi/stores/template_store';
 	import type { ViewerChannel } from '@xivi/data/viewer_entities';
 	import Icon from '@iconify/svelte';
 
-	export let templateIdx: number;
-	export let groupId: string;
-	export let groupIdx: number;
+	interface Props {
+		templateIdx: number;
+		groupId: string;
+		groupIdx: number;
+	}
+
+	let { templateIdx, groupId, groupIdx }: Props = $props();
 
 	const modalStore = getModalStore();
 
@@ -63,7 +64,7 @@
 	<section class="channels grid grid-cols-2 gap-2 p-1">
 		{#each $templates[templateIdx].groups[groupIdx].viewerChannels as channel, channelIdx (channel.id)}
 			<div
-				class="channel w-content max-w-content card variant-ghost-tertiary card-hover grid h-32 grid-cols-5"
+				class="channel w-content max-w-content card preset-tonal-tertiary border border-tertiary-500 card-hover grid h-32 grid-cols-5"
 			>
 				<img class="h-auto max-h-32 w-auto self-center p-4" src={channel.logo} alt="Logo" />
 				<div class="col-span-3 mb-1 ml-4 mr-4 mt-1 self-center">
@@ -74,7 +75,7 @@
 						{channel.programme}
 					</div>
 					{#if channel.start != '' && channel.end != ''}
-						<ProgressBar
+						<Progress
 							label="Progress Bar"
 							class="mt-2 drop-shadow-md"
 							value={getProgress(channel.start, channel.end)}
@@ -84,7 +85,7 @@
 				</div>
 				<button
 					class="btn btn-md h-fit w-fit self-center"
-					on:click={() => {
+					onclick={() => {
 						modalPlayer(channel.name, channel.stream);
 					}}
 				>

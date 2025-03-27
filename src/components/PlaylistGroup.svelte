@@ -2,9 +2,8 @@
 <script lang="ts">
 	import PlaylistChannel from './PlaylistChannel.svelte';
 	import { onMount } from 'svelte';
-	import { Accordion, AccordionItem, SlideToggle } from '@skeletonlabs/skeleton';
+	import { Accordion, Switch } from '@skeletonlabs/skeleton-svelte';
 	import { playlists } from '@xivi/stores/playlist_store';
-	import { getModalStore } from '@skeletonlabs/skeleton';
 	import type { PlaylistGroup } from '@xivi/data/playlist_entities';
 	import {
 		dndzone,
@@ -16,8 +15,12 @@
 	import { fade } from 'svelte/transition';
 	import { cubicIn } from 'svelte/easing';
 
-	export let playlistId: number;
-	export let playlistIdx: number;
+	interface Props {
+		playlistId: number;
+		playlistIdx: number;
+	}
+
+	let { playlistId, playlistIdx }: Props = $props();
 	let shouldIgnoreDndEvents = false;
 	const flipDurationMs = 150;
 	const dropFromOthersDisabled = true;
@@ -106,23 +109,27 @@
 
 {#if $playlists[playlistIdx].groups != null && $playlists[playlistIdx].groups.length > 0}
 	<Accordion>
-		<AccordionItem class="card shadow-md mb-1">
-			<svelte:fragment slot="summary">
-				<div class="flex flex-row items-center">
-					<h4>DISABLED GROUPS</h4>
-				</div>
-			</svelte:fragment>
-			<svelte:fragment slot="content">
-				{#each $playlists[playlistIdx].groups as group, groupIdx (group.id)}
-					{#if !group.enabled}
-						<div class="card shadow-md p-1 px-4 flex flex-row items-center content-center">
-							<span>{group.name}</span>
-							<SlideToggle class="ml-auto p-1" name="group_slider" bind:checked={group.enabled} active="bg-primary-500" size="sm" on:click={(event) => disableGroup(event, group)}/>
-						</div>
-					{/if}
-				{/each}
-			</svelte:fragment>
-		</AccordionItem>
+		<Accordion.Item class="card shadow-md mb-1">
+			{#snippet summary()}
+					
+					<div class="flex flex-row items-center">
+						<h4>DISABLED GROUPS</h4>
+					</div>
+				
+					{/snippet}
+			{#snippet content()}
+					
+					{#each $playlists[playlistIdx].groups as group, groupIdx (group.id)}
+						{#if !group.enabled}
+							<div class="card shadow-md p-1 px-4 flex flex-row items-center content-center">
+								<span>{group.name}</span>
+								<Switch class="ml-auto p-1" name="group_slider" bind:checked={group.enabled} active="bg-primary-500" size="sm" on:click={(event) => disableGroup(event, group)}/>
+							</div>
+						{/if}
+					{/each}
+				
+					{/snippet}
+		</Accordion.Item>
 		<section
 			use:dndzone={{
 				items: $playlists[playlistIdx].groups,
@@ -131,23 +138,27 @@
 				type: dndTypeGroups,
 				transformDraggedElement
 			}}
-			on:consider={handleDndConsider}
-			on:finalize={handleDndFinalize}
+			onconsider={handleDndConsider}
+			onfinalize={handleDndFinalize}
 		>
 			{#each $playlists[playlistIdx].groups as group, groupIdx (group.id)}
 				<div id="animate" animate:flip={{ duration: flipDurationMs }}>
 					{#if group.enabled}
-						<AccordionItem class="card shadow-md mb-1" key={group.id}>
-							<svelte:fragment slot="summary">
-								<div class="flex flex-row items-center">
-									<h4>{group.name}</h4>
-									<SlideToggle class="ml-auto p-1" name="group_slider" bind:checked={group.enabled} active="bg-primary-500" size="sm" on:click={(event) => disableGroup(event, group)}/>
-								</div>
-							</svelte:fragment>
-							<svelte:fragment slot="content">
-								<PlaylistChannel {playlistId} {playlistIdx} groupId={group.id} {groupIdx} />
-							</svelte:fragment>
-						</AccordionItem>
+						<Accordion.Item class="card shadow-md mb-1" key={group.id}>
+							{#snippet summary()}
+													
+									<div class="flex flex-row items-center">
+										<h4>{group.name}</h4>
+										<Switch class="ml-auto p-1" name="group_slider" bind:checked={group.enabled} active="bg-primary-500" size="sm" on:click={(event) => disableGroup(event, group)}/>
+									</div>
+								
+													{/snippet}
+							{#snippet content()}
+													
+									<PlaylistChannel {playlistId} {playlistIdx} groupId={group.id} {groupIdx} />
+								
+													{/snippet}
+						</Accordion.Item>
 						{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
 							<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
 								{group.name}

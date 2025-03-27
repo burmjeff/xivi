@@ -4,10 +4,8 @@
 	import { onMount } from 'svelte';
 	import {
 		Accordion,
-		AccordionItem,
-		getModalStore,
 		type ModalSettings
-	} from '@skeletonlabs/skeleton';
+	} from '@skeletonlabs/skeleton-svelte';
 	import { templates } from '@xivi/stores/template_store';
 	import { templateGroups } from '@xivi/stores/template_store';
 	import type { TemplateGroup } from '@xivi/data/template_entities';
@@ -18,8 +16,12 @@
 	import Icon from '@iconify/svelte';
 
 	const modalStore = getModalStore();
-	export let templateId: number;
-	export let templateIdx: number;
+	interface Props {
+		templateId: number;
+		templateIdx: number;
+	}
+
+	let { templateId, templateIdx }: Props = $props();
 	let dndTypeGroups = 'groups';
 	let shouldIgnoreDndEvents = false;
 	const flipDurationMs = 150;
@@ -41,7 +43,7 @@
 		}
 	});
 
-	async function addGroup(groupId: string) {
+	async function addGroup(groupId: number) {
 		try {
 			const response = await fetch(`/api/template/${templateId}/group/${groupId}/item`, {
 				method: 'POST'
@@ -60,7 +62,7 @@
 		}
 	}
 
-	function deletePrompt(groupId: string) {
+	function deletePrompt(groupId: number) {
 		const modal: ModalSettings = {
 			type: 'confirm',
 			title: 'Please Confirm',
@@ -74,7 +76,7 @@
 	}
 
 	//TODO COLLAPSE ACCORDIION ITEM BEFORE DELETE
-	async function deleteTemplateGroup(groupId: string) {
+	async function deleteTemplateGroup(groupId: number) {
 		try {
 			const response = await fetch(`/api/template/${templateId}/group/${groupId}/item`, {
 				method: 'DELETE'
@@ -96,7 +98,7 @@
 		//e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
 
 		if (trigger === TRIGGERS.DRAG_STARTED) {
-			dndIdx = $templates[templateIdx].groups.findIndex((item) => item.id === id);
+			dndIdx = $templates[templateIdx].groups.findIndex((item) => item.id === Number(id));
 			dndItem = $templates[templateIdx].groups[dndIdx];
 			e.detail.items[dndIdx].itemOpen = false;
 			$templates[templateIdx].groups[dndIdx].itemOpen = false;
@@ -112,7 +114,7 @@
 		const { trigger, id } = e.detail.info;
 		if (trigger === TRIGGERS.DROPPED_INTO_ZONE && !shouldIgnoreDndEvents) {
 			e.detail.items = e.detail.items.filter((item) => !item.isDragged);
-			addGroup(id);
+			addGroup(Number(id));
 			$templates[templateIdx].groups = e.detail.items;
 			shouldIgnoreDndEvents = false;
 		} else if (!shouldIgnoreDndEvents) {
@@ -145,30 +147,31 @@
 				type: dndTypeGroups,
 				transformDraggedElement
 			}}
-			on:consider={handleDndConsider}
-			on:finalize={handleDndFinalize}
+			onconsider={handleDndConsider}
+			onfinalize={handleDndFinalize}
 		>
 			{#if $templates[templateIdx].groups.length > 0}
 				{#each $templates[templateIdx].groups as group, groupIdx (group.id)}
-					<div id="animate" animate:flip={{ duration: flipDurationMs }}>
-						<AccordionItem class="card shadow-md mb-1" key={groupIdx} bind:open={group.itemOpen}>
-							<svelte:fragment slot="summary">
-								<div class="flex flex-row items-center">
-									<h4 class="text-lg">{group.name}</h4>
-									<button
-										class="btn-icon btn-icon-sm inset-y-0 !bg-transparent"
-										on:click={() => {
-											(group.itemOpen = true), deletePrompt(group.id);
-										}}
-									>
-										<Icon icon="icon-park-outline:delete" width="18" height="18" />
-									</button>
-								</div>
-							</svelte:fragment>
-							<svelte:fragment slot="content">
+					<div id="animate" class="card shadow-md mb-1" animate:flip={{ duration: flipDurationMs }}>
+						<Accordion.Item  value={group.name}>
+							{#snippet control()}
+													
+									<div class="flex flex-row items-center">
+										<h4 class="text-lg">{group.name}</h4>
+										<button
+											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+											onclick={() => {
+												(group.itemOpen = true), deletePrompt(group.id);
+											}}
+										>
+											<Icon icon="icon-park-outline:delete" width="18" height="18" />
+										</button>
+									</div>
+							{/snippet}
+							{#snippet panel()}	
 								<TemplateChannel groupId={group.id} {groupIdx} />
-							</svelte:fragment>
-						</AccordionItem>
+							{/snippet}
+						</Accordion.Item>
 						{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
 							<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
 								{group.name}
