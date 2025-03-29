@@ -175,52 +175,6 @@
 	}
 </script>
 
-<Modal
-	open={renameModalOpen}
-	onOpenChange={(e) => (renameModalOpen = e.open)}
-	backdropClasses="backdrop-blur-sm"
->
-	{#snippet content()}
-	<div class="card p-4 w-modal shadow-xl space-y-4">
-		<header class="text-2xl font-bold">Rename Template</header>
-		<article>
-			<label class="label">
-				<span>Enter new template name</span>
-				<input
-					class="input"
-					type="text"
-					bind:value={renameInputValue}
-					minlength="1"
-					maxlength="20"
-					required
-				/>
-			</label>
-		</article>
-		<footer class="flex justify-end gap-4">
-			<button type="button" class="btn variant-ghost" onclick={() => handleRenameClose(false)}>Cancel</button>
-			<button type="button" class="btn variant-filled" onclick={() => handleRenameClose(true)}>Submit</button>
-		</footer>
-	</div>
-	{/snippet}
-</Modal>
-
-<Modal
-	open={deleteModalOpen}
-	onOpenChange={(e) => (deleteModalOpen = e.open)}
-	backdropClasses="backdrop-blur-sm"
->
-	{#snippet content()}
-	<div class="card p-4 w-modal shadow-xl space-y-4">
-		<header class="text-2xl font-bold">Please Confirm</header>
-		<article>Are you sure you wish to delete this template?</article>
-		<footer class="flex justify-end space-x-2">
-			<button class="btn variant-filled" onclick={() => handleDeleteClose(false)}>Cancel</button>
-			<button class="btn variant-filled-error" onclick={() => handleDeleteClose(true)}>Delete</button>
-		</footer>
-	</div>
-	{/snippet}
-</Modal>
-
 <section class="templates card card-hover p-1">
 	<header class="templates-header flex items-center justify-center">
 		<h3 class="h3 font-bold">Templates</h3>
@@ -304,6 +258,52 @@
 	<FloatingArrow bind:ref={elemArrow} context={templateSettingsFloating.context} fill="#575969" />
 </div>
 {/if}
+
+<Modal
+	open={renameModalOpen}
+	onOpenChange={(e) => (renameModalOpen = e.open)}
+	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet content()}
+	<div class="card p-4 w-modal shadow-xl space-y-4">
+		<header class="text-2xl font-bold">Rename Template</header>
+		<article>
+			<label class="label">
+				<span>Enter new template name</span>
+				<input
+					class="input"
+					type="text"
+					bind:value={renameInputValue}
+					minlength="1"
+					maxlength="20"
+					required
+				/>
+			</label>
+		</article>
+		<footer class="flex justify-end gap-4">
+			<button type="button" class="btn preset-outlined-surface-500" onclick={() => handleRenameClose(false)}>Cancel</button>
+			<button type="button" class="btn preset-filled-primary-600" onclick={() => handleRenameClose(true)}>Submit</button>
+		</footer>
+	</div>
+	{/snippet}
+</Modal>
+
+<Modal
+	open={deleteModalOpen}
+	onOpenChange={(e) => (deleteModalOpen = e.open)}
+	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet content()}
+	<div class="card p-4 w-modal shadow-xl space-y-4">
+		<header class="text-2xl font-bold">Please Confirm</header>
+		<article>Are you sure you wish to delete this template?</article>
+		<footer class="flex justify-end space-x-2">
+			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
+			<button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
+		</footer>
+	</div>
+	{/snippet}
+</Modal>
 
 <style>
 	#accord {

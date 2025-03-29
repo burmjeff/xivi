@@ -16,6 +16,7 @@
 		useDismiss,
 		useFloating,
 		useHover,
+		useClick,
 		useInteractions,
 		useRole,
 	} from "@skeletonlabs/floating-ui-svelte";
@@ -187,8 +188,8 @@
 		<header class="text-2xl font-bold">Please Confirm</header>
 		<article>Are you sure you wish to delete this playlist?</article>
 		<footer class="flex justify-end space-x-2">
-			<button class="btn variant-filled" onclick={() => handleDeleteClose(false)}>Cancel</button>
-			<button class="btn variant-filled-error" onclick={() => handleDeleteClose(true)}>Delete</button>
+			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
+			<button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
 		</footer>
 	</div>
 	{/snippet}

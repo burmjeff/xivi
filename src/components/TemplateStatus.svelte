@@ -164,7 +164,7 @@
 		<header class="text-2xl font-bold">Notification</header>
 		<article>{modalContent}</article>
 		<footer class="flex justify-end space-x-2">
-			<button class="btn variant-filled" onclick={closeModal}>Close</button>
+			<button class="btn preset-outlined-surface-500" onclick={closeModal}>Close</button>
 		</footer>
 	</div>
 	{/snippet}
