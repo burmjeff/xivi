@@ -21,6 +21,7 @@
 		useDismiss,
 		useFloating,
 		useHover,
+		useClick,
 		useInteractions,
 		useRole,
 	} from "@skeletonlabs/floating-ui-svelte";
@@ -64,8 +65,9 @@
 	});
 	const tooltipRole = useRole(tooltipFloatingAdd.context, { role: "tooltip" });
 	const tooltipHover = useHover(tooltipFloatingAdd.context, { move: false });
+	const tooltipClick = useClick(tooltipFloatingAdd.context);
 	const tooltipDismiss = useDismiss(tooltipFloatingAdd.context);
-	const tooltipInteractions = useInteractions([tooltipRole, tooltipHover, tooltipDismiss]);
+	const tooltipInteractions = useInteractions([tooltipRole, tooltipHover, tooltipClick, tooltipDismiss]);
 
 	async function renameGroup(groupIdx: number, groupName: string, groupId: string) {
 		if (groupName !== '') {
@@ -233,7 +235,7 @@
 		}
 	}
 
-	let modalOpen = $state(false);
+	let modalGroupOpen = $state(false);
 	let currentGroupData = $state({
 		isNew: false,
 		groupIdx: 0,
@@ -241,18 +243,26 @@
 	});
 
 	function modalGroupSettings(isNew: boolean, groupIdx: number, group: TemplateGroup | undefined) {
+		console.log('modalGroupSettings called with isNew:', isNew, 'group:', group?.name);
 		currentGroupData = {
 			isNew,
 			groupIdx,
 			group
 		};
-		modalOpen = true;
+		modalGroupOpen = true;
+		console.log('modalGroupOpen set to:', modalGroupOpen, 'currentGroupData:', currentGroupData);
+		// Force a UI update
+		setTimeout(() => {
+			console.log('Checking modalGroupOpen after timeout:', modalGroupOpen);
+		}, 100);
 	}
 	function handleGroupSettingsClose(formData?: any) {
+		console.log('handleGroupSettingsClose called with formData:', formData);
 		if (formData) {
 			addTemplateGroup(formData, currentGroupData.groupIdx, currentGroupData.isNew, currentGroupData.group);
 		}
-		modalOpen = false;
+		modalGroupOpen = false;
+		console.log('modalGroupOpen set to false');
 	}
 
 	async function convertGroup(groupName: string, groupId: number) {
@@ -336,7 +346,15 @@
 		<h3 class="h3 font-bold">Template Groups</h3>
 		<button
 			class="btn btn-md"
-			onclick={() => modalGroupSettings(true, 0, undefined)}
+			onclick={(e) => {
+				e.stopPropagation();
+				e.preventDefault();
+				modalGroupSettings(true, 0, undefined);
+				console.log('Add button clicked');
+				setTimeout(() => {
+					console.log('Add button: modalGroupOpen after timeout:', modalGroupOpen);
+				}, 100);
+			}}
 			bind:this={tooltipFloatingAdd.elements.reference}
 			{...tooltipInteractions.getReferenceProps()}
 		>
@@ -380,8 +398,15 @@
 										<h4 class="text-lg">{group.name}</h4>
 										<button
 											class="btn-icon btn-icon-sm inset-y-0 bg-transparent! ml-auto"
-											onclick={() => {
-											(group.itemOpen = true), modalGroupSettings(false, groupIdx, group);
+											onclick={(e) => {
+												e.stopPropagation();
+												e.preventDefault();
+												group.itemOpen = true;
+												modalGroupSettings(false, groupIdx, group);
+												console.log('Edit button clicked for group:', group.name);
+												setTimeout(() => {
+													console.log('Edit button: modalGroupOpen after timeout:', modalGroupOpen);
+												}, 100);
 										}}
 										>
 											<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
@@ -422,33 +447,38 @@
 	{/if}
 </section>
 
-<!-- Tooltip popup is now handled by the floating UI -->
-<!-- <div class="card preset-filled-secondary-500 p-2" data-popup="addTooltip">
-	<p>Add New Template Group</p>
-	<div class="preset-filled-secondary-500 arrow"></div>
-</div> -->
-
-<GroupSettings
-    bind:modalOpen={modalOpen}
-    parent={{ onClose: handleGroupSettingsClose }}
-    isNew={currentGroupData.isNew}
-    name={currentGroupData.group?.name ?? ''}
-    dynamic={currentGroupData.group?.dynamic ?? false}
-    dynamicgroup={currentGroupData.group?.dynamicgroup ?? 0}
-/>
+<Modal
+    open={modalGroupOpen}
+    onOpenChange={(e) => (modalGroupOpen = e.open)}
+	contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
+	positionerBase="fixed inset-0 flex justify-center items-center"
+    backdropClasses="backdrop-blur-sm fixed inset-0"
+>
+	{#snippet content()}
+		<GroupSettings
+			parent={{ onClose: handleGroupSettingsClose }}
+			isNew={currentGroupData.isNew}
+			name={currentGroupData.group?.name ?? ''}
+			dynamic={currentGroupData.group?.dynamic ?? false}
+			dynamicgroup={currentGroupData.group?.dynamicgroup ?? 0}
+		/>
+    {/snippet}
+</Modal>
 
 <Modal
     open={modalDeleteOpen}
     onOpenChange={(e) => (modalDeleteOpen = e.open)}
-    backdropClasses="backdrop-blur-sm"
+    contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
+	positionerBase="fixed inset-0 flex justify-center items-center"
+    backdropClasses="backdrop-blur-sm fixed inset-0"
 >
     {#snippet content()}
         <div class="card p-4 w-modal shadow-xl space-y-4">
             <header class="text-2xl font-bold">Please Confirm</header>
             <article>Are you sure you wish to delete this group?</article>
             <footer class="flex justify-end space-x-2">
-                <button class="btn variant-filled" onclick={() => handleDeleteClose(false)}>Cancel</button>
-                <button class="btn variant-filled-error" onclick={() => handleDeleteClose(true)}>Delete</button>
+                <button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
+                <button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
             </footer>
         </div>
     {/snippet}
@@ -457,7 +487,9 @@
 <Modal
     open={modalChannelOpen}
     onOpenChange={(e) => (modalChannelOpen = e.open)}
-    backdropClasses="backdrop-blur-sm"
+    contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
+	positionerBase="fixed inset-0 flex justify-center items-center"
+    backdropClasses="backdrop-blur-sm fixed inset-0"
 >
     {#snippet content()}
         <ChannelSettings
@@ -473,7 +505,9 @@
 <Modal
     open={modalConvertOpen}
     onOpenChange={(e) => (modalConvertOpen = e.open)}
-    backdropClasses="backdrop-blur-sm"
+    contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
+	positionerBase="fixed inset-0 flex justify-center items-center"
+    backdropClasses="backdrop-blur-sm fixed inset-0"
 >
     {#snippet content()}
         <div class="card p-4 w-modal shadow-xl space-y-4">
@@ -492,8 +526,8 @@
                 </label>
             </article>
             <footer class="flex justify-end space-x-2">
-                <button class="btn variant-filled" onclick={() => handleConvertClose(false)}>Cancel</button>
-                <button class="btn variant-filled-primary" onclick={() => handleConvertClose(true)}>Submit</button>
+                <button class="btn preset-filled-primary-600" onclick={() => handleConvertClose(false)}>Cancel</button>
+                <button class="btn preset-outlined-surface-500" onclick={() => handleConvertClose(true)}>Submit</button>
             </footer>
         </div>
     {/snippet}

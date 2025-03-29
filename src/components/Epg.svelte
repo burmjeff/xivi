@@ -183,60 +183,6 @@
 	}
 </script>
 
-<Modal
-	open={editModalOpen}
-	onOpenChange={(e) => (editModalOpen = e.open)}
-	triggerBase="btn preset-tonal"
-	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
-	backdropClasses="backdrop-blur-sm"
->
-  	{#snippet trigger()}Open Modal{/snippet}
-  	{#snippet content()}
-		<header class="flex justify-between">
-			<h2 class="h2">Edit EPG {editType}</h2>
-		</header>
-		<article>
-			<label class="label">
-				<span>New {editType}</span>
-				<input
-					class="input"
-					type="text"
-					bind:value={editValue}
-					placeholder="Enter new value"
-				/>
-			</label>
-		</article>
-		<footer class="flex justify-end gap-4">
-			<button type="button" class="btn preset-tonal" onclick={editModalClose}>Cancel</button>
-			<button type="button" class="btn preset-filled" onclick={handleConfirm}>Save</button>
-		</footer>
- 	{/snippet}
-</Modal>
-
-<Modal
-	open={deleteModalOpen}
-    onOpenChange={(e) => (deleteModalOpen = e.open)}
-    triggerBase="btn preset-tonal"
-  	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
-  	backdropClasses="backdrop-blur-sm"
->
-	{#snippet trigger()}Open Modal{/snippet}
-	{#snippet content()}
-		<header class="flex justify-between">
-			<h2 class="h2">Confirm Delete</h2>
-		</header>
-		<article>
-			<p class="opacity-60">
-				Are you sure you wish to delete this EPG?
-			</p>
-		</article>
-		<footer class="flex justify-end gap-4">
-			<button type="button" class="btn variant-ghost" onclick={() => deleteModalOpen = false}>Cancel</button>
-			<button type="button" class="btn variant-filled-error" onclick={handleDelete}>Delete</button>
-		</footer>
-	{/snippet}
-</Modal>
-
 <section class="epgs card p-1">
 	<header class="epgs-header flex items-center justify-center space-x-4">
 		<h3 class="h3 font-bold">Epgs</h3>
@@ -352,6 +298,60 @@
 		{/if}
 	</div>
 </section>
+
+<Modal
+	open={editModalOpen}
+	onOpenChange={(e) => (editModalOpen = e.open)}
+	triggerBase="btn preset-tonal"
+	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	backdropClasses="backdrop-blur-sm"
+>
+  	{#snippet trigger()}{/snippet}
+  	{#snippet content()}
+		<header class="flex justify-between">
+			<h2 class="h2">Edit EPG {editType}</h2>
+		</header>
+		<article>
+			<label class="label">
+				<span>New {editType}</span>
+				<input
+					class="input"
+					type="text"
+					bind:value={editValue}
+					placeholder="Enter new value"
+				/>
+			</label>
+		</article>
+		<footer class="flex justify-end gap-4">
+			<button type="button" class="btn preset-tonal" onclick={editModalClose}>Cancel</button>
+			<button type="button" class="btn preset-filled" onclick={handleConfirm}>Save</button>
+		</footer>
+ 	{/snippet}
+</Modal>
+
+<Modal
+	open={deleteModalOpen}
+    onOpenChange={(e) => (deleteModalOpen = e.open)}
+    triggerBase="btn preset-tonal"
+  	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+  	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet trigger()}{/snippet}
+	{#snippet content()}
+		<header class="flex justify-between">
+			<h2 class="h2">Confirm Delete</h2>
+		</header>
+		<article>
+			<p class="opacity-60">
+				Are you sure you wish to delete this EPG?
+			</p>
+		</article>
+		<footer class="flex justify-end gap-4">
+			<button type="button" class="btn preset-outlined-surface-500" onclick={() => deleteModalOpen = false}>Cancel</button>
+			<button type="button" class="btn preset-tonal-error" onclick={handleDelete}>Delete</button>
+		</footer>
+	{/snippet}
+</Modal>
 
 <style>
 	#accord {

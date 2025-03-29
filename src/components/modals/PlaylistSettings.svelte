@@ -1,7 +1,6 @@
 <!-- PlaylistSettings.svelte -->
 
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { Modal } from '@skeletonlabs/skeleton-svelte';
 
 	let { modalOpen = $bindable(), parent, isNew, id, name, url } = $props<{
@@ -46,6 +45,7 @@
 <Modal
 	open={modalOpen}
 	onOpenChange={(e) => (modalOpen = e.open)}
+	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
 	backdropClasses="backdrop-blur-sm"
 >
 	{#snippet content()}
