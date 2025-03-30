@@ -175,6 +175,52 @@
 	}
 </script>
 
+<Modal
+	open={renameModalOpen}
+	onOpenChange={(e) => (renameModalOpen = e.open)}
+	contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
+	positionerBase="fixed inset-0 flex justify-center items-center"
+	backdropClasses="backdrop-blur-sm fixed inset-0"
+>
+	{#snippet content()}
+		<header class="text-2xl font-bold">Rename Template</header>
+		<article>
+			<label class="label">
+				<span>Enter new template name</span>
+				<input
+					class="input"
+					type="text"
+					bind:value={renameInputValue}
+					minlength="1"
+					maxlength="20"
+					required
+				/>
+			</label>
+		</article>
+		<footer class="flex justify-end gap-4">
+			<button type="button" class="btn preset-outlined-surface-500" onclick={() => handleRenameClose(false)}>Cancel</button>
+			<button type="button" class="btn preset-filled-primary-500" onclick={() => handleRenameClose(true)}>Submit</button>
+		</footer>
+	{/snippet}
+</Modal>
+
+<Modal
+	open={deleteModalOpen}
+	onOpenChange={(e) => (deleteModalOpen = e.open)}
+	contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
+	positionerBase="fixed inset-0 flex justify-center items-center"
+	backdropClasses="backdrop-blur-sm fixed inset-0"
+>
+	{#snippet content()}
+		<header class="text-2xl font-bold">Please Confirm</header>
+		<article>Are you sure you wish to delete this template?</article>
+		<footer class="flex justify-end space-x-2">
+			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
+			<button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
+		</footer>
+	{/snippet}
+</Modal>
+
 <section class="templates card card-hover p-1">
 	<header class="templates-header flex items-center justify-center">
 		<h3 class="h3 font-bold">Templates</h3>
@@ -202,7 +248,7 @@
 	</header>
 	<div id="accord" class="templates-viewport min-w-full overflow-auto">
 		{#if $templates.length > 0}
-			<Accordion>
+			<Accordion collapsible>
 				{#each $templates as template, templateIdx (template.id)}
 					<div class="card shadow-md mb-1">
 						<Accordion.Item value={template.name} >
@@ -210,15 +256,19 @@
 									<div class="item-center flex flex-row">
 										<h4 class="text-lg">{template.name}</h4>
 										<button
-											class="btn-icon btn-icon-sm inset-y-0 bg-transparent! ml-auto"
-											onclick={() => renamePrompt(template.name, template.id)}
+											class="btn-icon btn-icon-md inset-y-0 bg-transparent! ml-auto"
+											onclick={(e) => {
+												renamePrompt(template.name, template.id)
+												e.stopPropagation();
+											}}
 										>
 											<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
 										</button>
 										<button
-											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
-											onclick={() => {
-											(template.itemOpen = true), deletePrompt(template.id);
+											class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+											onclick={(e) => {
+											deletePrompt(template.id)
+											e.stopPropagation();
 										}}
 										>
 											<Icon icon="icon-park-outline:delete" width="18" height="18" />
@@ -258,52 +308,6 @@
 	<FloatingArrow bind:ref={elemArrow} context={templateSettingsFloating.context} fill="#575969" />
 </div>
 {/if}
-
-<Modal
-	open={renameModalOpen}
-	onOpenChange={(e) => (renameModalOpen = e.open)}
-	backdropClasses="backdrop-blur-sm"
->
-	{#snippet content()}
-	<div class="card p-4 w-modal shadow-xl space-y-4">
-		<header class="text-2xl font-bold">Rename Template</header>
-		<article>
-			<label class="label">
-				<span>Enter new template name</span>
-				<input
-					class="input"
-					type="text"
-					bind:value={renameInputValue}
-					minlength="1"
-					maxlength="20"
-					required
-				/>
-			</label>
-		</article>
-		<footer class="flex justify-end gap-4">
-			<button type="button" class="btn preset-outlined-surface-500" onclick={() => handleRenameClose(false)}>Cancel</button>
-			<button type="button" class="btn preset-filled-primary-600" onclick={() => handleRenameClose(true)}>Submit</button>
-		</footer>
-	</div>
-	{/snippet}
-</Modal>
-
-<Modal
-	open={deleteModalOpen}
-	onOpenChange={(e) => (deleteModalOpen = e.open)}
-	backdropClasses="backdrop-blur-sm"
->
-	{#snippet content()}
-	<div class="card p-4 w-modal shadow-xl space-y-4">
-		<header class="text-2xl font-bold">Please Confirm</header>
-		<article>Are you sure you wish to delete this template?</article>
-		<footer class="flex justify-end space-x-2">
-			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
-			<button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
-		</footer>
-	</div>
-	{/snippet}
-</Modal>
 
 <style>
 	#accord {

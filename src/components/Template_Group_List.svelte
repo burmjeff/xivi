@@ -21,7 +21,6 @@
 		useDismiss,
 		useFloating,
 		useHover,
-		useClick,
 		useInteractions,
 		useRole,
 	} from "@skeletonlabs/floating-ui-svelte";
@@ -65,34 +64,8 @@
 	});
 	const tooltipRole = useRole(tooltipFloatingAdd.context, { role: "tooltip" });
 	const tooltipHover = useHover(tooltipFloatingAdd.context, { move: false });
-	const tooltipClick = useClick(tooltipFloatingAdd.context);
 	const tooltipDismiss = useDismiss(tooltipFloatingAdd.context);
-	const tooltipInteractions = useInteractions([tooltipRole, tooltipHover, tooltipClick, tooltipDismiss]);
-
-	async function renameGroup(groupIdx: number, groupName: string, groupId: string) {
-		if (groupName !== '') {
-			const newGroup = {
-				id: groupId,
-				name: groupName
-			};
-			try {
-				const response = await fetch(`/api/template/group`, {
-					method: 'PUT',
-					headers: {
-						'Content-Type': 'application/json'
-					},
-					body: JSON.stringify(newGroup)
-				});
-				if (response.ok) {
-					$templateGroups[groupIdx].name = groupName;
-				} else {
-					console.error('Error:', response.status, response.statusText);
-				}
-			} catch (error) {
-				console.log('Error updating template group:', error);
-			}
-		}
-	}
+	const tooltipInteractions = useInteractions([tooltipRole, tooltipHover, tooltipDismiss]);
 
 	let modalDeleteOpen = $state(false);
 	let modalChannelOpen = $state(false);
@@ -120,7 +93,7 @@
 			const response = await fetch(`/api/template/group/${groupId}`, {
 				method: 'DELETE'
 			});
-			const data = await response.status;
+			const data = response.status;
 			console.log('Deleted template group:', data);
 			$templateGroups = $templateGroups.filter((t) => t.id != groupId);
 		} catch (error) {
@@ -249,12 +222,9 @@
 			groupIdx,
 			group
 		};
+		// Set the modal to open
 		modalGroupOpen = true;
 		console.log('modalGroupOpen set to:', modalGroupOpen, 'currentGroupData:', currentGroupData);
-		// Force a UI update
-		setTimeout(() => {
-			console.log('Checking modalGroupOpen after timeout:', modalGroupOpen);
-		}, 100);
 	}
 	function handleGroupSettingsClose(formData?: any) {
 		console.log('handleGroupSettingsClose called with formData:', formData);
@@ -299,8 +269,9 @@
 		if (trigger === TRIGGERS.DRAG_STARTED) {
 			dndIdx = $templateGroups.findIndex((item) => item.id === Number(id));
 			dndItem = $templateGroups[dndIdx];
-			e.detail.items[dndIdx].itemOpen = false;
-			$templateGroups[dndIdx].itemOpen = false;
+			// Don't set itemOpen directly as it may not be initialized
+			// e.detail.items[dndIdx].itemOpen = false;
+			// $templateGroups[dndIdx].itemOpen = false;
 			$templateGroups = e.detail.items;
 			shouldIgnoreDndEvents = true;
 		} else if (!shouldIgnoreDndEvents) {
@@ -330,9 +301,9 @@
 		}
 	}
 	function transformDraggedElement(
-		draggedEl: HTMLElement | undefined,
+		_draggedEl: HTMLElement | undefined,
 		data: Item | undefined,
-		index: number | undefined
+		_index: number | undefined
 	) {
 		if (!shouldIgnoreDndEvents) {
 			data!.isDragged = true;
@@ -341,39 +312,114 @@
 	}
 </script>
 
+<Modal
+    open={modalGroupOpen}
+    onOpenChange={(e) => (modalGroupOpen = e.open)}
+	contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
+	positionerBase="fixed inset-0 flex justify-center items-center"
+    backdropClasses="backdrop-blur-sm fixed inset-0"
+    zIndex="z-50"
+>
+	{#snippet content()}
+		<GroupSettings
+			parent={{ onClose: handleGroupSettingsClose }}
+			isNew={currentGroupData.isNew}
+			name={currentGroupData.group?.name ?? ''}
+			dynamic={currentGroupData.group?.dynamic ?? false}
+			dynamicgroup={currentGroupData.group?.dynamicgroup ?? 0}
+		/>
+    {/snippet}
+</Modal>
+
+<Modal
+    open={modalDeleteOpen}
+    onOpenChange={(e) => (modalDeleteOpen = e.open)}
+    contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
+	positionerBase="fixed inset-0 flex justify-center items-center"
+    backdropClasses="backdrop-blur-sm fixed inset-0"
+>
+    {#snippet content()}
+		<header class="text-2xl font-bold">Please Confirm</header>
+		<article>Are you sure you wish to delete this group?</article>
+		<footer class="flex justify-end space-x-2">
+			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
+			<button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
+		</footer>
+    {/snippet}
+</Modal>
+
+<Modal
+    open={modalChannelOpen}
+    onOpenChange={(e) => (modalChannelOpen = e.open)}
+    contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
+	positionerBase="fixed inset-0 flex justify-center items-center"
+    backdropClasses="backdrop-blur-sm fixed inset-0"
+>
+    {#snippet content()}
+		<ChannelSettings
+			isNew={true}
+			channelIdx={null}
+			groupIdx={groupToAddChannel.idx}
+			parent={{ onClose: handleChannelClose }}
+		/>
+    {/snippet}
+</Modal>
+
+<Modal
+    open={modalConvertOpen}
+    onOpenChange={(e) => (modalConvertOpen = e.open)}
+    contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
+	positionerBase="fixed inset-0 flex justify-center items-center"
+    backdropClasses="backdrop-blur-sm fixed inset-0"
+>
+    {#snippet content()}
+		<header class="text-2xl font-bold">Convert Playlist Group to Template Group</header>
+		<article>
+			<label class="label">
+				<span>Template Group Name:</span>
+				<input
+					class="input"
+					type="text"
+					bind:value={convertGroupNameInput}
+					minlength="1"
+					maxlength="20"
+					required
+				/>
+			</label>
+		</article>
+		<footer class="flex justify-end gap-4">
+			<button class="btn preset-outlined-surface-500" onclick={() => handleConvertClose(false)}>Cancel</button>
+			<button class="btn preset-filled-primary-500" onclick={() => handleConvertClose(true)}>Submit</button>
+		</footer>
+    {/snippet}
+</Modal>
+
 <section class="tmplgroups card card-hover p-1">
 	<header class="tmplgroups-header flex items-center justify-center">
 		<h3 class="h3 font-bold">Template Groups</h3>
 		<button
 			class="btn btn-md"
 			onclick={(e) => {
+				modalGroupSettings(true, 0, undefined)
 				e.stopPropagation();
-				e.preventDefault();
-				modalGroupSettings(true, 0, undefined);
-				console.log('Add button clicked');
-				setTimeout(() => {
-					console.log('Add button: modalGroupOpen after timeout:', modalGroupOpen);
-				}, 100);
 			}}
 			bind:this={tooltipFloatingAdd.elements.reference}
 			{...tooltipInteractions.getReferenceProps()}
 		>
 			<Icon icon="icon-park-twotone:add-one" color="#0a7e85" width="25" height="25" />
+			{#if tooltipAdd}
+				<div
+					bind:this={tooltipFloatingAdd.elements.floating}
+					style={tooltipFloatingAdd.floatingStyles}
+					{...tooltipInteractions.getFloatingProps()}
+					class="floating popover-neutral"
+					transition:fade={{ duration: 200 }}
+				>
+					<p><strong>Add Group</strong></p>
+					<FloatingArrow bind:ref={elemArrow} context={tooltipFloatingAdd.context} fill="#575969" />
+				</div>
+			{/if}
 		</button>
-		{#if tooltipAdd}
-					<div
-						bind:this={tooltipFloatingAdd.elements.floating}
-						style={tooltipFloatingAdd.floatingStyles}
-						{...tooltipInteractions.getFloatingProps()}
-						class="floating popover-neutral"
-						transition:fade={{ duration: 200 }}
-					>
-						<p>
-							<strong>Add Group</strong>
-						</p>
-						<FloatingArrow bind:ref={elemArrow} context={tooltipFloatingAdd.context} fill="#575969" />
-					</div>
-				{/if}
 	</header>
 	{#if $templateGroups != null}
 		<Accordion collapsible>
@@ -394,37 +440,37 @@
 						<div id="animate" class="card shadow-md mb-1" animate:flipAnimation={{ duration: flipDurationMs }}>
 							<Accordion.Item value={group.name}>
 								{#snippet control()}
-									<div class="flex flex-row items-center">
+									<div class="flex flex-row items-center justify-between w-full">
 										<h4 class="text-lg">{group.name}</h4>
-										<button
-											class="btn-icon btn-icon-sm inset-y-0 bg-transparent! ml-auto"
-											onclick={(e) => {
+										<div class="flex flex-row gap-1">
+											<button
+												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+												onclick={(e) => {
+													e.stopPropagation();
+													modalGroupSettings(false, groupIdx, group);
+											}}
+											>
+												<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
+											</button>
+											<button
+												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+												onclick={(e) => {
 												e.stopPropagation();
-												e.preventDefault();
-												group.itemOpen = true;
-												modalGroupSettings(false, groupIdx, group);
-												console.log('Edit button clicked for group:', group.name);
-												setTimeout(() => {
-													console.log('Edit button: modalGroupOpen after timeout:', modalGroupOpen);
-												}, 100);
-										}}
-										>
-											<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
-										</button>
-										<button
-											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
-											onclick={() => {
-											(group.itemOpen = true), deletePrompt(group.id);
-										}}
-										>
-											<Icon icon="icon-park-outline:delete" width="18" height="18" />
-										</button>
-										<button
-											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
-											onclick={() => modalAddChannel(group.id, groupIdx)}
-										>
-											<Icon icon="icon-park-outline:add" width="18" height="18" />
-										</button>
+												deletePrompt(group.id);
+											}}
+											>
+												<Icon icon="icon-park-outline:delete" width="18" height="18" />
+											</button>
+											<button
+												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+												onclick={(e) => {
+												e.stopPropagation();
+												modalAddChannel(group.id, groupIdx);
+											}}
+											>
+												<Icon icon="icon-park-outline:add" width="18" height="18" />
+											</button>
+										</div>
 									</div>
 								{/snippet}
 								{#snippet panel()}
@@ -446,92 +492,6 @@
 		</Accordion>
 	{/if}
 </section>
-
-<Modal
-    open={modalGroupOpen}
-    onOpenChange={(e) => (modalGroupOpen = e.open)}
-	contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
-	positionerBase="fixed inset-0 flex justify-center items-center"
-    backdropClasses="backdrop-blur-sm fixed inset-0"
->
-	{#snippet content()}
-		<GroupSettings
-			parent={{ onClose: handleGroupSettingsClose }}
-			isNew={currentGroupData.isNew}
-			name={currentGroupData.group?.name ?? ''}
-			dynamic={currentGroupData.group?.dynamic ?? false}
-			dynamicgroup={currentGroupData.group?.dynamicgroup ?? 0}
-		/>
-    {/snippet}
-</Modal>
-
-<Modal
-    open={modalDeleteOpen}
-    onOpenChange={(e) => (modalDeleteOpen = e.open)}
-    contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
-	positionerBase="fixed inset-0 flex justify-center items-center"
-    backdropClasses="backdrop-blur-sm fixed inset-0"
->
-    {#snippet content()}
-        <div class="card p-4 w-modal shadow-xl space-y-4">
-            <header class="text-2xl font-bold">Please Confirm</header>
-            <article>Are you sure you wish to delete this group?</article>
-            <footer class="flex justify-end space-x-2">
-                <button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
-                <button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
-            </footer>
-        </div>
-    {/snippet}
-</Modal>
-
-<Modal
-    open={modalChannelOpen}
-    onOpenChange={(e) => (modalChannelOpen = e.open)}
-    contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
-	positionerBase="fixed inset-0 flex justify-center items-center"
-    backdropClasses="backdrop-blur-sm fixed inset-0"
->
-    {#snippet content()}
-        <ChannelSettings
-            modalOpen={modalChannelOpen}
-            isNew={true}
-            channelIdx={null}
-            groupIdx={groupToAddChannel.idx}
-            parent={{ onClose: handleChannelClose }}
-        />
-    {/snippet}
-</Modal>
-
-<Modal
-    open={modalConvertOpen}
-    onOpenChange={(e) => (modalConvertOpen = e.open)}
-    contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
-	positionerBase="fixed inset-0 flex justify-center items-center"
-    backdropClasses="backdrop-blur-sm fixed inset-0"
->
-    {#snippet content()}
-        <div class="card p-4 w-modal shadow-xl space-y-4">
-            <header class="text-2xl font-bold">Convert Playlist Group to Template Group</header>
-            <article>
-                <label class="label">
-                    <span>Enter new template group name</span>
-                    <input
-                        class="input"
-                        type="text"
-                        bind:value={convertGroupNameInput}
-                        minlength="1"
-                        maxlength="20"
-                        required
-                    />
-                </label>
-            </article>
-            <footer class="flex justify-end space-x-2">
-                <button class="btn preset-filled-primary-600" onclick={() => handleConvertClose(false)}>Cancel</button>
-                <button class="btn preset-outlined-surface-500" onclick={() => handleConvertClose(true)}>Submit</button>
-            </footer>
-        </div>
-    {/snippet}
-</Modal>
 
 <style>
 	#accord {

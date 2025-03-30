@@ -2,6 +2,9 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte';
+
+	// Note: Svelte components don't need default exports
+	// They are automatically exported
 	import {
 		Switch,
 		Combobox } from '@skeletonlabs/skeleton-svelte';
@@ -23,7 +26,10 @@
 
 	const { parent, isNew, name, dynamic, dynamicgroup } = $props();
 
-	let selectedOption = $state([""]);
+	// Initialize selectedOption with dynamicgroup if it exists
+	let selectedOption = $state(dynamicgroup > 0 ? [dynamicgroup.toString()] : []);
+
+	// Log initial values in onMount to avoid state reference issues
 
 	interface DynamicOptions {
 		label: string;
@@ -102,6 +108,7 @@
 
 	onMount(async () => {
 		console.log('GroupSettings onMount called with dynamic:', dynamic, 'dynamicgroup:', dynamicgroup);
+		console.log('Initial selectedOption:', selectedOption);
 		if ($playlists.length == 0) {
 			playlists.set(await updatePlaylists());
 		}
@@ -177,10 +184,25 @@
 		dynamicOptions = uniqueOptions;
 		console.log(`Final dynamicOptions count: ${dynamicOptions.length}`);
 
-		// Initialize selectedOption if dynamicgroup is set
+		// Ensure selectedOption is set if dynamicgroup is set
 		if (dynamic && dynamicgroup > 0) {
-			selectedOption = [dynamicgroup.toString()];
-			console.log('Setting selectedOption to:', selectedOption);
+			// Find the matching option to verify it exists
+			const matchingOption = dynamicOptions.find(option => option.value.toString() === dynamicgroup.toString());
+			if (matchingOption) {
+				console.log('Found matching option:', matchingOption);
+				// Set the selectedOption to the dynamicgroup value
+				selectedOption = [dynamicgroup.toString()];
+				console.log('Setting selectedOption to:', selectedOption);
+			} else {
+				console.warn('No matching option found for dynamicgroup:', dynamicgroup);
+				console.log('Available options:', dynamicOptions);
+
+				// If no matching option is found, but we have options, select the first one
+				if (dynamicOptions.length > 0) {
+					selectedOption = [dynamicOptions[0].value.toString()];
+					console.log('Setting selectedOption to first available option:', selectedOption);
+				}
+			}
 		}
 	});
 
@@ -198,7 +220,6 @@
 		}
 		console.log('Calling parent.onClose with formData:', formData);
 		parent.onClose(formData);
-		modalClose();
 	}
 
 	function onCancel(): void {
@@ -206,10 +227,7 @@
         parent.onClose();
     }
 
-	function modalClose() {
-    // We don't need to set modalOpen here anymore since we're using the parent's modal
-    console.log('Modal close function called');
-  }
+
 </script>
 
 <div class="modal-add-group">
@@ -249,12 +267,22 @@
 				{#if formData.dynamic}
 					<span>Select Playlist Group</span>
 					{#if dynamicOptions.length > 0}
+						<!-- Log the current state of the combobox data -->
+						{#if selectedOption.length > 0}
+							{@const selectedLabel = dynamicOptions.find(opt => opt.value.toString() === selectedOption[0])?.label || 'Unknown'}
+							{console.log('Selected option label:', selectedLabel)}
+						{/if}
 						<Combobox
 						data={dynamicOptions}
 						value={selectedOption}
-						onValueChange={(e) => (selectedOption = e.value)}
+						onValueChange={(e) => {
+							console.log('Combobox value changed:', e.value);
+							selectedOption = e.value;
+						}}
 						label=""
 						placeholder="Select..."
+						defaultValue={selectedOption}
+						defaultHighlightedValue={selectedOption.length > 0 ? selectedOption[0] : undefined}
 						positioning={{
 							placement: 'bottom-start',
 							flip: false,
@@ -290,9 +318,9 @@
 				<FloatingArrow bind:ref={elemArrow} context={tooltipFloating.context} fill="#575969" />
 			</div>
 		{/if}
-		<footer class="modal-footer {parent.regionFooter}">
+		<footer class="modal-footer flex justify-end gap-4">
 			<button class="btn preset-outlined-surface-500" onclick={onCancel}>Cancel</button>
-			<button class="btn preset-filled-primary-600" onclick={onFormSubmit}>Save</button>
+			<button class="btn preset-filled-primary-500" onclick={onFormSubmit}>Save</button>
 		</footer>
 	</div>
 </div>

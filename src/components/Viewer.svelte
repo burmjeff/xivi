@@ -29,7 +29,7 @@
 		) {
 			try {
 				const response = await fetch(`/api/template/${$templates[selected].id}/groups`);
-				if (await response.ok) {
+				if (response.ok) {
 					const data = await response.json();
 					if (typeof data !== 'undefined') {
 						$templates[selected].groups = data.templategroups;
@@ -75,13 +75,13 @@
 				{#each $templates[selected].groups as group, groupIdx (group.id)}
 					<div class="groups w-content justify-center p-1 card shadow-md mb-1">
 						<Accordion.Item value={group.name}>
-							{#snippet control()}			
-									<div class="flex flex-row items-center">
+							{#snippet control()}
+									<div class="flex flex-row items-center justify-between w-full">
 										<h4 class="text-lg">{group.name}</h4>
 									</div>
 							{/snippet}
 							{#snippet panel()}
-								<ViewerChannels templateIdx={selected} groupId={group.id} {groupIdx} />		
+								<ViewerChannels templateIdx={selected} groupId={group.id} {groupIdx} />
 							{/snippet}
 						</Accordion.Item>
 					</div>

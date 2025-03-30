@@ -5,7 +5,7 @@
 	import { templateGroups } from '@xivi/stores/template_store';
 	import Icon from '@iconify/svelte';
 	import { writable } from 'svelte/store';
-	import { FileUpload, Modal, Combobox } from '@skeletonlabs/skeleton-svelte';
+	import { FileUpload, Combobox } from '@skeletonlabs/skeleton-svelte';
 	import xivi from '@xivi/lib/assets/xivi.png';
 	import type { Match, PlaylistChannel } from '@xivi/data/playlist_entities';
 	import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
@@ -28,13 +28,7 @@
 		useRole,
 	} from "@skeletonlabs/floating-ui-svelte";
 
-	let { modalOpen = $bindable(), parent, isNew, groupIdx, channelIdx } = $props<{
-		modalOpen: boolean;
-		parent: any;
-		isNew: boolean;
-		groupIdx: number;
-		channelIdx: number | null;
-	}>();
+	const { parent, isNew, groupIdx, channelIdx } = $props();
 
 	const playlist_ch_items = writable<PlaylistChannel[]>([]);
 
@@ -211,19 +205,18 @@
 
 
 	async function onFormSubmit(): Promise<void> {
+		console.log('Form submitted with data:', formData);
 		if (newImg) {
 			const fetchedData = await uploadImage();
 			formData.logoid = fetchedData.id;
 			formData.logo = fetchedData.image;
 		}
 		formData.tvgid = selectedTvgid[0];
+		console.log('Calling parent.onClose with formData:', formData);
 		parent.onClose(formData);
-		modalClose();
 	}
 
-	function modalClose() {
-		modalOpen = false;
-	}
+
 
 	async function deleteChannel() {
 		try {
@@ -233,13 +226,12 @@
 					method: 'DELETE'
 				}
 			);
-			const data = await response.status;
-			console.log('Deleted template channel:', data);
+			const status = response.status;
+			console.log('Deleted template channel, status:', status);
 			$templateGroups[groupIdx].channels = $templateGroups[groupIdx].channels.filter(
 				(t) => Number(t.id) != formData.id
 			);
 			parent.onClose();
-			modalClose();
 		} catch (error) {
 			console.log('Error deleting template channel:', error);
 			return;
@@ -259,9 +251,9 @@
 				},
 				body: JSON.stringify(channelItem)
 			});
-			const data = await response.status;
+			const status = response.status;
 			if (response.ok) {
-				console.log('Removed template channel item:', data);
+				console.log('Removed template channel item, status:', status);
 				$playlist_ch_items = $playlist_ch_items.filter((t) => t.id != playlistId);
 			}
 		} catch (error) {
@@ -363,13 +355,7 @@
 	}
 </script>
 
-<Modal
-	open={modalOpen}
-	onOpenChange={(e) => (modalOpen = e.open)}
-	backdropClasses="backdrop-blur-sm"
->
-	{#snippet content()}
-	<div class="modal-channel-settings max-w-screen card max-h-screen space-y-2 p-2 shadow-xl">
+<div class="modal-channel-settings">
 		{#if isNew}
 			<header class="justify-center text-center text-2xl font-bold">Add Channel</header>
 		{:else}
@@ -407,7 +393,7 @@
 						<div class="grid w-64 grid-cols-2 items-center space-x-10 p-1">
 							<img class="h-auto max-h-32 w-auto" src={formData.logo} alt="Logo" />
 							<button
-								class="preset-filled-primary-500 btn h-fit w-fit"
+								class="fill-primary-500 btn h-fit w-fit"
 								onclick={updateLogos}
 								bind:this={logoFloating.elements.reference}
 								{...logoInteractions.getReferenceProps()}
@@ -516,24 +502,21 @@
 			{/if}
 
 		</form>
-		<footer class="modal-footer {parent.regionFooter}">
+		<footer class="modal-footer flex justify-end gap-4">
 			{#if !isNew}
-				<button class="preset-tonal-error border border-error-500 btn items-center" onclick={deleteChannel}>
+				<button class="btn preset-tonal-error" onclick={deleteChannel}>
 					<Icon icon="icon-park-outline:delete" width="20" height="20" />
 					<span>Delete</span>
 				</button>
 			{/if}
-			<button class="btn items-center {parent.buttonNeutral}" onclick={parent.onClose}>
-				{parent.buttonTextCancel}</button
-			>
-			<button class="btn items-center {parent.buttonPositive}" onclick={onFormSubmit}>
-				<Icon icon="icon-park-outline:save-one" width="20" height="20" />
-				<span>Save Changes</span>
+			<button class="btn preset-outlined-surface-500" onclick={parent.onClose}>
+				Cancel
+			</button>
+			<button class="btn preset-filled-primary-500" onclick={onFormSubmit}>
+				Save
 			</button>
 		</footer>
-	</div>
-	{/snippet}
-</Modal>
+</div>
 
 {#if logoPopupOpen}
 <div

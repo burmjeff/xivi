@@ -253,7 +253,7 @@
 				</label>
 			</div>
 			<hr class="border-t-4!" />
-			<button type="button" class="preset-filled btn items-center" onclick={updateSettings}>
+			<button type="button" class="btn preset-filled-primary-500 items-center" onclick={updateSettings}>
 				<Icon icon="icon-park-outline:save-one" width="18" height="18" />
 				<span>Save Settings</span>
 			</button>

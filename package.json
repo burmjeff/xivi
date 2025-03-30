@@ -9,6 +9,8 @@
 		"upgrade": "npx npm-check-updates -u && npm run setup",
 		"upgrade-all": "npx npm-check-updates -u && npm run setup && echo \"Update Golang dependencies...\" && go get -u ./...",
 		"dev": "vite dev --open",
+		"dev:debug": "vite dev --debug hmr --open",
+		"dev:force": "vite dev --force --open",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",

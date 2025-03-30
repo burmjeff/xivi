@@ -75,7 +75,7 @@
 	const tooltipHover = useHover(tooltipFloating.context, { move: false });
 	const tooltipDismiss = useDismiss(tooltipFloating.context);
 	const tooltipInteractions = useInteractions([tooltipRole, tooltipHover, tooltipDismiss]);
-	
+
 	const addRole = useRole(addFloating.context);
 	const addClick = useClick(addFloating.context);
 	const addDismiss = useDismiss(addFloating.context);
@@ -162,7 +162,7 @@
 			} else {
 				console.error('Error:', response.status, response.statusText);
 			}
-			
+
 		} catch (error) {
 			console.log('Error updating epg:', error);
 		}
@@ -186,8 +186,8 @@
 <section class="epgs card p-1">
 	<header class="epgs-header flex items-center justify-center space-x-4">
 		<h3 class="h3 font-bold">Epgs</h3>
-		<button 
-			class="btn btn-md" 
+		<button
+			class="btn btn-md"
 			bind:this={tooltipFloating.elements.reference}
 			bind:this={addFloating.elements.reference}
 			{...tooltipInteractions.getReferenceProps()}
@@ -258,7 +258,7 @@
 									<button
 										class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
 										onclick={() => {
-											(epg.itemOpen = true), editPrompt(epgIdx, "name");
+											editPrompt(epgIdx, "name");
 										}}
 									>
 										<Icon icon="icon-park-outline:edit-one" width="18" height="18" />
@@ -269,7 +269,7 @@
 									<button
 										class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
 										onclick={() => {
-											(epg.itemOpen = true), editPrompt(epgIdx, "url");
+											editPrompt(epgIdx, "url");
 										}}
 									>
 										<Icon icon="icon-park-outline:edit-one" width="18" height="18" />
@@ -282,7 +282,7 @@
 									><button
 										class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
 										onclick={() => {
-											(epg.itemOpen = true), deletePrompt(epg.id);
+											deletePrompt(epg.id);
 										}}
 									>
 										<Icon icon="icon-park-outline:delete" width="18" height="18" />
@@ -323,8 +323,8 @@
 			</label>
 		</article>
 		<footer class="flex justify-end gap-4">
-			<button type="button" class="btn preset-tonal" onclick={editModalClose}>Cancel</button>
-			<button type="button" class="btn preset-filled" onclick={handleConfirm}>Save</button>
+			<button type="button" class="btn preset-outlined-surface-500" onclick={editModalClose}>Cancel</button>
+			<button type="button" class="btn preset-filled-primary-500" onclick={handleConfirm}>Save</button>
 		</footer>
  	{/snippet}
 </Modal>
