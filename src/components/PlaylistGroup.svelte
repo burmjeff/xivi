@@ -109,19 +109,19 @@
 </script>
 
 {#if $playlists[playlistIdx].groups != null && $playlists[playlistIdx].groups.length > 0}
-	<Accordion collapsible value={accordionValue} onValueChange={(e) => (accordionValue = e.value)} multiple>
+	<Accordion collapsible value={accordionValue} onValueChange={(e) => (accordionValue = e.value)}>
 		<Accordion.Item value="disabled-groups" base="card shadow-md mb-1">
 			{#snippet control()}
-				<div class="flex flex-row items-center justify-between w-full">
+				<div class="flex flex-row items-center w-full">
 					<h4>DISABLED GROUPS</h4>
 				</div>
 			{/snippet}
 			{#snippet panel()}
 				{#each $playlists[playlistIdx].groups as group (group.id)}
 					{#if !group.enabled}
-						<div class="card shadow-md p-1 px-4 flex flex-row items-center justify-between w-full">
-							<span>{group.name}</span>
-							<div class="flex flex-row gap-1">
+						<div class="card shadow-md p-1 px-4 flex flex-row items-center w-full">
+							<span class="flex-grow">{group.name}</span>
+							<div class="flex flex-row gap-2">
 								<span role="button" tabindex="0" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Enter' && e.stopPropagation()}>
 									<Switch classes="p-1" name="group_slider" checked={group.enabled} onCheckedChange={(e) => disableGroup(e, group)}/>
 								</span>
@@ -147,9 +147,9 @@
 					{#if group.enabled}
 						<Accordion.Item value={group.id.toString()} base="card shadow-md mb-1">
 							{#snippet control()}
-								<div class="flex flex-row items-center justify-between w-full">
-									<h4>{group.name}</h4>
-									<div class="flex flex-row gap-1">
+								<div class="flex flex-row items-center w-full">
+									<h4 class="flex-grow">{group.name}</h4>
+									<div class="flex flex-row gap-2">
 										<span role="button" tabindex="0" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Enter' && e.stopPropagation()}>
 											<Switch classes="p-1" name="group_slider" checked={group.enabled} onCheckedChange={(e) => disableGroup(e, group)}/>
 										</span>
