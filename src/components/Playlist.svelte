@@ -16,12 +16,12 @@
 		useDismiss,
 		useFloating,
 		useHover,
-		useClick,
 		useInteractions,
 		useRole,
 	} from "@skeletonlabs/floating-ui-svelte";
 	import PlaylistSettings from './modals/PlaylistSettings.svelte';
 	import { playlists } from '@xivi/stores/playlist_store';
+	import type { Playlist } from '@xivi/data/playlist_entities';
 	import Icon from '@iconify/svelte';
 	import { fade } from 'svelte/transition';
 
@@ -84,6 +84,7 @@
 	}
 
 	function handlePlaylistClose(formData: any = null) {
+		console.log('handlePlaylistClose called with formData:', formData);
 		if (formData) {
 			addPlaylist(formData, isNewPlaylist, currentPlaylistId);
 		}
@@ -142,8 +143,9 @@
 		}
 	}
 
-	function deletePrompt(playlistId: number): void {
-		currentPlaylistId = playlistId;
+	function deletePrompt(playlist: Playlist): void {
+		playlist.itemOpen = false;
+		currentPlaylistId = playlist.id;
 		deleteModalOpen = true;
 	}
 
@@ -159,8 +161,8 @@
 			const response = await fetch(`/api/playlist/${playlistId}`, {
 				method: 'DELETE'
 			});
-			const data = await response.status;
-			console.log('Deleted playlist:', data);
+			const status = response.status;
+			console.log('Deleted playlist, status:', status);
 			$playlists = $playlists.filter((t) => t.id != playlistId);
 		} catch (error) {
 			console.log('Error deleting playlist:', error);
@@ -169,29 +171,38 @@
 	}
 </script>
 
-<PlaylistSettings
-	modalOpen={playlistModalOpen}
-	parent={{ onClose: handlePlaylistClose }}
-	isNew={isNewPlaylist}
-	id={currentPlaylistId}
-	name={currentPlaylistName}
-	url={currentPlaylistUrl}
-/>
+<Modal
+	open={playlistModalOpen}
+	onOpenChange={(e) => (playlistModalOpen = e.open)}
+	contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
+	positionerBase="fixed inset-0 flex justify-center items-center"
+	backdropClasses="backdrop-blur-sm fixed inset-0"
+>
+	{#snippet content()}
+		<PlaylistSettings
+			parent={{ onClose: handlePlaylistClose }}
+			isNew={isNewPlaylist}
+			id={currentPlaylistId}
+			name={currentPlaylistName}
+			url={currentPlaylistUrl}
+		/>
+	{/snippet}
+</Modal>
 
 <Modal
 	open={deleteModalOpen}
 	onOpenChange={(e) => (deleteModalOpen = e.open)}
-	backdropClasses="backdrop-blur-sm"
+	contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
+	positionerBase="fixed inset-0 flex justify-center items-center"
+	backdropClasses="backdrop-blur-sm fixed inset-0"
 >
 	{#snippet content()}
-	<div class="card p-4 w-modal shadow-xl space-y-4">
 		<header class="text-2xl font-bold">Please Confirm</header>
 		<article>Are you sure you wish to delete this playlist?</article>
-		<footer class="flex justify-end space-x-2">
+		<footer class="flex justify-end gap-4">
 			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
 			<button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
 		</footer>
-	</div>
 	{/snippet}
 </Modal>
 
@@ -213,36 +224,40 @@
 					class="floating popover-neutral card p-2"
 					transition:fade={{ duration: 200 }}
 				>
-					<p>Add New Playlist</p>
+					<p><strong>Add New Playlist</strong></p>
 					<FloatingArrow bind:ref={elemArrow} context={addPlTooltipFloating.context} fill="#575969" />
 				</div>
 			{/if}
 		</button>
 	</header>
-	<Accordion>
+	<Accordion collapsible>
 		<div id="accord" class="playlists-viewport min-w-full overflow-auto">
 			{#if $playlists != null && $playlists.length > 0}
 				{#each $playlists as playlist, index (playlist.id)}
 					<div class="card shadow-md mb-1">
 						<Accordion.Item value={playlist.name}>
 							{#snippet control()}
-
-									<div class="flex flex-row items-center">
+									<div class="flex flex-row items-center justify-between w-full">
 										<h4 class="text-lg">{playlist.name}</h4>
-										<span class="text-green-600 text-xs ml-auto p-1">Updated at: {(getDate(playlist.updated_at))}</span>
-										<button
-											class="btn btn-md"
-											onclick={() => modalPlaylist(false, playlist.id, playlist.name, playlist.url)}
-										>
-											<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
-										</button>
-										<button
-											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
-											onclick={() => {
-											(playlist.itemOpen = true), deletePrompt(playlist.id);
-										}}
-											><Icon icon="icon-park-outline:delete" width="18" height="18" />
-										</button>
+										<div class="flex flex-row items-center gap-1">
+											<span class="text-green-600 text-xs p-1">Updated at: {(getDate(playlist.updated_at))}</span>
+											<button
+												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+												onclick={(e) => {
+													e.stopPropagation();
+													modalPlaylist(false, playlist.id, playlist.name, playlist.url);
+												}}
+												><Icon icon="icon-park-outline:edit-two" width="18" height="18" />
+											</button>
+											<button
+												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+												onclick={(e) => {
+													e.stopPropagation();
+													deletePrompt(playlist);
+												}}
+												><Icon icon="icon-park-outline:delete" width="18" height="18" />
+											</button>
+										</div>
 									</div>
 							{/snippet}
 							{#snippet panel()}

@@ -1,6 +1,6 @@
 <!-- TemplateGroup.svelte -->
 <script lang="ts">
-	import TemplateChannel from './TemplateChannel.svelte';
+	import TemplateChannel from './TemplateChannel.svelte'
 	import { onMount } from 'svelte';
 	import {
 		Accordion,
@@ -49,7 +49,7 @@
 			const response = await fetch(`/api/template/${templateId}/group/${groupId}/item`, {
 				method: 'POST'
 			});
-			if (await response.ok) {
+			if (response.ok) {
 				let newGroup = $templateGroups.find((item) => item.id === groupId);
 				console.log('Added template group:', newGroup);
 				const fetchedData = await updateTemplateGroups();
@@ -81,7 +81,7 @@
 			const response = await fetch(`/api/template/${templateId}/group/${groupId}/item`, {
 				method: 'DELETE'
 			});
-			const data = await response.status;
+			const data = response.status;
 			console.log('Removing template group:', data);
 			$templates[templateIdx].groups = $templates[templateIdx].groups.filter(
 				(t) => t.id != groupId
@@ -129,9 +129,9 @@
 		}
 	}
 	function transformDraggedElement(
-		draggedEl: HTMLElement | undefined,
+		_draggedEl: HTMLElement | undefined,
 		data: Item | undefined,
-		index: number | undefined
+		_index: number | undefined
 	) {
 		if (!shouldIgnoreDndEvents) data!.isDragged = true;
 	}
@@ -140,17 +140,17 @@
 <Modal
 	open={deleteModalOpen}
 	onOpenChange={(e) => (deleteModalOpen = e.open)}
-	backdropClasses="backdrop-blur-sm"
+	contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
+	positionerBase="fixed inset-0 flex justify-center items-center"
+    backdropClasses="backdrop-blur-sm fixed inset-0"
 >
 	{#snippet content()}
-	<div class="card p-4 w-modal shadow-xl space-y-4">
 		<header class="text-2xl font-bold">Please Confirm</header>
 		<article>Are you sure you wish to remove this group from template?</article>
 		<footer class="flex justify-end space-x-2">
 			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
 			<button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
 		</footer>
-	</div>
 	{/snippet}
 </Modal>
 
@@ -171,17 +171,19 @@
 					<div id="animate" class="card shadow-md mb-1" animate:flip={{ duration: flipDurationMs }}>
 						<Accordion.Item  value={group.name}>
 							{#snippet control()}
-
-									<div class="flex flex-row items-center">
+									<div class="flex flex-row items-center justify-between w-full">
 										<h4 class="text-lg">{group.name}</h4>
-										<button
-											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
-											onclick={() => {
-												(group.itemOpen = true), deletePrompt(group.id);
-											}}
-										>
-											<Icon icon="icon-park-outline:delete" width="18" height="18" />
-										</button>
+										<div class="flex flex-row gap-1">
+											<button
+												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+												onclick={(e) => {
+													e.stopPropagation();
+													deletePrompt(group.id);
+												}}
+											>
+												<Icon icon="icon-park-outline:delete" width="18" height="18" />
+											</button>
+										</div>
 									</div>
 							{/snippet}
 							{#snippet panel()}

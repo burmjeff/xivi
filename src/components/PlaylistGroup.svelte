@@ -49,7 +49,7 @@
 	async function disableGroup(e: any, group: PlaylistGroup) {
 		if (group !== null) {
 			group.enabled = e.checked;
-			
+
 			try {
 				const response = await fetch(`/api/playlist/group`, {
 					method: 'PUT',
@@ -109,19 +109,23 @@
 </script>
 
 {#if $playlists[playlistIdx].groups != null && $playlists[playlistIdx].groups.length > 0}
-	<Accordion value={accordionValue} onValueChange={(e) => (accordionValue = e.value)} multiple>
+	<Accordion collapsible value={accordionValue} onValueChange={(e) => (accordionValue = e.value)} multiple>
 		<Accordion.Item value="disabled-groups" base="card shadow-md mb-1">
 			{#snippet control()}
-				<div class="flex flex-row items-center">
+				<div class="flex flex-row items-center justify-between w-full">
 					<h4>DISABLED GROUPS</h4>
 				</div>
 			{/snippet}
 			{#snippet panel()}
 				{#each $playlists[playlistIdx].groups as group (group.id)}
 					{#if !group.enabled}
-						<div class="card shadow-md p-1 px-4 flex flex-row items-center content-center">
+						<div class="card shadow-md p-1 px-4 flex flex-row items-center justify-between w-full">
 							<span>{group.name}</span>
-							<Switch classes="ml-auto p-1" name="group_slider" checked={group.enabled} onCheckedChange={(e) => disableGroup(e, group)}/>
+							<div class="flex flex-row gap-1">
+								<span role="button" tabindex="0" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Enter' && e.stopPropagation()}>
+									<Switch classes="p-1" name="group_slider" checked={group.enabled} onCheckedChange={(e) => disableGroup(e, group)}/>
+								</span>
+							</div>
 						</div>
 					{/if}
 				{/each}
@@ -143,9 +147,13 @@
 					{#if group.enabled}
 						<Accordion.Item value={group.id.toString()} base="card shadow-md mb-1">
 							{#snippet control()}
-								<div class="flex flex-row items-center">
+								<div class="flex flex-row items-center justify-between w-full">
 									<h4>{group.name}</h4>
-									<Switch classes="ml-auto p-1" name="group_slider" checked={group.enabled} onCheckedChange={(e) => disableGroup(e, group)}/>
+									<div class="flex flex-row gap-1">
+										<span role="button" tabindex="0" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Enter' && e.stopPropagation()}>
+											<Switch classes="p-1" name="group_slider" checked={group.enabled} onCheckedChange={(e) => disableGroup(e, group)}/>
+										</span>
+									</div>
 								</div>
 							{/snippet}
 							{#snippet panel()}

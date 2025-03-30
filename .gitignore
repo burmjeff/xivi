@@ -5,6 +5,8 @@
 .vscode/
 .idea/
 xivi.code-workspace
+.augment-guidelines
+.cursorrules
 
 # Build
 build/
@@ -20,6 +22,7 @@ local_cache/
 
 # Test
 *.out
+.vite/
 
 # Environment variables
 .env

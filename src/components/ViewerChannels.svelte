@@ -66,7 +66,7 @@
 	<section class="channels grid grid-cols-2 gap-2 p-1">
 		{#each $templates[templateIdx].groups[groupIdx].viewerChannels as channel, channelIdx (channel.id)}
 			<div
-				class="channel w-content max-w-content card preset-tonal-tertiary border border-tertiary-500 card-hover grid h-32 grid-cols-5"
+				class="channel w-content max-w-content card preset-filled-primary-700-300 border border-primary-900 card-hover grid h-32 grid-cols-5"
 			>
 				<img class="h-auto max-h-32 w-auto self-center p-4" src={channel.logo} alt="Logo" />
 				<div class="col-span-3 mb-1 ml-4 mr-4 mt-1 self-center">

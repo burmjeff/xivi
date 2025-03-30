@@ -2,6 +2,7 @@
 	import '@xivi/app.css';
 	import { AppBar } from '@skeletonlabs/skeleton-svelte';
 	import xivi from '@xivi/lib/assets/xivi.png';
+	import '../hmr-handler';
 	interface Props {
 		children?: import('svelte').Snippet;
 	}

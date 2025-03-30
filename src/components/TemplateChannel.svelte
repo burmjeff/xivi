@@ -160,6 +160,23 @@
 	}
 </script>
 
+<Modal
+    open={modalChannelOpen}
+    onOpenChange={(e) => (modalChannelOpen = e.open)}
+    contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
+	positionerBase="fixed inset-0 flex justify-center items-center"
+    backdropClasses="backdrop-blur-sm fixed inset-0"
+>
+    {#snippet content()}
+		<ChannelSettings
+			isNew={false}
+			channelIdx={currentChannelIdx}
+			groupIdx={groupIdx}
+			parent={{ onClose: handleChannelClose }}
+		/>
+    {/snippet}
+</Modal>
+
 {#if $templateGroups[groupIdx] != null && $templateGroups[groupIdx].channels != null}
 	<table class="templateChannel table ">
 		<thead>
@@ -209,22 +226,6 @@
 		</tbody>
 	</table>
 {/if}
-
-<Modal
-	open={modalChannelOpen}
-	onOpenChange={(e) => (modalChannelOpen = e.open)}
-	backdropClasses="backdrop-blur-sm"
->
-	{#snippet content()}
-		<ChannelSettings
-			modalOpen={modalChannelOpen}
-			isNew={false}
-			channelIdx={currentChannelIdx}
-			{groupIdx}
-			parent={{ onClose: handleChannelClose }}
-		/>
-	{/snippet}
-</Modal>
 
 <style>
 	#animate {
