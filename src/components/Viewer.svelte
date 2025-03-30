@@ -76,8 +76,8 @@
 					<div class="groups w-content justify-center p-1 card shadow-md mb-1">
 						<Accordion.Item value={group.name}>
 							{#snippet control()}
-									<div class="flex flex-row items-center justify-between w-full">
-										<h4 class="text-lg">{group.name}</h4>
+									<div class="flex flex-row items-center w-full">
+										<h4 class="text-lg flex-grow">{group.name}</h4>
 									</div>
 							{/snippet}
 							{#snippet panel()}

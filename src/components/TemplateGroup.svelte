@@ -155,7 +155,7 @@
 </Modal>
 
 {#if $templates[templateIdx].groups != null}
-	<Accordion>
+	<Accordion collapsible>
 		<section
 			use:dndzone={{
 				items: $templates[templateIdx].groups,
@@ -171,9 +171,9 @@
 					<div id="animate" class="card shadow-md mb-1" animate:flip={{ duration: flipDurationMs }}>
 						<Accordion.Item  value={group.name}>
 							{#snippet control()}
-									<div class="flex flex-row items-center justify-between w-full">
-										<h4 class="text-lg">{group.name}</h4>
-										<div class="flex flex-row gap-1">
+									<div class="flex flex-row items-center w-full">
+										<h4 class="text-lg flex-grow">{group.name}</h4>
+										<div class="flex flex-row gap-2">
 											<button
 												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
 												onclick={(e) => {

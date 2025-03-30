@@ -253,10 +253,11 @@
 					<div class="card shadow-md mb-1">
 						<Accordion.Item value={template.name} >
 							{#snippet control()}
-									<div class="item-center flex flex-row">
-										<h4 class="text-lg">{template.name}</h4>
+								<div class="flex flex-row items-center w-full">
+									<h4 class="text-lg flex-grow">{template.name}</h4>
+									<div class="flex flex-row gap-2">
 										<button
-											class="btn-icon btn-icon-md inset-y-0 bg-transparent! ml-auto"
+											class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
 											onclick={(e) => {
 												renamePrompt(template.name, template.id)
 												e.stopPropagation();
@@ -267,13 +268,14 @@
 										<button
 											class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
 											onclick={(e) => {
-											deletePrompt(template.id)
-											e.stopPropagation();
-										}}
+												deletePrompt(template.id)
+												e.stopPropagation();
+											}}
 										>
 											<Icon icon="icon-park-outline:delete" width="18" height="18" />
 										</button>
 									</div>
+								</div>
 							{/snippet}
 							{#snippet panel()}
 								<TemplateGroup templateId={template.id} {templateIdx} />
