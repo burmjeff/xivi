@@ -280,7 +280,7 @@
 							selectedOption = e.value;
 						}}
 						label=""
-						placeholder="Select..."
+						placeholder="Select or type..."
 						defaultValue={selectedOption}
 						defaultHighlightedValue={selectedOption.length > 0 ? selectedOption[0] : undefined}
 						positioning={{
