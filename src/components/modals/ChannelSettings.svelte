@@ -35,9 +35,13 @@
 	let newImg = false;
 	let logoName: string;
 
-	let tvgidList = $state<string[]>([]);
 	let selectedTvgid = $state([""]); // For Combobox
-	let tvgidOptions = $state<{label: string; value: string}[]>([]);
+
+	interface TvgidOptions {
+		label: string;
+		value: string;
+	}
+	let tvgidOptions: TvgidOptions[] = $state([]);
 
 	let dndTypeChannels = 'channelSettings';
 	let shouldIgnoreMatchEvents = false;
@@ -106,7 +110,7 @@
 		}
 	};
 
-	const updateTvgids = async () => {
+	const getTvgids = async () => {
 		const response = await fetch(
 			`/api/epg/tvgids`
 		);
@@ -119,15 +123,20 @@
 	let elemArrow: HTMLElement | null = $state(null);
 
 	onMount(async () => {
-		const fetchedTvgids = await updateTvgids();
+		tvgidOptions = [];
+		const fetchedTvgids = await getTvgids();
 		if (fetchedTvgids !== null && typeof fetchedTvgids !== 'undefined') {
-			tvgidList = fetchedTvgids;
-			tvgidOptions = tvgidList.map((tvgid) => {
-				return {
-					label: `${tvgid}`,
-					value: `${tvgid}`
-				};
-			});
+			const tvgidList = fetchedTvgids
+				.map((tvgid: string) => {
+					return {
+						label: `${tvgid}`,
+						value: `${tvgid}`
+					};
+				});
+
+			if (tvgidList.length > 0) {
+				tvgidOptions.push(...tvgidList);
+			}
 		}
 		if (formData.tvgid != "") {
 			selectedTvgid[0] = formData.tvgid;
@@ -379,8 +388,15 @@
 							data={tvgidOptions}
 							value={selectedTvgid}
 							onValueChange={(e) => (selectedTvgid = e.value)}
-							label="Select TVG ID"
+							label=""
 							placeholder="Select or type..."
+							positioning={{
+								placement: 'bottom-start',
+								flip: false,
+								overflowPadding: 8,
+								fitViewport: true
+							}}
+							contentBase="max-h-48 overflow-y-auto"
 						>
 							{#snippet item(item: {label: string; value: string})}
 								<div class="flex w-full justify-between space-x-2">
@@ -459,7 +475,7 @@
 			{#if !isNew}
 				<hr class="border-t-2!" />
 				<div class="max-h-80 overflow-y-scroll">
-					<table class="table  justify-center text-center shadow-md">
+					<table class="table justify-center text-center shadow-md">
 						<thead>
 							<tr id="thead">
 								<th>Title</th>
@@ -502,19 +518,23 @@
 			{/if}
 
 		</form>
-		<footer class="modal-footer flex justify-end gap-4">
-			{#if !isNew}
-				<button class="btn preset-tonal-error" onclick={deleteChannel}>
-					<Icon icon="icon-park-outline:delete" width="20" height="20" />
-					<span>Delete</span>
+		<footer class="modal-footer flex justify-between pt-2">
+			<div>
+				{#if !isNew}
+					<button class="btn preset-tonal-error" onclick={deleteChannel}>
+						<Icon icon="icon-park-outline:delete" width="20" height="20" />
+						<span>Delete</span>
+					</button>
+				{/if}
+			</div>
+			<div class="flex gap-4">
+				<button class="btn preset-outlined-surface-500" onclick={parent.onClose}>
+					Cancel
 				</button>
-			{/if}
-			<button class="btn preset-outlined-surface-500" onclick={parent.onClose}>
-				Cancel
-			</button>
-			<button class="btn preset-filled-primary-500" onclick={onFormSubmit}>
-				Save
-			</button>
+				<button class="btn preset-filled-primary-500" onclick={onFormSubmit}>
+					Save
+				</button>
+			</div>
 		</footer>
 </div>
 

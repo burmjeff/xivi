@@ -45,26 +45,35 @@
 	}
 
 	function modalPlayer(name: string, stream: string) {
-		currentPlayerName = name;
-		currentPlayerStream = stream;
-		playerModalOpen = true;
+		// Close modal first if it's already open to ensure proper reset
+		if (playerModalOpen) {
+			playerModalOpen = false;
+			// Small delay to ensure modal is fully closed before reopening
+			setTimeout(() => {
+				currentPlayerName = name;
+				currentPlayerStream = stream;
+				playerModalOpen = true;
+			}, 100);
+		} else {
+			currentPlayerName = name;
+			currentPlayerStream = stream;
+			playerModalOpen = true;
+		}
+		console.log('Opening player modal with stream:', stream);
 	}
 
-	function handlePlayerClose() {
-		playerModalOpen = false;
-	}
+	// Modal is closed via the onOpenChange event in the Player component
 </script>
 
 <Player
 	modalOpen={playerModalOpen}
-	parent={{ onClose: handlePlayerClose }}
 	name={currentPlayerName}
 	stream={currentPlayerStream}
 />
 
 {#if $templates[templateIdx].groups[groupIdx].viewerChannels != null}
 	<section class="channels grid grid-cols-2 gap-2 p-1">
-		{#each $templates[templateIdx].groups[groupIdx].viewerChannels as channel, channelIdx (channel.id)}
+		{#each $templates[templateIdx].groups[groupIdx].viewerChannels as channel (channel.id)}
 			<div
 				class="channel w-content max-w-content card preset-filled-primary-700-300 border border-primary-900 card-hover grid h-32 grid-cols-5"
 			>
