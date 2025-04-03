@@ -31,22 +31,22 @@ type EpgProgramme struct {
 }
 
 type Title struct {
-	Lang  string `db:"lang" json:"lang,omitempty" xml:"lang,attr,omitempty"`
-	Value string `db:"value" json:"value" xml:",chardata"`
+	Lang  string `db:"title.lang" json:"lang,omitempty" xml:"lang,attr,omitempty"`
+	Value string `db:"title.value" json:"value" xml:",chardata"`
 }
 type Icon struct {
-	Src string `db:"src" json:"src,omitempty" xml:"src,attr,omitempty"`
+	Src string `db:"icon.src" json:"src,omitempty" xml:"src,attr,omitempty"`
 }
 type EpisodeNumber struct {
-	System string `db:"system" json:"system,omitempty" xml:"system,attr,omitempty"`
-	Value  string `db:"value" json:"value,omitempty" xml:",chardata"`
+	System string `db:"episodenumber.system" json:"system,omitempty" xml:"system,attr,omitempty"`
+	Value  string `db:"episodenumber.value" json:"value,omitempty" xml:",chardata"`
 }
 type Rating struct {
-	System string `db:"system" json:"system,omitempty" xml:"system,attr,omitempty"`
-	Value  string `db:"value" json:"value,omitempty" xml:"value,omitempty"`
+	System string `db:"rating.system" json:"system,omitempty" xml:"system,attr,omitempty"`
+	Value  string `db:"rating.value" json:"value,omitempty" xml:"value,omitempty"`
 }
 type Video struct {
-	Quality string `db:"quality" json:"quality,omitempty" xml:"quality,omitempty"`
+	Quality string `db:"video.quality" json:"quality,omitempty" xml:"quality,omitempty"`
 }
 
 type StringArray []string
@@ -112,6 +112,31 @@ func (t *Time) Scan(value interface{}) error {
 	if !ok {
 		return fmt.Errorf("failed to scan Time: value %v is not of type time.Time", value)
 	}
-	t.Time = v
+
+	// Convert the time to the application's configured timezone when reading from DB
+	localTime, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+	if err != nil {
+		localTime = time.UTC
+	}
+
+	// Store the time in the configured timezone
+	t.Time = v.In(localTime)
 	return nil
+}
+
+// String returns a custom string representation of the time
+// This ensures the time is in the application's configured timezone
+// and formats it with the correct timezone offset
+func (t Time) String() string {
+	// Get the application's configured timezone
+	localTime, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+	if err != nil {
+		localTime = time.UTC
+	}
+
+	// Ensure the time is in the configured timezone
+	localizedTime := t.In(localTime)
+
+	// Format the time with the timezone offset
+	return localizedTime.Format("2006-01-02 15:04:05 -0700")
 }

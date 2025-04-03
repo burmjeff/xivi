@@ -21,9 +21,9 @@ func RunCronJobs() {
 	}
 
 	s := gocron.NewScheduler(localTime)
-	playlistJob, err := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(UpdatePlaylists)
-	epgJob, err := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(UpdateEpgs)
-	vacuumJob, err := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(VacuumDB)
+	playlistJob, _ := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(UpdatePlaylists)
+	epgJob, _ := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(UpdateEpgs)
+	vacuumJob, _ := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(VacuumDB)
 
 	log.Log().Msgf("Playlist update scheduled at: %s", playlistJob.ScheduledAtTime())
 	log.Log().Msgf("EPG update scheduled at: %s", epgJob.ScheduledAtTime())
@@ -33,6 +33,18 @@ func RunCronJobs() {
 }
 
 func UpdatePlaylists() {
+
+	// Store dynamic group relationships before updating playlists
+	var dynamicGroups []models.TemplateGroup
+	if groups, err := database.Db.GetAllTmplGroups(); err != nil {
+		log.Err(err)
+	} else {
+		for _, group := range *groups {
+			if group.Dynamic && group.DynamicGroup != nil {
+				dynamicGroups = append(dynamicGroups, group)
+			}
+		}
+	}
 
 	// get playlists.
 	playlists, err := database.Db.GetPlaylists()
@@ -49,12 +61,49 @@ func UpdatePlaylists() {
 		log.Log().Msgf("Finished Updating Playlist: %s", playlist.Name)
 	}
 
+	// Update all dynamic groups
 	if groups, err := database.Db.GetAllTmplGroups(); err != nil {
 		log.Err(err)
 	} else {
+		// First, ensure all previously dynamic groups are still properly connected
+		for _, storedGroup := range dynamicGroups {
+			// Check if the group still exists and is still dynamic
+			group, err := database.Db.GetTmplGroup(storedGroup.ID)
+			if err != nil {
+				log.Warn().Msgf("Template group %d no longer exists", storedGroup.ID)
+				continue
+			}
+
+			// If the group is no longer dynamic, but was before, restore it
+			if !group.Dynamic && storedGroup.DynamicGroup != nil {
+				log.Info().Msgf("Restoring dynamic connection for template group %d", group.ID)
+				group.Dynamic = true
+				group.DynamicGroup = storedGroup.DynamicGroup
+				if err := database.Db.UpdateTmplGroup(group); err != nil {
+					log.Err(err).Msgf("Failed to restore dynamic connection for template group %d", group.ID)
+				}
+			}
+
+			// Update the dynamic group
+			if group.Dynamic && group.DynamicGroup != nil {
+				utils.UpdateDynamicGroup(*group)
+			}
+		}
+
+		// Then update any other dynamic groups
 		for _, group := range *groups {
-			if group.Dynamic {
-				utils.UpdateDynamicGroup(group)
+			if group.Dynamic && group.DynamicGroup != nil {
+				// Skip groups we've already processed
+				alreadyProcessed := false
+				for _, storedGroup := range dynamicGroups {
+					if group.ID == storedGroup.ID {
+						alreadyProcessed = true
+						break
+					}
+				}
+				if !alreadyProcessed {
+					utils.UpdateDynamicGroup(group)
+				}
 			}
 		}
 	}
@@ -63,7 +112,7 @@ func UpdatePlaylists() {
 	if templates, err := database.Db.GetTemplates(); err != nil {
 		log.Debug().Err(err)
 	} else {
-		m3uTools := utils.M3uTools{}
+		m3uTools := utils.NewM3uTools()
 		for _, template := range *templates {
 			go m3uTools.CreateM3u(template)
 		}
@@ -83,6 +132,7 @@ func UpdateEpgs() {
 		utils.ParseEpg(&epg)
 		log.Log().Msgf("Finished Updating EPG: %s", epg.Name)
 	}
+	CleanupOldEpgProgrammes()
 }
 
 func cleanPlaylist(playlist models.Playlist, startTime time.Time) {
@@ -107,9 +157,19 @@ func cleanPlaylist(playlist models.Playlist, startTime time.Time) {
 func VacuumDB() {
 	// Call INCREMENTAL VACUUM
 	ctx := context.Background()
-	err := database.Db.VacuumDB(ctx)
+	err := database.Db.CleanupQueries.VacuumDB(ctx)
 	if err != nil {
 		log.Debug().Msgf("Database vacuum: %v", err)
 	}
 	log.Debug().Msgf("Database vacuum completed")
+}
+
+func CleanupOldEpgProgrammes() {
+	// Clean up old EPG programmes
+	ctx := context.Background()
+	err := database.Db.CleanupQueries.CleanOldEpgProgrammes(ctx)
+	if err != nil {
+		log.Error().Msgf("Failed to clean up old EPG programmes: %v", err)
+	}
+	log.Debug().Msg("EPG programme cleanup completed")
 }

@@ -3,8 +3,8 @@
 	import { onMount } from 'svelte';
 	import { templateGroups } from '@xivi/stores/template_store';
 	import type { TemplateChannel } from '@xivi/data/template_entities';
-	import type { ModalSettings } from '@skeletonlabs/skeleton';
-	import { getModalStore } from '@skeletonlabs/skeleton';
+	import { Modal } from '@skeletonlabs/skeleton-svelte';
+	import ChannelSettings from './modals/ChannelSettings.svelte';
 	import {
 		dndzone,
 		TRIGGERS,
@@ -15,10 +15,15 @@
 	import { fade } from 'svelte/transition';
 	import { cubicIn } from 'svelte/easing';
 
-	export let groupId: string;
-	export let groupIdx: number;
+	interface Props {
+		groupId: number;
+		groupIdx: number;
+	}
 
-	const modalStore = getModalStore();
+	let { groupId, groupIdx }: Props = $props();
+
+	let modalChannelOpen = $state(false);
+	let currentChannelIdx = $state(0);
 	let dndTypeChannels = 'channels';
 	let dndItem: TemplateChannel;
 	let dndIdx: number;
@@ -45,7 +50,7 @@
 	async function updateSettings(channelIdx: number, formData: any) {
 		if (formData.name != '' && formData.tvgid != '' && formData.logo != '') {
 			let newSettings = {
-				id: parseInt($templateGroups[groupIdx].channels[channelIdx].id),
+				id: $templateGroups[groupIdx].channels[channelIdx].id,
 				name: formData.name,
 				tvgid: formData.tvgid,
 				logoid: formData.logoid,
@@ -76,25 +81,15 @@
 	}
 
 	function modalSettings(channelIdx: number) {
-		new Promise<boolean>((resolve) => {
-			const modal: ModalSettings = {
-				type: 'component',
-				component: 'modalChannelSettings',
-				meta: {
-					isNew: false,
-					channelIdx: channelIdx,
-					groupIdx: groupIdx
-				},
-				response: (r: boolean) => {
-					resolve(r);
-				}
-			};
-			modalStore.trigger(modal);
-		}).then((r: any) => {
-			if (r) {
-				updateSettings(channelIdx, r);
-			}
-		});
+		currentChannelIdx = channelIdx;
+		modalChannelOpen = true;
+	}
+
+	function handleChannelClose(formData: any = null) {
+		if (formData) {
+			updateSettings(currentChannelIdx, formData);
+		}
+		modalChannelOpen = false;
 	}
 
 	async function convertChannel(channelId: string) {
@@ -125,7 +120,7 @@
 		//e.detail.items.sort((itemA, itemB) => Number(itemA.id) - Number(itemB.id));
 
 		if (trigger === TRIGGERS.DRAG_STARTED) {
-			dndIdx = $templateGroups[groupIdx].channels.findIndex((item) => item.id === id);
+			dndIdx = $templateGroups[groupIdx].channels.findIndex((item) => item.id === Number(id));
 			dndItem = $templateGroups[groupIdx].channels[dndIdx];
 			$templateGroups[groupIdx].channels = e.detail.items;
 			shouldIgnoreDndEvents = true;
@@ -165,8 +160,25 @@
 	}
 </script>
 
+<Modal
+    open={modalChannelOpen}
+    onOpenChange={(e) => (modalChannelOpen = e.open)}
+    contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
+	positionerBase="fixed inset-0 flex justify-center items-center"
+    backdropClasses="backdrop-blur-sm fixed inset-0"
+>
+    {#snippet content()}
+		<ChannelSettings
+			isNew={false}
+			channelIdx={currentChannelIdx}
+			groupIdx={groupIdx}
+			parent={{ onClose: handleChannelClose }}
+		/>
+    {/snippet}
+</Modal>
+
 {#if $templateGroups[groupIdx] != null && $templateGroups[groupIdx].channels != null}
-	<table class="templateChannel table table-hover">
+	<table class="templateChannel table ">
 		<thead>
 			<tr id="thead">
 				<th>Logo</th>
@@ -181,15 +193,15 @@
 				type: dndTypeChannels,
 				transformDraggedElement
 			}}
-			on:consider={handleDndConsider}
-			on:finalize={handleDndFinalize}
+			onconsider={handleDndConsider}
+			onfinalize={handleDndFinalize}
 		>
 			{#if $templateGroups[groupIdx].channels.length > 0}
 				{#each $templateGroups[groupIdx].channels as channel, channelIdx (channel.id)}
 					<tr
 						id="animate"
 						animate:flip={{ duration: flipDurationMs }}
-						on:click={() => modalSettings(channelIdx)}
+						onclick={() => modalSettings(channelIdx)}
 					>
 						<td><img class="max-w-16 max-h-10" src={channel.logo} alt="Logo" /></td>
 						<td>{channel.name}</td>
@@ -197,19 +209,19 @@
 
 						{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
 							{#if channel.name}
-								<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
+								<td in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
 									{channel.name}
-								</div>
+								</td>
 							{:else}
-								<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
+								<td in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
 									{channel.name}
-								</div>
+								</td>
 							{/if}
 						{/if}
 					</tr>
 				{/each}
 			{:else}
-				<p>No channels found</p>
+				<tr><td>No channels found</td></tr>
 			{/if}
 		</tbody>
 	</table>

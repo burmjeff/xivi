@@ -8,7 +8,7 @@ export interface Template {
 }
 
 export interface TemplateGroup {
-	id: string;
+	id: number;
 	name: string;
 	dynamic: boolean;
 	dynamicgroup: number;
@@ -20,7 +20,7 @@ export interface TemplateGroup {
 }
 
 export interface TemplateChannel {
-	id: string;
+	id: number;
 	name: string;
 	tvgid: string;
 	logoid: number;

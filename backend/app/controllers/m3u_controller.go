@@ -36,7 +36,7 @@ func CreateM3U(c *fiber.Ctx) error {
 		})
 	}
 
-	m3uTools := utils.M3uTools{}
+	m3uTools := utils.NewM3uTools()
 	go m3uTools.CreateM3u(*template)
 	go utils.CreateEpgXML(*template)
 

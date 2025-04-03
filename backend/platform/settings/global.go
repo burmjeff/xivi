@@ -9,6 +9,7 @@ var APP_SETTINGS = &AppSettings{
 	Server:      Server{},
 	Playlist:    Playlist{},
 	Streaming:   Streaming{},
+	Vector:      Vector{},
 }
 var SERVER_PATH = ""
 var CONFIG_PATH = "./config"
@@ -23,6 +24,7 @@ type AppSettings struct {
 	Server      `yaml:"server" json:"server"`
 	Playlist    `yaml:"playlist" json:"playlist"`
 	Streaming   `yaml:"streaming" json:"streaming"`
+	Vector      `yaml:"vector" json:"vector"`
 }
 
 type Application struct {
@@ -52,4 +54,11 @@ type Streaming struct {
 	Buffer    int    `yaml:"buffer" json:"buffer"`
 	RetryEOS  int    `yaml:"retryeos" json:"retryeos"`
 	UserAgent string `yaml:"useragent" json:"useragent"`
+}
+
+type Vector struct {
+	BatchSize       int `yaml:"batch_size" json:"batch_size"`
+	ParallelBatches int `yaml:"parallel_batches" json:"parallel_batches"`
+	Timeout         int `yaml:"timeout" json:"timeout"`
+	CacheSize       int `yaml:"cache_size" json:"cache_size"`
 }

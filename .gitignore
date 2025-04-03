@@ -5,6 +5,10 @@
 .vscode/
 .idea/
 xivi.code-workspace
+.augment-guidelines
+.cursorrules
+.repomix-output.txt
+.augmentignore
 
 # Build
 build/
@@ -16,9 +20,11 @@ xivi.exe
 xivi
 lib_build/
 serve/
+local_cache/
 
 # Test
 *.out
+.vite/
 
 # Environment variables
 .env
