@@ -111,6 +111,12 @@ func SetDefaults() (*AppSettings, error) {
 			RetryEOS:  10,
 			UserAgent: "Xivi 1.0",
 		},
+		Vector: Vector{
+			BatchSize:       100,
+			ParallelBatches: 20,
+			Timeout:         90,
+			CacheSize:       500,
+		},
 	}
 
 	return &defaults, nil

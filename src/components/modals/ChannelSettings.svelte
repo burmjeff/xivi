@@ -83,7 +83,6 @@
 			logoid: 0,
 			logo: xivi
 		};
-		//newImg = true
 	}
 
 	const updateChannelItems = async () => {

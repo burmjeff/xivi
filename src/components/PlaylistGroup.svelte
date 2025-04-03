@@ -112,8 +112,8 @@
 	<Accordion collapsible value={accordionValue} onValueChange={(e) => (accordionValue = e.value)}>
 		<Accordion.Item value="disabled-groups" base="card shadow-md mb-1">
 			{#snippet control()}
-				<div class="flex flex-row items-center w-full">
-					<h4>DISABLED GROUPS</h4>
+				<div class="flex flex-row items-center w-full cursor-pointer">
+					<h4 class="w-full">DISABLED GROUPS</h4>
 				</div>
 			{/snippet}
 			{#snippet panel()}
@@ -147,7 +147,7 @@
 					{#if group.enabled}
 						<Accordion.Item value={group.id.toString()} base="card shadow-md mb-1">
 							{#snippet control()}
-								<div class="flex flex-row items-center w-full">
+								<div class="flex flex-row items-center w-full cursor-pointer">
 									<h4 class="flex-grow">{group.name}</h4>
 									<div class="flex flex-row gap-2">
 										<span role="button" tabindex="0" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Enter' && e.stopPropagation()}>

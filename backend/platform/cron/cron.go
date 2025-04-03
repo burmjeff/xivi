@@ -21,9 +21,9 @@ func RunCronJobs() {
 	}
 
 	s := gocron.NewScheduler(localTime)
-	playlistJob, err := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(UpdatePlaylists)
-	epgJob, err := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(UpdateEpgs)
-	vacuumJob, err := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(VacuumDB)
+	playlistJob, _ := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(UpdatePlaylists)
+	epgJob, _ := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(UpdateEpgs)
+	vacuumJob, _ := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(VacuumDB)
 
 	log.Log().Msgf("Playlist update scheduled at: %s", playlistJob.ScheduledAtTime())
 	log.Log().Msgf("EPG update scheduled at: %s", epgJob.ScheduledAtTime())
@@ -132,6 +132,7 @@ func UpdateEpgs() {
 		utils.ParseEpg(&epg)
 		log.Log().Msgf("Finished Updating EPG: %s", epg.Name)
 	}
+	CleanupOldEpgProgrammes()
 }
 
 func cleanPlaylist(playlist models.Playlist, startTime time.Time) {
@@ -156,9 +157,19 @@ func cleanPlaylist(playlist models.Playlist, startTime time.Time) {
 func VacuumDB() {
 	// Call INCREMENTAL VACUUM
 	ctx := context.Background()
-	err := database.Db.VacuumDB(ctx)
+	err := database.Db.CleanupQueries.VacuumDB(ctx)
 	if err != nil {
 		log.Debug().Msgf("Database vacuum: %v", err)
 	}
 	log.Debug().Msgf("Database vacuum completed")
+}
+
+func CleanupOldEpgProgrammes() {
+	// Clean up old EPG programmes
+	ctx := context.Background()
+	err := database.Db.CleanupQueries.CleanOldEpgProgrammes(ctx)
+	if err != nil {
+		log.Error().Msgf("Failed to clean up old EPG programmes: %v", err)
+	}
+	log.Debug().Msg("EPG programme cleanup completed")
 }

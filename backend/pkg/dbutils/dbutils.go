@@ -21,7 +21,24 @@ func NewNullString(s string) sql.NullString {
 }
 
 func CustomMapper(column string) string {
-	return strings.Replace(column, "[]", "_array_", 1)
+	// Handle array notation
+	column = strings.Replace(column, "[]", "_array_", 1)
+
+	// Handle dot notation in column names
+	if strings.Contains(column, ".") {
+		parts := strings.Split(column, ".")
+		if len(parts) == 2 {
+			// For nested structs like title.value, map to the struct field
+			// This is critical for mapping database columns to nested struct fields
+			// Log the mapping for debugging
+			log.Debug().Msgf("CustomMapper: mapping column %s to struct field %s", column, parts[0])
+
+			// Return the parent field name to map to the nested struct
+			return parts[0]
+		}
+	}
+
+	return column
 }
 
 func ConvertTime(timeStr string) (time.Time, error) {

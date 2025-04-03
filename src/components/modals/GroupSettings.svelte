@@ -26,8 +26,8 @@
 
 	const { parent, isNew, name, dynamic, dynamicgroup } = $props();
 
-	// Initialize selectedOption with dynamicgroup if it exists
-	let selectedOption = $state(dynamicgroup > 0 ? [dynamicgroup.toString()] : []);
+	// Initialize with empty string array for the Combobox, similar to ChannelSettings.svelte
+	let selectedOption = $state([""]);
 
 	// Log initial values in onMount to avoid state reference issues
 
@@ -50,6 +50,20 @@
 		dynamic,
 		dynamicgroup
 	});
+
+	if (!isNew) {
+		formData = {
+			name: name,
+			dynamic: dynamic,
+			dynamicgroup: dynamicgroup,
+		};
+	} else {
+		formData = {
+			name: "",
+			dynamic: false,
+			dynamicgroup: 0,
+		};
+	}
 
 	const updatePlaylists = async () => {
 		try {
@@ -108,7 +122,6 @@
 
 	onMount(async () => {
 		console.log('GroupSettings onMount called with dynamic:', dynamic, 'dynamicgroup:', dynamicgroup);
-		console.log('Initial selectedOption:', selectedOption);
 		if ($playlists.length == 0) {
 			playlists.set(await updatePlaylists());
 		}
@@ -157,7 +170,6 @@
 						return {
 							label: `${$playlists[i].name} - ${group.name}`,// (ID: ${group.id})`,
 							value: group.id,
-
 						};
 					});
 
@@ -168,52 +180,43 @@
 			}
 		}
 
-		// Remove any duplicate options (just in case)
-		const uniqueOptions: DynamicOptions[] = [];
-		const seenValues = new Set<string | number>();
+		// Set the initial selected option for the dynamicgroup combobox
+		console.log('Setting initial dynamicgroup value:', formData.dynamicgroup);
+		console.log('Dynamic options available:', dynamicOptions);
 
-		dynamicOptions.forEach(option => {
-			if (!seenValues.has(option.value)) {
-				seenValues.add(option.value);
-				uniqueOptions.push(option);
-			} else {
-				console.log(`Skipping duplicate option with value: ${option.value}, label: ${option.label}`);
+		// The issue is that dynamicOptions is empty at this point, even though we've added items to it
+		// Let's use setTimeout to ensure all reactivity updates have been processed
+		setTimeout(() => {
+			console.log('In setTimeout - Dynamic options available:', dynamicOptions);
+
+			// Make sure we have all options loaded before setting the selected value
+			if (formData.dynamic && formData.dynamicgroup !== 0) {
+				// Convert the numeric ID to string for comparison
+				const dynamicGroupId = formData.dynamicgroup.toString();
+				console.log('In setTimeout - Setting selectedOption to new array with:', dynamicGroupId);
+
+				// Create a completely new array to ensure reactivity
+				selectedOption = [dynamicGroupId];
+				console.log('In setTimeout - Selected option after assignment:', selectedOption);
 			}
-		});
+		}, 100); // Small delay to ensure dynamicOptions is populated
 
-		dynamicOptions = uniqueOptions;
 		console.log(`Final dynamicOptions count: ${dynamicOptions.length}`);
 
-		// Ensure selectedOption is set if dynamicgroup is set
-		if (dynamic && dynamicgroup > 0) {
-			// Find the matching option to verify it exists
-			const matchingOption = dynamicOptions.find(option => option.value.toString() === dynamicgroup.toString());
-			if (matchingOption) {
-				console.log('Found matching option:', matchingOption);
-				// Set the selectedOption to the dynamicgroup value
-				selectedOption = [dynamicgroup.toString()];
-				console.log('Setting selectedOption to:', selectedOption);
-			} else {
-				console.warn('No matching option found for dynamicgroup:', dynamicgroup);
-				console.log('Available options:', dynamicOptions);
-
-				// If no matching option is found, but we have options, select the first one
-				if (dynamicOptions.length > 0) {
-					selectedOption = [dynamicOptions[0].value.toString()];
-					console.log('Setting selectedOption to first available option:', selectedOption);
-				}
-			}
-		}
 	});
 
 	async function onFormSubmit(): Promise<void> {
 		console.log('Form submitted with data:', formData);
+		console.log('Selected option at form submit:', selectedOption);
+
 		if (formData.dynamic) {
-			if (selectedOption.length == 0) {
+			if (selectedOption.length == 0 || selectedOption[0] === "") {
+				console.log('No option selected, disabling dynamic group');
 				formData.dynamic = false;
 				formData.dynamicgroup = 0;
 			} else {
 				formData.dynamicgroup = Number(selectedOption[0]);
+				console.log('Setting dynamicgroup to:', formData.dynamicgroup);
 			}
 		} else {
 			formData.dynamicgroup = 0;
@@ -267,34 +270,26 @@
 				{#if formData.dynamic}
 					<span>Select Playlist Group</span>
 					{#if dynamicOptions.length > 0}
-						<!-- Log the current state of the combobox data -->
-						{#if selectedOption.length > 0}
-							{@const selectedLabel = dynamicOptions.find(opt => opt.value.toString() === selectedOption[0])?.label || 'Unknown'}
-							{console.log('Selected option label:', selectedLabel)}
-						{/if}
+						<!-- Add defaultValue to ensure initial selection is shown -->
 						<Combobox
-						data={dynamicOptions}
-						value={selectedOption}
-						onValueChange={(e) => {
-							console.log('Combobox value changed:', e.value);
-							selectedOption = e.value;
-						}}
-						label=""
-						placeholder="Select or type..."
-						defaultValue={selectedOption}
-						defaultHighlightedValue={selectedOption.length > 0 ? selectedOption[0] : undefined}
-						positioning={{
-							placement: 'bottom-start',
-							flip: false,
-							overflowPadding: 8,
-							fitViewport: true
-						}}
-						contentBase="max-h-48 overflow-y-auto"
+							data={dynamicOptions}
+							value={selectedOption}
+							defaultValue={selectedOption}
+							onValueChange={(e) => (selectedOption = e.value)}
+							label=""
+							placeholder="Select or type..."
+							positioning={{
+								placement: 'bottom-start',
+								flip: false,
+								overflowPadding: 8,
+								fitViewport: true
+							}}
+							contentBase="max-h-48 overflow-y-auto"
 						>
 						<!-- This is optional. Combobox will render label by default -->
-						{#snippet item(item)}
+						{#snippet item(item: {label: string; value: string})}
 							<div class="flex w-full justify-between space-x-2">
-							<span>{item.label}</span>
+								<span>{item.label}</span>
 							</div>
 						{/snippet}
 					</Combobox>
