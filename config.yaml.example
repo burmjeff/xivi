@@ -21,3 +21,9 @@ streaming:
   buffer: 1
   retryEOS: 10
   useragent: Xivi 1.0
+
+vector:
+  batch_size: 100
+  parallel_batches: 20
+  timeout: 90
+  cache_size: 500

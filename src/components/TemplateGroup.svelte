@@ -171,7 +171,7 @@
 					<div id="animate" class="card shadow-md mb-1" animate:flip={{ duration: flipDurationMs }}>
 						<Accordion.Item  value={group.name}>
 							{#snippet control()}
-									<div class="flex flex-row items-center w-full">
+									<div class="flex flex-row items-center w-full cursor-pointer">
 										<h4 class="text-lg flex-grow">{group.name}</h4>
 										<div class="flex flex-row gap-2">
 											<button

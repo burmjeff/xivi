@@ -344,7 +344,7 @@ func (q *PlaylistQueries) GetPlChannelsByName(name string) (*[]models.PlaylistCh
 func (q *PlaylistQueries) GetPlChannelsByTvgID(tvgid string) ([]models.PlaylistChannel, error) {
 	channels := []models.PlaylistChannel{}
 
-	query := `SELECT * FROM playlistchannel WHERE tvgid = ?`
+	query := `SELECT * FROM playlistchannel WHERE tvg_id = ?`
 
 	err := q.Select(&channels, query, tvgid)
 	if err != nil {

@@ -305,18 +305,23 @@ func GetHlsChannels(c *fiber.Ctx) error {
 			channel.Stream = fmt.Sprintf("http://%s:%d/stream/hls/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, tmplChannel.Uuid)
 
 			if tmplChannel.TvgID != nil {
+				// Get the current programme
 				if epgProgramme, err := database.Db.GetProgrammeByTime(ctx, *tmplChannel.TvgID, time.Now()); err != nil {
-					log.Warn().Msgf("LiveChannel: No EPG Programme found")
+					log.Warn().Msgf("LiveChannel: No EPG Programme found for tvgID: %s", *tmplChannel.TvgID)
+					channel.Programme = "No programme information"
 				} else {
+					// Use the found programme
 					channel.Programme = epgProgramme.Title.Value
 					channel.Start = epgProgramme.Start.String()
 					channel.End = epgProgramme.Stop.String()
 
-					epgProgrammeNext, err := database.Db.GetProgrammeByTime(ctx, *tmplChannel.TvgID, epgProgramme.Start.Time)
-					if err != nil {
-						log.Warn().Msgf("LiveChannel: No EPG Next Programme found")
+					// Get the next programme after the current one ends
+					if epgProgrammeNext, err := database.Db.GetProgrammeByTime(ctx, *tmplChannel.TvgID, epgProgramme.Stop.Time); err != nil {
+						log.Warn().Msgf("LiveChannel: No EPG Next Programme found for tvgID: %s", *tmplChannel.TvgID)
+						channel.Next = "No programme information"
+					} else {
+						channel.Next = epgProgrammeNext.Title.Value
 					}
-					channel.Next = epgProgrammeNext.Title.Value
 				}
 			}
 			channels = append(channels, channel)

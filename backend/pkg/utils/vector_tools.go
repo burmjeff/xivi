@@ -11,6 +11,7 @@ import (
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
+	"xivi/backend/platform/settings"
 
 	"github.com/anush008/fastembed-go"
 	"github.com/rs/zerolog/log"
@@ -27,7 +28,6 @@ var (
 	embeddingCache        = make(map[string][]float64)
 	embeddingCacheMux     sync.RWMutex
 	vectorizationQueue    = make(chan vectorizationRequest, 500) // Reduced from 500 to 100
-	batchSize             = 20                                   // Reduced from 50 to 20
 	cachePath             = "./vector_cache"                     // Path for persistent cache
 	cacheInitialized      = false
 	cacheInitMux          sync.Mutex
@@ -120,6 +120,12 @@ type vectorizationResult struct {
 // Batch processor goroutine
 func batchProcessor() {
 	for {
+		// Get batch size from settings
+		batchSize := settings.APP_SETTINGS.Vector.BatchSize
+		if batchSize <= 0 {
+			batchSize = 25 // Default if not set
+		}
+
 		// Collect batch of requests
 		batch := make([]vectorizationRequest, 0, batchSize)
 		request := <-vectorizationQueue
@@ -436,7 +442,7 @@ func VectorizeString(text string) ([]float64, error) {
 	return result.vector, result.err
 }
 
-// Batch implementation for vectorizing multiple strings at once
+// Batch implementation for vectorizing multiple strings at once with parallel processing
 func VectorizeStringBatch(texts []string) ([][]float64, error) {
 	if len(texts) == 0 {
 		return [][]float64{}, nil
@@ -445,6 +451,17 @@ func VectorizeStringBatch(texts []string) ([][]float64, error) {
 	model, err := getEmbeddingModel()
 	if err != nil {
 		return nil, err
+	}
+
+	// Get batch configuration from settings
+	batchSize := settings.APP_SETTINGS.Vector.BatchSize
+	if batchSize <= 0 {
+		batchSize = 25 // Default if not set
+	}
+
+	parallelBatches := settings.APP_SETTINGS.Vector.ParallelBatches
+	if parallelBatches <= 0 {
+		parallelBatches = 4 // Default if not set
 	}
 
 	// Add passage prefix for better embedding quality if not already prefixed
@@ -457,27 +474,74 @@ func VectorizeStringBatch(texts []string) ([][]float64, error) {
 		}
 	}
 
-	// Use Embed for batch processing
-	embeddings32, err := model.Embed(prefixedTexts, batchSize)
-	if err != nil {
-		log.Error().Msgf("Failed to process batch embedding: %v", err)
-		// Fall back to processing individually
-		log.Warn().Msg("Falling back to individual vector processing")
-		results := make([][]float64, len(texts))
-		for i, text := range texts {
-			if vector, err := VectorizeStringSingle(text); err == nil {
-				results[i] = vector
-			} else {
-				log.Error().Msgf("Failed to vectorize text '%s': %v", text, err)
-				results[i] = make([]float64, 0) // Empty vector for failed item
-			}
+	// Prepare for parallel processing
+	totalTexts := len(prefixedTexts)
+	results := make([][]float32, totalTexts)
+	errChan := make(chan error, parallelBatches)
+	var wg sync.WaitGroup
+
+	// Create a semaphore to limit concurrent batches
+	semaphore := make(chan struct{}, parallelBatches)
+
+	// Process in batches
+	for startIdx := 0; startIdx < totalTexts; startIdx += batchSize {
+		endIdx := startIdx + batchSize
+		if endIdx > totalTexts {
+			endIdx = totalTexts
 		}
-		return results, nil
+
+		// Acquire semaphore slot
+		semaphore <- struct{}{}
+
+		wg.Add(1)
+		go func(start, end int) {
+			defer wg.Done()
+			defer func() { <-semaphore }() // Release semaphore slot when done
+
+			batch := prefixedTexts[start:end]
+			log.Debug().Msgf("Processing batch %d to %d (size: %d)", start, end, len(batch))
+
+			// Process this batch
+			batchEmbeddings, batchErr := model.Embed(batch, batchSize)
+			if batchErr != nil {
+				log.Error().Msgf("Failed to process batch %d-%d: %v", start, end, batchErr)
+				errChan <- batchErr
+				return
+			}
+
+			// Store results in the correct positions
+			for i, embedding := range batchEmbeddings {
+				results[start+i] = embedding
+			}
+		}(startIdx, endIdx)
+	}
+
+	// Wait for all goroutines to complete
+	wg.Wait()
+	close(errChan)
+
+	// Check if any errors occurred
+	for err := range errChan {
+		if err != nil {
+			log.Error().Msgf("Batch processing error: %v", err)
+			// Fall back to processing individually
+			log.Warn().Msg("Falling back to individual vector processing")
+			results := make([][]float64, len(texts))
+			for i, text := range texts {
+				if vector, err := VectorizeStringSingle(text); err == nil {
+					results[i] = vector
+				} else {
+					log.Error().Msgf("Failed to vectorize text '%s': %v", text, err)
+					results[i] = make([]float64, 0) // Empty vector for failed item
+				}
+			}
+			return results, nil
+		}
 	}
 
 	// Convert float32 to float64
-	embeddings := make([][]float64, len(embeddings32))
-	for i, embedding32 := range embeddings32 {
+	embeddings := make([][]float64, len(results))
+	for i, embedding32 := range results {
 		embeddings[i] = make([]float64, len(embedding32))
 		for j, v := range embedding32 {
 			embeddings[i][j] = float64(v)

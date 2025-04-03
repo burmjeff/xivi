@@ -237,7 +237,7 @@
 					<div class="card shadow-md mb-1">
 						<Accordion.Item value={playlist.name}>
 							{#snippet control()}
-									<div class="flex flex-row items-center w-full">
+									<div class="flex flex-row items-center w-full cursor-pointer">
 										<h4 class="text-lg flex-grow">{playlist.name}</h4>
 										<div class="flex flex-row items-center gap-2">
 											<span class="text-green-600 text-xs p-1">Updated at: {(getDate(playlist.updated_at))}</span>
