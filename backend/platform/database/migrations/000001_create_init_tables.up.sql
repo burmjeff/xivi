@@ -209,6 +209,14 @@ CREATE INDEX idx_regex_filters ON regexfilters (id);
 CREATE INDEX idx_group_filters ON groupfilters (group_id);
 CREATE INDEX idx_template_group_item_orderr ON template_group_item (orderr);
 CREATE INDEX idx_template_group_channel_orderr ON template_group_channel (orderr);
+CREATE INDEX idx_epgchannel_channelid ON epgchannel (channelid);
+CREATE INDEX idx_epgprogramme_channel_time ON epgprogramme (channel, start, stop);
+CREATE INDEX idx_epgprogramme_start_stop ON epgprogramme (start, stop);
+CREATE UNIQUE INDEX idx_epgchannel_channelid_unique ON epgchannel(channelid);
+CREATE UNIQUE INDEX idx_epgprogramme_channel_time_unique ON epgprogramme(channel, start, stop);
+CREATE INDEX idx_channelvectors_id_name ON channelvectors(id, name);
+CREATE INDEX idx_channelvectors_name ON channelvectors(name);
+CREATE INDEX idx_playlistchannelvectors_channel_vector ON playlistchannelvectors(channel_id, vector_id);
 
 -- Add triggers
 CREATE TRIGGER template_group_item_order

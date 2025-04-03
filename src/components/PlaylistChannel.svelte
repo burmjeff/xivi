@@ -13,10 +13,19 @@
 	import { fade } from 'svelte/transition';
 	import { cubicIn } from 'svelte/easing';
 
-	export let playlistId: number;
-	export let playlistIdx: number;
-	export let groupId: string;
-	export let groupIdx: number;
+	interface Props {
+		playlistId: number;
+		playlistIdx: number;
+		groupId: string;
+		groupIdx: number;
+	}
+
+	let {
+		playlistId,
+		playlistIdx,
+		groupId,
+		groupIdx
+	}: Props = $props();
 	let dndTypeChannels = 'channels';
 	let dndItem: PlaylistChannel;
 	let dndIdx: number;
@@ -91,8 +100,8 @@
 				type: dndTypeChannels,
 				dropFromOthersDisabled
 			}}
-			on:consider={handleDndConsider}
-			on:finalize={handleDndFinalize}
+			onconsider={handleDndConsider}
+			onfinalize={handleDndFinalize}
 		>
 			{#each $playlists[playlistIdx].groups[groupIdx].channels as channel, channelIdx (channel.id)}
 				<tr id="animate" animate:flip={{ duration: flipDurationMs }}>
@@ -101,9 +110,9 @@
 					<td>{channel.tvg_id}</td>
 
 					{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-						<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
+						<td in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
 							{channel.title}
-						</div>
+						</td>
 					{/if}
 				</tr>
 			{/each}

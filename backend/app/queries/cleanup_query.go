@@ -10,7 +10,7 @@ import (
 // SQL query constants
 const (
 	vacuumDBQuery            = `PRAGMA incremental_vacuum;`
-	cleanPlaylistGroupsQuery = `DELETE FROM playlistgroup 
+	cleanPlaylistGroupsQuery = `DELETE FROM playlistgroup
 		WHERE ? NOT IN (SELECT playlist_id FROM playlistgroup)`
 	cleanPlaylistChannelsQuery = `DELETE FROM playlistchannel
 		WHERE ROWID IN (
@@ -19,6 +19,8 @@ const (
 			WHERE ? NOT IN (SELECT playlist_id FROM playlistgroup)
 			OR playlistgroup.enabled = false
 		)`
+	cleanOldEpgProgrammesQuery = `DELETE FROM epgprogramme
+		WHERE stop < datetime('now', 'localtime', '-1 day')`
 )
 
 type CleanupQueries struct {
@@ -74,6 +76,31 @@ func (q *CleanupQueries) CleanPlaylistChannels(ctx context.Context, id int64) er
 			log.Error().Err(err).Int64("playlist_id", id).Msg("Failed to clean playlist channels")
 		}
 		return err
+	})
+}
+
+// CleanOldEpgProgrammes deletes EPG programmes that are older than 1 day past their end time
+func (q *CleanupQueries) CleanOldEpgProgrammes(ctx context.Context) error {
+	return q.WithContext(ctx, func(ctx context.Context) error {
+		stmt, err := q.GetPreparedStmt(cleanOldEpgProgrammesQuery)
+		if err != nil {
+			return err
+		}
+
+		res, err := stmt.ExecContext(ctx)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to clean old EPG programmes")
+			return err
+		}
+
+		rowsAffected, err := res.RowsAffected()
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to get rows affected count for EPG cleanup")
+		} else {
+			log.Info().Int64("rows_deleted", rowsAffected).Msg("Cleaned up old EPG programmes")
+		}
+
+		return nil
 	})
 }
 
