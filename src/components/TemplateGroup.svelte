@@ -1,6 +1,6 @@
 <!-- TemplateGroup.svelte -->
 <script lang="ts">
-	import TemplateChannel from './TemplateChannel.svelte'
+	import TemplateChannel from './TemplateChannel.svelte';
 	import { onMount } from 'svelte';
 	import {
 		Accordion,
@@ -28,6 +28,7 @@
 	const flipDurationMs = 150;
 	let dndItem: TemplateGroup;
 	let dndIdx: number;
+	let accordionItem = $state<string[]>([]);
 
 	const updateTemplateGroups = async () => {
 		const response = await fetch(`/api/template/${templateId}/groups`);
@@ -137,13 +138,66 @@
 	}
 </script>
 
+<div id="accord" class="templategroups-viewport min-w-full overflow-auto">
+	{#if $templates[templateIdx].groups != null}
+		<Accordion value={accordionItem} onValueChange={(e) => (accordionItem = e.value)} collapsible>
+			<section
+				use:dndzone={{
+					items: $templates[templateIdx].groups,
+					flipDurationMs,
+					type: dndTypeGroups,
+					transformDraggedElement
+				}}
+				onconsider={handleDndConsider}
+				onfinalize={handleDndFinalize}
+			>
+				{#if $templates[templateIdx].groups.length > 0}
+					{#each $templates[templateIdx].groups as group, groupIdx (group.id)}
+						<div id="animate" class="card shadow-md mb-1" animate:flip={{ duration: flipDurationMs }}>
+							<Accordion.Item  value={group.name}>
+								{#snippet control()}
+										<div class="flex flex-row items-center w-full cursor-pointer">
+											<h4 class="text-lg flex-grow">{group.name}</h4>
+											<div class="flex flex-row gap-2">
+												<button
+													class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+													onclick={(e) => {
+														e.stopPropagation();
+														deletePrompt(group.id);
+													}}
+												>
+													<Icon icon="icon-park-outline:delete" width="18" height="18" />
+												</button>
+											</div>
+										</div>
+								{/snippet}
+								{#snippet panel()}
+									<TemplateChannel groupId={group.id} {groupIdx} />
+								{/snippet}
+							</Accordion.Item>
+							{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+								<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
+									{group.name}
+								</div>
+							{/if}
+						</div>
+					{/each}
+				{:else}
+					<p>No groups found</p>
+				{/if}
+			</section>
+		</Accordion>
+	{/if}
+</div>
+
 <Modal
 	open={deleteModalOpen}
 	onOpenChange={(e) => (deleteModalOpen = e.open)}
-	contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
-	positionerBase="fixed inset-0 flex justify-center items-center"
-    backdropClasses="backdrop-blur-sm fixed inset-0"
+	triggerBase="btn preset-tonal"
+	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	backdropClasses="backdrop-blur-sm"
 >
+	{#snippet trigger()}{/snippet}
 	{#snippet content()}
 		<header class="text-2xl font-bold">Please Confirm</header>
 		<article>Are you sure you wish to remove this group from template?</article>
@@ -153,56 +207,6 @@
 		</footer>
 	{/snippet}
 </Modal>
-
-{#if $templates[templateIdx].groups != null}
-	<Accordion collapsible>
-		<section
-			use:dndzone={{
-				items: $templates[templateIdx].groups,
-				flipDurationMs,
-				type: dndTypeGroups,
-				transformDraggedElement
-			}}
-			onconsider={handleDndConsider}
-			onfinalize={handleDndFinalize}
-		>
-			{#if $templates[templateIdx].groups.length > 0}
-				{#each $templates[templateIdx].groups as group, groupIdx (group.id)}
-					<div id="animate" class="card shadow-md mb-1" animate:flip={{ duration: flipDurationMs }}>
-						<Accordion.Item  value={group.name}>
-							{#snippet control()}
-									<div class="flex flex-row items-center w-full cursor-pointer">
-										<h4 class="text-lg flex-grow">{group.name}</h4>
-										<div class="flex flex-row gap-2">
-											<button
-												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
-												onclick={(e) => {
-													e.stopPropagation();
-													deletePrompt(group.id);
-												}}
-											>
-												<Icon icon="icon-park-outline:delete" width="18" height="18" />
-											</button>
-										</div>
-									</div>
-							{/snippet}
-							{#snippet panel()}
-								<TemplateChannel groupId={group.id} {groupIdx} />
-							{/snippet}
-						</Accordion.Item>
-						{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-							<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
-								{group.name}
-							</div>
-						{/if}
-					</div>
-				{/each}
-			{:else}
-				<p>No groups found</p>
-			{/if}
-		</section>
-	</Accordion>
-{/if}
 
 <style>
 	.custom-shadow-item {

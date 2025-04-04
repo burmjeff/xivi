@@ -45,6 +45,7 @@
 	// Floating UI state
 	let addPlTooltipOpen = $state(false);
 	let elemArrow: HTMLElement | null = $state(null);
+	let accordionItem = $state<string[]>([]);
 
 	// Floating UI setup for add playlist tooltip
 	const addPlTooltipFloating = useFloating({
@@ -94,7 +95,7 @@
 	async function addPlaylist(formData: any, isNew: boolean, id: number) {
 		let method: string;
 		if (formData.name && formData.url) {
-			let newGroup = {
+			let newPlaylist = {
 				id: id,
 				name: formData.name,
 				url: formData.url
@@ -112,7 +113,7 @@
 					headers: {
 						'Content-Type': 'application/json'
 					},
-					body: JSON.stringify(newGroup)
+					body: JSON.stringify(newPlaylist)
 				});
 				if (response.ok) {
 					if (isNew) {
@@ -121,7 +122,7 @@
 						$playlists.push(data.playlist);
 						$playlists = [...$playlists];
 					} else {
-						console.log('Updated playlist: ', newGroup.name);
+						console.log('Updated playlist: ', newPlaylist.name);
 						$playlists = $playlists.map((playlist) => {
 							if (playlist.id === id) {
 								return {
@@ -171,41 +172,6 @@
 	}
 </script>
 
-<Modal
-	open={playlistModalOpen}
-	onOpenChange={(e) => (playlistModalOpen = e.open)}
-	contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
-	positionerBase="fixed inset-0 flex justify-center items-center"
-	backdropClasses="backdrop-blur-sm fixed inset-0"
->
-	{#snippet content()}
-		<PlaylistSettings
-			parent={{ onClose: handlePlaylistClose }}
-			isNew={isNewPlaylist}
-			id={currentPlaylistId}
-			name={currentPlaylistName}
-			url={currentPlaylistUrl}
-		/>
-	{/snippet}
-</Modal>
-
-<Modal
-	open={deleteModalOpen}
-	onOpenChange={(e) => (deleteModalOpen = e.open)}
-	contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
-	positionerBase="fixed inset-0 flex justify-center items-center"
-	backdropClasses="backdrop-blur-sm fixed inset-0"
->
-	{#snippet content()}
-		<header class="text-2xl font-bold">Please Confirm</header>
-		<article>Are you sure you wish to delete this playlist?</article>
-		<footer class="flex justify-end gap-4">
-			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
-			<button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
-		</footer>
-	{/snippet}
-</Modal>
-
 <section class="playlists card card-hover p-1">
 	<header class="playlists-header flex items-center justify-center">
 		<h3 class="h3 font-bold">Playlists</h3>
@@ -230,7 +196,7 @@
 			{/if}
 		</button>
 	</header>
-	<Accordion collapsible>
+	<Accordion value={accordionItem} onValueChange={(e) => (accordionItem = e.value)} collapsible>
 		<div id="accord" class="playlists-viewport min-w-full overflow-auto">
 			{#if $playlists != null && $playlists.length > 0}
 				{#each $playlists as playlist, index (playlist.id)}
@@ -273,7 +239,42 @@
 	</Accordion>
 </section>
 
+<Modal
+	open={playlistModalOpen}
+	onOpenChange={(e) => (playlistModalOpen = e.open)}
+	triggerBase="btn preset-tonal"
+	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet trigger()}{/snippet}
+	{#snippet content()}
+		<PlaylistSettings
+			parent={{ onClose: handlePlaylistClose }}
+			isNew={isNewPlaylist}
+			id={currentPlaylistId}
+			name={currentPlaylistName}
+			url={currentPlaylistUrl}
+		/>
+	{/snippet}
+</Modal>
 
+<Modal
+	open={deleteModalOpen}
+	onOpenChange={(e) => (deleteModalOpen = e.open)}
+	triggerBase="btn preset-tonal"
+	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet trigger()}{/snippet}
+	{#snippet content()}
+		<header class="text-2xl font-bold">Please Confirm</header>
+		<article>Are you sure you wish to delete this playlist?</article>
+		<footer class="flex justify-end gap-4">
+			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
+			<button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
+		</footer>
+	{/snippet}
+</Modal>
 
 <style>
 	#accord {

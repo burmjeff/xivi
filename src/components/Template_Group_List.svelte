@@ -37,6 +37,7 @@
 
 	let tooltipAdd = $state(false);
 	let elemArrow: HTMLElement | null = $state(null);
+	let accordionItem = $state<string[]>([]);
 
 	const updateTemplateGroups = async () => {
 		const response = await fetch('/api/template/groups/all');
@@ -312,88 +313,6 @@
 	}
 </script>
 
-<Modal
-    open={modalGroupOpen}
-    onOpenChange={(e) => (modalGroupOpen = e.open)}
-	contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
-	positionerBase="fixed inset-0 flex justify-center items-center"
-    backdropClasses="backdrop-blur-sm fixed inset-0"
-    zIndex="z-50"
->
-	{#snippet content()}
-		<GroupSettings
-			parent={{ onClose: handleGroupSettingsClose }}
-			isNew={currentGroupData.isNew}
-			name={currentGroupData.group?.name ?? ''}
-			dynamic={currentGroupData.group?.dynamic ?? false}
-			dynamicgroup={currentGroupData.group?.dynamicgroup ?? 0}
-		/>
-    {/snippet}
-</Modal>
-
-<Modal
-    open={modalDeleteOpen}
-    onOpenChange={(e) => (modalDeleteOpen = e.open)}
-    contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
-	positionerBase="fixed inset-0 flex justify-center items-center"
-    backdropClasses="backdrop-blur-sm fixed inset-0"
->
-    {#snippet content()}
-		<header class="text-2xl font-bold">Please Confirm</header>
-		<article>Are you sure you wish to delete this group?</article>
-		<footer class="flex justify-end space-x-2">
-			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
-			<button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
-		</footer>
-    {/snippet}
-</Modal>
-
-<Modal
-    open={modalChannelOpen}
-    onOpenChange={(e) => (modalChannelOpen = e.open)}
-    contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
-	positionerBase="fixed inset-0 flex justify-center items-center"
-    backdropClasses="backdrop-blur-sm fixed inset-0"
->
-    {#snippet content()}
-		<ChannelSettings
-			isNew={true}
-			channelIdx={null}
-			groupIdx={groupToAddChannel.idx}
-			parent={{ onClose: handleChannelClose }}
-		/>
-    {/snippet}
-</Modal>
-
-<Modal
-    open={modalConvertOpen}
-    onOpenChange={(e) => (modalConvertOpen = e.open)}
-    contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
-	positionerBase="fixed inset-0 flex justify-center items-center"
-    backdropClasses="backdrop-blur-sm fixed inset-0"
->
-    {#snippet content()}
-		<header class="text-2xl font-bold">Convert Playlist Group to Template Group</header>
-		<article>
-			<label class="label">
-				<span>Template Group Name:</span>
-				<input
-					class="input"
-					type="text"
-					bind:value={convertGroupNameInput}
-					minlength="1"
-					maxlength="20"
-					required
-				/>
-			</label>
-		</article>
-		<footer class="flex justify-end gap-4">
-			<button class="btn preset-outlined-surface-500" onclick={() => handleConvertClose(false)}>Cancel</button>
-			<button class="btn preset-filled-primary-500" onclick={() => handleConvertClose(true)}>Submit</button>
-		</footer>
-    {/snippet}
-</Modal>
-
 <section class="tmplgroups card card-hover p-1">
 	<header class="tmplgroups-header flex items-center justify-center">
 		<h3 class="h3 font-bold">Template Groups</h3>
@@ -422,7 +341,7 @@
 		</button>
 	</header>
 	{#if $templateGroups != null}
-		<Accordion collapsible>
+		<Accordion value={accordionItem} onValueChange={(e) => (accordionItem = e.value)} collapsible>
 			<section
 				id="accord"
 				class="templategroups-viewport min-w-full overflow-auto"
@@ -492,6 +411,91 @@
 		</Accordion>
 	{/if}
 </section>
+
+<Modal
+    open={modalGroupOpen}
+    onOpenChange={(e) => (modalGroupOpen = e.open)}
+	triggerBase="btn preset-tonal"
+	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet trigger()}{/snippet}
+	{#snippet content()}
+		<GroupSettings
+			parent={{ onClose: handleGroupSettingsClose }}
+			isNew={currentGroupData.isNew}
+			name={currentGroupData.group?.name ?? ''}
+			dynamic={currentGroupData.group?.dynamic ?? false}
+			dynamicgroup={currentGroupData.group?.dynamicgroup ?? 0}
+		/>
+    {/snippet}
+</Modal>
+
+<Modal
+    open={modalDeleteOpen}
+    onOpenChange={(e) => (modalDeleteOpen = e.open)}
+    triggerBase="btn preset-tonal"
+	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet trigger()}{/snippet}
+    {#snippet content()}
+		<header class="text-2xl font-bold">Please Confirm</header>
+		<article>Are you sure you wish to delete this group?</article>
+		<footer class="flex justify-end space-x-2">
+			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
+			<button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
+		</footer>
+    {/snippet}
+</Modal>
+
+<Modal
+    open={modalChannelOpen}
+    onOpenChange={(e) => (modalChannelOpen = e.open)}
+    triggerBase="btn preset-tonal"
+	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet trigger()}{/snippet}
+    {#snippet content()}
+		<ChannelSettings
+			isNew={true}
+			channelIdx={null}
+			groupIdx={groupToAddChannel.idx}
+			parent={{ onClose: handleChannelClose }}
+		/>
+    {/snippet}
+</Modal>
+
+<Modal
+    open={modalConvertOpen}
+    onOpenChange={(e) => (modalConvertOpen = e.open)}
+    triggerBase="btn preset-tonal"
+	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet trigger()}{/snippet}
+    {#snippet content()}
+		<header class="text-2xl font-bold">Convert Playlist Group to Template Group</header>
+		<article>
+			<label class="label">
+				<span>Template Group Name:</span>
+				<input
+					class="input"
+					type="text"
+					bind:value={convertGroupNameInput}
+					minlength="1"
+					maxlength="20"
+					required
+				/>
+			</label>
+		</article>
+		<footer class="flex justify-end gap-4">
+			<button class="btn preset-outlined-surface-500" onclick={() => handleConvertClose(false)}>Cancel</button>
+			<button class="btn preset-filled-primary-500" onclick={() => handleConvertClose(true)}>Submit</button>
+		</footer>
+    {/snippet}
+</Modal>
 
 <style>
 	#accord {

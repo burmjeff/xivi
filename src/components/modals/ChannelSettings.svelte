@@ -363,7 +363,7 @@
 	}
 </script>
 
-<div class="modal-channel-settings">
+<div class="modal-channel-settings max-w-scree">
 		{#if isNew}
 			<header class="justify-center text-center text-2xl font-bold">Add Channel</header>
 		{:else}
@@ -371,7 +371,7 @@
 		{/if}
 		<form class="modal-form space-y-4 border border-surface-500 p-4 rounded-container">
 			<div class="playlist_ch_items grid grid-cols-5 space-x-6">
-				<div class="form col-span-2">
+				<div class="form col-span-2 px-2">
 					<label class="channel_name">
 						<span>Channel Name</span>
 						<input
@@ -417,10 +417,10 @@
 						</div>
 					</div>
 				</div>
-				<div class="max-h-72 col-span-3">
+				<div class="max-h-72 col-span-3 px-2">
 					<header class="justify-center text-center font-bold mb-2">Current Playlist Channels</header>
 					<div class="max-h-72 overflow-y-scroll">
-						<table class="table  justify-center text-center shadow-md">
+						<table class="table justify-center text-center shadow-md">
 							<thead>
 								<tr id="thead">
 									<th>Title</th>

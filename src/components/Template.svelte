@@ -1,6 +1,7 @@
 <!-- Template.svelte -->
 <script lang="ts">
 	import TemplateGroup from './TemplateGroup.svelte';
+	import TemplateSettings from './modals/TemplateSettings.svelte';
 	import { onMount } from 'svelte';
 	import {
 		Accordion,
@@ -15,7 +16,6 @@
 		useDismiss,
 		useFloating,
 		useHover,
-		useClick,
 		useInteractions,
 		useRole,
 	} from "@skeletonlabs/floating-ui-svelte";
@@ -23,11 +23,11 @@
 	import Icon from '@iconify/svelte';
 	import { fade } from 'svelte/transition';
 
-	let renameModalOpen = $state(false);
+	let TemplateModalOpen = $state(false);
 	let deleteModalOpen = $state(false);
 	let currentTemplateId = $state(0);
 	let currentTemplateName = $state('');
-	let renameInputValue = $state('');
+	let isNewTemplate = $state(false);
 
 	const updateTemplates = async () => {
 		const response = await fetch('/api/templates');
@@ -43,6 +43,7 @@
 	let templateSettingsOpen = $state(false);
 	let addTemplateTooltipOpen = $state(false);
 	let elemArrow: HTMLElement | null = $state(null);
+	let accordionItem = $state<string[]>([]);
 
 	// Floating UI setup for template settings
 	const templateSettingsFloating = useFloating({
@@ -74,76 +75,73 @@
 		},
 	});
 
-	// Interactions for template settings
-	const templateSettingsRole = useRole(templateSettingsFloating.context);
-	const templateSettingsClick = useClick(templateSettingsFloating.context);
-	const templateSettingsDismiss = useDismiss(templateSettingsFloating.context);
-	const templateSettingsInteractions = useInteractions([templateSettingsRole, templateSettingsClick, templateSettingsDismiss]);
-
 	// Interactions for add template tooltip
 	const addTemplateTooltipRole = useRole(addTemplateTooltipFloating.context, { role: "tooltip" });
 	const addTemplateTooltipHover = useHover(addTemplateTooltipFloating.context, { move: false });
 	const addTemplateTooltipDismiss = useDismiss(addTemplateTooltipFloating.context);
 	const addTemplateTooltipInteractions = useInteractions([addTemplateTooltipRole, addTemplateTooltipHover, addTemplateTooltipDismiss]);
 
-	async function addTemplate() {
-		const inputName = {
-			name: (document.querySelector('.template_name input') as HTMLInputElement).value
-		};
-		if (inputName !== null) {
-			try {
-				const response = await fetch('/api/template', {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json'
-					},
-					body: JSON.stringify(inputName)
-				});
-				const data = await response.json();
-				console.log('Created template', data);
-				$templates.push(data.template);
-				$templates = $templates;
-			} catch (error) {
-				console.log('Error creating template:', error);
-			}
+	function modalTemplate(isNew: boolean, id: number, name: string) {
+		isNewTemplate = isNew;
+		currentTemplateId = id;
+		currentTemplateName = name;
+		TemplateModalOpen = true;
+	}
+
+	function handleTemplateClose(formData: any = null) {
+		console.log('handleTemplateClose called with formData:', formData);
+		if (formData) {
+			addTemplate(formData, isNewTemplate, currentTemplateId);
 		}
+		TemplateModalOpen = false;
 	}
 
-	function renamePrompt(templateName: string, templateId: number): void {
-		currentTemplateId = templateId;
-		currentTemplateName = templateName;
-		renameInputValue = templateName;
-		renameModalOpen = true;
-	}
-
-	function handleRenameClose(confirm: boolean) {
-		if (confirm && renameInputValue) {
-			renameTemplate(renameInputValue, currentTemplateId);
-		}
-		renameModalOpen = false;
-	}
-
-	async function renameTemplate(templateName: string, templateId: number) {
-		if (templateName !== '') {
+	async function addTemplate(formData: any, isNew: boolean, id: number) {
+		if (formData.name) {
 			const newTemplate = {
-				id: templateId,
-				name: templateName
+				id: id,
+				name: formData.name
 			};
+
 			try {
-				const response = await fetch(`/api/template`, {
-					method: 'PUT',
+				let method: string;
+				if (isNew) {
+					method = 'POST';
+				} else {
+					method = 'PUT';
+				}
+
+				const response = await fetch('/api/template', {
+					method: method,
 					headers: {
 						'Content-Type': 'application/json'
 					},
 					body: JSON.stringify(newTemplate)
 				});
 				if (response.ok) {
-					templates.set(await updateTemplates());
+					if (isNew) {
+						const data = await response.json();
+						console.log('Createdtemplate:', data);
+						$templates.push(data.template);
+						$templates = [...$templates];
+					} else {
+						console.log('Updated template: ', newTemplate.name);
+						$templates = $templates.map((template) => {
+							if (template.id === id) {
+								return {
+									...template,
+									name: formData.name
+								};
+							}
+							return template;
+						});
+						$templates = [...$templates];
+					}
 				} else {
 					console.error('Error:', response.status, response.statusText);
 				}
 			} catch (error) {
-				console.log('Error updating template:', error);
+				console.log('Error creating playlist:', error);
 			}
 		}
 	}
@@ -175,59 +173,12 @@
 	}
 </script>
 
-<Modal
-	open={renameModalOpen}
-	onOpenChange={(e) => (renameModalOpen = e.open)}
-	contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
-	positionerBase="fixed inset-0 flex justify-center items-center"
-	backdropClasses="backdrop-blur-sm fixed inset-0"
->
-	{#snippet content()}
-		<header class="text-2xl font-bold">Rename Template</header>
-		<article>
-			<label class="label">
-				<span>Enter new template name</span>
-				<input
-					class="input"
-					type="text"
-					bind:value={renameInputValue}
-					minlength="1"
-					maxlength="20"
-					required
-				/>
-			</label>
-		</article>
-		<footer class="flex justify-end gap-4">
-			<button type="button" class="btn preset-outlined-surface-500" onclick={() => handleRenameClose(false)}>Cancel</button>
-			<button type="button" class="btn preset-filled-primary-500" onclick={() => handleRenameClose(true)}>Submit</button>
-		</footer>
-	{/snippet}
-</Modal>
-
-<Modal
-	open={deleteModalOpen}
-	onOpenChange={(e) => (deleteModalOpen = e.open)}
-	contentBase="card bg-surface-100-900 p-4 shadow-xl max-w-screen-sm"
-	positionerBase="fixed inset-0 flex justify-center items-center"
-	backdropClasses="backdrop-blur-sm fixed inset-0"
->
-	{#snippet content()}
-		<header class="text-2xl font-bold">Please Confirm</header>
-		<article>Are you sure you wish to delete this template?</article>
-		<footer class="flex justify-end space-x-2">
-			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
-			<button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
-		</footer>
-	{/snippet}
-</Modal>
-
 <section class="templates card card-hover p-1">
 	<header class="templates-header flex items-center justify-center">
 		<h3 class="h3 font-bold">Templates</h3>
 		<button
 			class="btn btn-md"
-			bind:this={templateSettingsFloating.elements.reference}
-			{...templateSettingsInteractions.getReferenceProps()}
+			onclick={() => modalTemplate(true, 0, '')}
 			bind:this={addTemplateTooltipFloating.elements.reference}
 			{...addTemplateTooltipInteractions.getReferenceProps()}
 		>
@@ -248,7 +199,7 @@
 	</header>
 	<div id="accord" class="templates-viewport min-w-full overflow-auto">
 		{#if $templates.length > 0}
-			<Accordion collapsible>
+			<Accordion value={accordionItem} onValueChange={(e) => (accordionItem = e.value)} collapsible>
 				{#each $templates as template, templateIdx (template.id)}
 					<div class="card shadow-md mb-1">
 						<Accordion.Item value={template.name} >
@@ -259,7 +210,7 @@
 										<button
 											class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
 											onclick={(e) => {
-												renamePrompt(template.name, template.id)
+												modalTemplate(false, template.id, template.name);
 												e.stopPropagation();
 											}}
 										>
@@ -289,27 +240,42 @@
 		{/if}
 	</div>
 </section>
-{#if templateSettingsOpen}
-<div
-	bind:this={templateSettingsFloating.elements.floating}
-	style={templateSettingsFloating.floatingStyles}
-	{...templateSettingsInteractions.getFloatingProps()}
-	class="floating popover-neutral card gap-4 p-4"
-	transition:fade={{ duration: 200 }}
+
+<Modal
+	open={TemplateModalOpen}
+	onOpenChange={(e) => (TemplateModalOpen = e.open)}
+	triggerBase="btn preset-tonal"
+	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	backdropClasses="backdrop-blur-sm"
 >
-	<header class="justify-center text-center text-2xl font-bold">Add Template</header>
-	<div class="space-y-4">
-		<label class="template_name">
-			<span>Template Name</span>
-			<input class="input" type="text" placeholder="Template Name" />
-		</label>
-		<label class="submit_button">
-			<button class="btn bg-primary-500" onclick={addTemplate}>Add Template</button>
-		</label>
-	</div>
-	<FloatingArrow bind:ref={elemArrow} context={templateSettingsFloating.context} fill="#575969" />
-</div>
-{/if}
+	{#snippet trigger()}{/snippet}
+	{#snippet content()}
+		<TemplateSettings
+			parent={{ onClose: handleTemplateClose }}
+			isNew={isNewTemplate}
+			id={currentTemplateId}
+			name={currentTemplateName}
+		/>
+	{/snippet}
+</Modal>
+
+<Modal
+	open={deleteModalOpen}
+	onOpenChange={(e) => (deleteModalOpen = e.open)}
+	triggerBase="btn preset-tonal"
+	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	backdropClasses="backdrop-blur-sm"
+>
+	{#snippet trigger()}{/snippet}
+	{#snippet content()}
+		<header class="text-2xl font-bold">Please Confirm</header>
+		<article>Are you sure you wish to delete this template?</article>
+		<footer class="flex justify-end space-x-2">
+			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
+			<button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
+		</footer>
+	{/snippet}
+</Modal>
 
 <style>
 	#accord {

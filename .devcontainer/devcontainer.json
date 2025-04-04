@@ -2,7 +2,7 @@
 // README at: https://github.com/devcontainers/templates/tree/main/src/ubuntu
 {
 	"name": "xivi-dev",
-	"image": "mcr.microsoft.com/devcontainers/base:noble",
+	"image": "mcr.microsoft.com/devcontainers/base:bookworm",
 	"forwardPorts": [3000],
 	"features": {
 		"ghcr.io/devcontainers/features/go:1": {},

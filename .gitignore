@@ -7,7 +7,7 @@
 xivi.code-workspace
 .augment-guidelines
 .cursorrules
-.repomix-output.txt
+.repomix*
 .augmentignore
 
 # Build
