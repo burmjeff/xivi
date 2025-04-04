@@ -75,6 +75,10 @@ export default defineConfig({
       }
     }
   },
+  css: {
+    // Force consistent CSS ordering in development
+    devSourcemap: true,
+  },
   // Optimize build settings
   build: {
     // Target modern browsers for better performance

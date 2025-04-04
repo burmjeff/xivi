@@ -32,6 +32,7 @@
 		<label class="playlist_name p-2">
 			<span>Playlist Name</span>
 			<input
+				name="playlist_name"
 				class="input"
 				type="text"
 				bind:value={formData.name}
@@ -41,6 +42,7 @@
 		<label class="playlist_url p-2">
 			<span>Playlist URL</span>
 			<input
+				name="playlist_url"
 				class="input"
 				type="text"
 				bind:value={formData.url}
