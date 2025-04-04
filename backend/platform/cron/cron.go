@@ -2,6 +2,7 @@ package cron
 
 import (
 	"context"
+	"sync"
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/pkg/utils"
@@ -10,6 +11,12 @@ import (
 
 	"github.com/go-co-op/gocron"
 	"github.com/rs/zerolog/log"
+)
+
+// Mutex to prevent concurrent database operations
+var (
+	updateMutex sync.Mutex
+	isUpdating  bool
 )
 
 // TODO DISPLAY RUN COUNT AND NEXT UPDATE TIME IN GUI
@@ -33,6 +40,22 @@ func RunCronJobs() {
 }
 
 func UpdatePlaylists() {
+	// Prevent concurrent updates
+	updateMutex.Lock()
+	if isUpdating {
+		log.Warn().Msg("Skipping playlist update as another update is already in progress")
+		updateMutex.Unlock()
+		return
+	}
+	isUpdating = true
+	updateMutex.Unlock()
+
+	// Ensure isUpdating is reset when we're done
+	defer func() {
+		updateMutex.Lock()
+		isUpdating = false
+		updateMutex.Unlock()
+	}()
 
 	// Store dynamic group relationships before updating playlists
 	var dynamicGroups []models.TemplateGroup
@@ -120,6 +143,23 @@ func UpdatePlaylists() {
 }
 
 func UpdateEpgs() {
+	// Prevent concurrent updates
+	updateMutex.Lock()
+	if isUpdating {
+		log.Warn().Msg("Skipping EPG update as another update is already in progress")
+		updateMutex.Unlock()
+		return
+	}
+	isUpdating = true
+	updateMutex.Unlock()
+
+	// Ensure isUpdating is reset when we're done
+	defer func() {
+		updateMutex.Lock()
+		isUpdating = false
+		updateMutex.Unlock()
+	}()
+
 	// get epgs.
 	epgs, err := database.Db.GetEpgs(context.Background())
 	if err != nil {
@@ -155,6 +195,16 @@ func cleanPlaylist(playlist models.Playlist, startTime time.Time) {
 }
 
 func VacuumDB() {
+	// Prevent running vacuum during updates
+	updateMutex.Lock()
+	if isUpdating {
+		log.Warn().Msg("Skipping database vacuum as an update is in progress")
+		updateMutex.Unlock()
+		return
+	}
+	// We don't set isUpdating here because vacuum can run alongside other operations
+	updateMutex.Unlock()
+
 	// Call INCREMENTAL VACUUM
 	ctx := context.Background()
 	err := database.Db.CleanupQueries.VacuumDB(ctx)

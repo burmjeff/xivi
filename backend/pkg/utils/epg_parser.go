@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -20,9 +19,10 @@ import (
 
 // Constants for optimization
 const (
-	ChannelBatchSize   = 100 // Number of channels to process in a batch
-	ProgrammeBatchSize = 500 // Number of programmes to process in a batch
-	MaxWorkers         = 4   // Maximum number of worker goroutines
+	ChannelBatchSize   = 50  // Reduced from 100 to 50 to reduce transaction size
+	ProgrammeBatchSize = 250 // Reduced from 500 to 250 to reduce transaction size
+	MaxWorkers         = 2   // Reduced from 4 to 2 to reduce database contention
+	MaxRetries         = 5   // Number of retries for database operations
 )
 
 // ParseEpg parses an EPG file and stores the data in the database
@@ -56,9 +56,10 @@ func ParseEpg(epg *models.Epg) {
 		processChannels(ctx, epgItem.Channels)
 	}
 
-	// Process programmes in batches using workers
+	// Process programmes in batches using improved workers with better retry logic
 	if len(epgItem.Programmes) > 0 {
 		log.Info().Int("count", len(epgItem.Programmes)).Msg("Processing EPG programmes")
+		// Use the improved version with better retry logic
 		processProgrammes(ctx, epgItem.Programmes)
 	}
 
@@ -155,11 +156,9 @@ func processChannels(ctx context.Context, channels []models.EpgChannel) {
 	// Create a map to track all channel IDs we're processing
 	allChannelIds := make(map[string]bool)
 
-	// First pass: collect all channel IDs to fetch in bulk
-	channelIDs := make([]string, 0, len(channels))
+	// First pass: collect all channel IDs in a map
 	for _, channel := range channels {
 		if channel.ChannelId != "" {
-			channelIDs = append(channelIDs, channel.ChannelId)
 			allChannelIds[channel.ChannelId] = true
 		}
 	}
@@ -286,14 +285,11 @@ func processChannels(ctx context.Context, channels []models.EpgChannel) {
 
 // processProgrammes processes EPG programmes in batches using worker pool
 func processProgrammes(ctx context.Context, programmes []models.EpgProgramme) {
-	// Determine optimal number of workers based on CPU cores
-	numWorkers := runtime.NumCPU()
-	if numWorkers > MaxWorkers {
-		numWorkers = MaxWorkers
-	}
+	// Determine optimal number of workers based on CPU cores, but limit to 2 to reduce contention
+	numWorkers := 2 // Reduced from MaxWorkers to 2
 
-	// Create work distribution channels
-	jobs := make(chan models.EpgProgramme, ProgrammeBatchSize)
+	// Create work distribution channels with smaller buffer to reduce memory usage
+	jobs := make(chan models.EpgProgramme, 250) // Reduced from 500 to 250
 	wg := sync.WaitGroup{}
 
 	// Start worker pool
@@ -319,9 +315,6 @@ func processProgrammes(ctx context.Context, programmes []models.EpgProgramme) {
 
 	// Wait for all workers to complete
 	wg.Wait()
-
-	// Batch insert remaining programmes if supported
-	// Note: This would require collecting programmes in the worker and returning them
 }
 
 // processProgrammeWorker processes programmes from the jobs channel
@@ -342,32 +335,80 @@ func processProgrammeWorker(ctx context.Context, jobs <-chan models.EpgProgramme
 		// Log the programme being processed
 		log.Debug().Str("channel", programme.Channel).Str("title", programme.Title.Value).Time("start", programme.Start.Time).Msg("Processing programme")
 
-		// Look up existing programme
-		existing, err := database.Db.GetProgrammeByTime(ctx, programme.Channel, programme.Start.Time)
+		// Look up existing programme with retry logic
+		var existing *models.EpgProgramme
+		var err error
+
+		// Retry parameters
+		baseDelay := 200 * time.Millisecond
+
+		// Try to get the programme with retries
+		for retry := 0; retry < EpgMaxRetries; retry++ {
+			existing, err = database.Db.GetProgrammeByTime(ctx, programme.Channel, programme.Start.Time)
+			if err == nil || !strings.Contains(err.Error(), "database is locked") {
+				break // Success or non-lock error
+			}
+
+			// Database lock error, retry with backoff
+			delay := baseDelay * time.Duration(1<<uint(retry))
+			time.Sleep(delay)
+		}
+
 		if err != nil {
-			// Create new programme
-			_, createErr := database.Db.CreateEpgProgramme(ctx, programme)
-			if createErr != nil {
+			// Create new programme with retry logic
+			var createErr error
+			for retry := 0; retry < EpgMaxRetries; retry++ {
+				_, createErr = database.Db.CreateEpgProgramme(ctx, programme)
+				if createErr == nil {
+					break // Success
+				}
+
 				// Check if this is a duplicate error (constraint violation)
 				if strings.Contains(createErr.Error(), "UNIQUE constraint failed") {
 					// Try to get the existing programme again and update it
-					existing, retryErr := database.Db.GetProgrammeByTime(ctx, programme.Channel, programme.Start.Time)
-					if retryErr == nil {
-						// Update the existing programme
-						if updateErr := database.Db.UpdateEpgProgramme(ctx, existing.ID, &programme); updateErr != nil {
-							log.Warn().Err(updateErr).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to update programme after duplicate detection")
+					for updateRetry := 0; updateRetry < EpgMaxRetries; updateRetry++ {
+						existing, retryErr := database.Db.GetProgrammeByTime(ctx, programme.Channel, programme.Start.Time)
+						if retryErr == nil {
+							// Update the existing programme
+							updateErr := database.Db.UpdateEpgProgramme(ctx, existing.ID, &programme)
+							if updateErr == nil || !strings.Contains(updateErr.Error(), "database is locked") {
+								break // Success or non-lock error
+							}
 						}
-					} else {
-						log.Warn().Err(retryErr).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to retrieve programme after duplicate detection")
+
+						// Retry with backoff
+						delay := baseDelay * time.Duration(1<<uint(updateRetry))
+						time.Sleep(delay)
 					}
-				} else {
-					log.Warn().Err(createErr).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to create programme")
+					break // Exit the create retry loop after handling duplicate
 				}
+
+				// If it's a database lock error, retry with backoff
+				if strings.Contains(createErr.Error(), "database is locked") ||
+					strings.Contains(createErr.Error(), "busy") {
+					delay := baseDelay * time.Duration(1<<uint(retry))
+					time.Sleep(delay)
+					continue
+				}
+
+				// Other error, log and break
+				log.Warn().Err(createErr).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to create programme")
+				break
 			}
 		} else {
-			// Update existing programme
-			if err := database.Db.UpdateEpgProgramme(ctx, existing.ID, &programme); err != nil {
-				log.Warn().Err(err).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to update programme")
+			// Update existing programme with retry logic
+			for retry := 0; retry < EpgMaxRetries; retry++ {
+				updateErr := database.Db.UpdateEpgProgramme(ctx, existing.ID, &programme)
+				if updateErr == nil || !strings.Contains(updateErr.Error(), "database is locked") {
+					if updateErr != nil {
+						log.Warn().Err(updateErr).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to update programme")
+					}
+					break // Success or non-lock error
+				}
+
+				// Database lock error, retry with backoff
+				delay := baseDelay * time.Duration(1<<uint(retry))
+				time.Sleep(delay)
 			}
 		}
 	}
