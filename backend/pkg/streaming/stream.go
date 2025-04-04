@@ -266,10 +266,29 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 				// First unlink the bin to isolate it
 				tee.Unlink(sinkBin.Element)
 
+				// Set all elements in the bin to NULL state first
+				if elements, err := sinkBin.GetElements(); err == nil && elements != nil {
+					for _, element := range elements {
+						log.Debug().Msgf("Setting element %s to NULL state", element.GetName())
+						// Cleanup all pads first
+						if pads, _ := element.GetPads(); pads != nil {
+							for _, pad := range pads {
+								pad.PauseTask()
+							}
+						}
+						if err := element.SetState(gst.StateNull); err != nil {
+							log.Debug().Msgf("WARNING: Failed to set %s state to Null: %v", element.GetName(), err)
+						}
+					}
+				}
+
 				// Set sink bin to NULL state
 				if err := sinkBin.SetState(gst.StateNull); err != nil {
 					log.Warn().Msgf("WARNING: Failed to set sink bin to NULL state: %v", err)
 				}
+
+				// Wait a bit for state change to complete
+				time.Sleep(100 * time.Millisecond)
 
 				// Remove the bin from pipeline
 				if err := s.pipeline.Remove(sinkBin.Element); err != nil {
