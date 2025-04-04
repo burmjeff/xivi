@@ -19,9 +19,9 @@ import (
 
 // Constants for optimization
 const (
-	ChannelBatchSize   = 50  // Reduced from 100 to 50 to reduce transaction size
-	ProgrammeBatchSize = 250 // Reduced from 500 to 250 to reduce transaction size
-	MaxWorkers         = 2   // Reduced from 4 to 2 to reduce database contention
+	ChannelBatchSize   = 50  // Number of channels to process in a batch
+	ProgrammeBatchSize = 250 // Number of programmes to process in a batch
+	MaxWorkers         = 2   // Maximum number of worker goroutines
 	MaxRetries         = 5   // Number of retries for database operations
 )
 
@@ -343,7 +343,7 @@ func processProgrammeWorker(ctx context.Context, jobs <-chan models.EpgProgramme
 		baseDelay := 200 * time.Millisecond
 
 		// Try to get the programme with retries
-		for retry := 0; retry < EpgMaxRetries; retry++ {
+		for retry := 0; retry < MaxRetries; retry++ {
 			existing, err = database.Db.GetProgrammeByTime(ctx, programme.Channel, programme.Start.Time)
 			if err == nil || !strings.Contains(err.Error(), "database is locked") {
 				break // Success or non-lock error
@@ -357,7 +357,7 @@ func processProgrammeWorker(ctx context.Context, jobs <-chan models.EpgProgramme
 		if err != nil {
 			// Create new programme with retry logic
 			var createErr error
-			for retry := 0; retry < EpgMaxRetries; retry++ {
+			for retry := 0; retry < MaxRetries; retry++ {
 				_, createErr = database.Db.CreateEpgProgramme(ctx, programme)
 				if createErr == nil {
 					break // Success
@@ -366,7 +366,7 @@ func processProgrammeWorker(ctx context.Context, jobs <-chan models.EpgProgramme
 				// Check if this is a duplicate error (constraint violation)
 				if strings.Contains(createErr.Error(), "UNIQUE constraint failed") {
 					// Try to get the existing programme again and update it
-					for updateRetry := 0; updateRetry < EpgMaxRetries; updateRetry++ {
+					for updateRetry := 0; updateRetry < MaxRetries; updateRetry++ {
 						existing, retryErr := database.Db.GetProgrammeByTime(ctx, programme.Channel, programme.Start.Time)
 						if retryErr == nil {
 							// Update the existing programme
@@ -397,7 +397,7 @@ func processProgrammeWorker(ctx context.Context, jobs <-chan models.EpgProgramme
 			}
 		} else {
 			// Update existing programme with retry logic
-			for retry := 0; retry < EpgMaxRetries; retry++ {
+			for retry := 0; retry < MaxRetries; retry++ {
 				updateErr := database.Db.UpdateEpgProgramme(ctx, existing.ID, &programme)
 				if updateErr == nil || !strings.Contains(updateErr.Error(), "database is locked") {
 					if updateErr != nil {
