@@ -22,13 +22,13 @@
 
 	// Make videoUrl reactive to stream changes
 	let videoUrl = $state(stream);
-	
+
 	// Update videoUrl when stream changes
 	$effect(() => {
 		videoUrl = stream;
 		console.log('Stream URL updated:', videoUrl);
 	});
-	
+
 	let player: HTMLElement | undefined = $state();
 	const remote = new MediaRemoteControl();
 	let isLoading = $state(true);
@@ -42,10 +42,47 @@
 		if (player) {
 			// Stop playback and reset player
 			try {
+				// First pause playback
 				remote.pause();
+
 				// Force player to unload current stream
 				const mediaPlayer = player as MediaPlayerElement;
+
+				// Properly dispose of HLS provider if active
+				if (mediaPlayer.provider && isHLSProvider(mediaPlayer.provider)) {
+					console.log('Disposing HLS provider');
+					try {
+						// Access the hls.js instance and destroy it
+						const hls = mediaPlayer.provider.instance;
+						if (hls && typeof hls.destroy === 'function') {
+							hls.destroy();
+							console.log('HLS provider destroyed');
+						}
+					} catch (hlsError) {
+						console.error('Error destroying HLS provider:', hlsError);
+					}
+				}
+
+				// Clear the source
 				mediaPlayer.src = '';
+
+				// Force garbage collection by removing references
+				setTimeout(() => {
+					// Additional cleanup to ensure GStreamer resources are released
+					try {
+						// Dispatch a custom event to force cleanup
+						mediaPlayer.dispatchEvent(new CustomEvent('cleanup'));
+
+						// Force the HTML media element to load (if available)
+						const mediaElement = mediaPlayer.querySelector('video, audio');
+						if (mediaElement instanceof HTMLMediaElement) {
+							mediaElement.load();
+						}
+						console.log('Player cleanup complete');
+					} catch (cleanupError) {
+						console.error('Error during player cleanup:', cleanupError);
+					}
+				}, 100);
 			} catch (e) {
 				console.error('Error cleaning up player:', e);
 			}
@@ -119,11 +156,11 @@
 	function onProviderChange(event: MediaProviderChangeEvent) {
 		const provider = event.detail;
 		console.log('Provider changed:', provider?.type);
-		
+
 		// Configure HLS provider with optimized settings
 		if (isHLSProvider(provider)) {
 			console.log('Configuring HLS provider for URL:', videoUrl);
-			
+
 			// Configure HLS provider
 			provider.config = {
 				// Use standard mode instead of low latency for better compatibility
@@ -154,7 +191,7 @@
 					console.log('HLS XHR request:', xhr.responseURL || 'unknown URL');
 				}
 			};
-			
+
 			// Force player to reload the source
 			if (player) {
 				const mediaPlayer = player as MediaPlayerElement;
@@ -171,30 +208,52 @@
 	// Watch for modal open/close
 	$effect(() => {
 		if (!modalOpen) {
+			// Ensure proper cleanup when modal closes
 			handleModalClose();
 		} else {
 			// Modal opened - reset loading state
 			isLoading = true;
 			hasError = false;
 			errorMessage = '';
-			
+
 			// If player exists, force reload the stream
 			if (player) {
 				const mediaPlayer = player as MediaPlayerElement;
-				// Small delay to ensure DOM is ready
+
+				// First ensure any existing stream is properly cleaned up
+				if (mediaPlayer.provider && isHLSProvider(mediaPlayer.provider)) {
+					console.log('Cleaning up existing HLS provider before loading new stream');
+					try {
+						// Access the hls.js instance and destroy it
+						const hls = mediaPlayer.provider.instance;
+						if (hls && typeof hls.destroy === 'function') {
+							hls.destroy();
+						}
+					} catch (hlsError) {
+						console.error('Error destroying HLS provider:', hlsError);
+					}
+				}
+
+				// Clear the source first
+				mediaPlayer.src = '';
+
+				// Small delay to ensure DOM is ready and previous stream is cleaned up
 				setTimeout(() => {
-					console.log('Reloading player with URL:', videoUrl);
-					
+					console.log('Loading player with URL:', videoUrl);
+
 					// Log network requests for debugging
 					console.log('Checking network connectivity to stream URL...');
 					fetch(videoUrl, { method: 'HEAD' })
 						.then(response => {
 							console.log('Stream URL response:', response.status, response.statusText);
-							console.log('Stream URL headers:', response.headers);
-							
+
 							// Set source and play
 							mediaPlayer.src = videoUrl;
-							remote.play();
+
+							// Small delay before playing to ensure provider is initialized
+							setTimeout(() => {
+								remote.play();
+							}, 100);
 						})
 						.catch(error => {
 							console.error('Error fetching stream URL:', error);
@@ -233,12 +292,32 @@
 			<button class="btn btn-sm variant-filled-primary mt-4" onclick={() => {
 				hasError = false;
 				isLoading = true;
-				
-				// Force reload the stream
+
+				// Force reload the stream with proper cleanup
 				if (player) {
 					const mediaPlayer = player as MediaPlayerElement;
-					mediaPlayer.src = videoUrl;
-					setTimeout(() => remote.play(), 500);
+
+					// First clean up existing provider
+					if (mediaPlayer.provider && isHLSProvider(mediaPlayer.provider)) {
+						console.log('Cleaning up HLS provider before retry');
+						try {
+							const hls = mediaPlayer.provider.instance;
+							if (hls && typeof hls.destroy === 'function') {
+								hls.destroy();
+							}
+						} catch (hlsError) {
+							console.error('Error destroying HLS provider during retry:', hlsError);
+						}
+					}
+
+					// Clear source first
+					mediaPlayer.src = '';
+
+					// Wait a bit before setting new source
+					setTimeout(() => {
+						mediaPlayer.src = videoUrl;
+						setTimeout(() => remote.play(), 200);
+					}, 300);
 				}
 			}}>
 				Try Again

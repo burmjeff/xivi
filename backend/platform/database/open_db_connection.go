@@ -107,6 +107,7 @@ func optimizeDBConnection(db *sqlx.DB) {
 		"PRAGMA auto_vacuum = INCREMENTAL;",      // Incremental vacuum for better performance
 		"PRAGMA busy_timeout = 300000;",          // Set busy timeout to 300 seconds (5 minutes)
 		"PRAGMA timeout = 300000;",               // Set timeout to 300 seconds (5 minutes)
+		"PRAGMA wal_checkpoint(PASSIVE);",        // Perform a passive checkpoint
 	}
 
 	for _, pragma := range pragmas {

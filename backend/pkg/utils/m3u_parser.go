@@ -59,8 +59,8 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 	m.playlistID = playlist.ID
 	log.Info().Msg("Parser started")
 
-	// Initialize batch processing
-	m.batchSize = 100
+	// Initialize batch processing with smaller batch size to reduce contention
+	m.batchSize = 50 // Reduced from 100 to 50 to reduce transaction size
 	m.channelBatch = make([]models.PlaylistChannel, 0, m.batchSize)
 	m.channelURLBatch = make([]models.ChannelUrl, 0, m.batchSize)
 	m.pendingVectorization = make([]models.PlaylistChannel, 0, m.batchSize)
@@ -243,16 +243,16 @@ func (m *M3uParser) flushBatches() {
 	m.batchMutex.Lock()
 	defer m.batchMutex.Unlock()
 
-	if len(m.channelBatch) == 0 {
-		log.Debug().Msg("No channels in batch to flush")
+	if len(m.channelBatch) == 0 && len(m.channelURLBatch) == 0 {
+		log.Debug().Msg("No items in batch to flush")
 		return
 	}
 
 	log.Info().Msgf("Starting flush of %d channels and %d URLs", len(m.channelBatch), len(m.channelURLBatch))
 
-	// Define retry parameters
-	maxRetries := 5
-	baseDelay := 50 * time.Millisecond
+	// Define retry parameters with increased values for better handling of database locks
+	maxRetries := 10                    // Increased from 5 to 10
+	baseDelay := 500 * time.Millisecond // Increased from 50ms to 500ms
 
 	// Prepare array to store channels with new IDs for vectorization
 	pendingVectors := make([]models.PlaylistChannel, 0, len(m.channelBatch))
@@ -273,7 +273,8 @@ func (m *M3uParser) flushBatches() {
 			if retry < maxRetries-1 && (strings.Contains(err.Error(), "database is locked") ||
 				strings.Contains(err.Error(), "busy")) {
 				delay := baseDelay * time.Duration(1<<uint(retry))
-				jitter := time.Duration(rand.Intn(50)) * time.Millisecond
+				jitter := time.Duration(rand.Intn(100)) * time.Millisecond // Increased jitter
+				log.Warn().Msgf("Database locked, retrying in %v", delay+jitter)
 				time.Sleep(delay + jitter)
 				continue
 			}
@@ -430,12 +431,18 @@ func (m *M3uParser) flushBatches() {
 		log.Info().Msg("All batch items processed, committing transaction")
 		if err := tx.Commit(); err != nil {
 			log.Error().Msgf("Failed to commit transaction: %v", err)
-			tx.Rollback()
+			// Attempt to rollback, but don't fail if rollback fails
+			if rbErr := tx.Rollback(); rbErr != nil {
+				log.Error().Msgf("Failed to rollback transaction: %v", rbErr)
+			}
 
 			if retry < maxRetries-1 && (strings.Contains(err.Error(), "database is locked") ||
-				strings.Contains(err.Error(), "busy")) {
+				strings.Contains(err.Error(), "busy") ||
+				strings.Contains(err.Error(), "cannot commit") ||
+				strings.Contains(err.Error(), "SQL statements in progress")) {
 				delay := baseDelay * time.Duration(1<<uint(retry))
-				jitter := time.Duration(rand.Intn(50)) * time.Millisecond
+				jitter := time.Duration(rand.Intn(100)) * time.Millisecond // Increased jitter
+				log.Warn().Msgf("Commit failed due to lock, retrying in %v", delay+jitter)
 				time.Sleep(delay + jitter)
 				continue
 			}
