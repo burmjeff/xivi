@@ -179,6 +179,7 @@ func executeMatchPlaylistTvgid(playlistCh models.PlaylistChannel) error {
 
 	insertCount := 0
 	for _, channel := range *channels {
+		// Handle the case where playlistChUrl might be nil
 		if playlistChUrl == nil || !itemExists(channel.ID, playlistChUrl.Url) {
 			_, err = stmt.Exec(channel.ID, playlistCh.ID)
 			if err != nil {
@@ -231,10 +232,13 @@ func executeMatchPlaylistChannelName(playlistCh models.PlaylistChannel) error {
 	var chMatch int64
 	var score float64
 	chunkSize := 30
+	var playlistChUrl *models.ChannelUrl
 
-	playlistChUrl, err := database.Db.GetChannelUrl(playlistCh.ID)
+	// Get channel URL, but handle the case where it might not exist
+	playlistChUrl, err = database.Db.GetChannelUrl(playlistCh.ID)
 	if err != nil {
 		log.Debug().Msgf("matchPlaylistChannelName: %v", err)
+		// Continue without URL - we'll handle nil check later
 	}
 
 	channelVector, err := database.Db.GetChannelVectorByName(playlistCh.Title)
@@ -309,7 +313,8 @@ func executeMatchPlaylistChannelName(playlistCh models.PlaylistChannel) error {
 		}
 	}
 
-	if chMatch != 0 && !itemExists(chMatch, playlistChUrl.Url) {
+	// Only proceed if we found a match and either we don't have a URL or the item doesn't exist
+	if chMatch != 0 && (playlistChUrl == nil || !itemExists(chMatch, playlistChUrl.Url)) {
 		tx, err := database.Db.VectorQueries.Beginx()
 		if err != nil {
 			log.Error().Msgf("Failed to begin transaction: %v", err)
@@ -374,7 +379,7 @@ func matchTemplateTvgid(templateCh *models.TemplateChannel) ([]models.PlaylistCh
 			if err != nil {
 				log.Debug().Msgf("matchTemplateTvgid GetChannelUrl: %v", err)
 				continue
-			} else if itemExists(channel.ID, playlistChUrl.Url) {
+			} else if playlistChUrl != nil && itemExists(channel.ID, playlistChUrl.Url) {
 				continue
 			}
 
@@ -552,15 +557,30 @@ func matchTemplateChannelName(templateCh *models.TemplateChannel) error {
 }
 
 func itemExists(tmplId int64, plUrl string) bool {
-	if items, _ := database.Db.GetTmplChannelItemsByCh(tmplId); len(*items) > 0 {
-		for _, item := range *items {
-			if itemUrl, err := database.Db.GetChannelUrl(item.PlaylistChannelId); err != nil {
-				log.Debug().Msgf("matchChannels:, %v", err)
-			} else {
-				if itemUrl.Url == plUrl {
-					return true
-				}
-			}
+	// If URL is empty, we can't check for existence
+	if plUrl == "" {
+		return false
+	}
+
+	items, err := database.Db.GetTmplChannelItemsByCh(tmplId)
+	if err != nil {
+		log.Debug().Msgf("itemExists: GetTmplChannelItemsByCh: %v", err)
+		return false
+	}
+
+	if items == nil || len(*items) == 0 {
+		return false
+	}
+
+	for _, item := range *items {
+		itemUrl, err := database.Db.GetChannelUrl(item.PlaylistChannelId)
+		if err != nil {
+			log.Debug().Msgf("itemExists: GetChannelUrl: %v", err)
+			continue
+		}
+
+		if itemUrl != nil && itemUrl.Url == plUrl {
+			return true
 		}
 	}
 	return false
