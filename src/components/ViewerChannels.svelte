@@ -102,22 +102,24 @@
 		return Math.max(0, Math.min(100, progress));
 	}
 
+	// Simple function to open player modal with a stream
 	function modalPlayer(name: string, stream: string) {
+		// Set stream info
+		currentPlayerName = name;
+		currentPlayerStream = stream;
+
 		// Close modal first if it's already open to ensure proper reset
 		if (playerModalOpen) {
 			playerModalOpen = false;
-			// Small delay to ensure modal is fully closed before reopening
+
+			// Use a delay to ensure modal is fully closed before reopening
 			setTimeout(() => {
-				currentPlayerName = name;
-				currentPlayerStream = stream;
 				playerModalOpen = true;
-			}, 100);
+			}, 500);
 		} else {
-			currentPlayerName = name;
-			currentPlayerStream = stream;
+			// Just open the modal
 			playerModalOpen = true;
 		}
-		console.log('Opening player modal with stream:', stream);
 	}
 
 	// Modal is closed via the onOpenChange event in the Player component
