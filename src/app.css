@@ -4,6 +4,8 @@
 @import "@skeletonlabs/skeleton/optional/presets";
 /*Add your theme import for your theme: "xivi-theme" here */
 @import './xivi-theme.css';
+/*Dialog positioning fixes*/
+@import './dialog-fixes.css';
 
 /*
   The default border color has changed to `currentColor` in Tailwind CSS v4,
