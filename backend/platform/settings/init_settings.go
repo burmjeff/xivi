@@ -113,7 +113,7 @@ func SetDefaults() (*AppSettings, error) {
 		},
 		Vector: Vector{
 			BatchSize:       100,
-			ParallelBatches: 20,
+			ParallelBatches: 10,
 			Timeout:         90,
 			CacheSize:       500,
 		},
