@@ -8,8 +8,7 @@
 		"resolveJsonModule": true,
 		"skipLibCheck": true,
 		"sourceMap": true,
-		"strict": true,
-		"types": ["vidstack/svelte"]
+		"strict": true
 	},
 	"include": ["src/**/*", "global.d.ts", "xivi-theme.css"]
 	// Path aliases are handled by https://kit.svelte.dev/docs/configuration#alias
