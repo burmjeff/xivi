@@ -110,21 +110,28 @@ func AddStream(s *Stream) {
 
 	// Check for existing stream with same UUID
 	for i, existing := range Streams {
-		if existing.Settings.Uuid == s.Settings.Uuid {
+		if existing != nil && existing.Settings != nil && existing.Settings.Uuid == s.Settings.Uuid {
+			log.Debug().Msgf("Found existing stream with UUID %s, closing it before adding new one", s.Settings.Uuid)
+
 			// Close existing stream before adding new one
 			existing.Close(nil, nil)
 
 			// Wait a bit for cleanup to complete
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(1000 * time.Millisecond)
 
 			// Remove the existing stream from the slice to avoid duplicates
 			// This is safer than relying on Close to call RemoveStream
 			copy(Streams[i:], Streams[i+1:])
 			Streams = Streams[:len(Streams)-1]
+
+			// Force garbage collection
+			runtime.GC()
+			time.Sleep(100 * time.Millisecond)
 			break
 		}
 	}
 	Streams = append(Streams, s)
+	log.Debug().Msgf("Added new stream with UUID %s, total streams: %d", s.Settings.Uuid, len(Streams))
 }
 
 func RemoveStream(s *Stream) {
@@ -161,6 +168,10 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 
 	// Decrement count and check if we need to do full cleanup
 	s.count--
+	// Ensure count doesn't go negative
+	if s.count < 0 {
+		s.count = 0
+	}
 	log.Debug().Msgf("Closing stream, count now: %d for UUID: %s", s.count, s.Settings.Uuid)
 
 	// Determine if we need full cleanup
@@ -221,56 +232,111 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 					time.Sleep(200 * time.Millisecond)
 				}
 
-				// Set each element to NULL state first with improved error handling
+				// Set each element to NULL state first with improved error handling and object validation
 				if elements, _ := s.pipeline.GetElementsSorted(); elements != nil {
 					for _, element := range elements {
-						log.Debug().Msgf("Setting element to NULL state: %s", element.GetName())
-						// Cleanup all pads first
-						if pads, _ := element.GetPads(); pads != nil {
+						// Skip invalid elements
+						if element == nil || element.GstObject() == nil {
+							log.Debug().Msg("Skipping nil element during state change")
+							continue
+						}
+
+						name := element.GetName()
+						log.Debug().Msgf("Setting element to NULL state: %s", name)
+
+						// Cleanup all pads first with validation
+						if pads, err := element.GetPads(); err == nil && pads != nil {
 							for _, pad := range pads {
-								pad.PauseTask()
+								if pad != nil && pad.GstObject() != nil {
+									pad.PauseTask()
+								}
 							}
 						}
+
 						// Try multiple times to set state to NULL
 						for i := 0; i < 3; i++ {
+							// Check again if element is still valid
+							if element.GstObject() == nil {
+								log.Debug().Msgf("Element %s is no longer valid, skipping state change", name)
+								break
+							}
+
 							if err := element.SetState(gst.StateNull); err != nil {
 								log.Debug().Msgf("WARNING: Failed to set %s state to Null (attempt %d/3): %v",
-									element.GetName(), i+1, err)
+									name, i+1, err)
 								time.Sleep(100 * time.Millisecond)
 							} else {
+								log.Debug().Msgf("Successfully set %s state to NULL", name)
 								break
 							}
 						}
 					}
 					// Wait a bit for all state changes to complete
-					time.Sleep(100 * time.Millisecond)
+					time.Sleep(200 * time.Millisecond)
 				}
 
-				// Now remove elements with improved error handling
+				// Now remove elements with improved error handling and object validation
 				if elements, _ := s.pipeline.GetElementsSorted(); elements != nil {
 					for _, element := range elements {
-						log.Debug().Msgf("Removing element: %s", element.GetName())
+						// Skip invalid elements
+						if element == nil || element.GstObject() == nil {
+							log.Debug().Msg("Skipping nil element during cleanup")
+							continue
+						}
+
+						name := element.GetName()
+						log.Debug().Msgf("Removing element: %s", name)
+
 						// Try multiple times to remove the element
 						for i := 0; i < 3; i++ {
+							// Check again if element is still valid before removing
+							if element.GstObject() == nil {
+								log.Debug().Msgf("Element %s is no longer valid, skipping removal", name)
+								break
+							}
+
 							if err := s.pipeline.Remove(element); err != nil {
 								log.Debug().Msgf("WARNING: Failed to remove element from pipeline: %s (attempt %d/3): %v",
-									element.GetName(), i+1, err)
+									name, i+1, err)
 								time.Sleep(100 * time.Millisecond)
 							} else {
+								log.Debug().Msgf("Successfully removed element: %s", name)
 								break
 							}
 						}
 					}
 				}
 
-				// Final cleanup with additional safeguards
+				// Final cleanup with additional safeguards and defensive programming
 				if s.pipeline != nil {
-					s.pipeline.Clear()
+					// Ensure pipeline is in NULL state before clearing
+					if s.pipeline.GstObject() != nil {
+						// Try to set to NULL state one more time
+						s.pipeline.SetState(gst.StateNull)
+						time.Sleep(200 * time.Millisecond)
+
+						// Clear the pipeline with error handling
+						try := func() (success bool) {
+							defer func() {
+								if r := recover(); r != nil {
+									log.Warn().Msgf("Recovered from panic during pipeline cleanup: %v", r)
+									success = false
+								}
+							}()
+							s.pipeline.Clear()
+							return true
+						}
+
+						if !try() {
+							log.Warn().Msg("Failed to clear pipeline safely, continuing with cleanup")
+						}
+					}
 					s.pipeline = nil
 				}
 
 				// Force garbage collection to clean up any remaining GStreamer resources
 				runtime.GC()
+				time.Sleep(100 * time.Millisecond) // Give GC time to run
 			}
 
 			// Cleanup HLS directory with retry

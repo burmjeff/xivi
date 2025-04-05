@@ -24,6 +24,6 @@ streaming:
 
 vector:
   batch_size: 100
-  parallel_batches: 20
+  parallel_batches: 10
   timeout: 90
   cache_size: 500
