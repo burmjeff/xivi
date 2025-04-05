@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"crypto/md5"
 	"database/sql"
+	"fmt"
 	"io"
 	"math"
 	"math/rand"
@@ -19,6 +21,13 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// ChannelURLPair represents a channel and its associated URL with a correlation ID
+type ChannelURLPair struct {
+	Channel       models.PlaylistChannel
+	URL           models.ChannelUrl
+	CorrelationID string // Used to ensure channels and URLs stay paired correctly
+}
+
 // M3uParser - A parser for m3u files.
 type M3uParser struct {
 	playlistID      int64
@@ -26,11 +35,10 @@ type M3uParser struct {
 	content         string
 	regexes         map[string]*regexp.Regexp
 	matchedPlaylist int64
-	// New fields for batch processing
-	channelBatch    []models.PlaylistChannel
-	channelURLBatch []models.ChannelUrl
-	batchMutex      sync.Mutex
-	batchSize       int
+	// New fields for batch processing with improved channel-URL association
+	channelPairs []ChannelURLPair
+	batchMutex   sync.Mutex
+	batchSize    int
 	// NEW: Channels that need vectorization after commit
 	pendingVectorization []models.PlaylistChannel
 }
@@ -61,8 +69,7 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 
 	// Initialize batch processing with smaller batch size to reduce contention
 	m.batchSize = 50 // Reduced from 100 to 50 to reduce transaction size
-	m.channelBatch = make([]models.PlaylistChannel, 0, m.batchSize)
-	m.channelURLBatch = make([]models.ChannelUrl, 0, m.batchSize)
+	m.channelPairs = make([]ChannelURLPair, 0, m.batchSize)
 	m.pendingVectorization = make([]models.PlaylistChannel, 0, m.batchSize)
 
 	//Check if matching playlist exists
@@ -118,10 +125,10 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 
 	// Check if we have any remaining channels to process
 	m.batchMutex.Lock()
-	remainingChannels := len(m.channelBatch)
+	remainingChannels := len(m.channelPairs)
 	m.batchMutex.Unlock()
 
-	log.Info().Msgf("Parsing complete, flushing any remaining channels: %d", remainingChannels)
+	log.Info().Msgf("Parsing complete, flushing any remaining channel pairs: %d", remainingChannels)
 
 	// Ensure any remaining batched items are processed
 	m.flushBatches()
@@ -243,19 +250,19 @@ func (m *M3uParser) flushBatches() {
 	m.batchMutex.Lock()
 	defer m.batchMutex.Unlock()
 
-	if len(m.channelBatch) == 0 && len(m.channelURLBatch) == 0 {
+	if len(m.channelPairs) == 0 {
 		log.Debug().Msg("No items in batch to flush")
 		return
 	}
 
-	log.Info().Msgf("Starting flush of %d channels and %d URLs", len(m.channelBatch), len(m.channelURLBatch))
+	log.Info().Msgf("Starting flush of %d channel-URL pairs", len(m.channelPairs))
 
 	// Define retry parameters with increased values for better handling of database locks
 	maxRetries := 10                    // Increased from 5 to 10
 	baseDelay := 500 * time.Millisecond // Increased from 50ms to 500ms
 
 	// Prepare array to store channels with new IDs for vectorization
-	pendingVectors := make([]models.PlaylistChannel, 0, len(m.channelBatch))
+	pendingVectors := make([]models.PlaylistChannel, 0, len(m.channelPairs))
 
 	for retry := 0; retry < maxRetries; retry++ {
 		// Only log retries after the first attempt
@@ -281,13 +288,14 @@ func (m *M3uParser) flushBatches() {
 			return
 		}
 
-		// Process all batched channels first, storing created IDs
-		channelIDMap := make(map[int]int64) // Map to track indices to channel IDs
+		// Process all channel pairs, storing created IDs
+		channelIDMap := make(map[string]int64) // Map to track correlation IDs to channel IDs
 
-		log.Info().Msgf("Processing %d channels in batch", len(m.channelBatch))
+		log.Info().Msgf("Processing %d channel pairs in batch", len(m.channelPairs))
 
 		success := true
-		for i, channel := range m.channelBatch {
+		for _, pair := range m.channelPairs {
+			channel := pair.Channel
 			var channelID int64
 
 			if channel.ID == 0 {
@@ -318,9 +326,9 @@ func (m *M3uParser) flushBatches() {
 					break
 				}
 
-				log.Debug().Msgf("Successfully inserted channel: %s with ID %d", channel.Title, channelID)
+				log.Debug().Msgf("Successfully inserted channel: %s with ID %d (correlation: %s)", channel.Title, channelID, pair.CorrelationID)
 				// Store the channel ID for URL processing
-				channelIDMap[i] = channelID
+				channelIDMap[pair.CorrelationID] = channelID
 			} else {
 				// Update existing channel
 				log.Debug().Msgf("Updating existing channel: %s (ID: %d)", channel.Title, channel.ID)
@@ -341,8 +349,8 @@ func (m *M3uParser) flushBatches() {
 					break
 				}
 
-				log.Debug().Msgf("Successfully updated channel: %s (ID: %d)", channel.Title, channel.ID)
-				channelIDMap[i] = channel.ID
+				log.Debug().Msgf("Successfully updated channel: %s (ID: %d, correlation: %s)", channel.Title, channel.ID, pair.CorrelationID)
+				channelIDMap[pair.CorrelationID] = channel.ID
 			}
 		}
 
@@ -358,16 +366,17 @@ func (m *M3uParser) flushBatches() {
 			return
 		}
 
-		// Process all batched URLs after all channels are processed
-		log.Info().Msgf("Processing %d URLs in batch", len(m.channelURLBatch))
-		for i, url := range m.channelURLBatch {
+		// Process all URLs from channel pairs after all channels are processed
+		log.Info().Msgf("Processing URLs for %d channel pairs", len(m.channelPairs))
+		for _, pair := range m.channelPairs {
 			var stmt *sql.Stmt
 			var err error
+			url := pair.URL
 
-			// Get the correct channel ID from our map
-			if channelID, exists := channelIDMap[i]; exists {
+			// Get the correct channel ID from our map using correlation ID
+			if channelID, exists := channelIDMap[pair.CorrelationID]; exists {
 				url.ChannelId = channelID
-				log.Debug().Msgf("Mapped URL to channel ID: %d", channelID)
+				log.Debug().Msgf("Mapped URL to channel ID: %d (correlation: %s)", channelID, pair.CorrelationID)
 			}
 
 			// Skip URLs with invalid channel IDs (would violate foreign key constraints)
@@ -450,22 +459,22 @@ func (m *M3uParser) flushBatches() {
 		}
 
 		// Success - log and prepare channels for vectorization
-		log.Info().Msgf("Successfully committed batch of %d channels (attempt %d)", len(m.channelBatch), retry+1)
+		log.Info().Msgf("Successfully committed batch of %d channel pairs (attempt %d)", len(m.channelPairs), retry+1)
 
 		// Collect channels with their new IDs for vectorization
-		for i, channel := range m.channelBatch {
-			if id, exists := channelIDMap[i]; exists {
+		for _, pair := range m.channelPairs {
+			if id, exists := channelIDMap[pair.CorrelationID]; exists {
 				// Create a copy of the channel with the new ID
-				channelCopy := channel
+				channelCopy := pair.Channel
 				channelCopy.ID = id
 				pendingVectors = append(pendingVectors, channelCopy)
-				log.Debug().Msgf("Added channel for vectorization: %s (ID: %d)", channelCopy.Title, channelCopy.ID)
+				log.Debug().Msgf("Added channel for vectorization: %s (ID: %d, correlation: %s)",
+					channelCopy.Title, channelCopy.ID, pair.CorrelationID)
 			}
 		}
 
 		// Clear the batches
-		m.channelBatch = make([]models.PlaylistChannel, 0, m.batchSize)
-		m.channelURLBatch = make([]models.ChannelUrl, 0, m.batchSize)
+		m.channelPairs = make([]ChannelURLPair, 0, m.batchSize)
 
 		// Process vectorization in a separate goroutine to avoid holding the mutex
 		if len(pendingVectors) > 0 {
@@ -641,27 +650,43 @@ func (m *M3uParser) parseLine(line string, streamLink string) {
 		// Default to 0 for order - will be set properly by the batch process
 		channelURL.Order = 0
 
+		// Create a unique correlation ID for this channel-URL pair
+		// Use a combination of title, tvgID, and URL to ensure uniqueness
+		correlationBase := title
+		if tvgID != "" {
+			correlationBase += "-" + tvgID
+		}
+		correlationBase += "-" + streamLink
+		correlationID := fmt.Sprintf("%x", md5.Sum([]byte(correlationBase)))
+
 		if len(foundChannels) == 0 {
 			// New channel - add to batch
 			playlistChannel.CreatedAt = time.Now()
 			playlistChannel.UpdatedAt = time.Now()
 			playlistChannel.Enabled = true
 
+			// Create a channel-URL pair with correlation ID
+			channelPair := ChannelURLPair{
+				Channel:       playlistChannel,
+				URL:           channelURL,
+				CorrelationID: correlationID,
+			}
+
 			// Add to batch for processing
 			m.batchMutex.Lock()
-			preCount := len(m.channelBatch)
-			m.channelBatch = append(m.channelBatch, playlistChannel)
-			m.channelURLBatch = append(m.channelURLBatch, channelURL)
-			log.Debug().Msgf("Added new channel to batch: %s (batch size: %d)", playlistChannel.Title, len(m.channelBatch))
+			preCount := len(m.channelPairs)
+			m.channelPairs = append(m.channelPairs, channelPair)
+			log.Debug().Msgf("Added new channel to batch: %s (correlation: %s, batch size: %d)",
+				playlistChannel.Title, correlationID, len(m.channelPairs))
 
 			// If batch is full, process it
-			if len(m.channelBatch) >= m.batchSize {
-				log.Info().Msgf("Batch full (%d channels) - flushing batch", len(m.channelBatch))
+			if len(m.channelPairs) >= m.batchSize {
+				log.Info().Msgf("Batch full (%d channel pairs) - flushing batch", len(m.channelPairs))
 				// Release the lock before flushing to prevent deadlock
 				m.batchMutex.Unlock()
 				// Flush directly instead of in a goroutine
 				m.flushBatches()
-				log.Info().Msgf("Batch flush complete, processed %d channels", preCount)
+				log.Info().Msgf("Batch flush complete, processed %d channel pairs", preCount)
 			} else {
 				m.batchMutex.Unlock()
 			}
@@ -671,24 +696,27 @@ func (m *M3uParser) parseLine(line string, streamLink string) {
 				playlistChannel.Enabled = foundChannel.Enabled
 				playlistChannel.ID = foundChannel.ID
 
-				// Add to batch for processing
-				channelURL.ChannelId = foundChannel.ID
+				// Create a channel-URL pair with correlation ID
+				channelPair := ChannelURLPair{
+					Channel:       playlistChannel,
+					URL:           channelURL,
+					CorrelationID: correlationID,
+				}
 
 				m.batchMutex.Lock()
-				preCount := len(m.channelBatch)
-				m.channelBatch = append(m.channelBatch, playlistChannel)
-				m.channelURLBatch = append(m.channelURLBatch, channelURL)
-				log.Debug().Msgf("Updated existing channel in batch: %s (ID: %d, batch size: %d)",
-					playlistChannel.Title, playlistChannel.ID, len(m.channelBatch))
+				preCount := len(m.channelPairs)
+				m.channelPairs = append(m.channelPairs, channelPair)
+				log.Debug().Msgf("Updated existing channel in batch: %s (ID: %d, correlation: %s, batch size: %d)",
+					playlistChannel.Title, playlistChannel.ID, correlationID, len(m.channelPairs))
 
 				// If batch is full, process it
-				if len(m.channelBatch) >= m.batchSize {
-					log.Info().Msgf("Batch full (%d channels) - flushing batch", len(m.channelBatch))
+				if len(m.channelPairs) >= m.batchSize {
+					log.Info().Msgf("Batch full (%d channel pairs) - flushing batch", len(m.channelPairs))
 					// Release the lock before flushing to prevent deadlock
 					m.batchMutex.Unlock()
 					// Flush directly instead of in a goroutine
 					m.flushBatches()
-					log.Info().Msgf("Batch flush complete, processed %d channels", preCount)
+					log.Info().Msgf("Batch flush complete, processed %d channel pairs", preCount)
 				} else {
 					m.batchMutex.Unlock()
 				}
@@ -700,9 +728,16 @@ func (m *M3uParser) parseLine(line string, streamLink string) {
 			tvgid := strconv.Itoa(int(playlistChannel.ID))
 			playlistChannel.TvgID = &tvgid
 
+			// Create a channel-URL pair with correlation ID for tvgID update
+			channelPair := ChannelURLPair{
+				Channel:       playlistChannel,
+				URL:           models.ChannelUrl{ChannelId: playlistChannel.ID},
+				CorrelationID: fmt.Sprintf("%x-update", md5.Sum([]byte(fmt.Sprintf("%d", playlistChannel.ID)))),
+			}
+
 			// Add to update batch
 			m.batchMutex.Lock()
-			m.channelBatch = append(m.channelBatch, playlistChannel)
+			m.channelPairs = append(m.channelPairs, channelPair)
 			log.Debug().Msgf("Added channel to batch for tvgID update: %s (ID: %d)", playlistChannel.Title, playlistChannel.ID)
 			m.batchMutex.Unlock()
 		}
