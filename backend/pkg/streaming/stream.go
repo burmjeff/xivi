@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -108,10 +109,18 @@ func AddStream(s *Stream) {
 	defer streamsMutex.Unlock()
 
 	// Check for existing stream with same UUID
-	for _, existing := range Streams {
+	for i, existing := range Streams {
 		if existing.Settings.Uuid == s.Settings.Uuid {
 			// Close existing stream before adding new one
 			existing.Close(nil, nil)
+
+			// Wait a bit for cleanup to complete
+			time.Sleep(500 * time.Millisecond)
+
+			// Remove the existing stream from the slice to avoid duplicates
+			// This is safer than relying on Close to call RemoveStream
+			copy(Streams[i:], Streams[i+1:])
+			Streams = Streams[:len(Streams)-1]
 			break
 		}
 	}
@@ -128,6 +137,10 @@ func RemoveStream(s *Stream) {
 			copy(Streams[i:], Streams[i+1:])
 			Streams = Streams[:len(Streams)-1]
 			log.Debug().Msgf("Removed stream %s, remaining streams: %d", s.Settings.Uuid, len(Streams))
+
+			// Force garbage collection after removing a stream
+			// This helps ensure GStreamer resources are properly released
+			runtime.GC()
 			break
 		}
 	}
@@ -175,12 +188,10 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 		}
 	}
 
-	// If we're not doing full cleanup, reset the closing flag
-	if !needFullCleanup {
-		s.isClosing = false
-	}
-
-	s.Mu.Unlock() // Release lock before potentially long operations
+	// Always release the lock before potentially long operations
+	// but remember if we need full cleanup
+	s.isClosing = false // Reset the flag immediately to allow new connections
+	s.Mu.Unlock()
 
 	// Only do full pipeline cleanup if no streams are left
 	if needFullCleanup {
@@ -194,19 +205,23 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 					log.Warn().Msgf("Failed to set pipeline to NULL state: %v", err)
 				}
 
-				// Wait a bit for state change to complete
-				time.Sleep(100 * time.Millisecond)
+				// Wait a bit longer for state change to complete
+				time.Sleep(200 * time.Millisecond)
 
-				// Send EOS event with retry
+				// Wait a bit longer for state change to complete
+				time.Sleep(200 * time.Millisecond)
+
+				// Send EOS event with retry and longer wait times
 				for i := 0; i < 3; i++ {
 					if s.pipeline.SendEvent(gst.NewEOSEvent()) {
+						log.Debug().Msg("Successfully sent EOS to pipeline")
 						break
 					}
 					log.Warn().Msg("WARNING: Failed to send EOS to pipeline, retrying...")
-					time.Sleep(100 * time.Millisecond)
+					time.Sleep(200 * time.Millisecond)
 				}
 
-				// Set each element to NULL state first
+				// Set each element to NULL state first with improved error handling
 				if elements, _ := s.pipeline.GetElementsSorted(); elements != nil {
 					for _, element := range elements {
 						log.Debug().Msgf("Setting element to NULL state: %s", element.GetName())
@@ -216,25 +231,46 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 								pad.PauseTask()
 							}
 						}
-						if err := element.SetState(gst.StateNull); err != nil {
-							log.Debug().Msgf("WARNING: Failed to set %s state to Null", element.GetName())
+						// Try multiple times to set state to NULL
+						for i := 0; i < 3; i++ {
+							if err := element.SetState(gst.StateNull); err != nil {
+								log.Debug().Msgf("WARNING: Failed to set %s state to Null (attempt %d/3): %v",
+									element.GetName(), i+1, err)
+								time.Sleep(100 * time.Millisecond)
+							} else {
+								break
+							}
 						}
 					}
+					// Wait a bit for all state changes to complete
+					time.Sleep(100 * time.Millisecond)
 				}
 
-				// Now remove elements
+				// Now remove elements with improved error handling
 				if elements, _ := s.pipeline.GetElementsSorted(); elements != nil {
 					for _, element := range elements {
 						log.Debug().Msgf("Removing element: %s", element.GetName())
-						if err := s.pipeline.Remove(element); err != nil {
-							log.Debug().Msgf("WARNING: Failed to remove element from pipeline: %s", element.GetName())
+						// Try multiple times to remove the element
+						for i := 0; i < 3; i++ {
+							if err := s.pipeline.Remove(element); err != nil {
+								log.Debug().Msgf("WARNING: Failed to remove element from pipeline: %s (attempt %d/3): %v",
+									element.GetName(), i+1, err)
+								time.Sleep(100 * time.Millisecond)
+							} else {
+								break
+							}
 						}
 					}
 				}
 
-				// Final cleanup
-				s.pipeline.Clear()
-				s.pipeline = nil
+				// Final cleanup with additional safeguards
+				if s.pipeline != nil {
+					s.pipeline.Clear()
+					s.pipeline = nil
+				}
+
+				// Force garbage collection to clean up any remaining GStreamer resources
+				runtime.GC()
 			}
 
 			// Cleanup HLS directory with retry
@@ -252,6 +288,7 @@ func (s *Stream) Close(sinkBin *gst.Bin, done chan bool) gst.FlowReturn {
 			// Final cleanup of stream object
 			s.Mu.Lock()
 			s.isClosing = false
+			s.count = 0 // Ensure count is reset to 0
 			s.Mu.Unlock()
 			log.Info().Msgf("Pipeline fully disposed for stream: %s", s.Settings.Uuid)
 		}()
@@ -1230,6 +1267,12 @@ func (s *Stream) CreateHlsDir() error {
 func (s *Stream) StartStream(c *fiber.Ctx) error {
 	var err error
 	log.Info().Msgf("Starting stream for UUID: %s, Source: %s", s.Settings.Uuid, s.Settings.Src)
+
+	// Ensure we're starting with a clean state
+	s.Mu.Lock()
+	s.isClosing = false
+	s.count = 0
+	s.Mu.Unlock()
 
 	// Create a main loop for GStreamer
 	mainLoop := glib.NewMainLoop(glib.MainContextDefault(), false)
