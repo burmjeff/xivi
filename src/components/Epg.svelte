@@ -36,11 +36,27 @@
 	let elemArrow: HTMLElement | null = $state(null);
 	let editModalOpen = $state(false);
 	let deleteModalOpen = $state(false);
+	let editNameTooltipOpen = $state(false);
+	let editUrlTooltipOpen = $state(false);
+	let deleteTooltipOpen = $state(false);
+	let refreshTooltipOpen = $state(false);
+	let refreshingEpgId = $state<number | null>(null);
 
 	let currentEpgIdx: number;
 	let editType: string = $state("");
 	let editValue: string = $state("");
 	let epgToDelete: number | null = null;
+
+	// Format date to YYYY-MM-DD HH:MM
+	function formatDateTime(dateStr: string) {
+		const date = new Date(dateStr);
+		let year = date.getFullYear();
+		let month = String(date.getMonth() + 1).padStart(2, '0');
+		let day = String(date.getDate()).padStart(2, '0');
+		let hours = String(date.getHours()).padStart(2, '0');
+		let minutes = String(date.getMinutes()).padStart(2, '0');
+		return `${year}-${month}-${day} ${hours}:${minutes}`;
+	}
 
 	// Use Floating
 	const tooltipFloating = useFloating({
@@ -80,6 +96,90 @@
 	const addClick = useClick(addFloating.context);
 	const addDismiss = useDismiss(addFloating.context);
 	const addInteractions = useInteractions([addRole, addClick, addDismiss]);
+
+	// Floating UI setup for edit name tooltip
+	const editNameTooltipFloating = useFloating({
+		whileElementsMounted: autoUpdate,
+		get open() {
+			return editNameTooltipOpen;
+		},
+		onOpenChange: (v) => {
+			editNameTooltipOpen = v;
+		},
+		placement: "top",
+		get middleware() {
+			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+		},
+	});
+
+	// Interactions for edit name tooltip
+	const editNameTooltipRole = useRole(editNameTooltipFloating.context, { role: "tooltip" });
+	const editNameTooltipHover = useHover(editNameTooltipFloating.context, { move: false });
+	const editNameTooltipDismiss = useDismiss(editNameTooltipFloating.context);
+	const editNameTooltipInteractions = useInteractions([editNameTooltipRole, editNameTooltipHover, editNameTooltipDismiss]);
+
+	// Floating UI setup for edit URL tooltip
+	const editUrlTooltipFloating = useFloating({
+		whileElementsMounted: autoUpdate,
+		get open() {
+			return editUrlTooltipOpen;
+		},
+		onOpenChange: (v) => {
+			editUrlTooltipOpen = v;
+		},
+		placement: "top",
+		get middleware() {
+			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+		},
+	});
+
+	// Interactions for edit URL tooltip
+	const editUrlTooltipRole = useRole(editUrlTooltipFloating.context, { role: "tooltip" });
+	const editUrlTooltipHover = useHover(editUrlTooltipFloating.context, { move: false });
+	const editUrlTooltipDismiss = useDismiss(editUrlTooltipFloating.context);
+	const editUrlTooltipInteractions = useInteractions([editUrlTooltipRole, editUrlTooltipHover, editUrlTooltipDismiss]);
+
+	// Floating UI setup for delete tooltip
+	const deleteTooltipFloating = useFloating({
+		whileElementsMounted: autoUpdate,
+		get open() {
+			return deleteTooltipOpen;
+		},
+		onOpenChange: (v) => {
+			deleteTooltipOpen = v;
+		},
+		placement: "top",
+		get middleware() {
+			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+		},
+	});
+
+	// Interactions for delete tooltip
+	const deleteTooltipRole = useRole(deleteTooltipFloating.context, { role: "tooltip" });
+	const deleteTooltipHover = useHover(deleteTooltipFloating.context, { move: false });
+	const deleteTooltipDismiss = useDismiss(deleteTooltipFloating.context);
+	const deleteTooltipInteractions = useInteractions([deleteTooltipRole, deleteTooltipHover, deleteTooltipDismiss]);
+
+	// Floating UI setup for refresh tooltip
+	const refreshTooltipFloating = useFloating({
+		whileElementsMounted: autoUpdate,
+		get open() {
+			return refreshTooltipOpen;
+		},
+		onOpenChange: (v) => {
+			refreshTooltipOpen = v;
+		},
+		placement: "top",
+		get middleware() {
+			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+		},
+	});
+
+	// Interactions for refresh tooltip
+	const refreshTooltipRole = useRole(refreshTooltipFloating.context, { role: "tooltip" });
+	const refreshTooltipHover = useHover(refreshTooltipFloating.context, { move: false });
+	const refreshTooltipDismiss = useDismiss(refreshTooltipFloating.context);
+	const refreshTooltipInteractions = useInteractions([refreshTooltipRole, refreshTooltipHover, refreshTooltipDismiss]);
 
 	function handleConfirm() {
 		if (editValue) {
@@ -173,12 +273,42 @@
 			const response = await fetch(`/api/epg/${epgId}`, {
 				method: 'DELETE'
 			});
-			const data = await response.status;
+			const data = response.status;
 			console.log('Deleted epg:', data);
 			$epgs = $epgs.filter((t) => t.id != epgId);
 		} catch (error) {
 			console.log('Error deleting epg:', error);
 			return;
+		}
+	}
+
+	async function refreshEpg(epgId: number) {
+		try {
+			// Set the refreshing state for this EPG
+			refreshingEpgId = epgId;
+
+			// Call the API to refresh the EPG
+			const response = await fetch(`/api/epg/${epgId}/refresh`, {
+				method: 'POST'
+			});
+
+			if (response.ok) {
+				console.log('Refreshing EPG started');
+
+				// Wait a bit to allow the backend to process, then update the UI
+				setTimeout(async () => {
+					// Fetch updated EPGs
+					epgs.set(await updateEpgs());
+					// Clear the refreshing state
+					refreshingEpgId = null;
+				}, 2000);
+			} else {
+				console.error('Error refreshing EPG:', response.status, response.statusText);
+				refreshingEpgId = null;
+			}
+		} catch (error) {
+			console.log('Error refreshing EPG:', error);
+			refreshingEpgId = null;
 		}
 	}
 </script>
@@ -241,51 +371,124 @@
 	<div id="accord" class="epgs-viewport min-w-full overflow-auto">
 		{#if $epgs != null}
 			<table class="epgTable table ">
-				<thead class="items-center text-center">
-					<tr id="thead">
-						<th>Name</th>
-						<th>Url</th>
-						<th>Updated</th>
-						<th>Delete</th>
+				<thead>
+					<tr>
+						<th class="text-center">Name</th>
+						<th class="text-center">Url</th>
+						<th class="text-center">Updated</th>
+						<th class="text-center">Refresh</th>
+						<th class="text-center">Delete</th>
 					</tr>
 				</thead>
 				<tbody class="items-center">
 					{#if $epgs.length > 0}
 						{#each $epgs as epg, epgIdx (epg.id)}
-							<tr>
+							<tr id="animate">
 								<td>
-									{epg.name}
+									<div class="flex items-center justify-center gap-2">
+										<span>{epg.name}</span>
+										<button
+											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+											onclick={() => {
+												editPrompt(epgIdx, "name");
+											}}
+											bind:this={editNameTooltipFloating.elements.reference}
+											{...editNameTooltipInteractions.getReferenceProps()}
+										>
+											<Icon icon="icon-park-outline:edit-one" width="18" height="18" />
+											{#if editNameTooltipOpen}
+												<div
+													bind:this={editNameTooltipFloating.elements.floating}
+													style={editNameTooltipFloating.floatingStyles}
+													{...editNameTooltipInteractions.getFloatingProps()}
+													class="floating popover-neutral card p-2"
+													transition:fade={{ duration: 200 }}
+												>
+													<p><strong>Edit EPG Name</strong></p>
+													<FloatingArrow bind:ref={elemArrow} context={editNameTooltipFloating.context} fill="#575969" />
+												</div>
+											{/if}
+										</button>
+									</div>
+								</td>
+								<td>
+									<div class="flex items-center justify-center gap-2">
+										<span>{epg.url}</span>
+										<button
+											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+											onclick={() => {
+												editPrompt(epgIdx, "url");
+											}}
+											bind:this={editUrlTooltipFloating.elements.reference}
+											{...editUrlTooltipInteractions.getReferenceProps()}
+										>
+											<Icon icon="icon-park-outline:edit-one" width="18" height="18" />
+											{#if editUrlTooltipOpen}
+												<div
+													bind:this={editUrlTooltipFloating.elements.floating}
+													style={editUrlTooltipFloating.floatingStyles}
+													{...editUrlTooltipInteractions.getFloatingProps()}
+													class="floating popover-neutral card p-2"
+													transition:fade={{ duration: 200 }}
+												>
+													<p><strong>Edit EPG URL</strong></p>
+													<FloatingArrow bind:ref={elemArrow} context={editUrlTooltipFloating.context} fill="#575969" />
+												</div>
+											{/if}
+										</button>
+									</div>
+								</td>
+								<td>
+									{formatDateTime(epg.updated_at)}
+								</td>
+								<td class="justify-center items-center">
 									<button
 										class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
 										onclick={() => {
-											editPrompt(epgIdx, "name");
+											refreshEpg(epg.id);
 										}}
+										bind:this={refreshTooltipFloating.elements.reference}
+										{...refreshTooltipInteractions.getReferenceProps()}
+										disabled={refreshingEpgId === epg.id}
+										class:animate-spin={refreshingEpgId === epg.id}
 									>
-										<Icon icon="icon-park-outline:edit-one" width="18" height="18" />
+										<Icon icon="icon-park-outline:refresh-one" width="18" height="18" />
+										{#if refreshTooltipOpen}
+											<div
+												bind:this={refreshTooltipFloating.elements.floating}
+												style={refreshTooltipFloating.floatingStyles}
+												{...refreshTooltipInteractions.getFloatingProps()}
+												class="floating popover-neutral card p-2"
+												transition:fade={{ duration: 200 }}
+											>
+												<p><strong>Refresh EPG</strong></p>
+												<FloatingArrow bind:ref={elemArrow} context={refreshTooltipFloating.context} fill="#575969" />
+											</div>
+										{/if}
 									</button>
 								</td>
-								<td>
-									{epg.url}
+								<td class="justify-center items-center">
 									<button
-										class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
-										onclick={() => {
-											editPrompt(epgIdx, "url");
-										}}
-									>
-										<Icon icon="icon-park-outline:edit-one" width="18" height="18" />
-									</button>
-								</td>
-								<td>
-									{epg.updated_at}
-								</td>
-								<td
-									><button
 										class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
 										onclick={() => {
 											deletePrompt(epg.id);
 										}}
+										bind:this={deleteTooltipFloating.elements.reference}
+										{...deleteTooltipInteractions.getReferenceProps()}
 									>
 										<Icon icon="icon-park-outline:delete" width="18" height="18" />
+										{#if deleteTooltipOpen}
+											<div
+												bind:this={deleteTooltipFloating.elements.floating}
+												style={deleteTooltipFloating.floatingStyles}
+												{...deleteTooltipInteractions.getFloatingProps()}
+												class="floating popover-neutral card p-2"
+												transition:fade={{ duration: 200 }}
+											>
+												<p><strong>Delete EPG</strong></p>
+												<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#575969" />
+											</div>
+										{/if}
 									</button>
 								</td>
 							</tr>
@@ -358,8 +561,14 @@
 		max-height: 82vh;
 		height: 82vh;
 	}
-	#thead {
+
+	/* Center all table cells and headers */
+	table th,
+	table td {
+		text-align: center !important;
+	}
+
+	#animate {
 		position: relative;
-		text-align: center;
 	}
 </style>

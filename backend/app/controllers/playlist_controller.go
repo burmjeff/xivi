@@ -7,6 +7,7 @@ import (
 
 	"xivi/backend/app/models"
 	"xivi/backend/pkg/utils"
+	"xivi/backend/platform/cron"
 	"xivi/backend/platform/database"
 
 	"github.com/gofiber/fiber/v2"
@@ -423,6 +424,49 @@ func ConvertPlaylistGroup(c *fiber.Ctx) error {
 		"error":         false,
 		"msg":           nil,
 		"templategroup": templateGroup,
+	})
+}
+
+// RefreshPlaylist func to manually refresh/update a playlist by given ID.
+// @Description Manually refresh/update a playlist by given ID.
+// @Summary manually refresh/update a playlist by given ID
+// @Tags Playlist
+// @Produce json
+// @Param id path string true "Playlist ID"
+// @Success 200 {string} status "ok"
+// @Router /playlist/{playlist_id}/refresh [post]
+func RefreshPlaylist(c *fiber.Ctx) error {
+	// Catch playlist ID from URL.
+	playlist_id, err := strconv.ParseInt(c.Params("playlist_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Get the playlist by ID
+	playlist, err := database.Db.GetPlaylist(playlist_id)
+	if err != nil {
+		// Return status 404 and playlist not found error.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "playlist with this ID not found",
+		})
+	}
+
+	// Parse the M3U file to update the playlist
+	m3uParser := utils.M3uParser{}
+	go func() {
+		startTime := time.Now()
+		m3uParser.ParseM3u(*playlist)
+		cron.CleanPlaylist(*playlist, startTime)
+	}()
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error": false,
+		"msg":   "Playlist refresh started",
 	})
 }
 

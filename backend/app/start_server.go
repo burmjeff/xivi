@@ -37,10 +37,7 @@ func StartServer(app *fiber.App) {
 
 	//Start Cronjobs
 	cron.RunCronJobs()
-	cron.CleanupOldEpgProgrammes()
-	go cron.UpdatePlaylists()
-	go cron.UpdateEpgs()
-	go cron.VacuumDB()
+	go cron.RunUpdates()
 
 	// Run server.
 	log.Printf("Server starting at http://%s ...\n", settings.SERVER_PATH)

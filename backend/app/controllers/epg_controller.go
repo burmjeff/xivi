@@ -6,6 +6,7 @@ import (
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/pkg/utils"
+	"xivi/backend/platform/cron"
 	"xivi/backend/platform/database"
 
 	"github.com/gofiber/fiber/v2"
@@ -248,6 +249,48 @@ func DeleteEpg(c *fiber.Ctx) error {
 
 	// Return status 204 no content.
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+// RefreshEpg func to manually refresh/update an EPG by given ID.
+// @Description Manually refresh/update an EPG by given ID.
+// @Summary manually refresh/update an EPG by given ID
+// @Tags Epg
+// @Produce json
+// @Param id path string true "EPG ID"
+// @Success 200 {string} status "ok"
+// @Router /epg/{epg_id}/refresh [post]
+func RefreshEpg(c *fiber.Ctx) error {
+	ctx := context.Background()
+	// Catch EPG ID from URL.
+	epg_id, err := strconv.ParseInt(c.Params("epg_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Get the EPG by ID
+	epg, err := database.Db.GetEpg(ctx, epg_id)
+	if err != nil {
+		// Return status 404 and EPG not found error.
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "EPG with this ID not found",
+		})
+	}
+
+	// Parse the EPG file to update the EPG
+	go func() {
+		utils.ParseEpg(epg)
+		cron.CleanupOldEpgProgrammes()
+	}()
+
+	// Return status 200 OK.
+	return c.JSON(fiber.Map{
+		"error": false,
+		"msg":   "EPG refresh started",
+	})
 }
 
 // GetEpgTvgids

@@ -25,6 +25,7 @@ func PublicRoutes(a *fiber.App) {
 	api.Post("/playlist", controllers.CreatePlaylist)                                                // create a new playlist
 	api.Post("/playlist/:playlist_id/group/:group_id/convert", controllers.ConvertPlaylistGroup)     // convert playlistgroup
 	api.Post("/playlist/channel/:channel_id/convert/:group_id", controllers.ConvertPlaylistChannel)  // convert playlistchannel
+	api.Post("/playlist/:playlist_id/refresh", controllers.RefreshPlaylist)                          // manually refresh a playlist
 	api.Delete("/playlist/:playlist_id", controllers.DeletePlaylist)                                 // delete playlist by ID
 	api.Put("/playlist/group", controllers.UpdatePlaylistGroup)                                      // update playlist group
 	api.Put("/playlist", controllers.UpdatePlaylist)                                                 // update playlist
@@ -59,12 +60,13 @@ func PublicRoutes(a *fiber.App) {
 	api.Post("/m3u/:template_id", controllers.CreateM3U) // create m3u from template id
 
 	// EPG Routes
-	api.Get("/epgs", controllers.GetEpgs)                  // Get all Epgs
-	api.Post("/epg", controllers.AddEpg)                   // Add a new Epg
-	api.Put("/epg", controllers.UpdateEpg)                 // Modify Epg
-	api.Post("/epg/create/:epg_id", controllers.CreateEpg) // Generate a new Epg xmltv xml
-	api.Delete("/epg/:epg_id", controllers.DeleteEpg)      // Delete epg
-	api.Get("/epg/tvgids", controllers.GetEpgTvgids)       // get epg channel ids
+	api.Get("/epgs", controllers.GetEpgs)                    // Get all Epgs
+	api.Post("/epg", controllers.AddEpg)                     // Add a new Epg
+	api.Put("/epg", controllers.UpdateEpg)                   // Modify Epg
+	api.Post("/epg/create/:epg_id", controllers.CreateEpg)   // Generate a new Epg xmltv xml
+	api.Delete("/epg/:epg_id", controllers.DeleteEpg)        // Delete epg
+	api.Post("/epg/:epg_id/refresh", controllers.RefreshEpg) // Manually refresh an EPG
+	api.Get("/epg/tvgids", controllers.GetEpgTvgids)         // get epg channel ids
 
 	// Logo Routes
 	api.Get("/logos", controllers.GetLogos)             // get list of all logos

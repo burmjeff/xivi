@@ -132,9 +132,12 @@ func NewVectorQueries(db *sqlx.DB) *VectorQueries {
 	// Initialize prepared statements
 	initPreparedStatements(db)
 
-	return &VectorQueries{
+	// Create a new VectorQueries instance
+	queries := &VectorQueries{
 		BaseQueries: NewBaseQueries(db),
 	}
+
+	return queries
 }
 
 // Initialize prepared statements for better performance
@@ -142,10 +145,31 @@ func initPreparedStatements(db *sqlx.DB) {
 	preparedStmtsMux.Lock()
 	defer preparedStmtsMux.Unlock()
 
-	// Only initialize if not already initialized
-	if insertVectorStmt != nil && selectVectorByNameStmt != nil && selectVectorByIdStmt != nil &&
-		insertPlaylistVectorStmt != nil && updatePlaylistVectorStmt != nil && selectPlaylistVectorStmt != nil {
-		return
+	// Always reinitialize statements to ensure they're valid
+	// Close existing statements if they exist
+	if insertVectorStmt != nil {
+		insertVectorStmt.Close()
+		insertVectorStmt = nil
+	}
+	if selectVectorByNameStmt != nil {
+		selectVectorByNameStmt.Close()
+		selectVectorByNameStmt = nil
+	}
+	if selectVectorByIdStmt != nil {
+		selectVectorByIdStmt.Close()
+		selectVectorByIdStmt = nil
+	}
+	if insertPlaylistVectorStmt != nil {
+		insertPlaylistVectorStmt.Close()
+		insertPlaylistVectorStmt = nil
+	}
+	if updatePlaylistVectorStmt != nil {
+		updatePlaylistVectorStmt.Close()
+		updatePlaylistVectorStmt = nil
+	}
+	if selectPlaylistVectorStmt != nil {
+		selectPlaylistVectorStmt.Close()
+		selectPlaylistVectorStmt = nil
 	}
 
 	// Create prepared statements with error handling

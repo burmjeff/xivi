@@ -42,6 +42,8 @@
 	// Floating UI state
 	let templateSettingsOpen = $state(false);
 	let addTemplateTooltipOpen = $state(false);
+	let editTooltipOpen = $state(false);
+	let deleteTooltipOpen = $state(false);
 	let elemArrow: HTMLElement | null = $state(null);
 	let accordionItem = $state<string[]>([]);
 
@@ -80,6 +82,48 @@
 	const addTemplateTooltipHover = useHover(addTemplateTooltipFloating.context, { move: false });
 	const addTemplateTooltipDismiss = useDismiss(addTemplateTooltipFloating.context);
 	const addTemplateTooltipInteractions = useInteractions([addTemplateTooltipRole, addTemplateTooltipHover, addTemplateTooltipDismiss]);
+
+	// Floating UI setup for edit tooltip
+	const editTooltipFloating = useFloating({
+		whileElementsMounted: autoUpdate,
+		get open() {
+			return editTooltipOpen;
+		},
+		onOpenChange: (v) => {
+			editTooltipOpen = v;
+		},
+		placement: "top",
+		get middleware() {
+			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+		},
+	});
+
+	// Interactions for edit tooltip
+	const editTooltipRole = useRole(editTooltipFloating.context, { role: "tooltip" });
+	const editTooltipHover = useHover(editTooltipFloating.context, { move: false });
+	const editTooltipDismiss = useDismiss(editTooltipFloating.context);
+	const editTooltipInteractions = useInteractions([editTooltipRole, editTooltipHover, editTooltipDismiss]);
+
+	// Floating UI setup for delete tooltip
+	const deleteTooltipFloating = useFloating({
+		whileElementsMounted: autoUpdate,
+		get open() {
+			return deleteTooltipOpen;
+		},
+		onOpenChange: (v) => {
+			deleteTooltipOpen = v;
+		},
+		placement: "top",
+		get middleware() {
+			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+		},
+	});
+
+	// Interactions for delete tooltip
+	const deleteTooltipRole = useRole(deleteTooltipFloating.context, { role: "tooltip" });
+	const deleteTooltipHover = useHover(deleteTooltipFloating.context, { move: false });
+	const deleteTooltipDismiss = useDismiss(deleteTooltipFloating.context);
+	const deleteTooltipInteractions = useInteractions([deleteTooltipRole, deleteTooltipHover, deleteTooltipDismiss]);
 
 	function modalTemplate(isNew: boolean, id: number, name: string) {
 		isNewTemplate = isNew;
@@ -206,24 +250,52 @@
 							{#snippet control()}
 								<div class="flex flex-row items-center w-full cursor-pointer">
 									<h4 class="text-lg flex-grow">{template.name}</h4>
-									<div class="flex flex-row gap-2">
+									<div class="flex flex-row gap-1">
 										<button
-											class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
 											onclick={(e) => {
 												modalTemplate(false, template.id, template.name);
 												e.stopPropagation();
 											}}
+											bind:this={editTooltipFloating.elements.reference}
+											{...editTooltipInteractions.getReferenceProps()}
 										>
 											<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
+											{#if editTooltipOpen}
+												<div
+													bind:this={editTooltipFloating.elements.floating}
+													style={editTooltipFloating.floatingStyles}
+													{...editTooltipInteractions.getFloatingProps()}
+													class="floating popover-neutral card p-2"
+													transition:fade={{ duration: 200 }}
+												>
+													<p><strong>Edit Template</strong></p>
+													<FloatingArrow bind:ref={elemArrow} context={editTooltipFloating.context} fill="#575969" />
+												</div>
+											{/if}
 										</button>
 										<button
-											class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
 											onclick={(e) => {
 												deletePrompt(template.id)
 												e.stopPropagation();
 											}}
+											bind:this={deleteTooltipFloating.elements.reference}
+											{...deleteTooltipInteractions.getReferenceProps()}
 										>
 											<Icon icon="icon-park-outline:delete" width="18" height="18" />
+											{#if deleteTooltipOpen}
+												<div
+													bind:this={deleteTooltipFloating.elements.floating}
+													style={deleteTooltipFloating.floatingStyles}
+													{...deleteTooltipInteractions.getFloatingProps()}
+													class="floating popover-neutral card p-2"
+													transition:fade={{ duration: 200 }}
+												>
+													<p><strong>Delete Template</strong></p>
+													<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#575969" />
+												</div>
+											{/if}
 										</button>
 									</div>
 								</div>
