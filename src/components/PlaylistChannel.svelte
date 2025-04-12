@@ -87,10 +87,10 @@
 {#if $playlists[playlistIdx].groups[groupIdx].channels != null && $playlists[playlistIdx].groups[groupIdx].channels.length > 0}
 	<table class="playlistChannel table">
 		<thead>
-			<tr id="thead">
-				<th>Logo</th>
-				<th>Name</th>
-				<th>tvg-id</th>
+			<tr>
+				<th class="text-center">Logo</th>
+				<th class="text-center">Name</th>
+				<th class="text-center">tvg-id</th>
 			</tr>
 		</thead>
 		<tbody
@@ -123,10 +123,16 @@
 {/if}
 
 <style>
+	/* Center all table cells and headers */
+	table th,
+	table td {
+		text-align: center !important;
+	}
+
 	#animate {
 		position: relative;
-		text-align: center;
 	}
+
 	.custom-shadow-item {
 		position: absolute;
 		top: 0;
@@ -138,9 +144,5 @@
 		background: lightblue;
 		opacity: 0.6;
 		margin: 0;
-	}
-	#thead {
-		position: relative;
-		text-align: center;
 	}
 </style>

@@ -28,15 +28,13 @@ func RunCronJobs() {
 	}
 
 	s := gocron.NewScheduler(localTime)
-	playlistJob, _ := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(UpdatePlaylists)
-	epgJob, _ := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(UpdateEpgs)
-	vacuumJob, _ := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(VacuumDB)
 
-	log.Log().Msgf("Playlist update scheduled at: %s", playlistJob.ScheduledAtTime())
-	log.Log().Msgf("EPG update scheduled at: %s", epgJob.ScheduledAtTime())
-	log.Log().Msgf("Database vacuum scheduled at: %s", vacuumJob.ScheduledAtTime())
+	// Schedule the update process that runs all updates
+	updateJob, _ := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(RunUpdates)
+	log.Log().Msgf("Full update scheduled at: %s", updateJob.ScheduledAtTime())
 
 	s.StartAsync()
+	log.Info().Msg("Cron scheduler started successfully")
 }
 
 func UpdatePlaylists() {
@@ -55,32 +53,50 @@ func UpdatePlaylists() {
 		updateMutex.Lock()
 		isUpdating = false
 		updateMutex.Unlock()
+
+		// Recover from any panics
+		if r := recover(); r != nil {
+			log.Error().Interface("panic", r).Msg("Recovered from panic in UpdatePlaylists")
+		}
 	}()
+
+	// Create a context with timeout for operations that might need it
+	_, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
 
 	// Store dynamic group relationships before updating playlists
 	var dynamicGroups []models.TemplateGroup
 	if groups, err := database.Db.GetAllTmplGroups(); err != nil {
-		log.Err(err)
+		log.Error().Err(err).Msg("Failed to get template groups")
 	} else {
 		for _, group := range *groups {
 			if group.Dynamic && group.DynamicGroup != nil {
 				dynamicGroups = append(dynamicGroups, group)
 			}
 		}
+		log.Info().Int("count", len(dynamicGroups)).Msg("Found dynamic template groups")
 	}
 
-	// get playlists.
+	// get playlists - use context where supported
 	playlists, err := database.Db.GetPlaylists()
 	if err != nil {
-		log.Err(err)
+		log.Error().Err(err).Msg("Failed to get playlists")
 		return
 	}
+
+	if playlists == nil || len(*playlists) == 0 {
+		log.Warn().Msg("No playlists found to update")
+		return
+	}
+
+	log.Info().Int("count", len(*playlists)).Msg("Starting playlist update process")
 	startTime := time.Now()
+
 	for _, playlist := range *playlists {
 		log.Log().Msgf("Updating Playlist: %s", playlist.Name)
 		m3uParser := utils.M3uParser{}
 		m3uParser.ParseM3u(playlist)
-		cleanPlaylist(playlist, startTime)
+		CleanPlaylist(playlist, startTime)
 		log.Log().Msgf("Finished Updating Playlist: %s", playlist.Name)
 	}
 
@@ -140,6 +156,8 @@ func UpdatePlaylists() {
 			go m3uTools.CreateM3u(template)
 		}
 	}
+
+	// No signal needed for manual updates
 }
 
 func UpdateEpgs() {
@@ -158,25 +176,48 @@ func UpdateEpgs() {
 		updateMutex.Lock()
 		isUpdating = false
 		updateMutex.Unlock()
+
+		// Recover from any panics
+		if r := recover(); r != nil {
+			log.Error().Interface("panic", r).Msg("Recovered from panic in UpdateEpgs")
+		}
 	}()
 
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
 	// get epgs.
-	epgs, err := database.Db.GetEpgs(context.Background())
+	epgs, err := database.Db.GetEpgs(ctx)
 	if err != nil {
-		log.Err(err)
+		log.Error().Err(err).Msg("Failed to get EPGs")
 		return
 	}
+
+	if epgs == nil || len(*epgs) == 0 {
+		log.Warn().Msg("No EPGs found to update")
+		return
+	}
+
+	log.Info().Int("count", len(*epgs)).Msg("Starting EPG update process")
 
 	for _, epg := range *epgs {
 		log.Log().Msgf("Updating EPG: %s", epg.Name)
 		utils.ParseEpg(&epg)
 		log.Log().Msgf("Finished Updating EPG: %s", epg.Name)
 	}
+
+	log.Info().Msg("All EPGs updated, cleaning up old programmes")
 	CleanupOldEpgProgrammes()
+	log.Info().Msg("EPG update process completed successfully")
+
+	// No signal needed for manual updates
 }
 
-func cleanPlaylist(playlist models.Playlist, startTime time.Time) {
-	ctx := context.Background()
+func CleanPlaylist(playlist models.Playlist, startTime time.Time) {
+	// Create a context with timeout for database operations
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 	if err := database.Db.CleanPlaylistGroups(ctx, playlist.ID); err != nil {
 		log.Debug().Msgf("Playlist Clean: %v", err)
 	}
@@ -205,21 +246,52 @@ func VacuumDB() {
 	// We don't set isUpdating here because vacuum can run alongside other operations
 	updateMutex.Unlock()
 
-	// Call INCREMENTAL VACUUM
-	ctx := context.Background()
+	// Call INCREMENTAL VACUUM with a timeout context
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	log.Info().Msg("Starting database vacuum operation")
 	err := database.Db.CleanupQueries.VacuumDB(ctx)
 	if err != nil {
-		log.Debug().Msgf("Database vacuum: %v", err)
+		log.Error().Err(err).Msg("Database vacuum failed")
+		return
 	}
-	log.Debug().Msgf("Database vacuum completed")
+	log.Info().Msg("Database vacuum completed successfully")
+
+	// No signal needed for manual updates
 }
 
 func CleanupOldEpgProgrammes() {
 	// Clean up old EPG programmes
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	log.Info().Msg("Starting cleanup of old EPG programmes")
 	err := database.Db.CleanupQueries.CleanOldEpgProgrammes(ctx)
 	if err != nil {
-		log.Error().Msgf("Failed to clean up old EPG programmes: %v", err)
+		log.Error().Err(err).Msg("Failed to clean up old EPG programmes")
+		return
 	}
-	log.Debug().Msg("EPG programme cleanup completed")
+	log.Info().Msg("EPG programme cleanup completed successfully")
+}
+
+// RunUpdates runs all updates in sequence: playlist -> EPG -> vacuum
+// This is used by the cron scheduler to ensure updates happen in the correct order
+func RunUpdates() {
+	log.Log().Msg("Starting scheduled update process")
+	database.ReinitializePreparedStatements()
+
+	// Step 1: Update playlists
+	log.Info().Msg("Step 1/3: Starting playlist update")
+	UpdatePlaylists()
+
+	// Step 2: Update EPGs
+	log.Info().Msg("Step 2/3: Starting EPG update")
+	UpdateEpgs()
+
+	// Step 3: Vacuum database
+	log.Info().Msg("Step 3/3: Starting database vacuum")
+	VacuumDB()
+
+	log.Info().Msg("Update process completed successfully")
 }

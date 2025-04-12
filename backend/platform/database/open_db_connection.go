@@ -14,7 +14,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var Db *Queries
+var (
+	Db         *Queries
+	dbInstance *sqlx.DB // Store the database instance for reinitialization
+)
 
 // Queries struct for collect all app queries.
 type Queries struct {
@@ -34,6 +37,9 @@ func OpenDBConnection() (*Queries, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Store the database instance for later reinitialization
+	dbInstance = db
 
 	// Apply additional PRAGMA optimizations
 	optimizeDBConnection(db)
@@ -202,4 +208,53 @@ func InitDB(db *sqlx.DB) error {
 
 	log.Print("Migrations ran successfully")
 	return nil
+}
+
+// ReinitializePreparedStatements reinitializes all prepared statements in the database
+// This is useful to call before scheduled cron jobs to ensure fresh prepared statements
+func ReinitializePreparedStatements() {
+	if dbInstance == nil {
+		log.Error().Msg("Cannot reinitialize prepared statements: database instance is nil")
+		return
+	}
+
+	log.Info().Msg("Reinitializing all prepared statements")
+
+	// Reinitialize vector queries prepared statements
+	if Db != nil && Db.VectorQueries != nil {
+		// Access the initPreparedStatements function through reflection
+		// or recreate the VectorQueries instance
+		Db.VectorQueries = queries.NewVectorQueries(dbInstance)
+		log.Info().Msg("Vector queries prepared statements reinitialized")
+	}
+
+	// Force a connection reset by closing and reopening connections
+	// This helps clear any stale prepared statements
+	if err := dbInstance.Close(); err != nil {
+		log.Error().Err(err).Msg("Error closing database connections")
+		return
+	}
+
+	// Reopen the database connection
+	newDb, err := getDB()
+	if err != nil {
+		log.Error().Err(err).Msg("Error reopening database connection")
+		return
+	}
+
+	// Update the global instance
+	dbInstance = newDb
+
+	// Recreate all query instances
+	Db = &Queries{
+		PlaylistQueries: queries.NewPlaylistQueries(newDb),
+		TemplateQueries: queries.NewTemplateQueries(newDb),
+		EpgQueries:      queries.NewEpgQueries(newDb),
+		VectorQueries:   queries.NewVectorQueries(newDb),
+		LogoQueries:     queries.NewLogoQueries(newDb),
+		StreamQueries:   queries.NewStreamQueries(newDb),
+		CleanupQueries:  queries.NewCleanupQueries(newDb),
+	}
+
+	log.Info().Msg("All database prepared statements successfully reinitialized")
 }
