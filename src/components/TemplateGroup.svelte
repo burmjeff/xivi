@@ -14,6 +14,18 @@
 	import { fade } from 'svelte/transition';
 	import { cubicIn } from 'svelte/easing';
 	import Icon from '@iconify/svelte';
+	import {
+		FloatingArrow,
+		arrow,
+		autoUpdate,
+		flip as floatingFlip,
+		offset,
+		useDismiss,
+		useFloating,
+		useHover,
+		useInteractions,
+		useRole,
+	} from "@skeletonlabs/floating-ui-svelte";
 
 	interface Props {
 		templateId: number;
@@ -29,6 +41,10 @@
 	let dndItem: TemplateGroup;
 	let dndIdx: number;
 	let accordionItem = $state<string[]>([]);
+
+	// Floating UI state
+	let deleteTooltipOpen = $state(false);
+	let elemArrow: HTMLElement | null = $state(null);
 
 	const updateTemplateGroups = async () => {
 		const response = await fetch(`/api/template/${templateId}/groups`);
@@ -136,6 +152,27 @@
 	) {
 		if (!shouldIgnoreDndEvents) data!.isDragged = true;
 	}
+
+	// Floating UI setup for delete tooltip
+	const deleteTooltipFloating = useFloating({
+		whileElementsMounted: autoUpdate,
+		get open() {
+			return deleteTooltipOpen;
+		},
+		onOpenChange: (v: boolean) => {
+			deleteTooltipOpen = v;
+		},
+		placement: "top",
+		get middleware() {
+			return [offset(10), floatingFlip(), elemArrow && arrow({ element: elemArrow })];
+		},
+	});
+
+	// Interactions for delete tooltip
+	const deleteTooltipRole = useRole(deleteTooltipFloating.context, { role: "tooltip" });
+	const deleteTooltipHover = useHover(deleteTooltipFloating.context, { move: false });
+	const deleteTooltipDismiss = useDismiss(deleteTooltipFloating.context);
+	const deleteTooltipInteractions = useInteractions([deleteTooltipRole, deleteTooltipHover, deleteTooltipDismiss]);
 </script>
 
 <div id="accord" class="templategroups-viewport min-w-full overflow-auto">
@@ -158,15 +195,29 @@
 								{#snippet control()}
 										<div class="flex flex-row items-center w-full cursor-pointer">
 											<h4 class="text-lg flex-grow">{group.name}</h4>
-											<div class="flex flex-row gap-2">
+											<div class="flex flex-row gap-1">
 												<button
-													class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+													class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
 													onclick={(e) => {
 														e.stopPropagation();
 														deletePrompt(group.id);
 													}}
+													bind:this={deleteTooltipFloating.elements.reference}
+													{...deleteTooltipInteractions.getReferenceProps()}
 												>
 													<Icon icon="icon-park-outline:delete" width="18" height="18" />
+													{#if deleteTooltipOpen}
+														<div
+															bind:this={deleteTooltipFloating.elements.floating}
+															style={deleteTooltipFloating.floatingStyles}
+															{...deleteTooltipInteractions.getFloatingProps()}
+															class="floating popover-neutral card p-2"
+															transition:fade={{ duration: 200 }}
+														>
+															<p><strong>Remove Group</strong></p>
+															<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#575969" />
+														</div>
+													{/if}
 												</button>
 											</div>
 										</div>

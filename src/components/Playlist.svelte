@@ -31,6 +31,7 @@
 	let currentPlaylistName = $state('');
 	let currentPlaylistUrl = $state('');
 	let isNewPlaylist = $state(false);
+	let refreshingPlaylistId = $state<number | null>(null);
 
 	const updatePlaylists = async () => {
 		const response = await fetch('/api/playlists');
@@ -44,6 +45,9 @@
 
 	// Floating UI state
 	let addPlTooltipOpen = $state(false);
+	let refreshTooltipOpen = $state(false);
+	let editTooltipOpen = $state(false);
+	let deleteTooltipOpen = $state(false);
 	let elemArrow: HTMLElement | null = $state(null);
 	let accordionItem = $state<string[]>([]);
 
@@ -68,12 +72,77 @@
 	const addPlTooltipDismiss = useDismiss(addPlTooltipFloating.context);
 	const addPlTooltipInteractions = useInteractions([addPlTooltipRole, addPlTooltipHover, addPlTooltipDismiss]);
 
+	// Floating UI setup for refresh tooltip
+	const refreshTooltipFloating = useFloating({
+		whileElementsMounted: autoUpdate,
+		get open() {
+			return refreshTooltipOpen;
+		},
+		onOpenChange: (v) => {
+			refreshTooltipOpen = v;
+		},
+		placement: "top",
+		get middleware() {
+			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+		},
+	});
+
+	// Interactions for refresh tooltip
+	const refreshTooltipRole = useRole(refreshTooltipFloating.context, { role: "tooltip" });
+	const refreshTooltipHover = useHover(refreshTooltipFloating.context, { move: false });
+	const refreshTooltipDismiss = useDismiss(refreshTooltipFloating.context);
+	const refreshTooltipInteractions = useInteractions([refreshTooltipRole, refreshTooltipHover, refreshTooltipDismiss]);
+
+	// Floating UI setup for edit tooltip
+	const editTooltipFloating = useFloating({
+		whileElementsMounted: autoUpdate,
+		get open() {
+			return editTooltipOpen;
+		},
+		onOpenChange: (v) => {
+			editTooltipOpen = v;
+		},
+		placement: "top",
+		get middleware() {
+			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+		},
+	});
+
+	// Interactions for edit tooltip
+	const editTooltipRole = useRole(editTooltipFloating.context, { role: "tooltip" });
+	const editTooltipHover = useHover(editTooltipFloating.context, { move: false });
+	const editTooltipDismiss = useDismiss(editTooltipFloating.context);
+	const editTooltipInteractions = useInteractions([editTooltipRole, editTooltipHover, editTooltipDismiss]);
+
+	// Floating UI setup for delete tooltip
+	const deleteTooltipFloating = useFloating({
+		whileElementsMounted: autoUpdate,
+		get open() {
+			return deleteTooltipOpen;
+		},
+		onOpenChange: (v) => {
+			deleteTooltipOpen = v;
+		},
+		placement: "top",
+		get middleware() {
+			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+		},
+	});
+
+	// Interactions for delete tooltip
+	const deleteTooltipRole = useRole(deleteTooltipFloating.context, { role: "tooltip" });
+	const deleteTooltipHover = useHover(deleteTooltipFloating.context, { move: false });
+	const deleteTooltipDismiss = useDismiss(deleteTooltipFloating.context);
+	const deleteTooltipInteractions = useInteractions([deleteTooltipRole, deleteTooltipHover, deleteTooltipDismiss]);
+
 	function getDate(dateStr: string) {
 		const date = new Date(dateStr);
 		let year = date.getFullYear();
 		let month = String(date.getMonth() + 1).padStart(2, '0');
 		let day = String(date.getDate()).padStart(2, '0');
-		return `${year}-${month}-${day}`;
+		let hours = String(date.getHours()).padStart(2, '0');
+		let minutes = String(date.getMinutes()).padStart(2, '0');
+		return `${year}-${month}-${day} ${hours}:${minutes}`;
 	}
 
 	function modalPlaylist(isNew: boolean, id: number, name: string, url: string) {
@@ -170,6 +239,36 @@
 			return;
 		}
 	}
+
+	async function refreshPlaylist(playlistId: number) {
+		try {
+			// Set the refreshing state for this playlist
+			refreshingPlaylistId = playlistId;
+
+			// Call the API to refresh the playlist
+			const response = await fetch(`/api/playlist/${playlistId}/refresh`, {
+				method: 'POST'
+			});
+
+			if (response.ok) {
+				console.log('Refreshing playlist started');
+
+				// Wait a bit to allow the backend to process, then update the UI
+				setTimeout(async () => {
+					// Fetch updated playlists
+					playlists.set(await updatePlaylists());
+					// Clear the refreshing state
+					refreshingPlaylistId = null;
+				}, 2000);
+			} else {
+				console.error('Error refreshing playlist:', response.status, response.statusText);
+				refreshingPlaylistId = null;
+			}
+		} catch (error) {
+			console.log('Error refreshing playlist:', error);
+			refreshingPlaylistId = null;
+		}
+	}
 </script>
 
 <section class="playlists card card-hover p-1">
@@ -205,23 +304,75 @@
 							{#snippet control()}
 									<div class="flex flex-row items-center w-full cursor-pointer">
 										<h4 class="text-lg flex-grow">{playlist.name}</h4>
-										<div class="flex flex-row items-center gap-2">
+										<div class="flex flex-row items-center gap-1">
 											<span class="text-green-600 text-xs p-1">Updated at: {(getDate(playlist.updated_at))}</span>
 											<button
-												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+												class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
 												onclick={(e) => {
 													e.stopPropagation();
 													modalPlaylist(false, playlist.id, playlist.name, playlist.url);
 												}}
+												bind:this={editTooltipFloating.elements.reference}
+												{...editTooltipInteractions.getReferenceProps()}
 												><Icon icon="icon-park-outline:edit-two" width="18" height="18" />
+												{#if editTooltipOpen}
+													<div
+														bind:this={editTooltipFloating.elements.floating}
+														style={editTooltipFloating.floatingStyles}
+														{...editTooltipInteractions.getFloatingProps()}
+														class="floating popover-neutral card p-2"
+														transition:fade={{ duration: 200 }}
+													>
+														<p><strong>Edit Playlist</strong></p>
+														<FloatingArrow bind:ref={elemArrow} context={editTooltipFloating.context} fill="#575969" />
+													</div>
+												{/if}
 											</button>
 											<button
-												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+												class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+												onclick={(e) => {
+													e.stopPropagation();
+													refreshPlaylist(playlist.id);
+												}}
+												bind:this={refreshTooltipFloating.elements.reference}
+												{...refreshTooltipInteractions.getReferenceProps()}
+												disabled={refreshingPlaylistId === playlist.id}
+												class:animate-spin={refreshingPlaylistId === playlist.id}
+												><Icon icon="icon-park-outline:refresh-one" width="18" height="18" />
+												{#if refreshTooltipOpen}
+													<div
+														bind:this={refreshTooltipFloating.elements.floating}
+														style={refreshTooltipFloating.floatingStyles}
+														{...refreshTooltipInteractions.getFloatingProps()}
+														class="floating popover-neutral card p-2"
+														transition:fade={{ duration: 200 }}
+													>
+														<p><strong>Refresh Playlist</strong></p>
+														<FloatingArrow bind:ref={elemArrow} context={refreshTooltipFloating.context} fill="#575969" />
+													</div>
+												{/if}
+											</button>
+											<button
+												class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
 												onclick={(e) => {
 													e.stopPropagation();
 													deletePrompt(playlist);
 												}}
+												bind:this={deleteTooltipFloating.elements.reference}
+												{...deleteTooltipInteractions.getReferenceProps()}
 												><Icon icon="icon-park-outline:delete" width="18" height="18" />
+												{#if deleteTooltipOpen}
+													<div
+														bind:this={deleteTooltipFloating.elements.floating}
+														style={deleteTooltipFloating.floatingStyles}
+														{...deleteTooltipInteractions.getFloatingProps()}
+														class="floating popover-neutral card p-2"
+														transition:fade={{ duration: 200 }}
+													>
+														<p><strong>Delete Playlist</strong></p>
+														<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#575969" />
+													</div>
+												{/if}
 											</button>
 										</div>
 									</div>

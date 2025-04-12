@@ -163,10 +163,10 @@
 {#if $templateGroups[groupIdx] != null && $templateGroups[groupIdx].channels != null}
 	<table class="templateChannel table ">
 		<thead>
-			<tr id="thead">
-				<th>Logo</th>
-				<th>Name</th>
-				<th>tvg-id</th>
+			<tr>
+				<th class="text-center">Logo</th>
+				<th class="text-center">Name</th>
+				<th class="text-center">tvg-id</th>
 			</tr>
 		</thead>
 		<tbody
@@ -229,14 +229,16 @@
 </Modal>
 
 <style>
+	/* Center all table cells and headers */
+	table th,
+	table td {
+		text-align: center !important;
+	}
+
 	#animate {
 		position: relative;
-		text-align: center;
 	}
-	#thead {
-		position: relative;
-		text-align: center;
-	}
+
 	.custom-shadow-item {
 		position: absolute;
 		top: 0;
