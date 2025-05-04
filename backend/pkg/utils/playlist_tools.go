@@ -2,7 +2,6 @@ package utils
 
 import (
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"xivi/backend/app/models"
@@ -141,6 +140,8 @@ func UpdateDynamicGroup(group models.TemplateGroup) {
 	tmplChannels, err := database.Db.GetTmplChannelsByGroup(group.ID)
 	if err != nil {
 		log.Debug().Int64("group_id", group.ID).Msg(err.Error())
+		// Continue with empty slice rather than returning
+		tmplChannels = []models.TemplateChannel{}
 	}
 
 	// Get playlist channels for the dynamic group
@@ -155,28 +156,37 @@ func UpdateDynamicGroup(group models.TemplateGroup) {
 		log.Warn().Int64("group_id", group.ID).Int64("dynamicgroup_id", *group.DynamicGroup).Msg("Playlist group has no channels")
 	}
 
-	// Track which template channels we've found matches for
-	var foundChannels []models.TemplateChannel
+	// Create a map of template channels by tvgID for faster lookups
+	tmplChannelsByTvgID := make(map[string]*models.TemplateChannel, len(tmplChannels))
+	for i := range tmplChannels {
+		if tmplChannels[i].TvgID != nil {
+			tmplChannelsByTvgID[*tmplChannels[i].TvgID] = &tmplChannels[i]
+		}
+	}
 
-	// For each playlist channel, find or create a matching template channel
+	// Create a map to track which template channels are still needed
+	keepChannelIDs := make(map[int64]bool, len(tmplChannels))
+
+	// Process each playlist channel
 	for _, plChannel := range plChannels {
-		foundChannel := false
-		for _, tmplChannel := range tmplChannels {
-			// Match by tvgID if available
-			if tmplChannel.TvgID != nil && plChannel.TvgID == tmplChannel.TvgID {
-				// Update the template channel name to match the playlist channel
-				tmplChannel.Name = plChannel.Title
-				if err := database.Db.UpdateTmplChannel(tmplChannel); err != nil {
-					log.Err(err).Int64("channel_id", tmplChannel.ID).Msg("Failed to update template channel")
-				}
-				foundChannel = true
-				foundChannels = append(foundChannels, tmplChannel)
-				break
-			}
+		// Skip channels without tvgID
+		if plChannel.TvgID == nil {
+			continue
 		}
 
-		// If no matching template channel found, create one
-		if !foundChannel {
+		// Check if we already have a matching template channel
+		if tmplChannel, exists := tmplChannelsByTvgID[*plChannel.TvgID]; exists {
+			// Update the template channel name if needed
+			if tmplChannel.Name != plChannel.Title {
+				tmplChannel.Name = plChannel.Title
+				if err := database.Db.UpdateTmplChannel(*tmplChannel); err != nil {
+					log.Err(err).Int64("channel_id", tmplChannel.ID).Msg("Failed to update template channel")
+				}
+			}
+			// Mark this channel as needed
+			keepChannelIDs[tmplChannel.ID] = true
+		} else {
+			// Create a new template channel
 			channelID := ConvertPlChannel(plChannel)
 			if channelID > 0 {
 				tmplGroupChannel := models.TemplateGroupChannel{GroupId: group.ID, ChannelId: channelID}
@@ -184,20 +194,22 @@ func UpdateDynamicGroup(group models.TemplateGroup) {
 				if err != nil {
 					log.Err(err).Int64("group_id", group.ID).Int64("channel_id", channelID).Msg("Failed to create template group channel")
 				}
+				// Mark this new channel as needed
+				keepChannelIDs[channelID] = true
 			}
 		}
 	}
 
-	// Remove template channels that no longer have a matching playlist channel
+	// Remove template channels that are no longer needed
 	for _, tmplChannel := range tmplChannels {
-		if !(slices.Contains(foundChannels, tmplChannel)) {
+		if !keepChannelIDs[tmplChannel.ID] {
 			if err := database.Db.DeleteTmplChannel(tmplChannel.ID); err != nil {
 				log.Err(err).Int64("channel_id", tmplChannel.ID).Msg("Failed to delete template channel")
 			}
 		}
 	}
 
-	// Update the template group name to match the playlist group if needed
+	// Update the template group name if needed
 	if group.Name != playlistGroup.Name {
 		group.Name = playlistGroup.Name
 		if err := database.Db.UpdateTmplGroup(&group); err != nil {

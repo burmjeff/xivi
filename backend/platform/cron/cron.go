@@ -64,19 +64,6 @@ func UpdatePlaylists() {
 	_, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	// Store dynamic group relationships before updating playlists
-	var dynamicGroups []models.TemplateGroup
-	if groups, err := database.Db.GetAllTmplGroups(); err != nil {
-		log.Error().Err(err).Msg("Failed to get template groups")
-	} else {
-		for _, group := range *groups {
-			if group.Dynamic && group.DynamicGroup != nil {
-				dynamicGroups = append(dynamicGroups, group)
-			}
-		}
-		log.Info().Int("count", len(dynamicGroups)).Msg("Found dynamic template groups")
-	}
-
 	// get playlists - use context where supported
 	playlists, err := database.Db.GetPlaylists()
 	if err != nil {
@@ -104,45 +91,9 @@ func UpdatePlaylists() {
 	if groups, err := database.Db.GetAllTmplGroups(); err != nil {
 		log.Err(err)
 	} else {
-		// First, ensure all previously dynamic groups are still properly connected
-		for _, storedGroup := range dynamicGroups {
-			// Check if the group still exists and is still dynamic
-			group, err := database.Db.GetTmplGroup(storedGroup.ID)
-			if err != nil {
-				log.Warn().Msgf("Template group %d no longer exists", storedGroup.ID)
-				continue
-			}
-
-			// If the group is no longer dynamic, but was before, restore it
-			if !group.Dynamic && storedGroup.DynamicGroup != nil {
-				log.Info().Msgf("Restoring dynamic connection for template group %d", group.ID)
-				group.Dynamic = true
-				group.DynamicGroup = storedGroup.DynamicGroup
-				if err := database.Db.UpdateTmplGroup(group); err != nil {
-					log.Err(err).Msgf("Failed to restore dynamic connection for template group %d", group.ID)
-				}
-			}
-
-			// Update the dynamic group
-			if group.Dynamic && group.DynamicGroup != nil {
-				utils.UpdateDynamicGroup(*group)
-			}
-		}
-
-		// Then update any other dynamic groups
 		for _, group := range *groups {
 			if group.Dynamic && group.DynamicGroup != nil {
-				// Skip groups we've already processed
-				alreadyProcessed := false
-				for _, storedGroup := range dynamicGroups {
-					if group.ID == storedGroup.ID {
-						alreadyProcessed = true
-						break
-					}
-				}
-				if !alreadyProcessed {
-					utils.UpdateDynamicGroup(group)
-				}
+				utils.UpdateDynamicGroup(group)
 			}
 		}
 	}
@@ -156,8 +107,6 @@ func UpdatePlaylists() {
 			go m3uTools.CreateM3u(template)
 		}
 	}
-
-	// No signal needed for manual updates
 }
 
 func UpdateEpgs() {
