@@ -1,6 +1,6 @@
-/* Dialog positioning fixes for VSCode devcontainer */
+/* Enhanced Dialog Styling and Positioning Fixes */
 
-/* Ensure dialog backdrop covers the entire viewport */
+/* Ensure dialog backdrop covers the entire viewport with blur effect */
 [data-scope="dialog"][data-part="backdrop"] {
   position: fixed !important;
   top: 0 !important;
@@ -8,9 +8,13 @@
   right: 0 !important;
   bottom: 0 !important;
   z-index: 998 !important;
+  background-color: rgba(0, 0, 0, 0.7) !important;
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
+  animation: fadeIn 0.2s ease-out !important;
 }
 
-/* Ensure dialog content is centered in the viewport */
+/* Ensure dialog content is centered with enhanced styling */
 [data-scope="dialog"][data-part="content"] {
   position: fixed !important;
   top: 50% !important;
@@ -22,6 +26,10 @@
   overflow-y: auto !important;
   margin: 0 !important;
   box-sizing: border-box !important;
+  border-radius: 0.5rem !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3) !important;
+  animation: dialogEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
 }
 
 /* Fix for any potential parent element positioning issues */
@@ -48,4 +56,82 @@
   max-width: 100% !important;
   margin: 0 !important;
   box-sizing: border-box !important;
+}
+
+/* Dialog header styling */
+[data-scope="dialog"][data-part="content"] header {
+  padding: 1rem !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+/* Dialog footer styling */
+[data-scope="dialog"][data-part="content"] footer {
+  padding: 1rem !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 0.5rem !important;
+}
+
+/* Dialog close button styling */
+[data-scope="dialog"][data-part="close-trigger"] {
+  position: absolute !important;
+  top: 0.75rem !important;
+  right: 0.75rem !important;
+  background: transparent !important;
+  border: none !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+  font-size: 1.25rem !important;
+  cursor: pointer !important;
+  transition: color 0.2s ease !important;
+  padding: 0.25rem !important;
+  border-radius: 9999px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+[data-scope="dialog"][data-part="close-trigger"]:hover {
+  color: rgba(255, 255, 255, 0.9) !important;
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Dialog animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dialogEnter {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* Scrollbar styling for dialogs */
+[data-scope="dialog"][data-part="content"]::-webkit-scrollbar {
+  width: 6px !important;
+}
+
+[data-scope="dialog"][data-part="content"]::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1) !important;
+  border-radius: 3px !important;
+}
+
+[data-scope="dialog"][data-part="content"]::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2) !important;
+  border-radius: 3px !important;
+}
+
+[data-scope="dialog"][data-part="content"]::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3) !important;
 }

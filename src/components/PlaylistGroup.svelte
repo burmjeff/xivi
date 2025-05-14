@@ -13,6 +13,7 @@
 	import { flip } from 'svelte/animate';
 	import { fade } from 'svelte/transition';
 	import { cubicIn } from 'svelte/easing';
+	import Icon from '@iconify/svelte';
 
 	interface Props {
 		playlistId: number;
@@ -119,15 +120,20 @@
 				{#snippet panel()}
 					{#each $playlists[playlistIdx].groups as group (group.id)}
 						{#if !group.enabled}
-							<div class="card shadow-md p-1 px-4 flex flex-row items-center w-full">
+							<div class="card shadow-md py-1 px-4 flex flex-row items-center w-full">
 								<span class="flex-grow">{group.name}</span>
-								<div class="flex flex-row gap-2">
-									<Switch
-										name="group_enabled"
-										checked={group.enabled}
-										onCheckedChange={(e) => {group.enabled = e.checked; disableGroup(group)}}
-									/>
-								</div>
+								<Switch
+									name="group_enabled"
+									base="flex"
+									controlBase="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+									controlActive="bg-primary-500"
+									controlInactive="preset-filled-surface-200-800"
+									thumbBase="pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform"
+									thumbActive="translate-x-5"
+									thumbInactive="translate-x-1"
+									checked={group.enabled}
+									onCheckedChange={(e) => {group.enabled = e.checked; disableGroup(group)}}
+								/>
 							</div>
 						{/if}
 					{/each}
@@ -151,13 +157,18 @@
 								{#snippet control()}
 									<div class="flex flex-row items-center w-full cursor-pointer">
 										<h4 class="flex-grow">{group.name}</h4>
-										<div class="flex flex-row gap-2">
-											<Switch
-												name="group_enabled"
-												checked={group.enabled}
-												onCheckedChange={(e) => {group.enabled = e.checked; disableGroup(group)}}
-											/>
-										</div>
+										<Switch
+											name="group_enabled"
+											base="flex"
+											controlBase="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+											controlActive="bg-primary-500"
+											controlInactive="preset-filled-surface-200-800"
+											thumbBase="pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform"
+											thumbActive="translate-x-5"
+											thumbInactive="translate-x-1"
+											checked={group.enabled}
+											onCheckedChange={(e) => {group.enabled = e.checked; disableGroup(group)}}
+										/>
 									</div>
 								{/snippet}
 								{#snippet panel()}
@@ -176,7 +187,10 @@
 		</div>
 	</Accordion>
 {:else}
-	<p>No playlist groups found</p>
+	<div class="flex flex-col items-center justify-center py-2 px-2 text-center">
+		<Icon icon="mdi:folder-off" class="text-surface-500 mb-3" width="48" height="48" />
+		<h3 class="text-xl font-medium text-surface-300 mb-2">No Playlist Groups Found</h3>
+	</div>
 {/if}
 
 
