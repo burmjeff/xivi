@@ -7,14 +7,6 @@
 /*Dialog positioning fixes*/
 @import './dialog-fixes.css';
 
-/*
-  The default border color has changed to `currentColor` in Tailwind CSS v4,
-  so we've added these compatibility styles to make sure everything still
-  looks the same as it did with Tailwind CSS v3.
-
-  If we ever want to remove these styles, we need to add an explicit border
-  color utility to any element that depends on these defaults.
-*/
 @layer base {
   *,
   ::after,
@@ -22,6 +14,71 @@
   ::backdrop,
   ::file-selector-button {
     border-color: var(--color-gray-200, currentColor);
+  }
+
+  /* Enhanced Typography */
+  html {
+    font-size: 16px;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply text-surface-50;
+    line-height: 1.6;
+    letter-spacing: 0.015em;
+  }
+
+  a {
+    @apply text-primary-400 transition-colors duration-200;
+  }
+
+  a:hover {
+    @apply text-primary-300;
+  }
+
+  /* Improved Form Elements */
+  input, select, textarea {
+    @apply bg-surface-800/50 border border-surface-600 rounded-md px-3 py-2 focus:ring-2 focus:ring-primary-500/30 focus:border-primary-500 transition-all duration-200;
+  }
+
+  button {
+    @apply transition-all duration-200;
+  }
+
+  /* Table Styling */
+  table {
+    @apply w-full border-collapse;
+  }
+
+  th {
+    @apply text-left py-3 px-4 bg-surface-700/30 font-medium text-surface-200;
+  }
+
+  td {
+    @apply py-3 px-4 border-t border-surface-700/30;
+  }
+
+  tr:hover td {
+    @apply bg-surface-700/10;
+  }
+
+  /* Scrollbar Styling */
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-surface-800/50;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-surface-600 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-surface-500;
   }
 }
 
@@ -31,5 +88,36 @@
     @apply h-full overflow-hidden;
   }
 }
+
+/* Custom Utility Classes */
 @layer utilities {
+  /* Animation Utilities */
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-in-out;
+  }
+
+  .animate-slide-in {
+    animation: slideIn 0.3s ease-out;
+  }
+
+  /* Gradient Text */
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-400 to-secondary-400;
+  }
+
+  /* Glass Effect */
+  .glass {
+    @apply bg-surface-800/30 backdrop-blur-md border border-surface-500/20;
+  }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideIn {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }

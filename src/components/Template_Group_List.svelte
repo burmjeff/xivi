@@ -379,11 +379,11 @@
 	}
 </script>
 
-<section class="tmplgroups card card-hover p-1">
-	<header class="tmplgroups-header flex items-center justify-center">
-		<h3 class="h3 font-bold">Template Groups</h3>
+<section class="tmplgroups w-full h-full p-1">
+	<header class="tmplgroups-header flex items-center justify-center p-1 border-b border-surface-700/30">
+		<h4 class="h4 font-bold text-primary-400">Template Groups</h4>
 		<button
-			class="btn btn-md"
+			class="btn btn-md self-start"
 			onclick={(e) => {
 				modalGroupSettings(true, 0, undefined)
 				e.stopPropagation();
@@ -397,11 +397,11 @@
 					bind:this={tooltipFloatingAdd.elements.floating}
 					style={tooltipFloatingAdd.floatingStyles}
 					{...tooltipInteractions.getFloatingProps()}
-					class="floating popover-neutral"
+					class="floating glass card p-2 shadow-lg"
 					transition:fade={{ duration: 200 }}
 				>
-					<p><strong>Add Group</strong></p>
-					<FloatingArrow bind:ref={elemArrow} context={tooltipFloatingAdd.context} fill="#575969" />
+					<p class="text-sm font-medium"><strong>Create a Template Group</strong></p>
+					<FloatingArrow bind:ref={elemArrow} context={tooltipFloatingAdd.context} fill="#1e293b" />
 				</div>
 			{/if}
 		</button>
@@ -429,7 +429,7 @@
 										<h4 class="text-lg flex-grow">{group.name}</h4>
 										<div class="flex flex-row gap-1">
 											<button
-												class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
 												onclick={(e) => {
 													e.stopPropagation();
 													modalGroupSettings(false, groupIdx, group);
@@ -443,16 +443,16 @@
 														bind:this={editTooltipFloating.elements.floating}
 														style={editTooltipFloating.floatingStyles}
 														{...editTooltipInteractions.getFloatingProps()}
-														class="floating popover-neutral card p-2"
+														class="floating glass card p-2 shadow-lg"
 														transition:fade={{ duration: 200 }}
 													>
-														<p><strong>Edit Group</strong></p>
-														<FloatingArrow bind:ref={elemArrow} context={editTooltipFloating.context} fill="#575969" />
+														<p class="text-sm font-medium"><strong>Edit Group</strong></p>
+														<FloatingArrow bind:ref={elemArrow} context={editTooltipFloating.context} fill="#1e293b" />
 													</div>
 												{/if}
 											</button>
 											<button
-												class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
 												onclick={(e) => {
 													e.stopPropagation();
 													deletePrompt(group.id);
@@ -466,16 +466,16 @@
 														bind:this={deleteTooltipFloating.elements.floating}
 														style={deleteTooltipFloating.floatingStyles}
 														{...deleteTooltipInteractions.getFloatingProps()}
-														class="floating popover-neutral card p-2"
+														class="floating glass card p-2 shadow-lg"
 														transition:fade={{ duration: 200 }}
 													>
-														<p><strong>Delete Group</strong></p>
-														<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#575969" />
+														<p class="text-sm font-medium"><strong>Delete Group</strong></p>
+														<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#1e293b" />
 													</div>
 												{/if}
 											</button>
 											<button
-												class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
 												onclick={(e) => {
 													e.stopPropagation();
 													modalAddChannel(group.id, groupIdx);
@@ -489,11 +489,11 @@
 														bind:this={addChannelTooltipFloating.elements.floating}
 														style={addChannelTooltipFloating.floatingStyles}
 														{...addChannelTooltipInteractions.getFloatingProps()}
-														class="floating popover-neutral card p-2"
+														class="floating glass card p-2 shadow-lg"
 														transition:fade={{ duration: 200 }}
 													>
-														<p><strong>Add Channel</strong></p>
-														<FloatingArrow bind:ref={elemArrow} context={addChannelTooltipFloating.context} fill="#575969" />
+														<p class="text-sm font-medium"><strong>Add Channel</strong></p>
+														<FloatingArrow bind:ref={elemArrow} context={addChannelTooltipFloating.context} fill="#1e293b" />
 													</div>
 												{/if}
 											</button>
@@ -513,7 +513,11 @@
 						</div>
 					{/each}
 				{:else}
-					<p>No groups found</p>
+					<div class="flex flex-col items-center justify-center py-2 px-2 text-center">
+						<Icon icon="mdi:folder-off" class="text-surface-500 mb-3" width="48" height="48" />
+						<h3 class="text-xl font-medium text-surface-300 mb-2">No Groups Found</h3>
+						<p class="text-surface-400 max-w-md">Add your first group by clicking the "Add Template Group" button above or by dragging over a playlist group.</p>
+					</div>
 				{/if}
 			</section>
 		</Accordion>

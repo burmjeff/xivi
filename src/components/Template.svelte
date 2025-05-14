@@ -217,11 +217,11 @@
 	}
 </script>
 
-<section class="templates card card-hover p-1">
-	<header class="templates-header flex items-center justify-center">
-		<h3 class="h3 font-bold">Templates</h3>
+<section class="templates w-full h-full p-1">
+	<header class="templates-header flex items-center justify-center p-1 border-b border-surface-700/30">
+		<h4 class="h4 font-bold text-primary-400">Templates</h4>
 		<button
-			class="btn btn-md"
+			class="btn btn-md self-start"
 			onclick={() => modalTemplate(true, 0, '')}
 			bind:this={addTemplateTooltipFloating.elements.reference}
 			{...addTemplateTooltipInteractions.getReferenceProps()}
@@ -232,11 +232,11 @@
 					bind:this={addTemplateTooltipFloating.elements.floating}
 					style={addTemplateTooltipFloating.floatingStyles}
 					{...addTemplateTooltipInteractions.getFloatingProps()}
-					class="floating popover-neutral card p-2"
+					class="floating glass card p-2 shadow-lg"
 					transition:fade={{ duration: 200 }}
 				>
-					<p>Add New Template</p>
-					<FloatingArrow bind:ref={elemArrow} context={addTemplateTooltipFloating.context} fill="#575969" />
+					<p class="text-sm font-medium"><strong>Create a new template</strong></p>
+					<FloatingArrow bind:ref={elemArrow} context={addTemplateTooltipFloating.context} fill="#1e293b" />
 				</div>
 			{/if}
 		</button>
@@ -249,10 +249,10 @@
 						<Accordion.Item value={template.name} >
 							{#snippet control()}
 								<div class="flex flex-row items-center w-full cursor-pointer">
-									<h4 class="text-lg flex-grow">{template.name}</h4>
+									<h4 class="align-middle text-lg flex-grow">{template.name}</h4>
 									<div class="flex flex-row gap-1">
 										<button
-											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+											class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
 											onclick={(e) => {
 												modalTemplate(false, template.id, template.name);
 												e.stopPropagation();
@@ -266,16 +266,16 @@
 													bind:this={editTooltipFloating.elements.floating}
 													style={editTooltipFloating.floatingStyles}
 													{...editTooltipInteractions.getFloatingProps()}
-													class="floating popover-neutral card p-2"
+													class="floating glass card p-2 shadow-lg"
 													transition:fade={{ duration: 200 }}
 												>
-													<p><strong>Edit Template</strong></p>
-													<FloatingArrow bind:ref={elemArrow} context={editTooltipFloating.context} fill="#575969" />
+													<p class="text-sm font-medium"><strong>Edit Template</strong></p>
+													<FloatingArrow bind:ref={elemArrow} context={editTooltipFloating.context} fill="#1e293b" />
 												</div>
 											{/if}
 										</button>
 										<button
-											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+											class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
 											onclick={(e) => {
 												deletePrompt(template.id)
 												e.stopPropagation();
@@ -289,11 +289,11 @@
 													bind:this={deleteTooltipFloating.elements.floating}
 													style={deleteTooltipFloating.floatingStyles}
 													{...deleteTooltipInteractions.getFloatingProps()}
-													class="floating popover-neutral card p-2"
+													class="floating glass card p-2 shadow-lg"
 													transition:fade={{ duration: 200 }}
 												>
-													<p><strong>Delete Template</strong></p>
-													<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#575969" />
+													<p class="text-sm font-medium"><strong>Delete Template</strong></p>
+													<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#1e293b" />
 												</div>
 											{/if}
 										</button>
@@ -308,7 +308,11 @@
 				{/each}
 			</Accordion>
 		{:else}
-			<p>No templates found</p>
+			<div class="flex flex-col items-center justify-center py-2 px-2 text-center">
+				<Icon icon="mdi:folder-off" class="text-surface-500 mb-3" width="48" height="48" />
+				<h3 class="text-xl font-medium text-surface-300 mb-2">No Templates Found</h3>
+				<p class="text-surface-400 max-w-md">Create your first template by clicking the "Create Template" button above.</p>
+			</div>
 		{/if}
 	</div>
 </section>

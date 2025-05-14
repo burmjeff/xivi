@@ -12,6 +12,7 @@
 	import { flip } from 'svelte/animate';
 	import { fade } from 'svelte/transition';
 	import { cubicIn } from 'svelte/easing';
+	import Icon from '@iconify/svelte';
 
 	interface Props {
 		playlistId: number;
@@ -119,7 +120,10 @@
 		</tbody>
 	</table>
 {:else}
-	<p>No playlist channels found</p>
+	<div class="flex flex-col items-center justify-center py-2 px-2 text-center">
+		<Icon icon="mdi:folder-off" class="text-surface-500 mb-3" width="48" height="48" />
+		<h3 class="text-xl font-medium text-surface-300 mb-2">No Playlist Channels Found</h3>
+	</div>
 {/if}
 
 <style>

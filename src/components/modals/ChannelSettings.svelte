@@ -574,7 +574,7 @@
 			  </button>
 		</FileUpload>
 	</div>
-	<FloatingArrow bind:ref={elemArrow} context={logoFloating.context} fill="#575969" />
+	<FloatingArrow bind:ref={elemArrow} context={logoFloating.context} fill="#1e293b" />
 </div>
 {/if}
 

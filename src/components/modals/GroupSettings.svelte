@@ -284,7 +284,7 @@
 								overflowPadding: 8,
 								fitViewport: true
 							}}
-							contentBase="max-h-48 overflow-y-auto"
+							contentBase="max-h-48 glass card overflow-y-auto p-2 shadow-lg"
 						>
 						<!-- This is optional. Combobox will render label by default -->
 						{#snippet item(item: {label: string; value: string})}
@@ -304,13 +304,13 @@
 				bind:this={tooltipFloating.elements.floating}
 				style={tooltipFloating.floatingStyles}
 				{...tooltipInteractions.getFloatingProps()}
-				class="floating popover-neutral"
+				class="floating glass card p-2 shadow-lg"
 				transition:fade={{ duration: 200 }}
 			>
-				<p>
+				<p class="text-sm font-medium">
 					<strong>Enable Dynamic Group</strong>
 				</p>
-				<FloatingArrow bind:ref={elemArrow} context={tooltipFloating.context} fill="#575969" />
+				<FloatingArrow bind:ref={elemArrow} context={tooltipFloating.context} fill="#1e293b" />
 			</div>
 		{/if}
 		<footer class="modal-footer flex justify-end gap-4">
