@@ -1,7 +1,7 @@
 <!-- TemplateStatus.svelte -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Switch, Modal } from '@skeletonlabs/skeleton-svelte';
+	import { Modal } from '@skeletonlabs/skeleton-svelte';
 	import { templates } from '@xivi/stores/template_store';
 	import Icon from '@iconify/svelte';
 	import { settings } from '@xivi/stores/settings_store';
@@ -70,7 +70,7 @@
 			const response = await fetch(`/api/m3u/${templateId}`, {
 				method: 'POST'
 			});
-			const data = await response.status;
+			const data = response.status;
 			console.log('Refreshed M3U:', data);
 
 			// Show success modal
@@ -92,53 +92,81 @@
 
 </script>
 
-<section class="templates card card-hover p-1">
-	<header class="templates-header flex items-center justify-center space-x-4">
-		<h3 class="h3 font-bold">Status List</h3>
+<section class="templates card bg-surface-800/30 border border-surface-700/50 shadow-lg rounded-lg p-6">
+	<header class="templates-header flex items-center justify-between mb-6">
+		<div>
+			<h2 class="text-2xl font-bold text-primary-300">Template Status</h2>
+			<p class="text-surface-300 text-sm mt-1">Manage your templates and access their M3U and EPG files</p>
+		</div>
+
+		<div class="flex items-center gap-2">
+			<span class="text-sm text-surface-300">{$templates.length} Templates</span>
+		</div>
 	</header>
-	<div id="accord" class="templates-viewport min-w-full overflow-auto">
+
+	<div id="accord" class="templates-viewport overflow-auto rounded-lg border border-surface-700/30">
 		{#if $templates.length > 0 && $settings != null}
 			<div class="table-container">
-				<!-- Native Table Element -->
-				<table class="table ">
+				<!-- Enhanced Table Element -->
+				<table class="table w-full">
 					<thead>
-						<tr id="thead">
-							<th>Name</th>
-							<th>M3U</th>
-							<th>EPG</th>
-							<th>Refresh</th>
+						<tr class="bg-surface-700/30 border-b border-surface-600/30">
+							<th class="py-3 px-4 text-left font-medium text-surface-200">Template Name</th>
+							<th class="py-3 px-4 text-left font-medium text-surface-200">M3U URL</th>
+							<th class="py-3 px-4 text-left font-medium text-surface-200">EPG URL</th>
+							<th class="py-3 px-4 text-center font-medium text-surface-200 w-24">Actions</th>
 						</tr>
 					</thead>
 					<tbody>
-						{#each $templates as template, templateIdx (template.id)}
-							<tr id="thead">
-								<td>{template.name}</td>
-								<td
-									>http://{$settings.server.host}:{$settings.server
-										.port}/m3u/{template.name}.m3u</td
-								>
-								<td
-									>http://{$settings.server.host}:{$settings.server
-										.port}/xmltv/{template.name}.xml</td
-								>
-								<td>
+						{#each $templates as template (template.id)}
+							<tr class="border-b border-surface-700/20 hover:bg-surface-700/10 transition-colors duration-150">
+								<td class="py-4 px-4 font-medium text-primary-400">{template.name}</td>
+								<td class="py-4 px-4 text-surface-300">
+									<div class="flex items-center gap-2">
+										<span class="truncate">http://{$settings.server.host}:{$settings.server.port}/m3u/{template.name}.m3u</span>
+										<button
+											class="text-primary-400 hover:text-primary-300 transition-colors"
+											onclick={() => {
+												navigator.clipboard.writeText(`http://${$settings.server.host}:${$settings.server.port}/m3u/${template.name}.m3u`);
+												// Could add a toast notification here
+											}}
+										>
+											<Icon icon="mdi:content-copy" width="16" height="16" />
+										</button>
+									</div>
+								</td>
+								<td class="py-4 px-4 text-surface-300">
+									<div class="flex items-center gap-2">
+										<span class="truncate">http://{$settings.server.host}:{$settings.server.port}/xmltv/{template.name}.xml</span>
+										<button
+											class="text-primary-400 hover:text-primary-300 transition-colors"
+											onclick={() => {
+												navigator.clipboard.writeText(`http://${$settings.server.host}:${$settings.server.port}/xmltv/${template.name}.xml`);
+												// Could add a toast notification here
+											}}
+										>
+											<Icon icon="mdi:content-copy" width="16" height="16" />
+										</button>
+									</div>
+								</td>
+								<td class="py-4 px-4 text-center">
 									<button
-										class="btn-icon btn-icon-lg inset-y-0 bg-transparent!"
+										class="btn bg-primary-700 hover:bg-primary-600 text-white p-2 rounded-lg transition-colors"
 										onclick={() => refreshM3U(template.id, template.name)}
 										bind:this={refreshTooltipFloating.elements.reference}
 										{...refreshTooltipInteractions.getReferenceProps()}
 									>
-										<Icon icon="icon-park-outline:refresh-one" width="25" height="25" />
+										<Icon icon="mdi:refresh" width="18" height="18" />
 										{#if refreshTooltipOpen}
 											<div
 												bind:this={refreshTooltipFloating.elements.floating}
 												style={refreshTooltipFloating.floatingStyles}
 												{...refreshTooltipInteractions.getFloatingProps()}
-												class="floating popover-neutral card p-2"
+												class="floating glass card p-3 shadow-lg"
 												transition:fade={{ duration: 200 }}
 											>
-												<p>Regenerate m3u and EPG</p>
-												<FloatingArrow bind:ref={elemArrow} context={refreshTooltipFloating.context} fill="#575969" />
+												<p class="text-sm font-medium">Regenerate M3U and EPG files</p>
+												<FloatingArrow bind:ref={elemArrow} context={refreshTooltipFloating.context} fill="#1e293b" />
 											</div>
 										{/if}
 									</button>
@@ -149,7 +177,11 @@
 				</table>
 			</div>
 		{:else}
-			<p>No templates found</p>
+			<div class="flex flex-col items-center justify-center py-12 px-4 text-center">
+				<Icon icon="mdi:playlist-remove" class="text-surface-500 mb-4" width="48" height="48" />
+				<h3 class="text-xl font-medium text-surface-300 mb-2">No Templates Found</h3>
+				<p class="text-surface-400 max-w-md">Create your first template to get started with Xivi.</p>
+			</div>
 		{/if}
 	</div>
 </section>
@@ -158,15 +190,30 @@
 	open={modalOpen}
 	onOpenChange={(e) => (modalOpen = e.open)}
 	triggerBase="btn preset-tonal"
-	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	contentBase="card bg-surface-800 p-0 shadow-xl max-w-screen-sm border border-surface-700/50 rounded-lg overflow-hidden"
 	backdropClasses="backdrop-blur-sm"
 >
 	{#snippet content()}
-	<div class="card p-4 w-modal shadow-xl space-y-4">
-		<header class="text-2xl font-bold">Notification</header>
-		<article>{modalContent}</article>
-		<footer class="flex justify-end space-x-2">
-			<button class="btn preset-outlined-surface-500" onclick={closeModal}>Close</button>
+	<div class="w-modal">
+		<header class="bg-surface-700/30 p-4 border-b border-surface-700/30">
+			<h3 class="text-xl font-bold text-primary-300 flex items-center gap-2">
+				<Icon icon="mdi:information-outline" width="24" height="24" />
+				<span>Notification</span>
+			</h3>
+		</header>
+
+		<div class="p-6">
+			<p class="text-surface-200">{modalContent}</p>
+		</div>
+
+		<footer class="bg-surface-700/20 p-4 border-t border-surface-700/30 flex justify-end">
+			<button
+				class="btn bg-primary-700 hover:bg-primary-600 text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center gap-2"
+				onclick={closeModal}
+			>
+				<Icon icon="mdi:check" width="18" height="18" />
+				<span>Close</span>
+			</button>
 		</footer>
 	</div>
 	{/snippet}

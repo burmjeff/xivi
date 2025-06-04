@@ -313,11 +313,11 @@
 	}
 </script>
 
-<section class="epgs card p-1">
-	<header class="epgs-header flex items-center justify-center space-x-4">
-		<h3 class="h3 font-bold">Epgs</h3>
+<section class="epgs w-full h-full p-1">
+	<header class="epgs-header flex items-center justify-center p-1 border-b border-surface-700/30">
+		<h4 class="h4 font-bold text-primary-400">Epgs</h4>
 		<button
-			class="btn btn-md"
+			class="btn btn-md self-start"
 			bind:this={tooltipFloating.elements.reference}
 			bind:this={addFloating.elements.reference}
 			{...tooltipInteractions.getReferenceProps()}
@@ -331,13 +331,13 @@
 				bind:this={tooltipFloating.elements.floating}
 				style={tooltipFloating.floatingStyles}
 				{...tooltipInteractions.getFloatingProps()}
-				class="floating popover-neutral"
+				class="floating glass card p-2 shadow-lg"
 				transition:fade={{ duration: 200 }}
 			>
-				<p>
+				<p class="text-sm font-medium">
 					<strong>Add New EPG</strong>
 				</p>
-				<FloatingArrow bind:ref={elemArrow} context={tooltipFloating.context} fill="#575969" />
+				<FloatingArrow bind:ref={elemArrow} context={tooltipFloating.context} fill="#1e293b" />
 			</div>
 		{/if}
 		{#if addOpen}
@@ -364,7 +364,7 @@
 						</label>
 					</div>
 				</div>
-				<FloatingArrow bind:ref={elemArrow} context={addFloating.context} fill="#575969" />
+				<FloatingArrow bind:ref={elemArrow} context={addFloating.context} fill="#1e293b" />
 			</div>
 		{/if}
 	</header>
@@ -401,11 +401,11 @@
 													bind:this={editNameTooltipFloating.elements.floating}
 													style={editNameTooltipFloating.floatingStyles}
 													{...editNameTooltipInteractions.getFloatingProps()}
-													class="floating popover-neutral card p-2"
+													class="floating glass card p-2 shadow-lg"
 													transition:fade={{ duration: 200 }}
 												>
-													<p><strong>Edit EPG Name</strong></p>
-													<FloatingArrow bind:ref={elemArrow} context={editNameTooltipFloating.context} fill="#575969" />
+													<p class="text-sm font-medium"><strong>Edit EPG Name</strong></p>
+													<FloatingArrow bind:ref={elemArrow} context={editNameTooltipFloating.context} fill="#1e293b" />
 												</div>
 											{/if}
 										</button>
@@ -428,11 +428,11 @@
 													bind:this={editUrlTooltipFloating.elements.floating}
 													style={editUrlTooltipFloating.floatingStyles}
 													{...editUrlTooltipInteractions.getFloatingProps()}
-													class="floating popover-neutral card p-2"
+													class="floating glass card p-2 shadow-lg"
 													transition:fade={{ duration: 200 }}
 												>
-													<p><strong>Edit EPG URL</strong></p>
-													<FloatingArrow bind:ref={elemArrow} context={editUrlTooltipFloating.context} fill="#575969" />
+													<p class="text-sm font-medium"><strong>Edit EPG URL</strong></p>
+													<FloatingArrow bind:ref={elemArrow} context={editUrlTooltipFloating.context} fill="#1e293b" />
 												</div>
 											{/if}
 										</button>
@@ -458,11 +458,11 @@
 												bind:this={refreshTooltipFloating.elements.floating}
 												style={refreshTooltipFloating.floatingStyles}
 												{...refreshTooltipInteractions.getFloatingProps()}
-												class="floating popover-neutral card p-2"
+												class="floating glass card p-2 shadow-lg"
 												transition:fade={{ duration: 200 }}
 											>
-												<p><strong>Refresh EPG</strong></p>
-												<FloatingArrow bind:ref={elemArrow} context={refreshTooltipFloating.context} fill="#575969" />
+												<p class="text-sm font-medium"><strong>Refresh EPG</strong></p>
+												<FloatingArrow bind:ref={elemArrow} context={refreshTooltipFloating.context} fill="#1e293b" />
 											</div>
 										{/if}
 									</button>
@@ -482,11 +482,11 @@
 												bind:this={deleteTooltipFloating.elements.floating}
 												style={deleteTooltipFloating.floatingStyles}
 												{...deleteTooltipInteractions.getFloatingProps()}
-												class="floating popover-neutral card p-2"
+												class="floating glass card p-2 shadow-lg"
 												transition:fade={{ duration: 200 }}
 											>
-												<p><strong>Delete EPG</strong></p>
-												<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#575969" />
+												<p class="text-sm font-medium"><strong>Delete EPG</strong></p>
+												<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#1e293b" />
 											</div>
 										{/if}
 									</button>

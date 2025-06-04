@@ -191,13 +191,13 @@
 				{#if $templates[templateIdx].groups.length > 0}
 					{#each $templates[templateIdx].groups as group, groupIdx (group.id)}
 						<div id="animate" class="card shadow-md mb-1" animate:flip={{ duration: flipDurationMs }}>
-							<Accordion.Item  value={group.name}>
+							<Accordion.Item value={group.name}>
 								{#snippet control()}
 										<div class="flex flex-row items-center w-full cursor-pointer">
 											<h4 class="text-lg flex-grow">{group.name}</h4>
 											<div class="flex flex-row gap-1">
 												<button
-													class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+													class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
 													onclick={(e) => {
 														e.stopPropagation();
 														deletePrompt(group.id);
@@ -211,11 +211,11 @@
 															bind:this={deleteTooltipFloating.elements.floating}
 															style={deleteTooltipFloating.floatingStyles}
 															{...deleteTooltipInteractions.getFloatingProps()}
-															class="floating popover-neutral card p-2"
+															class="floating glass card p-2 shadow-lg"
 															transition:fade={{ duration: 200 }}
 														>
-															<p><strong>Remove Group</strong></p>
-															<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#575969" />
+															<p class="text-sm font-medium"><strong>Remove Group</strong></p>
+															<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#1e293b" />
 														</div>
 													{/if}
 												</button>
@@ -234,7 +234,11 @@
 						</div>
 					{/each}
 				{:else}
-					<p>No groups found</p>
+					<div class="flex flex-col items-center justify-center py-2 px-2 text-center">
+						<Icon icon="mdi:folder-off" class="text-surface-500 mb-3" width="36" height="36" />
+						<h4 class="text-lg font-medium text-surface-300 mb-2">No Groups Found</h4>
+						<p class="text-surface-400 text-sm max-w-md">Add groups to this template to organize your channels.</p>
+					</div>
 				{/if}
 			</section>
 		</Accordion>
