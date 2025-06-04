@@ -14,6 +14,7 @@
 	import { flip } from 'svelte/animate';
 	import { fade } from 'svelte/transition';
 	import { cubicIn } from 'svelte/easing';
+	import Icon from '@iconify/svelte';
 
 	interface Props {
 		groupId: number;
@@ -204,7 +205,13 @@
 					</tr>
 				{/each}
 			{:else}
-				<tr><td>No channels found</td></tr>
+				<tr>
+					<td class="flex flex-col items-center justify-center py-2 px-2 text-center">
+						<Icon icon="mdi:folder-off" class="text-surface-500 mb-3" width="48" height="48" />
+						<h3 class="text-xl font-medium text-surface-300 mb-2">No Template Channels Found</h3>
+						<p class="text-surface-400 max-w-md">Add your first channel by clicking the "Add Channel" button above or dragging one over from a playlist.</p>
+					</td>
+				</tr>
 			{/if}
 		</tbody>
 	</table>

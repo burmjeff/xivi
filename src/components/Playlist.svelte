@@ -271,11 +271,11 @@
 	}
 </script>
 
-<section class="playlists card card-hover p-1">
-	<header class="playlists-header flex items-center justify-center">
-		<h3 class="h3 font-bold">Playlists</h3>
+<section class="playlists w-full h-full p-1">
+	<header class="playlists-header flex items-center justify-center p-1 border-b border-surface-700/30">
+		<h4 class="h4 font-bold text-primary-400">Playlists</h4>
 		<button
-			class="btn btn-md"
+			class="btn btn-md self-start"
 			onclick={() => modalPlaylist(true, 0, '', '')}
 			bind:this={addPlTooltipFloating.elements.reference}
 			{...addPlTooltipInteractions.getReferenceProps()}
@@ -286,11 +286,11 @@
 					bind:this={addPlTooltipFloating.elements.floating}
 					style={addPlTooltipFloating.floatingStyles}
 					{...addPlTooltipInteractions.getFloatingProps()}
-					class="floating popover-neutral card p-2"
+					class="floating glass card p-2 shadow-lg"
 					transition:fade={{ duration: 200 }}
 				>
-					<p><strong>Add New Playlist</strong></p>
-					<FloatingArrow bind:ref={elemArrow} context={addPlTooltipFloating.context} fill="#575969" />
+					<p class="text-sm font-medium"><strong>Add a new Playlist</strong></p>
+					<FloatingArrow bind:ref={elemArrow} context={addPlTooltipFloating.context} fill="#1e293b" />
 				</div>
 			{/if}
 		</button>
@@ -307,7 +307,7 @@
 										<div class="flex flex-row items-center gap-1">
 											<span class="text-green-600 text-xs p-1">Updated at: {(getDate(playlist.updated_at))}</span>
 											<button
-												class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
 												onclick={(e) => {
 													e.stopPropagation();
 													modalPlaylist(false, playlist.id, playlist.name, playlist.url);
@@ -320,16 +320,16 @@
 														bind:this={editTooltipFloating.elements.floating}
 														style={editTooltipFloating.floatingStyles}
 														{...editTooltipInteractions.getFloatingProps()}
-														class="floating popover-neutral card p-2"
+														class="floating glass card p-2 shadow-lg"
 														transition:fade={{ duration: 200 }}
 													>
-														<p><strong>Edit Playlist</strong></p>
-														<FloatingArrow bind:ref={elemArrow} context={editTooltipFloating.context} fill="#575969" />
+														<p class="text-sm font-medium"><strong>Edit Playlist</strong></p>
+														<FloatingArrow bind:ref={elemArrow} context={editTooltipFloating.context} fill="#1e293b" />
 													</div>
 												{/if}
 											</button>
 											<button
-												class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
 												onclick={(e) => {
 													e.stopPropagation();
 													refreshPlaylist(playlist.id);
@@ -344,16 +344,16 @@
 														bind:this={refreshTooltipFloating.elements.floating}
 														style={refreshTooltipFloating.floatingStyles}
 														{...refreshTooltipInteractions.getFloatingProps()}
-														class="floating popover-neutral card p-2"
+														class="floating glass card p-2 shadow-lg"
 														transition:fade={{ duration: 200 }}
 													>
-														<p><strong>Refresh Playlist</strong></p>
-														<FloatingArrow bind:ref={elemArrow} context={refreshTooltipFloating.context} fill="#575969" />
+														<p class="text-sm font-medium"><strong>Refresh Playlist</strong></p>
+														<FloatingArrow bind:ref={elemArrow} context={refreshTooltipFloating.context} fill="#1e293b" />
 													</div>
 												{/if}
 											</button>
 											<button
-												class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
+												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
 												onclick={(e) => {
 													e.stopPropagation();
 													deletePrompt(playlist);
@@ -366,11 +366,11 @@
 														bind:this={deleteTooltipFloating.elements.floating}
 														style={deleteTooltipFloating.floatingStyles}
 														{...deleteTooltipInteractions.getFloatingProps()}
-														class="floating popover-neutral card p-2"
+														class="floating glass card p-2 shadow-lg"
 														transition:fade={{ duration: 200 }}
 													>
-														<p><strong>Delete Playlist</strong></p>
-														<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#575969" />
+														<p class="text-sm font-medium"><strong>Delete Playlist</strong></p>
+														<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#1e293b" />
 													</div>
 												{/if}
 											</button>
@@ -384,7 +384,11 @@
 					</div>
 				{/each}
 			{:else}
-				<p>No playlists found</p>
+				<div class="flex flex-col items-center justify-center py-2 px-2 text-center">
+					<Icon icon="mdi:folder-off" class="text-surface-500 mb-3" width="48" height="48" />
+					<h3 class="text-xl font-medium text-surface-300 mb-2">No Playlists Found</h3>
+					<p class="text-surface-400 max-w-md">Add your first playlist by clicking the "Add Playlist" button above.</p>
+				</div>
 			{/if}
 		</div>
 	</Accordion>
