@@ -233,78 +233,85 @@
 
 </script>
 
-<div class="modal-add-group">
+<div class="modal-group">
 	{#if isNew}
-		<header class="justify-center text-center text-2xl font-bold">Add Group</header>
+		<header class="text-center text-2xl font-bold mb26">Add Group</header>
 	{:else}
-		<header class="justify-center text-center text-2xl font-bold">Modify Group</header>
+		<header class="text-center text-2xl font-bold mb-2">Modify Group</header>
 	{/if}
-	<div class="">
-		<label class="template_group_name p-2">
-			<span>Template Group Name</span>
+	<div class="space-y-4">
+		<div class="form-group">
+			<label class="block text-sm font-medium mb-2" for="group_name">
+				Template Group Name
+			</label>
 			<input
-				class="input"
+				id="group_name"
+				class="input w-full"
 				type="text"
 				bind:value={formData.name}
-				placeholder="Template Group Name"
+				placeholder="Enter group name"
+				required
 			/>
-		</label>
-		<div class="grid grid-cols-2 items-center gap-4 p-2">
-			<div class="template_group_dynamic flex items-center justify-between" bind:this={tooltipFloating.elements.reference}>
-				<span>Dynamic Group</span>
-				<Switch
-					name="dynamic"
-					base="flex"
-					controlBase="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-					controlActive="bg-primary-500"
-					controlInactive="preset-filled-surface-200-800"
-					thumbBase="pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform"
-					thumbActive="translate-x-5"
-					thumbInactive="translate-x-1"
-					checked={formData.dynamic}
-					onCheckedChange={(e) => (formData.dynamic = e.checked)}
-					{...tooltipInteractions.getReferenceProps()}
-				/>
-			</div>
-			<div class="template_group_playlist flex flex-col">
-				{#if formData.dynamic}
-					<span>Select Playlist Group</span>
-					{#if dynamicOptions.length > 0}
-						<!-- Add defaultValue to ensure initial selection is shown -->
-						<Combobox
-							data={dynamicOptions}
-							value={selectedOption}
-							defaultValue={selectedOption}
-							onValueChange={(e) => (selectedOption = e.value)}
-							label=""
-							placeholder="Select or type..."
-							positioning={{
-								placement: 'bottom-start',
-								flip: false,
-								overflowPadding: 8,
-								fitViewport: true
-							}}
-							contentBase="max-h-48 glass card overflow-y-auto p-2 shadow-lg"
-						>
-						<!-- This is optional. Combobox will render label by default -->
-						{#snippet item(item: {label: string; value: string})}
-							<div class="flex w-full justify-between space-x-2">
-								<span>{item.label}</span>
-							</div>
-						{/snippet}
-					</Combobox>
-				{:else}
-					<div class="input p-2 text-gray-500">No playlist groups available</div>
+		</div>
+
+		<div class="form-section">
+			<div class="form-row">
+				<div class="form-group-inline" bind:this={tooltipFloating.elements.reference}>
+					<label class="text-sm font-medium">Dynamic Group</label>
+					<Switch
+						name="dynamic"
+						base="flex"
+						controlBase="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+						controlActive="bg-primary-500"
+						controlInactive="preset-filled-surface-200-800"
+						thumbBase="pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform"
+						thumbActive="translate-x-5"
+						thumbInactive="translate-x-1"
+						checked={formData.dynamic}
+						onCheckedChange={(e) => (formData.dynamic = e.checked)}
+						{...tooltipInteractions.getReferenceProps()}
+					/>
+				</div>
+
+				<div class="form-group flex-1">
+					{#if formData.dynamic}
+						<label class="block text-sm font-medium mb-2">Select Playlist Group</label>
+						{#if dynamicOptions.length > 0}
+							<Combobox
+								data={dynamicOptions}
+								value={selectedOption}
+								defaultValue={selectedOption}
+								onValueChange={(e) => (selectedOption = e.value)}
+								label=""
+								placeholder="Select or type..."
+								positioning={{
+									placement: 'bottom-start',
+									flip: false,
+									overflowPadding: 8,
+									fitViewport: true
+								}}
+								contentBase="max-h-48 glass card overflow-y-auto p-2 shadow-lg"
+							>
+							{#snippet item(item: {label: string; value: string})}
+								<div class="flex w-full justify-between space-x-2">
+									<span>{item.label}</span>
+								</div>
+							{/snippet}
+						</Combobox>
+					{:else}
+						<div class="input p-2 text-gray-500 bg-surface-700/30">No playlist groups available</div>
+					{/if}
 				{/if}
-			{/if}
+				</div>
 			</div>
 		</div>
+
 		{#if tooltipOpen}
 			<div
 				bind:this={tooltipFloating.elements.floating}
 				style={tooltipFloating.floatingStyles}
 				{...tooltipInteractions.getFloatingProps()}
-				class="floating glass card p-2 shadow-lg"
+				class="floating glass card p-2 shadow-lg z-50"
 				transition:fade={{ duration: 200 }}
 			>
 				<p class="text-sm font-medium">
@@ -313,9 +320,106 @@
 				<FloatingArrow bind:ref={elemArrow} context={tooltipFloating.context} fill="#1e293b" />
 			</div>
 		{/if}
-		<footer class="modal-footer flex justify-end gap-4">
-			<button class="btn preset-outlined-surface-500" onclick={onCancel}>Cancel</button>
-			<button class="btn preset-filled-primary-500" onclick={onFormSubmit}>Save</button>
+
+		<footer class="modal-footer flex justify-end gap-4 pt-4 border-t border-surface-600">
+			<button class="btn preset-outlined-surface-500 min-w-20" onclick={onCancel}>
+				Cancel
+			</button>
+			<button class="btn preset-filled-primary-500 min-w-20" onclick={onFormSubmit}>
+				Save
+			</button>
 		</footer>
 	</div>
 </div>
+
+<style>
+	.modal-group {
+		min-width: 500px;
+		padding: 1.5rem;
+	}
+
+	.form-group {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.form-group label {
+		color: var(--color-surface-200);
+		font-weight: 500;
+	}
+
+	.form-group input {
+		transition: all 0.2s ease;
+	}
+
+	.form-group input:focus {
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+	}
+
+	.form-section {
+		background: var(--color-surface-800/30);
+		border: 1px solid var(--color-surface-600/50);
+		border-radius: 0.5rem;
+		padding: 1rem;
+	}
+
+	.form-row {
+		display: flex;
+		gap: 1.5rem;
+		align-items: flex-start;
+	}
+
+	.form-group-inline {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.5rem;
+		min-width: 120px;
+	}
+
+	.form-group-inline label {
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--color-surface-200);
+		text-align: center;
+	}
+
+	.modal-footer {
+		margin-top: 2rem;
+	}
+
+	.modal-footer button {
+		font-weight: 500;
+		padding: 0.75rem 1.5rem;
+	}
+
+	/* Mobile responsive */
+	@media (max-width: 768px) {
+		.modal-group {
+			min-width: unset;
+			padding: 1rem;
+		}
+
+		.form-row {
+			flex-direction: column;
+			gap: 1rem;
+		}
+
+		.form-group-inline {
+			flex-direction: row;
+			justify-content: space-between;
+			min-width: unset;
+			width: 100%;
+		}
+
+		.modal-footer {
+			flex-direction: column;
+			gap: 0.75rem;
+		}
+
+		.modal-footer button {
+			width: 100%;
+		}
+	}
+</style>
