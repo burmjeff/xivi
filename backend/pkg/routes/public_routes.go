@@ -79,6 +79,9 @@ func PublicRoutes(a *fiber.App) {
 	api.Get("/settings", controllers.GetSettings)    // get settings
 	api.Put("/settings", controllers.UpdateSettings) // update settings
 
+	// System Status Routes
+	api.Get("/system/status", controllers.GetSystemStatus) // get system status metrics
+
 	// Stream Routes
 	router.Get("/stream/:stream_id", controllers.GetStream)
 	router.Get("/stream/hls/:stream_id", controllers.GetHlsStream)
