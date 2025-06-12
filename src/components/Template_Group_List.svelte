@@ -528,7 +528,7 @@
     open={modalGroupOpen}
     onOpenChange={(e) => (modalGroupOpen = e.open)}
 	triggerBase="btn preset-tonal"
-	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	contentBase="card bg-surface-100-900 shadow-xl"
 	backdropClasses="backdrop-blur-sm"
 >
 	{#snippet trigger()}{/snippet}
@@ -547,7 +547,7 @@
     open={modalDeleteOpen}
     onOpenChange={(e) => (modalDeleteOpen = e.open)}
     triggerBase="btn preset-tonal"
-	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl"
 	backdropClasses="backdrop-blur-sm"
 >
 	{#snippet trigger()}{/snippet}
@@ -565,7 +565,7 @@
     open={modalChannelOpen}
     onOpenChange={(e) => (modalChannelOpen = e.open)}
     triggerBase="btn preset-tonal"
-	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	contentBase="card bg-surface-100-900 shadow-xl"
 	backdropClasses="backdrop-blur-sm"
 >
 	{#snippet trigger()}{/snippet}
@@ -583,7 +583,7 @@
     open={modalConvertOpen}
     onOpenChange={(e) => (modalConvertOpen = e.open)}
     triggerBase="btn preset-tonal"
-	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl"
 	backdropClasses="backdrop-blur-sm"
 >
 	{#snippet trigger()}{/snippet}

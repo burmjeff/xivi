@@ -363,13 +363,13 @@
 	}
 </script>
 
-<div class="modal-channel-settings max-w-scree">
+<div class="modal-channel">
 		{#if isNew}
-			<header class="justify-center text-center text-2xl font-bold">Add Channel</header>
+			<header class="text-center text-2xl font-bold mb-2">Add Channel</header>
 		{:else}
-			<header class="justify-center text-center text-2xl font-bold">Channel Settings</header>
+			<header class="text-center text-2xl font-bold mb-2">Channel Settings</header>
 		{/if}
-		<form class="modal-form space-y-4 border border-surface-500 p-4 rounded-container">
+		<form class="modal-form space-y-4 border border-surface-500 p-6 rounded-container bg-surface-800/20">
 			<div class="playlist_ch_items grid grid-cols-5 space-x-6">
 				<div class="form col-span-2 px-2">
 					<label class="channel_name">
@@ -579,10 +579,34 @@
 {/if}
 
 <style>
+	.modal-channel {
+		min-width: 800px;
+		max-width: 1200px;
+		padding: 1.5rem;
+	}
+
+	.modal-form {
+		background: var(--color-surface-800/20);
+		border: 1px solid var(--color-surface-600/50);
+		border-radius: 0.5rem;
+	}
+
+	.modal-footer {
+		margin-top: 2rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--color-surface-600);
+	}
+
+	.modal-footer button {
+		font-weight: 500;
+		padding: 0.75rem 1.5rem;
+	}
+
 	#animate {
 		position: relative;
 		text-align: center;
 	}
+
 	.custom-shadow-item {
 		position: absolute;
 		top: 0;
@@ -595,16 +619,60 @@
 		opacity: 0.6;
 		margin: 0;
 	}
+
 	#thead {
 		position: relative;
 		text-align: center;
 		height: 0.25rem;
 		max-height: 0.25rem;
 	}
+
 	.center {
 		text-align: center;
 		justify-content: center;
 		align-items: center;
 		width: 100%;
+	}
+
+	/* Responsive design for smaller screens */
+	@media (max-width: 1024px) {
+		.modal-channel {
+			min-width: 90vw;
+			max-width: 95vw;
+			padding: 1rem;
+		}
+
+		.playlist_ch_items {
+			grid-template-columns: 1fr;
+			gap: 1rem;
+		}
+
+		.form {
+			order: 1;
+		}
+
+		.max-h-72.col-span-3 {
+			order: 2;
+		}
+	}
+
+	@media (max-width: 640px) {
+		.modal-channel {
+			min-width: unset;
+			padding: 0.75rem;
+		}
+
+		.modal-footer {
+			flex-direction: column;
+			gap: 0.75rem;
+		}
+
+		.modal-footer > div {
+			width: 100%;
+		}
+
+		.modal-footer button {
+			width: 100%;
+		}
 	}
 </style>

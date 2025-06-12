@@ -32,6 +32,36 @@
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
 }
 
+/* Modal Width Improvements - Responsive sizing for different modal types */
+
+/* Default modal sizing - more generous than before */
+[data-scope="dialog"][data-part="content"] {
+  max-width: 90vw !important;
+  min-width: 320px !important;
+}
+
+/* Simple form modals get medium width */
+.modal-playlist,
+.modal-template {
+  min-width: 400px;
+}
+
+/* Complex form modals get larger width */
+.modal-group,
+.modal-channel {
+  min-width: 500px;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 640px) {
+  [data-scope="dialog"][data-part="content"] {
+    width: 95vw !important;
+    max-width: none !important;
+    min-width: 280px !important;
+    max-height: 85vh !important;
+  }
+}
+
 /* Fix for any potential parent element positioning issues */
 [data-scope="dialog"][data-part="positioner"] {
   position: fixed !important;
