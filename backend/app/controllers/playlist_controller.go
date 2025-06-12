@@ -458,9 +458,20 @@ func RefreshPlaylist(c *fiber.Ctx) error {
 	// Parse the M3U file to update the playlist
 	m3uParser := utils.M3uParser{}
 	go func() {
+		// Capture start time BEFORE parsing begins - this represents the baseline
+		// for determining which channels existed before this update
 		startTime := time.Now()
+		log.Info().Int64("playlist_id", playlist.ID).Time("start_time", startTime).Msg("Starting playlist refresh")
+
+		// Parse the M3U file - this will update timestamps for existing channels
+		// and create new channels with current timestamps
 		m3uParser.ParseM3u(*playlist)
+
+		// Clean up stale channels - any channel not touched during parsing
+		// will have timestamps before startTime and will be removed
 		cron.CleanPlaylist(*playlist, startTime)
+
+		log.Info().Int64("playlist_id", playlist.ID).Msg("Playlist refresh completed")
 	}()
 
 	// Return status 200 OK.

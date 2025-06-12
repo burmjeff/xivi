@@ -77,14 +77,18 @@ func UpdatePlaylists() {
 	}
 
 	log.Info().Int("count", len(*playlists)).Msg("Starting playlist update process")
-	startTime := time.Now()
 
 	for _, playlist := range *playlists {
-		log.Log().Msgf("Updating Playlist: %s", playlist.Name)
+		log.Info().Str("playlist_name", playlist.Name).Int64("playlist_id", playlist.ID).Msg("Starting playlist update")
+
+		// Capture start time for each playlist individually
+		startTime := time.Now()
+
 		m3uParser := utils.M3uParser{}
 		m3uParser.ParseM3u(playlist)
 		CleanPlaylist(playlist, startTime)
-		log.Log().Msgf("Finished Updating Playlist: %s", playlist.Name)
+
+		log.Info().Str("playlist_name", playlist.Name).Int64("playlist_id", playlist.ID).Msg("Finished playlist update")
 	}
 
 	// Update all dynamic groups
@@ -164,24 +168,63 @@ func UpdateEpgs() {
 }
 
 func CleanPlaylist(playlist models.Playlist, startTime time.Time) {
+	log.Info().Int64("playlist_id", playlist.ID).Msg("Starting playlist cleanup")
+
 	// Create a context with timeout for database operations
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
+
+	// Clean orphaned groups and channels first
 	if err := database.Db.CleanPlaylistGroups(ctx, playlist.ID); err != nil {
-		log.Debug().Msgf("Playlist Clean: %v", err)
+		log.Error().Err(err).Int64("playlist_id", playlist.ID).Msg("Failed to clean playlist groups")
 	}
 	if err := database.Db.CleanPlaylistChannels(ctx, playlist.ID); err != nil {
-		log.Debug().Msgf("Playlist Clean: %v", err)
+		log.Error().Err(err).Int64("playlist_id", playlist.ID).Msg("Failed to clean playlist channels")
 	}
-	if channels, err := database.Db.GetPlChannels(playlist.ID); err != nil {
-		log.Err(err)
-	} else {
-		for _, channel := range *channels {
-			if channel.UpdatedAt.Before(startTime) && channel.CreatedAt.Before(startTime) {
-				database.Db.DeletePlChannel(channel.ID)
-			}
+
+	// Get all channels for this playlist
+	channels, err := database.Db.GetPlChannels(playlist.ID)
+	if err != nil {
+		log.Error().Err(err).Int64("playlist_id", playlist.ID).Msg("Failed to get playlist channels for cleanup")
+		return
+	}
+
+	if channels == nil || len(*channels) == 0 {
+		log.Info().Int64("playlist_id", playlist.ID).Msg("No channels found for cleanup")
+		return
+	}
+
+	// Count channels that need to be removed
+	var staleChannels []models.PlaylistChannel
+	for _, channel := range *channels {
+		// A channel is considered stale if:
+		// 1. Both CreatedAt and UpdatedAt are before the start time (never touched during this update)
+		// 2. OR UpdatedAt is before start time but CreatedAt is after (edge case for partial updates)
+		if (channel.UpdatedAt.Before(startTime) && channel.CreatedAt.Before(startTime)) ||
+			(channel.UpdatedAt.Before(startTime) && channel.CreatedAt.After(startTime)) {
+			staleChannels = append(staleChannels, channel)
 		}
 	}
+
+	if len(staleChannels) == 0 {
+		log.Info().Int64("playlist_id", playlist.ID).Msg("No stale channels found to clean up")
+		return
+	}
+
+	log.Info().Int64("playlist_id", playlist.ID).Int("stale_count", len(staleChannels)).Int("total_count", len(*channels)).Msg("Found stale channels to remove")
+
+	// Remove stale channels
+	removedCount := 0
+	for _, channel := range staleChannels {
+		if err := database.Db.DeletePlChannel(channel.ID); err != nil {
+			log.Error().Err(err).Int64("channel_id", channel.ID).Str("title", channel.Title).Msg("Failed to delete stale channel")
+		} else {
+			log.Debug().Int64("channel_id", channel.ID).Str("title", channel.Title).Msg("Removed stale channel")
+			removedCount++
+		}
+	}
+
+	log.Info().Int64("playlist_id", playlist.ID).Int("removed_count", removedCount).Msg("Playlist cleanup completed")
 }
 
 func VacuumDB() {
