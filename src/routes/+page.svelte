@@ -1,41 +1,94 @@
-<script>
+<script lang="ts">
 	import TemplateStatus from '@xivi/components/TemplateStatus.svelte';
 	import Icon from '@iconify/svelte';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import type { SystemStatusState, SystemStatusResponse } from '@xivi/data/system_entities';
 
 	// System status data
-	let systemStatus = $state({
+	let systemStatus: SystemStatusState = $state({
 		uptime: '0 days, 0 hours, 0 minutes',
 		cpu: '0%',
-		memory: '0 MB',
+		memory: '0 MB / 0 MB (0%)',
 		connections: 0,
-		isLoading: true
+		isLoading: true,
+		error: null,
+		lastUpdated: null
 	});
 
-	// Fetch system status data
+	// Auto-refresh interval
+	let refreshInterval: number | null = null;
+	const REFRESH_INTERVAL_MS = 30000; // 30 seconds
+
+	// Fetch system status data from API
 	async function fetchSystemStatus() {
-		// In a real implementation, this would fetch from an API
-		// For now, we'll simulate with random data
-		systemStatus.isLoading = true;
+		try {
+			systemStatus.isLoading = true;
+			systemStatus.error = null;
 
-		// Simulate API call
-		setTimeout(() => {
-			const days = Math.floor(Math.random() * 30);
-			const hours = Math.floor(Math.random() * 24);
-			const minutes = Math.floor(Math.random() * 60);
+			const response = await fetch('/api/system/status');
 
+			if (!response.ok) {
+				throw new Error(`HTTP error! status: ${response.status}`);
+			}
+
+			const data: SystemStatusResponse = await response.json();
+
+			if (data.error) {
+				throw new Error(data.msg || 'Unknown API error');
+			}
+
+			// Update system status with API data
 			systemStatus = {
-				uptime: `${days} days, ${hours} hours, ${minutes} minutes`,
-				cpu: `${Math.floor(Math.random() * 50)}%`,
-				memory: `${Math.floor(Math.random() * 1000)} MB`,
-				connections: Math.floor(Math.random() * 100),
-				isLoading: false
+				uptime: data.status.uptime,
+				cpu: data.status.cpu,
+				memory: data.status.memory,
+				connections: data.status.connections,
+				isLoading: false,
+				error: null,
+				lastUpdated: Date.now()
 			};
-		}, 1000);
+
+		} catch (error) {
+			console.error('Error fetching system status:', error);
+			systemStatus = {
+				...systemStatus,
+				isLoading: false,
+				error: error instanceof Error ? error.message : 'Failed to fetch system status',
+				lastUpdated: Date.now()
+			};
+		}
+	}
+
+	// Start auto-refresh
+	function startAutoRefresh() {
+		if (refreshInterval) {
+			clearInterval(refreshInterval);
+		}
+		refreshInterval = setInterval(fetchSystemStatus, REFRESH_INTERVAL_MS);
+	}
+
+	// Stop auto-refresh
+	function stopAutoRefresh() {
+		if (refreshInterval) {
+			clearInterval(refreshInterval);
+			refreshInterval = null;
+		}
+	}
+
+	// Manual refresh handler
+	async function handleRefresh() {
+		await fetchSystemStatus();
+		// Restart auto-refresh timer
+		startAutoRefresh();
 	}
 
 	onMount(() => {
 		fetchSystemStatus();
+		startAutoRefresh();
+	});
+
+	onDestroy(() => {
+		stopAutoRefresh();
 	});
 </script>
 
@@ -43,20 +96,51 @@
 	<!-- Page Header -->
 	<header class="mb-6">
 		<h1 class="text-gradient font-bold mb-2">System Dashboard</h1>
-		<div class="flex justify-between">
-			<p class="text-surface-300">Monitor your Xivi server status and templates</p>
+		<div class="flex justify-between items-end">
+			<div>
+				<p class="text-surface-300">Monitor your Xivi server status and templates</p>
+				{#if systemStatus.lastUpdated && !systemStatus.error}
+					<p class="text-surface-400 text-sm mt-1">
+						Last updated: {new Date(systemStatus.lastUpdated).toLocaleTimeString()}
+						• Auto-refresh every {REFRESH_INTERVAL_MS / 1000}s
+					</p>
+				{/if}
+			</div>
 			<!-- Refresh Button -->
 			<div class="flex justify-end">
 				<button
-					class="btn bg-primary-700 hover:bg-primary-600 text-white flex items-center gap-2 px-4 py-2 rounded-lg transition-colors duration-200"
-					onclick={fetchSystemStatus}
+					class="btn bg-primary-700 hover:bg-primary-600 text-white flex items-center gap-2 px-4 py-2 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+					onclick={handleRefresh}
+					disabled={systemStatus.isLoading}
 				>
-					<Icon icon="mdi:refresh" width="18" height="18" />
-					<span>Refresh Status</span>
+					<Icon
+						icon="mdi:refresh"
+						width="18"
+						height="18"
+						class={systemStatus.isLoading ? 'animate-spin' : ''}
+					/>
+					<span>{systemStatus.isLoading ? 'Refreshing...' : 'Refresh Status'}</span>
 				</button>
 			</div>
 		</div>
 	</header>
+
+	<!-- Error Banner -->
+	{#if systemStatus.error}
+		<div class="alert variant-filled-error mb-6">
+			<Icon icon="mdi:alert-circle" width="20" height="20" />
+			<div class="alert-message">
+				<h3 class="h4">System Status Error</h3>
+				<p>{systemStatus.error}</p>
+			</div>
+			<div class="alert-actions">
+				<button class="btn variant-filled" onclick={handleRefresh}>
+					<Icon icon="mdi:refresh" width="16" height="16" />
+					<span>Retry</span>
+				</button>
+			</div>
+		</div>
+	{/if}
 
 	<!-- Status Cards Grid -->
 	<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -68,6 +152,8 @@
 			</div>
 			{#if systemStatus.isLoading}
 				<div class="h-6 bg-surface-700/50 rounded animate-pulse w-3/4 my-2"></div>
+			{:else if systemStatus.error}
+				<p class="text-xl font-semibold text-error-400">--</p>
 			{:else}
 				<p class="text-xl font-semibold text-primary-300">{systemStatus.uptime}</p>
 			{/if}
@@ -81,6 +167,8 @@
 			</div>
 			{#if systemStatus.isLoading}
 				<div class="h-6 bg-surface-700/50 rounded animate-pulse w-1/4 my-2"></div>
+			{:else if systemStatus.error}
+				<p class="text-xl font-semibold text-error-400">--</p>
 			{:else}
 				<p class="text-xl font-semibold text-secondary-300">{systemStatus.cpu}</p>
 			{/if}
@@ -94,6 +182,8 @@
 			</div>
 			{#if systemStatus.isLoading}
 				<div class="h-6 bg-surface-700/50 rounded animate-pulse w-2/5 my-2"></div>
+			{:else if systemStatus.error}
+				<p class="text-xl font-semibold text-error-400">--</p>
 			{:else}
 				<p class="text-xl font-semibold text-tertiary-300">{systemStatus.memory}</p>
 			{/if}
@@ -107,6 +197,8 @@
 			</div>
 			{#if systemStatus.isLoading}
 				<div class="h-6 bg-surface-700/50 rounded animate-pulse w-1/3 my-2"></div>
+			{:else if systemStatus.error}
+				<p class="text-xl font-semibold text-error-400">--</p>
 			{:else}
 				<p class="text-xl font-semibold text-success-300">{systemStatus.connections}</p>
 			{/if}
