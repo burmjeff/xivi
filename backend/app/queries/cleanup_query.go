@@ -9,15 +9,19 @@ import (
 
 // SQL query constants
 const (
-	vacuumDBQuery            = `PRAGMA incremental_vacuum;`
+	vacuumDBQuery = `PRAGMA incremental_vacuum;`
+	// Clean empty playlist groups for the specified playlist (groups with no channels)
 	cleanPlaylistGroupsQuery = `DELETE FROM playlistgroup
-		WHERE ? NOT IN (SELECT playlist_id FROM playlistgroup)`
+		WHERE playlist_id = ?
+		AND id NOT IN (
+			SELECT DISTINCT group_id FROM playlistchannel
+			WHERE group_id IS NOT NULL
+		)`
+	// Clean playlist channels that belong to disabled groups in the specified playlist
 	cleanPlaylistChannelsQuery = `DELETE FROM playlistchannel
-		WHERE ROWID IN (
-			SELECT playlistchannel.ROWID FROM playlistchannel
-			JOIN playlistgroup ON playlistchannel.group_id = playlistgroup.id
-			WHERE ? NOT IN (SELECT playlist_id FROM playlistgroup)
-			OR playlistgroup.enabled = false
+		WHERE group_id IN (
+			SELECT id FROM playlistgroup
+			WHERE playlist_id = ? AND enabled = false
 		)`
 	cleanOldEpgProgrammesQuery = `DELETE FROM epgprogramme
 		WHERE stop < datetime('now', 'localtime', '-1 day')`
