@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"sync"
 	"time"
 	"xivi/backend/app/queries"
 	"xivi/backend/platform/settings"
@@ -15,8 +16,11 @@ import (
 )
 
 var (
-	Db         *Queries
-	dbInstance *sqlx.DB // Store the database instance for reinitialization
+	Db                 *Queries
+	dbInstance         *sqlx.DB     // Store the database instance for reinitialization
+	dbMutex            sync.RWMutex // Mutex to protect database operations during reinitialization
+	optimizationTicker *time.Ticker // Ticker for periodic optimization
+	optimizationDone   chan bool    // Channel to signal optimization goroutine to stop
 )
 
 // Queries struct for collect all app queries.
@@ -46,8 +50,11 @@ func OpenDBConnection() (*Queries, error) {
 
 	InitDB(db)
 
+	// Initialize optimization control structures
+	optimizationDone = make(chan bool, 1)
+
 	// Start periodic database optimization in background
-	go startPeriodicDatabaseOptimization(db)
+	go startPeriodicDatabaseOptimization()
 
 	return &Queries{
 		// Set queries from models using the new constructors:
@@ -143,32 +150,52 @@ func optimizeDBConnection(db *sqlx.DB) {
 }
 
 // Periodically optimize the database to maintain performance
-func startPeriodicDatabaseOptimization(db *sqlx.DB) {
+func startPeriodicDatabaseOptimization() {
 	// Run optimization every 30 minutes
-	ticker := time.NewTicker(30 * time.Minute)
-	defer ticker.Stop()
+	optimizationTicker = time.NewTicker(30 * time.Minute)
+	defer optimizationTicker.Stop()
 
 	for {
 		select {
-		case <-ticker.C:
+		case <-optimizationTicker.C:
 			log.Info().Msg("Running periodic database optimization")
 
+			// Use read lock to safely access the database instance
+			dbMutex.RLock()
+			currentDB := dbInstance
+			dbMutex.RUnlock()
+
+			// Check if database instance is valid
+			if currentDB == nil {
+				log.Warn().Msg("Skipping periodic optimization: database instance is nil")
+				continue
+			}
+
+			// Test connection before running optimization
+			if err := currentDB.Ping(); err != nil {
+				log.Error().Err(err).Msg("Skipping periodic optimization: database connection is not healthy")
+				continue
+			}
+
 			// Run ANALYZE to update statistics
-			if _, err := db.Exec("ANALYZE;"); err != nil {
+			if _, err := currentDB.Exec("ANALYZE;"); err != nil {
 				log.Error().Err(err).Msg("Failed to execute periodic ANALYZE")
 			}
 
 			// Run PRAGMA optimize to optimize the database
-			if _, err := db.Exec("PRAGMA optimize;"); err != nil {
+			if _, err := currentDB.Exec("PRAGMA optimize;"); err != nil {
 				log.Error().Err(err).Msg("Failed to execute periodic PRAGMA optimize")
 			}
 
 			// Run incremental VACUUM to reclaim space
-			if _, err := db.Exec("PRAGMA incremental_vacuum;"); err != nil {
+			if _, err := currentDB.Exec("PRAGMA incremental_vacuum;"); err != nil {
 				log.Error().Err(err).Msg("Failed to execute periodic incremental VACUUM")
 			}
 
 			log.Info().Msg("Periodic database optimization completed")
+		case <-optimizationDone:
+			log.Info().Msg("Stopping periodic database optimization")
+			return
 		}
 	}
 }
@@ -213,6 +240,10 @@ func InitDB(db *sqlx.DB) error {
 // ReinitializePreparedStatements reinitializes all prepared statements in the database
 // This is useful to call before scheduled cron jobs to ensure fresh prepared statements
 func ReinitializePreparedStatements() {
+	// Acquire write lock to prevent concurrent database operations
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+
 	if dbInstance == nil {
 		log.Error().Msg("Cannot reinitialize prepared statements: database instance is nil")
 		return
@@ -242,6 +273,9 @@ func ReinitializePreparedStatements() {
 		return
 	}
 
+	// Apply optimizations to the new connection
+	optimizeDBConnection(newDb)
+
 	// Update the global instance
 	dbInstance = newDb
 
@@ -257,4 +291,34 @@ func ReinitializePreparedStatements() {
 	}
 
 	log.Info().Msg("All database prepared statements successfully reinitialized")
+}
+
+// StopPeriodicOptimization stops the periodic database optimization goroutine
+func StopPeriodicOptimization() {
+	if optimizationDone != nil {
+		select {
+		case optimizationDone <- true:
+			log.Info().Msg("Sent stop signal to periodic optimization goroutine")
+		default:
+			log.Warn().Msg("Optimization goroutine stop signal channel is full or closed")
+		}
+	}
+}
+
+// CloseDBConnection closes the database connection and stops optimization
+func CloseDBConnection() error {
+	// Stop the periodic optimization first
+	StopPeriodicOptimization()
+
+	// Acquire write lock
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+
+	if dbInstance != nil {
+		err := dbInstance.Close()
+		dbInstance = nil
+		Db = nil
+		return err
+	}
+	return nil
 }

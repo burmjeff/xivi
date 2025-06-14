@@ -34,7 +34,7 @@ const (
 
 	selectTemplateChannelVectorQuery     = `SELECT * FROM templatechannelvectors WHERE channel_id = ?`
 	selectAllTemplateChannelVectorsQuery = `SELECT * FROM templatechannelvectors`
-	insertTemplateChannelVectorQuery     = `INSERT INTO templatechannelvectors VALUES (null, ?, ?)`
+	insertTemplateChannelVectorQuery     = `INSERT INTO templatechannelvectors VALUES (null, :channel_id, :vector_id)`
 	updateTemplateChannelVectorQuery     = `UPDATE templatechannelvectors SET vector_id = ? WHERE channel_id = ?`
 
 	selectPlaylistChannelVectorsQuery = `
@@ -58,7 +58,7 @@ const (
 
 	selectChannelVectorQuery       = `SELECT * FROM channelvectors WHERE id = ?`
 	selectChannelVectorByNameQuery = `SELECT * FROM channelvectors WHERE name = ?`
-	insertChannelVectorQuery       = `INSERT INTO channelvectors VALUES (null, ?, ?)`
+	insertChannelVectorQuery       = `INSERT INTO channelvectors VALUES (null, :name, :vector)`
 )
 
 type VectorQueries struct {
@@ -308,10 +308,19 @@ func (q *VectorQueries) GetTemplateChannelVector(channel_id int64) (*models.Temp
 
 	err = stmt.Get(vectorChannel, channel_id)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, ErrNotFound
+		// If prepared statement fails with parameter mismatch, fall back to direct query
+		if strings.Contains(err.Error(), "expected 2 arguments") ||
+			strings.Contains(err.Error(), "sql: expected") {
+			log.Warn().Err(err).Int64("channel_id", channel_id).Msg("Prepared statement failed, falling back to direct query")
+			// Fall back to direct query
+			err = q.Get(vectorChannel, selectTemplateChannelVectorQuery, channel_id)
 		}
-		return nil, err
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return nil, ErrNotFound
+			}
+			return nil, err
+		}
 	}
 
 	return vectorChannel, nil
@@ -327,7 +336,16 @@ func (q *VectorQueries) GetTemplateChannelVectors() ([]models.TemplateChannelVec
 
 	err = stmt.Select(&vectorChannels)
 	if err != nil {
-		return nil, err
+		// If prepared statement fails with parameter mismatch, fall back to direct query
+		if strings.Contains(err.Error(), "expected 2 arguments") ||
+			strings.Contains(err.Error(), "sql: expected") {
+			log.Warn().Err(err).Msg("Prepared statement failed, falling back to direct query")
+			// Fall back to direct query
+			err = q.Select(&vectorChannels, selectAllTemplateChannelVectorsQuery)
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return vectorChannels, nil
@@ -341,7 +359,16 @@ func (q *VectorQueries) CreateTemplateChannelVector(channelVector *models.Templa
 
 	res, err := stmt.Exec(channelVector.ChannelId, channelVector.VectorId)
 	if err != nil {
-		return 0, err
+		// If prepared statement fails with parameter mismatch, fall back to direct query
+		if strings.Contains(err.Error(), "expected 2 arguments") ||
+			strings.Contains(err.Error(), "sql: expected") {
+			log.Warn().Err(err).Int64("channel_id", channelVector.ChannelId).Msg("Prepared statement failed, falling back to direct query")
+			// Fall back to direct query
+			res, err = q.Exec(insertTemplateChannelVectorQuery, channelVector.ChannelId, channelVector.VectorId)
+		}
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	id, err := res.LastInsertId()
@@ -360,6 +387,15 @@ func (q *VectorQueries) UpdateTemplateChannelVector(channelVector *models.Templa
 	}
 
 	_, err = stmt.Exec(channelVector.VectorId, channelVector.ChannelId)
+	if err != nil {
+		// If prepared statement fails with parameter mismatch, fall back to direct query
+		if strings.Contains(err.Error(), "expected 2 arguments") ||
+			strings.Contains(err.Error(), "sql: expected") {
+			log.Warn().Err(err).Int64("channel_id", channelVector.ChannelId).Msg("Prepared statement failed, falling back to direct query")
+			// Fall back to direct query
+			_, err = q.Exec(updateTemplateChannelVectorQuery, channelVector.VectorId, channelVector.ChannelId)
+		}
+	}
 	return err
 }
 
@@ -371,8 +407,18 @@ func (q *VectorQueries) GetPlaylistChannelVectors() ([]models.PlaylistChannelVec
 		return nil, err
 	}
 
-	if err := stmt.Select(&vectorChannels); err != nil {
-		return nil, err
+	err = stmt.Select(&vectorChannels)
+	if err != nil {
+		// If prepared statement fails with parameter mismatch, fall back to direct query
+		if strings.Contains(err.Error(), "expected 2 arguments") ||
+			strings.Contains(err.Error(), "sql: expected") {
+			log.Warn().Err(err).Msg("Prepared statement failed, falling back to direct query")
+			// Fall back to direct query
+			err = q.Select(&vectorChannels, selectPlaylistChannelVectorsQuery)
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return vectorChannels, nil
@@ -386,8 +432,18 @@ func (q *VectorQueries) GetPlChVectorsByPlaylist(playlistId int64) ([]models.Pla
 		return nil, err
 	}
 
-	if err := stmt.Select(&vectorChannels, playlistId); err != nil {
-		return nil, err
+	err = stmt.Select(&vectorChannels, playlistId)
+	if err != nil {
+		// If prepared statement fails with parameter mismatch, fall back to direct query
+		if strings.Contains(err.Error(), "expected 2 arguments") ||
+			strings.Contains(err.Error(), "sql: expected") {
+			log.Warn().Err(err).Int64("playlist_id", playlistId).Msg("Prepared statement failed, falling back to direct query")
+			// Fall back to direct query
+			err = q.Select(&vectorChannels, selectPlaylistChannelVectorsByPlaylistQuery, playlistId)
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return vectorChannels, nil

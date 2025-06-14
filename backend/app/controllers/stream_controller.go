@@ -306,7 +306,7 @@ func GetHlsChannels(c *fiber.Ctx) error {
 
 			if tmplChannel.TvgID != nil {
 				// Get the current programme
-				if epgProgramme, err := database.Db.GetProgrammeByTime(ctx, *tmplChannel.TvgID, time.Now()); err != nil {
+				if epgProgramme, err := database.Db.GetCurrentProgramme(ctx, *tmplChannel.TvgID, time.Now()); err != nil {
 					log.Warn().Msgf("LiveChannel: No EPG Programme found for tvgID: %s", *tmplChannel.TvgID)
 					channel.Programme = "No programme information"
 				} else {
@@ -316,7 +316,7 @@ func GetHlsChannels(c *fiber.Ctx) error {
 					channel.End = epgProgramme.Stop.String()
 
 					// Get the next programme after the current one ends
-					if epgProgrammeNext, err := database.Db.GetProgrammeByTime(ctx, *tmplChannel.TvgID, epgProgramme.Stop.Time); err != nil {
+					if epgProgrammeNext, err := database.Db.GetCurrentProgramme(ctx, *tmplChannel.TvgID, epgProgramme.Stop.Time); err != nil {
 						log.Warn().Msgf("LiveChannel: No EPG Next Programme found for tvgID: %s", *tmplChannel.TvgID)
 						channel.Next = "No programme information"
 					} else {

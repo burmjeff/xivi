@@ -342,9 +342,9 @@ func processProgrammeWorker(ctx context.Context, jobs <-chan models.EpgProgramme
 		// Retry parameters
 		baseDelay := 200 * time.Millisecond
 
-		// Try to get the programme with retries
+		// Try to get the programme by exact time with retries
 		for retry := 0; retry < MaxRetries; retry++ {
-			existing, err = database.Db.GetProgrammeByTime(ctx, programme.Channel, programme.Start.Time)
+			existing, err = database.Db.GetProgrammeByExactTime(ctx, programme.Channel, programme.Start.Time, programme.Stop.Time)
 			if err == nil || !strings.Contains(err.Error(), "database is locked") {
 				break // Success or non-lock error
 			}
@@ -358,42 +358,27 @@ func processProgrammeWorker(ctx context.Context, jobs <-chan models.EpgProgramme
 			// Create new programme with retry logic
 			var createErr error
 			for retry := 0; retry < MaxRetries; retry++ {
-				_, createErr = database.Db.CreateEpgProgramme(ctx, programme)
-				if createErr == nil {
-					break // Success
-				}
-
-				// Check if this is a duplicate error (constraint violation)
-				if strings.Contains(createErr.Error(), "UNIQUE constraint failed") {
-					// Try to get the existing programme again and update it
-					for updateRetry := 0; updateRetry < MaxRetries; updateRetry++ {
-						existing, retryErr := database.Db.GetProgrammeByTime(ctx, programme.Channel, programme.Start.Time)
-						if retryErr == nil {
-							// Update the existing programme
-							updateErr := database.Db.UpdateEpgProgramme(ctx, existing.ID, &programme)
-							if updateErr == nil || !strings.Contains(updateErr.Error(), "database is locked") {
-								break // Success or non-lock error
-							}
+				if existing == nil {
+					_, createErr = database.Db.CreateEpgProgramme(ctx, programme)
+					if createErr == nil || !strings.Contains(createErr.Error(), "database is locked") {
+						if createErr != nil {
+							log.Warn().Err(createErr).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to create programme")
 						}
-
-						// Retry with backoff
-						delay := baseDelay * time.Duration(1<<uint(updateRetry))
-						time.Sleep(delay)
+						break // Success or non-lock error
 					}
-					break // Exit the create retry loop after handling duplicate
+				} else {
+					// Programme already exists, update it
+					updateErr := database.Db.UpdateEpgProgramme(ctx, existing.ID, &programme)
+					if updateErr == nil || !strings.Contains(updateErr.Error(), "database is locked") {
+						if updateErr != nil {
+							log.Warn().Err(updateErr).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to update programme-1")
+						}
+						break // Success or non-lock error
+					}
 				}
-
-				// If it's a database lock error, retry with backoff
-				if strings.Contains(createErr.Error(), "database is locked") ||
-					strings.Contains(createErr.Error(), "busy") {
-					delay := baseDelay * time.Duration(1<<uint(retry))
-					time.Sleep(delay)
-					continue
-				}
-
-				// Other error, log and break
-				log.Warn().Err(createErr).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to create programme")
-				break
+				// Retry with backoff
+				delay := baseDelay * time.Duration(1<<uint(retry))
+				time.Sleep(delay)
 			}
 		} else {
 			// Update existing programme with retry logic
@@ -401,7 +386,7 @@ func processProgrammeWorker(ctx context.Context, jobs <-chan models.EpgProgramme
 				updateErr := database.Db.UpdateEpgProgramme(ctx, existing.ID, &programme)
 				if updateErr == nil || !strings.Contains(updateErr.Error(), "database is locked") {
 					if updateErr != nil {
-						log.Warn().Err(updateErr).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to update programme")
+						log.Warn().Err(updateErr).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to update programme-2")
 					}
 					break // Success or non-lock error
 				}

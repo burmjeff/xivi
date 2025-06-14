@@ -270,7 +270,7 @@ func (q *PlaylistQueries) GetPlChannels(playlistId int64) (*[]models.PlaylistCha
 	query := `SELECT pc.* FROM playlistchannel pc
 	JOIN playlistgroup pg ON pg.id = pc.group_id
 	WHERE pg.playlist_id = ?
-	ORDER BY pg.id ASC, pc.orderr ASC`
+	ORDER BY pc.id ASC`
 
 	err := q.Select(channels, query, playlistId)
 	if err != nil {

@@ -195,32 +195,16 @@ func CleanPlaylist(playlist models.Playlist, startTime time.Time) {
 	}
 
 	// Count channels that need to be removed
-	var staleChannels []models.PlaylistChannel
-	for _, channel := range *channels {
-		// A channel is considered stale if:
-		// 1. Both CreatedAt and UpdatedAt are before the start time (never touched during this update)
-		// 2. OR UpdatedAt is before start time but CreatedAt is after (edge case for partial updates)
-		if (channel.UpdatedAt.Before(startTime) && channel.CreatedAt.Before(startTime)) ||
-			(channel.UpdatedAt.Before(startTime) && channel.CreatedAt.After(startTime)) {
-			staleChannels = append(staleChannels, channel)
-		}
-	}
-
-	if len(staleChannels) == 0 {
-		log.Info().Int64("playlist_id", playlist.ID).Msg("No stale channels found to clean up")
-		return
-	}
-
-	log.Info().Int64("playlist_id", playlist.ID).Int("stale_count", len(staleChannels)).Int("total_count", len(*channels)).Msg("Found stale channels to remove")
-
-	// Remove stale channels
 	removedCount := 0
-	for _, channel := range staleChannels {
-		if err := database.Db.DeletePlChannel(channel.ID); err != nil {
-			log.Error().Err(err).Int64("channel_id", channel.ID).Str("title", channel.Title).Msg("Failed to delete stale channel")
-		} else {
-			log.Debug().Int64("channel_id", channel.ID).Str("title", channel.Title).Msg("Removed stale channel")
-			removedCount++
+	for _, channel := range *channels {
+		// A channel is considered stale if UpdatedAt is before the start time
+		if channel.UpdatedAt.Before(startTime) {
+			if err := database.Db.DeletePlChannel(channel.ID); err != nil {
+				log.Error().Err(err).Int64("channel_id", channel.ID).Str("title", channel.Title).Msg("Failed to delete stale channel")
+			} else {
+				log.Debug().Int64("channel_id", channel.ID).Str("title", channel.Title).Msg("Removed stale channel")
+				removedCount++
+			}
 		}
 	}
 

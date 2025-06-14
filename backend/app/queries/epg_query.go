@@ -768,8 +768,9 @@ func (q *EpgQueries) GetProgrammesBytvgid(ctx context.Context, tvgid string) (*[
 	return programmes, nil
 }
 
-// GetProgrammeByTime gets an EPG programme by time
-func (q *EpgQueries) GetProgrammeByTime(ctx context.Context, tvgid string, epgTime time.Time) (*models.EpgProgramme, error) {
+// GetCurrentProgramme gets the EPG programme that is currently airing at the specified time
+// This method finds programmes where: start <= epgTime < stop
+func (q *EpgQueries) GetCurrentProgramme(ctx context.Context, tvgid string, epgTime time.Time) (*models.EpgProgramme, error) {
 	// Note: A caching mechanism could be implemented here to avoid repeated lookups
 	// for the same programme using a key like: tvgid + "_" + epgTime.Format(time.RFC3339)
 
@@ -784,7 +785,8 @@ func (q *EpgQueries) GetProgrammeByTime(ctx context.Context, tvgid string, epgTi
 	localEpgTime := epgTime.In(localTime)
 	log.Debug().Str("tvgid", tvgid).Time("originalTime", epgTime).Time("localizedTime", localEpgTime).Msg("Querying programme with localized time")
 
-	// Use a direct query approach to avoid mapping issues
+	// Use a direct query to find the programme currently airing at the specified time
+	// The logic is: start <= epgTime < stop (programme has started but not yet ended)
 	query := `
 		SELECT id, start, stop, channel,
 		"title.value", "title.lang", subtitle, desc, categories,
@@ -807,7 +809,7 @@ func (q *EpgQueries) GetProgrammeByTime(ctx context.Context, tvgid string, epgTi
 			Str("tvgid", tvgid).
 			Time("epgTime", localEpgTime).
 			Float64("duration_ms", float64(duration.Milliseconds())).
-			Msg("slow GetProgrammeByTime query")
+			Msg("slow GetCurrentProgramme query")
 	}
 
 	// Initialize the programme with default values for nested structs
@@ -862,6 +864,149 @@ func (q *EpgQueries) GetProgrammeByTime(ctx context.Context, tvgid string, epgTi
 			return nil, ErrNotFound
 		}
 		log.Error().Err(err).Str("tvgid", tvgid).Time("epgTime", epgTime).Msg("Error retrieving programme by time")
+		return nil, err
+	}
+
+	// Populate the programme struct
+	programme.ID = id
+	programme.Start = &models.Time{Time: startTime}
+	programme.Stop = &models.Time{Time: stopTime}
+	programme.Channel = channel
+
+	// Handle nullable fields
+	if titleValue.Valid {
+		programme.Title.Value = titleValue.String
+	}
+	if titleLang.Valid {
+		programme.Title.Lang = titleLang.String
+	}
+	if subtitle.Valid {
+		programme.Subtitle = subtitle.String
+	}
+	if desc.Valid {
+		programme.Desc = desc.String
+	}
+	if categories.Valid && categories.String != "" {
+		programme.Categories = strings.Split(categories.String, ",")
+	}
+	if iconSrc.Valid {
+		programme.Icon.Src = iconSrc.String
+	}
+	if directors.Valid && directors.String != "" {
+		programme.Directors = strings.Split(directors.String, ",")
+	}
+	if presenters.Valid && presenters.String != "" {
+		programme.Presenters = strings.Split(presenters.String, ",")
+	}
+	if producers.Valid && producers.String != "" {
+		programme.Producers = strings.Split(producers.String, ",")
+	}
+	if actors.Valid && actors.String != "" {
+		programme.Actors = strings.Split(actors.String, ",")
+	}
+	if episodeNumSystem.Valid {
+		programme.EpisodeNumber.System = episodeNumSystem.String
+	}
+	if episodeNumValue.Valid {
+		programme.EpisodeNumber.Value = episodeNumValue.String
+	}
+	if ratingSystem.Valid {
+		programme.Rating.System = ratingSystem.String
+	}
+	if ratingValue.Valid {
+		programme.Rating.Value = ratingValue.String
+	}
+	if videoQuality.Valid {
+		programme.Video.Quality = videoQuality.String
+	}
+	if date.Valid {
+		programme.Date = date.String
+	}
+
+	// Debug log to check if Title.Value is populated
+	log.Debug().Str("tvgid", tvgid).Str("title.value", programme.Title.Value).Msg("Retrieved programme by time")
+
+	return programme, nil
+}
+
+func (q *EpgQueries) GetProgrammeByExactTime(ctx context.Context, tvgid string, epgStartTime time.Time, epgEndTime time.Time) (*models.EpgProgramme, error) {
+	// Convert the input time to the application's configured timezone
+	localTime, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+	if err != nil {
+		localTime = time.UTC
+		log.Warn().Err(err).Msg("Failed to load timezone, using UTC")
+	}
+
+	// Ensure the query time is in the configured timezone
+	localStartTime := epgStartTime.In(localTime)
+	localEndTime := epgEndTime.In(localTime)
+
+	query := `
+		SELECT id, start, stop, channel,
+		"title.value", "title.lang", subtitle, desc, categories,
+		"icon.src", directors, presenters, producers, actors,
+		"episodenumber.system", "episodenumber.value",
+		"rating.system", "rating.value", "video.quality", date
+		FROM epgprogramme
+		WHERE channel = ? AND start = ? AND stop = ?
+		ORDER BY start ASC LIMIT 1
+	`
+
+	// Execute the query
+	row := q.QueryRowContext(ctx, query, tvgid, localStartTime, localEndTime)
+
+	// Initialize the programme with default values for nested structs
+	programme := &models.EpgProgramme{
+		Title:         models.Title{Value: "No Title"},
+		Icon:          models.Icon{},
+		EpisodeNumber: models.EpisodeNumber{},
+		Rating:        models.Rating{},
+		Video:         models.Video{},
+		Categories:    []string{},
+		Directors:     []string{},
+		Presenters:    []string{},
+		Producers:     []string{},
+		Actors:        []string{},
+	}
+
+	// Variables to hold the database values
+	var (
+		id               int64
+		startTime        time.Time
+		stopTime         time.Time
+		channel          string
+		titleValue       sql.NullString
+		titleLang        sql.NullString
+		subtitle         sql.NullString
+		desc             sql.NullString
+		categories       sql.NullString
+		iconSrc          sql.NullString
+		directors        sql.NullString
+		presenters       sql.NullString
+		producers        sql.NullString
+		actors           sql.NullString
+		episodeNumSystem sql.NullString
+		episodeNumValue  sql.NullString
+		ratingSystem     sql.NullString
+		ratingValue      sql.NullString
+		videoQuality     sql.NullString
+		date             sql.NullString
+	)
+
+	// Scan the row into variables
+	err = row.Scan(
+		&id, &startTime, &stopTime, &channel,
+		&titleValue, &titleLang, &subtitle, &desc, &categories,
+		&iconSrc, &directors, &presenters, &producers, &actors,
+		&episodeNumSystem, &episodeNumValue,
+		&ratingSystem, &ratingValue, &videoQuality, &date,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		log.Error().Err(err).Str("tvgid", tvgid).Time("epgTime", epgStartTime).Msg("Error retrieving programme by time")
 		return nil, err
 	}
 
