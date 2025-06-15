@@ -189,7 +189,7 @@ func processChannels(ctx context.Context, channels []models.EpgChannel) {
 
 		for _, channel := range batch {
 			if channel.ChannelId == "" {
-				log.Warn().Str("displayName", channel.DisplayName).Msg("Skipping channel with empty channelId")
+				log.Debug().Str("displayName", channel.DisplayName).Msg("Skipping channel with empty channelId")
 				continue
 			}
 
@@ -201,7 +201,6 @@ func processChannels(ctx context.Context, channels []models.EpgChannel) {
 			// Check if channel exists in our pre-fetched map
 			existing, exists := existingChannels[channel.ChannelId]
 			if !exists {
-				// Double-check with a direct query in case our bulk fetch missed it
 				existing, err := database.Db.GetEpgChannelByChannelId(ctx, channel.ChannelId)
 				if err != nil {
 					// Channel doesn't exist, add to new channels list
@@ -239,10 +238,8 @@ func processChannels(ctx context.Context, channels []models.EpgChannel) {
 		err := database.Db.BatchCreateEpgChannels(ctx, newChannels)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to batch create EPG channels")
-
-			// Fall back to individual inserts with better error handling
 			for _, channel := range newChannels {
-				// Check if channel already exists (could have been created by another process)
+				// Check if channel already exists
 				existing, checkErr := database.Db.GetEpgChannelByChannelId(ctx, channel.ChannelId)
 				if checkErr == nil {
 					// Channel already exists, check if it needs updating
@@ -258,7 +255,6 @@ func processChannels(ctx context.Context, channels []models.EpgChannel) {
 					// Try to create the channel
 					_, createErr := database.Db.CreateEpgChannel(ctx, channel)
 					if createErr != nil {
-						// If it's a unique constraint error, the channel was created by another process
 						if strings.Contains(createErr.Error(), "UNIQUE constraint failed") {
 							log.Debug().Str("channelId", channel.ChannelId).Msg("Channel already exists (created by another process)")
 						} else {
@@ -285,10 +281,9 @@ func processChannels(ctx context.Context, channels []models.EpgChannel) {
 
 // processProgrammes processes EPG programmes in batches using worker pool
 func processProgrammes(ctx context.Context, programmes []models.EpgProgramme) {
-	// Determine optimal number of workers based on CPU cores, but limit to 2 to reduce contention
-	numWorkers := 2 // Reduced from MaxWorkers to 2
+	numWorkers := 2
 
-	// Create work distribution channels with smaller buffer to reduce memory usage
+	// Create work distribution channels
 	jobs := make(chan models.EpgProgramme, 250) // Reduced from 500 to 250
 	wg := sync.WaitGroup{}
 
@@ -434,7 +429,7 @@ func generateEPGFiles(ctx context.Context) {
 func parseXML(xmlData io.Reader) (models.EpgItem, error) {
 	var epg models.EpgItem
 
-	// Create a buffered reader for better performance
+	// Create a buffered reader
 	bufReader := bufio.NewReaderSize(xmlData, 1024*1024) // 1MB buffer
 	decoder := xml.NewDecoder(bufReader)
 

@@ -75,6 +75,39 @@ func (q *BaseQueries) WithTransaction(fn func(*sqlx.Tx) error) error {
 	return nil
 }
 
+// WithTransactionContext executes a function within a transaction with context timeout
+func (q *BaseQueries) WithTransactionContext(ctx context.Context, fn func(context.Context, *sqlx.Tx) error) error {
+	// Create a context with timeout for the transaction
+	txCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	tx, err := q.BeginTxx(txCtx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			// Rollback on panic
+			_ = tx.Rollback()
+			panic(p) // Re-throw panic after rollback
+		}
+	}()
+
+	if err := fn(txCtx, tx); err != nil {
+		if rbErr := tx.Rollback(); rbErr != nil {
+			log.Error().Err(rbErr).Msg("transaction rollback failed")
+		}
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
 // WrapExec wraps the Exec function with error handling and logging
 func (q *BaseQueries) WrapExec(query string, args ...interface{}) (sql.Result, error) {
 	start := time.Now()
