@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"crypto/md5"
 	"database/sql"
 	"fmt"
@@ -68,7 +69,7 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 	log.Info().Msg("Parser started")
 
 	// Initialize batch processing with smaller batch size to reduce contention
-	m.batchSize = 50 // Reduced from 100 to 50 to reduce transaction size
+	m.batchSize = 25 // Further reduced from 50 to 25 to reduce transaction size and prevent deadlocks
 	m.channelPairs = make([]ChannelURLPair, 0, m.batchSize)
 	m.pendingVectorization = make([]models.PlaylistChannel, 0, m.batchSize)
 
@@ -271,8 +272,12 @@ func (m *M3uParser) flushBatches() {
 				retry+1, maxRetries, baseDelay*time.Duration(1<<uint(retry-1)))
 		}
 
-		// Begin transaction for batch insert/update
-		tx, err := database.Db.PlaylistQueries.Beginx()
+		// Create a context with timeout for the transaction
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		// Begin transaction for batch insert/update with context
+		tx, err := database.Db.PlaylistQueries.BeginTxx(ctx, nil)
 		if err != nil {
 			log.Error().Msgf("Failed to begin transaction: %v", err)
 

@@ -171,6 +171,18 @@ func initPreparedStatements(db *sqlx.DB) {
 		selectPlaylistVectorStmt.Close()
 		selectPlaylistVectorStmt = nil
 	}
+	if insertTemplateVectorStmt != nil {
+		insertTemplateVectorStmt.Close()
+		insertTemplateVectorStmt = nil
+	}
+	if updateTemplateVectorStmt != nil {
+		updateTemplateVectorStmt.Close()
+		updateTemplateVectorStmt = nil
+	}
+	if selectTemplateVectorStmt != nil {
+		selectTemplateVectorStmt.Close()
+		selectTemplateVectorStmt = nil
+	}
 
 	// Create prepared statements with error handling
 	var err error
@@ -221,6 +233,30 @@ func initPreparedStatements(db *sqlx.DB) {
 		log.Error().Err(err).Msg("Failed to prepare selectPlaylistVectorStmt")
 	} else {
 		log.Info().Msg("Successfully prepared selectPlaylistVectorStmt")
+	}
+
+	// Prepare insert template vector statement
+	insertTemplateVectorStmt, err = db.PrepareNamed(insertTemplateChannelVectorQuery)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to prepare insertTemplateVectorStmt")
+	} else {
+		log.Info().Msg("Successfully prepared insertTemplateVectorStmt")
+	}
+
+	// Prepare update template vector statement
+	updateTemplateVectorStmt, err = db.Preparex(updateTemplateChannelVectorQuery)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to prepare updateTemplateVectorStmt")
+	} else {
+		log.Info().Msg("Successfully prepared updateTemplateVectorStmt")
+	}
+
+	// Prepare select template vector statement
+	selectTemplateVectorStmt, err = db.Preparex(selectTemplateChannelVectorQuery)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to prepare selectTemplateVectorStmt")
+	} else {
+		log.Info().Msg("Successfully prepared selectTemplateVectorStmt")
 	}
 }
 
@@ -352,28 +388,72 @@ func (q *VectorQueries) GetTemplateChannelVectors() ([]models.TemplateChannelVec
 }
 
 func (q *VectorQueries) CreateTemplateChannelVector(channelVector *models.TemplateChannelVector) (int64, error) {
-	stmt, err := q.GetPreparedStmt(insertTemplateChannelVectorQuery)
-	if err != nil {
-		return 0, err
+	// Use context with timeout for better error handling
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	var res sql.Result
+	var err error
+
+	// Check if prepared statement is available
+	preparedStmtsMux.RLock()
+	if insertTemplateVectorStmt != nil {
+		// Use prepared statement
+		res, err = insertTemplateVectorStmt.ExecContext(ctx, map[string]interface{}{
+			"channel_id": channelVector.ChannelId,
+			"vector_id":  channelVector.VectorId,
+		})
+
+		// If it fails, fall back to direct query
+		if err != nil && (strings.Contains(err.Error(), "expected 2 arguments") ||
+			strings.Contains(err.Error(), "sql: expected")) {
+			log.Warn().Err(err).Int64("channel_id", channelVector.ChannelId).Msg("Prepared statement failed, falling back to direct query")
+			// Fall back to direct query with positional parameters
+			res, err = q.ExecContext(ctx, "INSERT INTO templatechannelvectors VALUES (null, ?, ?)", channelVector.ChannelId, channelVector.VectorId)
+		}
+	} else {
+		// Fall back to direct query with positional parameters
+		res, err = q.ExecContext(ctx, "INSERT INTO templatechannelvectors VALUES (null, ?, ?)", channelVector.ChannelId, channelVector.VectorId)
+	}
+	preparedStmtsMux.RUnlock()
+
+	duration := time.Since(start)
+
+	if duration > 500*time.Millisecond {
+		log.Debug().
+			Int64("channel_id", channelVector.ChannelId).
+			Int64("vector_id", channelVector.VectorId).
+			Float64("duration_ms", float64(duration.Milliseconds())).
+			Msg("slow CreateTemplateChannelVector query")
 	}
 
-	res, err := stmt.Exec(channelVector.ChannelId, channelVector.VectorId)
 	if err != nil {
-		// If prepared statement fails with parameter mismatch, fall back to direct query
-		if strings.Contains(err.Error(), "expected 2 arguments") ||
-			strings.Contains(err.Error(), "sql: expected") {
-			log.Warn().Err(err).Int64("channel_id", channelVector.ChannelId).Msg("Prepared statement failed, falling back to direct query")
-			// Fall back to direct query
-			res, err = q.Exec(insertTemplateChannelVectorQuery, channelVector.ChannelId, channelVector.VectorId)
+		// Check for UNIQUE constraint error
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			// Get the existing vector association
+			existingVector, getErr := q.GetTemplateChannelVector(channelVector.ChannelId)
+			if getErr == nil {
+				// If the vector ID is the same, just return the ID
+				if existingVector.VectorId == channelVector.VectorId {
+					return existingVector.ID, nil
+				}
+				// If the vector ID is different, update it
+				existingVector.VectorId = channelVector.VectorId
+				updateErr := q.UpdateTemplateChannelVector(existingVector)
+				if updateErr != nil {
+					log.Error().Err(updateErr).Int64("channel_id", channelVector.ChannelId).Msg("Failed to update template vector association")
+					return 0, updateErr
+				}
+				return existingVector.ID, nil
+			}
 		}
-		if err != nil {
-			return 0, err
-		}
+		return 0, err
 	}
 
 	id, err := res.LastInsertId()
 	if err != nil {
-		log.Warn().Msgf("Error retrieving the ID: %v", err)
+		log.Warn().Err(err).Int64("channel_id", channelVector.ChannelId).Msg("Error retrieving the ID")
 		return 0, err
 	}
 
@@ -807,6 +887,9 @@ var (
 	insertPlaylistVectorStmt *sqlx.NamedStmt
 	updatePlaylistVectorStmt *sqlx.NamedStmt
 	selectPlaylistVectorStmt *sqlx.Stmt
+	insertTemplateVectorStmt *sqlx.NamedStmt
+	updateTemplateVectorStmt *sqlx.Stmt
+	selectTemplateVectorStmt *sqlx.Stmt
 	preparedStmtsMux         sync.RWMutex
 )
 

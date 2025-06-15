@@ -69,16 +69,6 @@ func OpenDBConnection() (*Queries, error) {
 }
 
 func getDB() (*sqlx.DB, error) {
-	// Enhanced connection string with optimized settings:
-	// - WAL journal mode for better concurrency
-	// - Foreign keys enforcement
-	// - Larger cache size (1GB)
-	// - Incremental vacuum
-	// - Busy timeout to wait for locks (increased to 120000ms)
-	// - Normal synchronous mode for better performance
-	// - Memory-mapped I/O for better performance (increased to 1GB)
-	// - Shared cache enabled for better concurrency
-	// - Recursive triggers disabled for better performance
 	connStr := fmt.Sprintf("%s/xivi.db?_journal_mode=WAL&_foreign_keys=on&_shared_cache=true&_recursive_triggers=false", settings.CONFIG_PATH)
 
 	db, err := sqlx.Open("sqlite3", connStr)
@@ -86,73 +76,63 @@ func getDB() (*sqlx.DB, error) {
 		return nil, err
 	}
 
-	// Set connection pool settings
-	db.SetMaxOpenConns(0)                   // Increased from 50 to 100
-	db.SetConnMaxLifetime(0)                // Connections reused forever
-	db.SetConnMaxIdleTime(10 * time.Minute) // Close idle connections after 10 minutes
+	db.SetMaxOpenConns(0)
+	db.SetMaxIdleConns(5)                   // Keep some idle connections for performance
+	db.SetConnMaxLifetime(30 * time.Minute) // Close connections after 30 minutes to prevent leaks
+	db.SetConnMaxIdleTime(5 * time.Minute)  // Close idle connections after 5 minutes
 
 	return db, nil
 }
 
-// Apply additional PRAGMA optimizations that can't be set via connection string
 func optimizeDBConnection(db *sqlx.DB) {
-	// Execute pragmas in a transaction for better performance
-	tx, err := db.Begin()
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to begin transaction for PRAGMA settings")
-		return
-	}
-
 	pragmas := []string{
-		"PRAGMA temp_store = MEMORY;", // Store temporary tables in memory
-		"PRAGMA page_size = 65536;",   // Increased page size for better performance (from 32768 to 65536)
-		"PRAGMA locking_mode = NORMAL;",
-		"PRAGMA analysis_limit = 10000;",         // Increased limit for query analysis (from 5000 to 10000)
-		"PRAGMA optimize;",                       // Run automatic optimization
-		"PRAGMA wal_autocheckpoint = 4000;",      // Increase WAL checkpoint interval (from 2000 to 4000)
+		"PRAGMA temp_store = MEMORY;",            // Store temporary tables in memory
+		"PRAGMA page_size = 65536;",              // Increased page size for better performance
+		"PRAGMA locking_mode = NORMAL;",          // Normal locking mode for better concurrency
+		"PRAGMA analysis_limit = 10000;",         // Increased limit for query analysis
+		"PRAGMA wal_autocheckpoint = 4000;",      // Increase WAL checkpoint interval
 		"PRAGMA secure_delete = OFF;",            // Disable secure delete for performance
 		"PRAGMA query_only = OFF;",               // Allow write operations
 		"PRAGMA mmap_size = 1073741824;",         // Set memory-mapped I/O size (1GB)
 		"PRAGMA cache_size = -1048576;",          // Set cache size (1GB)
-		"PRAGMA journal_size_limit = 134217728;", // Limit WAL journal size to 128MB (from 64MB)
+		"PRAGMA journal_size_limit = 134217728;", // Limit WAL journal size to 128MB
 		"PRAGMA synchronous = NORMAL;",           // Normal synchronous mode for better performance
 		"PRAGMA case_sensitive_like = OFF;",      // Case-insensitive LIKE for better performance
 		"PRAGMA auto_vacuum = INCREMENTAL;",      // Incremental vacuum for better performance
-		"PRAGMA busy_timeout = 300000;",          // Set busy timeout to 300 seconds (5 minutes)
-		"PRAGMA timeout = 300000;",               // Set timeout to 300 seconds (5 minutes)
-		"PRAGMA wal_checkpoint(PASSIVE);",        // Perform a passive checkpoint
+		"PRAGMA busy_timeout = 60000;",           // Set busy timeout to 60 seconds
+		"PRAGMA timeout = 60000;",                // Set timeout to 60 seconds
 	}
 
+	// Execute pragmas individually to avoid transaction deadlocks
 	for _, pragma := range pragmas {
-		if _, err := tx.Exec(pragma); err != nil {
+		if _, err := db.Exec(pragma); err != nil {
 			log.Warn().Msgf("Failed to execute PRAGMA: %s, error: %v", pragma, err)
 		}
 	}
 
-	// Execute ANALYZE to update statistics
-	if _, err := tx.Exec("ANALYZE;"); err != nil {
-		log.Warn().Msgf("Failed to execute ANALYZE: %v", err)
+	// Run optimization commands separately
+	if _, err := db.Exec("PRAGMA optimize;"); err != nil {
+		log.Warn().Msgf("Failed to execute PRAGMA optimize: %v", err)
 	}
 
-	// Execute VACUUM to compact the database
-	if _, err := tx.Exec("VACUUM;"); err != nil {
-		log.Warn().Msgf("Failed to execute VACUUM: %v", err)
+	// Perform a passive checkpoint
+	if _, err := db.Exec("PRAGMA wal_checkpoint(PASSIVE);"); err != nil {
+		log.Warn().Msgf("Failed to execute WAL checkpoint: %v", err)
 	}
 
-	// Commit the transaction
-	if err := tx.Commit(); err != nil {
-		log.Error().Err(err).Msg("Failed to commit transaction for PRAGMA settings")
-		_ = tx.Rollback()
-		return
-	}
+	go func() {
+		if _, err := db.Exec("ANALYZE;"); err != nil {
+			log.Warn().Msgf("Failed to execute ANALYZE: %v", err)
+		}
+	}()
 
 	log.Info().Msg("SQLite connection optimized for high concurrency and performance")
 }
 
 // Periodically optimize the database to maintain performance
 func startPeriodicDatabaseOptimization() {
-	// Run optimization every 30 minutes
-	optimizationTicker = time.NewTicker(30 * time.Minute)
+	// Run optimization every 60 minutes
+	optimizationTicker = time.NewTicker(60 * time.Minute)
 	defer optimizationTicker.Stop()
 
 	for {
@@ -177,22 +157,29 @@ func startPeriodicDatabaseOptimization() {
 				continue
 			}
 
-			// Run ANALYZE to update statistics
-			if _, err := currentDB.Exec("ANALYZE;"); err != nil {
-				log.Error().Err(err).Msg("Failed to execute periodic ANALYZE")
-			}
+			// Run optimization commands
+			go func() {
+				// Run PRAGMA optimize to optimize the database
+				if _, err := currentDB.Exec("PRAGMA optimize;"); err != nil {
+					log.Error().Err(err).Msg("Failed to execute periodic PRAGMA optimize")
+				}
+			}()
 
-			// Run PRAGMA optimize to optimize the database
-			if _, err := currentDB.Exec("PRAGMA optimize;"); err != nil {
-				log.Error().Err(err).Msg("Failed to execute periodic PRAGMA optimize")
-			}
+			go func() {
+				// Run incremental VACUUM to reclaim space
+				if _, err := currentDB.Exec("PRAGMA incremental_vacuum;"); err != nil {
+					log.Error().Err(err).Msg("Failed to execute periodic incremental VACUUM")
+				}
+			}()
 
-			// Run incremental VACUUM to reclaim space
-			if _, err := currentDB.Exec("PRAGMA incremental_vacuum;"); err != nil {
-				log.Error().Err(err).Msg("Failed to execute periodic incremental VACUUM")
-			}
+			// Run ANALYZE
+			go func() {
+				if _, err := currentDB.Exec("ANALYZE;"); err != nil {
+					log.Error().Err(err).Msg("Failed to execute periodic ANALYZE")
+				}
+			}()
 
-			log.Info().Msg("Periodic database optimization completed")
+			log.Info().Msg("Periodic database optimization started (running in background)")
 		case <-optimizationDone:
 			log.Info().Msg("Stopping periodic database optimization")
 			return
@@ -201,11 +188,6 @@ func startPeriodicDatabaseOptimization() {
 }
 
 func InitDB(db *sqlx.DB) error {
-	//db, err := getDB()
-	//if err != nil {
-	//	log.Fatal().Msgf("Failed to connect to database: %v", err)
-	//}
-
 	driver, err := sqlite3.WithInstance(db.DB, &sqlite3.Config{})
 	if err != nil {
 		log.Fatal().Msgf("Failed to create database driver: %v", err)
@@ -238,9 +220,7 @@ func InitDB(db *sqlx.DB) error {
 }
 
 // ReinitializePreparedStatements reinitializes all prepared statements in the database
-// This is useful to call before scheduled cron jobs to ensure fresh prepared statements
 func ReinitializePreparedStatements() {
-	// Acquire write lock to prevent concurrent database operations
 	dbMutex.Lock()
 	defer dbMutex.Unlock()
 
@@ -253,14 +233,11 @@ func ReinitializePreparedStatements() {
 
 	// Reinitialize vector queries prepared statements
 	if Db != nil && Db.VectorQueries != nil {
-		// Access the initPreparedStatements function through reflection
-		// or recreate the VectorQueries instance
 		Db.VectorQueries = queries.NewVectorQueries(dbInstance)
 		log.Info().Msg("Vector queries prepared statements reinitialized")
 	}
 
 	// Force a connection reset by closing and reopening connections
-	// This helps clear any stale prepared statements
 	if err := dbInstance.Close(); err != nil {
 		log.Error().Err(err).Msg("Error closing database connections")
 		return

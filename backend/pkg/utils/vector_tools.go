@@ -25,16 +25,61 @@ var (
 
 // Cache for embeddings to avoid recomputing the same vectors
 var (
-	embeddingCache        = make(map[string][]float64)
-	embeddingCacheMux     sync.RWMutex
-	vectorizationQueue    = make(chan vectorizationRequest, 500) // Reduced from 500 to 100
-	cachePath             = "./vector_cache"                     // Path for persistent cache
-	cacheInitialized      = false
-	cacheInitMux          sync.Mutex
-	batchProcessorStarted = false
-	batchProcessorMux     sync.Mutex
-	dbOpSemaphore         = make(chan struct{}, 5) // Added semaphore to limit concurrent DB operations
+	embeddingCache          = make(map[string][]float64)
+	embeddingCacheMux       sync.RWMutex
+	vectorizationQueue      = make(chan vectorizationRequest, 200)
+	cachePath               = "./vector_cache" // Path for persistent cache
+	cacheInitialized        = false
+	cacheInitMux            sync.Mutex
+	batchProcessorStarted   = false
+	batchProcessorMux       sync.Mutex
+	dbOpSemaphore           = make(chan struct{}, 3)
+	dbOperationQueue        = make(chan dbOperation, 100)
+	dbQueueProcessorStarted = false
+	dbQueueProcessorMux     sync.Mutex
 )
+
+// Database operation types for queuing
+type dbOperation struct {
+	operationType string
+	channelId     int64
+	vectorId      int64
+	resultCh      chan<- error
+}
+
+// Start database operation queue processor
+func startDBQueueProcessor() {
+	dbQueueProcessorMux.Lock()
+	defer dbQueueProcessorMux.Unlock()
+
+	if !dbQueueProcessorStarted {
+		go dbOperationProcessor()
+		dbQueueProcessorStarted = true
+		log.Info().Msg("Database operation queue processor started")
+	}
+}
+
+func dbOperationProcessor() {
+	for op := range dbOperationQueue {
+		var err error
+
+		switch op.operationType {
+		case "associate_playlist_vector":
+			err = associateVectorWithChannelDirect(op.channelId, op.vectorId)
+		case "associate_template_vector":
+			err = associateTemplateVectorWithChannelDirect(op.channelId, op.vectorId)
+		default:
+			err = errors.New("unknown operation type")
+		}
+
+		// Send result back
+		select {
+		case op.resultCh <- err:
+		case <-time.After(5 * time.Second):
+			log.Warn().Str("operation", op.operationType).Msg("Timeout sending result back")
+		}
+	}
+}
 
 // Initialize the embedding model
 func getEmbeddingModel() (*fastembed.FlagEmbedding, error) {
@@ -58,7 +103,7 @@ func getEmbeddingModel() (*fastembed.FlagEmbedding, error) {
 	return embeddingModel, nil
 }
 
-// Initialize batch processor - safe to call multiple times
+// Initialize batch processor
 func startBatchProcessor() {
 	batchProcessorMux.Lock()
 	defer batchProcessorMux.Unlock()
@@ -69,10 +114,13 @@ func startBatchProcessor() {
 	}
 }
 
-// Initialize cache from disk - exposed so it can be called after DB is initialized
+// Initialize cache from disk
 func InitializeCache() {
 	// Start the batch processor first
 	startBatchProcessor()
+
+	// Start the database operation queue processor
+	startDBQueueProcessor()
 
 	cacheInitMux.Lock()
 	defer cacheInitMux.Unlock()
@@ -123,7 +171,7 @@ func batchProcessor() {
 		// Get batch size from settings
 		batchSize := settings.APP_SETTINGS.Vector.BatchSize
 		if batchSize <= 0 {
-			batchSize = 25 // Default if not set
+			batchSize = 25
 		}
 
 		// Collect batch of requests
@@ -131,8 +179,7 @@ func batchProcessor() {
 		request := <-vectorizationQueue
 		batch = append(batch, request)
 
-		// Try to collect more requests up to batchSize with shorter wait time
-		batchTimer := time.NewTimer(20 * time.Millisecond) // Reduced from 50ms to 20ms
+		batchTimer := time.NewTimer(20 * time.Millisecond)
 	collectLoop:
 		for len(batch) < batchSize {
 			select {
@@ -215,7 +262,6 @@ func processBatch(batch []vectorizationRequest) {
 				log.Error().Msgf("Invalid vector dimension for text '%s': got %d, expected 384",
 					textsToProcess[i], len(vector))
 
-				// Replace with fallback by processing this text individually
 				if singleVector, singleErr := VectorizeStringSingle(textsToProcess[i]); singleErr == nil {
 					vectors[i] = singleVector
 					log.Info().Msgf("Successfully fallback to single vectorization for '%s'", textsToProcess[i])
@@ -278,13 +324,16 @@ func processBatch(batch []vectorizationRequest) {
 }
 
 func PlaylistVectorQueue(in <-chan models.PlaylistChannel) {
-	bufChan := make(chan struct{}, 10) // Reduced from 20 to 10
+	bufChan := make(chan struct{}, 5)
 	for playlistCh := range in {
 		bufChan <- struct{}{}
 		go func(playlistCh models.PlaylistChannel) {
 			defer func() {
 				<-bufChan
 			}()
+
+			// Add a small delay to ensure channel is committed to database
+			time.Sleep(50 * time.Millisecond)
 
 			UpdatePlaylistVector(playlistCh)
 			// Add delay before matching to reduce contention
@@ -296,13 +345,16 @@ func PlaylistVectorQueue(in <-chan models.PlaylistChannel) {
 }
 
 func TemplateVectorQueue(in <-chan models.TemplateChannel) {
-	bufChan := make(chan struct{}, 10) // Reduced from 20 to 10
+	bufChan := make(chan struct{}, 5)
 	for templateCh := range in {
 		bufChan <- struct{}{}
 		go func(templateCh models.TemplateChannel) {
 			defer func() {
 				<-bufChan
 			}()
+
+			// Add a small delay to ensure channel is committed to database
+			time.Sleep(50 * time.Millisecond)
 
 			UpdateTemplateVector(&templateCh)
 			// Add delay before matching to reduce contention
@@ -325,9 +377,9 @@ func UpdatePlaylistVector(playlistCh models.PlaylistChannel) int64 {
 		log.Warn().Msgf("VECTORIZE_PLAYLIST_STRING: %v", err)
 		return 0
 	} else {
-		// Use the new retry-enabled association function
+		// Queued association function
 		if err := associateVectorWithChannel(playlistCh.ID, vectorId); err != nil {
-			log.Error().Msgf("Failed to associate vector with channel: %v", err)
+			log.Error().Int64("channelId", playlistCh.ID).Int64("vectorId", vectorId).Str("title", playlistCh.Title).Msgf("Failed to associate vector with channel: %v", err)
 			return 0
 		}
 		return vectorId
@@ -346,10 +398,9 @@ func UpdateTemplateVector(templateCh *models.TemplateChannel) int64 {
 		log.Warn().Msgf("VECTORIZE_TEMPLATE_STRING: %v", err)
 		return 0
 	} else {
-		// Check if association exists and create/update it with retry logic
-		// We'll create a similar helper function for template channel association
+		// Queued association function
 		if err := associateTemplateVectorWithChannel(templateCh.ID, vectorId); err != nil {
-			log.Error().Msgf("Failed to associate vector with template channel: %v", err)
+			log.Error().Int64("channelId", templateCh.ID).Int64("vectorId", vectorId).Str("name", templateCh.Name).Msgf("Failed to associate vector with template channel: %v", err)
 			return 0
 		}
 		return vectorId
@@ -399,7 +450,7 @@ func getChannelVector(name string) (int64, error) {
 	return channelVector.ID, nil
 }
 
-// Direct implementation for single string vectorization (used internally)
+// Direct implementation for single string vectorization
 func VectorizeStringSingle(text string) ([]float64, error) {
 	model, err := getEmbeddingModel()
 	if err != nil {
@@ -456,12 +507,12 @@ func VectorizeStringBatch(texts []string) ([][]float64, error) {
 	// Get batch configuration from settings
 	batchSize := settings.APP_SETTINGS.Vector.BatchSize
 	if batchSize <= 0 {
-		batchSize = 25 // Default if not set
+		batchSize = 25
 	}
 
 	parallelBatches := settings.APP_SETTINGS.Vector.ParallelBatches
 	if parallelBatches <= 0 {
-		parallelBatches = 4 // Default if not set
+		parallelBatches = 4
 	}
 
 	// Add passage prefix for better embedding quality if not already prefixed
@@ -524,7 +575,6 @@ func VectorizeStringBatch(texts []string) ([][]float64, error) {
 	for err := range errChan {
 		if err != nil {
 			log.Error().Msgf("Batch processing error: %v", err)
-			// Fall back to processing individually
 			log.Warn().Msg("Falling back to individual vector processing")
 			results := make([][]float64, len(texts))
 			for i, text := range texts {
@@ -616,9 +666,8 @@ func saveVectorToDB(text string, vector []float64) {
 	}
 }
 
-// associateVectorWithChannel attempts to associate a vector with a channel with retry logic
+// associateVectorWithChannel queues the association operation to avoid database locking
 func associateVectorWithChannel(channelId int64, vectorId int64) error {
-
 	if channelId == 0 {
 		return errors.New("invalid channel ID (0)")
 	}
@@ -627,101 +676,116 @@ func associateVectorWithChannel(channelId int64, vectorId int64) error {
 		return errors.New("invalid vector ID (0)")
 	}
 
-	maxRetries := 10
-	baseDelay := 500 * time.Millisecond
+	// Create result channel
+	resultCh := make(chan error, 1)
+
+	// Queue the operation
+	select {
+	case dbOperationQueue <- dbOperation{
+		operationType: "associate_playlist_vector",
+		channelId:     channelId,
+		vectorId:      vectorId,
+		resultCh:      resultCh,
+	}:
+		// Wait for result with timeout
+		select {
+		case err := <-resultCh:
+			return err
+		case <-time.After(30 * time.Second):
+			return errors.New("timeout waiting for database operation")
+		}
+	case <-time.After(5 * time.Second):
+		return errors.New("timeout queuing database operation")
+	}
+}
+
+// associateVectorWithChannelDirect performs the actual database operation
+func associateVectorWithChannelDirect(channelId int64, vectorId int64) error {
+	maxRetries := 3
+	baseDelay := 200 * time.Millisecond
 
 	for retry := 0; retry < maxRetries; retry++ {
-		// Use a transaction for the operation
-		tx, err := database.Db.VectorQueries.Beginx()
-		if err != nil {
+		if err := validateChannelAndVector(channelId, vectorId, "playlist"); err != nil {
+			log.Debug().Int64("channelId", channelId).Int64("vectorId", vectorId).Err(err).Msg("Validation failed for playlist channel association")
+			return err
+		}
+
+		newAssoc := &models.PlaylistChannelVector{
+			ChannelId: channelId,
+			VectorId:  vectorId,
+		}
+
+		_, err := database.Db.CreatePlaylistChannelVector(newAssoc)
+		if err == nil {
+			return nil // Success
+		}
+
+		log.Debug().Int64("channelId", channelId).Int64("vectorId", vectorId).Err(err).Msg("Failed to create playlist channel vector association")
+
+		if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
+			// Foreign key constraint means either channel or vector doesn't exist
+			// Re-validate to see which one is missing
+			if validateErr := validateChannelAndVector(channelId, vectorId, "playlist"); validateErr != nil {
+				log.Warn().Int64("channelId", channelId).Int64("vectorId", vectorId).Err(validateErr).Msg("Foreign key constraint failed - record no longer exists")
+				return validateErr
+			}
 			if retry < maxRetries-1 {
-				delay := baseDelay * time.Duration(1<<uint(retry))
+				delay := baseDelay * time.Duration(retry+1)
+				log.Debug().Int64("channelId", channelId).Int64("vectorId", vectorId).Dur("delay", delay).Msg("Retrying after foreign key constraint failure")
 				time.Sleep(delay)
 				continue
 			}
-			return err
 		}
 
-		// Check if an association already exists
-		var existingId int64
-		row := tx.QueryRow("SELECT id FROM playlistchannelvectors WHERE channel_id = ? LIMIT 1", channelId)
-		err = row.Scan(&existingId)
-
-		var stmt *sql.Stmt
-		if err == sql.ErrNoRows {
-			// Create new association
-			stmt, err = tx.Prepare("INSERT INTO playlistchannelvectors VALUES (null, ?, ?)")
-			if err != nil {
-				tx.Rollback()
-				if retry < maxRetries-1 {
-					delay := baseDelay * time.Duration(1<<uint(retry))
-					time.Sleep(delay)
-					continue
-				}
-				return err
-			}
-
-			_, err = stmt.Exec(channelId, vectorId)
-		} else if err == nil {
-			// Update existing association
-			stmt, err = tx.Prepare("UPDATE playlistchannelvectors SET vector_id = ? WHERE channel_id = ?")
-			if err != nil {
-				tx.Rollback()
-				if retry < maxRetries-1 {
-					delay := baseDelay * time.Duration(1<<uint(retry))
-					time.Sleep(delay)
-					continue
-				}
-				return err
-			}
-
-			_, err = stmt.Exec(vectorId, channelId)
-		} else {
-			// Database error
-			tx.Rollback()
-			if retry < maxRetries-1 && (strings.Contains(err.Error(), "database is locked") ||
-				strings.Contains(err.Error(), "busy")) {
-				delay := baseDelay * time.Duration(1<<uint(retry))
-				time.Sleep(delay)
-				continue
-			}
-			return err
+		// Retry on locking errors
+		if retry < maxRetries-1 && (strings.Contains(err.Error(), "database is locked") ||
+			strings.Contains(err.Error(), "busy")) {
+			delay := baseDelay * time.Duration(1<<uint(retry))
+			time.Sleep(delay)
+			continue
 		}
 
-		// Check for execution errors
-		if err != nil {
-			tx.Rollback()
-			if retry < maxRetries-1 && (strings.Contains(err.Error(), "database is locked") ||
-				strings.Contains(err.Error(), "busy") ||
-				strings.Contains(err.Error(), "FOREIGN KEY constraint failed")) {
-				delay := baseDelay * time.Duration(1<<uint(retry))
-				time.Sleep(delay)
-				continue
-			}
-			return err
-		}
-
-		// Commit the transaction
-		if err := tx.Commit(); err != nil {
-			if retry < maxRetries-1 && (strings.Contains(err.Error(), "database is locked") ||
-				strings.Contains(err.Error(), "busy")) {
-				delay := baseDelay * time.Duration(1<<uint(retry))
-				time.Sleep(delay)
-				continue
-			}
-			return err
-		}
-
-		// Success
-		return nil
+		return err
 	}
 
 	return errors.New("failed to associate vector with channel after maximum retries")
 }
 
-// associateTemplateVectorWithChannel attempts to associate a vector with a template channel with retry logic
-func associateTemplateVectorWithChannel(channelId int64, vectorId int64) error {
+// validateChannelAndVector checks if both channel and vector exist before creating association
+func validateChannelAndVector(channelId int64, vectorId int64, channelType string) error {
+	// Check if vector exists
+	_, err := database.Db.GetChannelVector(vectorId)
+	if err != nil {
+		if err == sql.ErrNoRows || strings.Contains(err.Error(), "record not found") {
+			return errors.New("vector not found")
+		}
+		return err
+	}
 
+	// Check if channel exists based on type
+	if channelType == "playlist" {
+		_, err = database.Db.GetPlChannel(channelId)
+		if err != nil {
+			if err == sql.ErrNoRows || strings.Contains(err.Error(), "record not found") {
+				return errors.New("playlist channel not found")
+			}
+			return err
+		}
+	} else if channelType == "template" {
+		_, err = database.Db.GetTmplChannel(channelId)
+		if err != nil {
+			if err == sql.ErrNoRows || strings.Contains(err.Error(), "record not found") {
+				return errors.New("template channel not found")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
+// associateTemplateVectorWithChannel queues the association operation to avoid database locking
+func associateTemplateVectorWithChannel(channelId int64, vectorId int64) error {
 	if channelId == 0 {
 		return errors.New("invalid template channel ID (0)")
 	}
@@ -730,93 +794,77 @@ func associateTemplateVectorWithChannel(channelId int64, vectorId int64) error {
 		return errors.New("invalid vector ID (0)")
 	}
 
-	maxRetries := 10
-	baseDelay := 500 * time.Millisecond
+	// Create result channel
+	resultCh := make(chan error, 1)
+
+	// Queue the operation
+	select {
+	case dbOperationQueue <- dbOperation{
+		operationType: "associate_template_vector",
+		channelId:     channelId,
+		vectorId:      vectorId,
+		resultCh:      resultCh,
+	}:
+		// Wait for result with timeout
+		select {
+		case err := <-resultCh:
+			return err
+		case <-time.After(30 * time.Second):
+			return errors.New("timeout waiting for database operation")
+		}
+	case <-time.After(5 * time.Second):
+		return errors.New("timeout queuing database operation")
+	}
+}
+
+// associateTemplateVectorWithChannelDirect performs the actual database operation
+func associateTemplateVectorWithChannelDirect(channelId int64, vectorId int64) error {
+	maxRetries := 3
+	baseDelay := 200 * time.Millisecond
 
 	for retry := 0; retry < maxRetries; retry++ {
-		// Use a transaction for the operation
-		tx, err := database.Db.VectorQueries.Beginx()
-		if err != nil {
+		// First, validate that both the channel and vector exist
+		if err := validateChannelAndVector(channelId, vectorId, "template"); err != nil {
+			log.Debug().Int64("channelId", channelId).Int64("vectorId", vectorId).Err(err).Msg("Validation failed for template channel association")
+			return err
+		}
+
+		newAssoc := &models.TemplateChannelVector{
+			ChannelId: channelId,
+			VectorId:  vectorId,
+		}
+
+		_, err := database.Db.CreateTemplateChannelVector(newAssoc)
+		if err == nil {
+			return nil // Success
+		}
+
+		log.Debug().Int64("channelId", channelId).Int64("vectorId", vectorId).Err(err).Msg("Failed to create template channel vector association")
+
+		if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
+			// Foreign key constraint means either channel or vector doesn't exist
+			// Re-validate to see which one is missing
+			if validateErr := validateChannelAndVector(channelId, vectorId, "template"); validateErr != nil {
+				log.Warn().Int64("channelId", channelId).Int64("vectorId", vectorId).Err(validateErr).Msg("Foreign key constraint failed - record no longer exists")
+				return validateErr
+			}
 			if retry < maxRetries-1 {
-				delay := baseDelay * time.Duration(1<<uint(retry))
+				delay := baseDelay * time.Duration(retry+1)
+				log.Debug().Int64("channelId", channelId).Int64("vectorId", vectorId).Dur("delay", delay).Msg("Retrying after foreign key constraint failure")
 				time.Sleep(delay)
 				continue
 			}
-			return err
 		}
 
-		// Check if an association already exists
-		var existingId int64
-		row := tx.QueryRow("SELECT id FROM templatechannelvectors WHERE channel_id = ? LIMIT 1", channelId)
-		err = row.Scan(&existingId)
-
-		var stmt *sql.Stmt
-		if err == sql.ErrNoRows {
-			// Create new association
-			stmt, err = tx.Prepare("INSERT INTO templatechannelvectors VALUES (null, ?, ?)")
-			if err != nil {
-				tx.Rollback()
-				if retry < maxRetries-1 {
-					delay := baseDelay * time.Duration(1<<uint(retry))
-					time.Sleep(delay)
-					continue
-				}
-				return err
-			}
-
-			_, err = stmt.Exec(channelId, vectorId)
-		} else if err == nil {
-			// Update existing association
-			stmt, err = tx.Prepare("UPDATE templatechannelvectors SET vector_id = ? WHERE channel_id = ?")
-			if err != nil {
-				tx.Rollback()
-				if retry < maxRetries-1 {
-					delay := baseDelay * time.Duration(1<<uint(retry))
-					time.Sleep(delay)
-					continue
-				}
-				return err
-			}
-
-			_, err = stmt.Exec(vectorId, channelId)
-		} else {
-			// Database error
-			tx.Rollback()
-			if retry < maxRetries-1 && (strings.Contains(err.Error(), "database is locked") ||
-				strings.Contains(err.Error(), "busy")) {
-				delay := baseDelay * time.Duration(1<<uint(retry))
-				time.Sleep(delay)
-				continue
-			}
-			return err
+		// Retry on locking errors
+		if retry < maxRetries-1 && (strings.Contains(err.Error(), "database is locked") ||
+			strings.Contains(err.Error(), "busy")) {
+			delay := baseDelay * time.Duration(1<<uint(retry))
+			time.Sleep(delay)
+			continue
 		}
 
-		// Check for execution errors
-		if err != nil {
-			tx.Rollback()
-			if retry < maxRetries-1 && (strings.Contains(err.Error(), "database is locked") ||
-				strings.Contains(err.Error(), "busy") ||
-				strings.Contains(err.Error(), "FOREIGN KEY constraint failed")) {
-				delay := baseDelay * time.Duration(1<<uint(retry))
-				time.Sleep(delay)
-				continue
-			}
-			return err
-		}
-
-		// Commit the transaction
-		if err := tx.Commit(); err != nil {
-			if retry < maxRetries-1 && (strings.Contains(err.Error(), "database is locked") ||
-				strings.Contains(err.Error(), "busy")) {
-				delay := baseDelay * time.Duration(1<<uint(retry))
-				time.Sleep(delay)
-				continue
-			}
-			return err
-		}
-
-		// Success
-		return nil
+		return err
 	}
 
 	return errors.New("failed to associate vector with template channel after maximum retries")
