@@ -22,15 +22,13 @@
 
 <div class="modal-template">
 	{#if isNew}
-		<header class="text-center text-2xl font-bold mb-2">Add Template</header>
+		<header class="mb-2 text-center text-2xl font-bold">Add Template</header>
 	{:else}
-		<header class="text-center text-2xl font-bold mb-2">Modify Template</header>
+		<header class="mb-2 text-center text-2xl font-bold">Modify Template</header>
 	{/if}
 	<div class="space-y-4">
 		<div class="form-group">
-			<label class="block text-sm font-medium mb-2" for="template_name">
-				Template Name
-			</label>
+			<label class="mb-2 block text-sm font-medium" for="template_name"> Template Name </label>
 			<input
 				id="template_name"
 				class="input w-full"
@@ -40,13 +38,9 @@
 				required
 			/>
 		</div>
-		<footer class="modal-footer flex justify-end gap-4 pt-4 border-t border-surface-600">
-			<button class="btn preset-outlined-surface-500 min-w-20" onclick={onCancel}>
-				Cancel
-			</button>
-			<button class="btn preset-filled-primary-500 min-w-20" onclick={onFormSubmit}>
-				Save
-			</button>
+		<footer class="modal-footer border-surface-600 flex justify-end gap-4 border-t pt-4">
+			<button class="btn preset-outlined-surface-500 min-w-20" onclick={onCancel}> Cancel </button>
+			<button class="btn preset-filled-primary-500 min-w-20" onclick={onFormSubmit}> Save </button>
 		</footer>
 	</div>
 </div>

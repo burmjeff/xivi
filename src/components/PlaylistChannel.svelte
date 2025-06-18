@@ -21,12 +21,7 @@
 		groupIdx: number;
 	}
 
-	let {
-		playlistId,
-		playlistIdx,
-		groupId,
-		groupIdx
-	}: Props = $props();
+	let { playlistId, playlistIdx, groupId, groupIdx }: Props = $props();
 	let dndTypeChannels = 'channels';
 	let dndItem: PlaylistChannel;
 	let dndIdx: number;
@@ -106,7 +101,13 @@
 		>
 			{#each $playlists[playlistIdx].groups[groupIdx].channels as channel, channelIdx (channel.id)}
 				<tr id="animate" animate:flip={{ duration: flipDurationMs }}>
-					<td><img class="max-w-16 max-h-10" src="/proxy-image?url={channel.tvg_logo}" alt="Logo" /></td>
+					<td
+						><img
+							class="max-h-10 max-w-16"
+							src="/proxy-image?url={channel.tvg_logo}"
+							alt="Logo"
+						/></td
+					>
 					<td>{channel.title}</td>
 					<td>{channel.tvg_id}</td>
 
@@ -120,9 +121,9 @@
 		</tbody>
 	</table>
 {:else}
-	<div class="flex flex-col items-center justify-center py-2 px-2 text-center">
+	<div class="flex flex-col items-center justify-center px-2 py-2 text-center">
 		<Icon icon="mdi:folder-off" class="text-surface-500 mb-3" width="48" height="48" />
-		<h3 class="text-xl font-medium text-surface-300 mb-2">No Playlist Channels Found</h3>
+		<h3 class="text-surface-300 mb-2 text-xl font-medium">No Playlist Channels Found</h3>
 	</div>
 {/if}
 

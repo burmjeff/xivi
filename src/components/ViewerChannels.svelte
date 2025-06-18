@@ -2,8 +2,7 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import {
-		Progress} from '@skeletonlabs/skeleton-svelte';
+	import { Progress } from '@skeletonlabs/skeleton-svelte';
 	import Player from './modals/Player.svelte';
 	import { templates } from '@xivi/stores/template_store';
 	import type { ViewerChannel } from '@xivi/data/viewer_entities';
@@ -121,24 +120,18 @@
 			playerModalOpen = true;
 		}
 	}
-
-	// Modal is closed via the onOpenChange event in the Player component
 </script>
 
-<Player
-	modalOpen={playerModalOpen}
-	name={currentPlayerName}
-	stream={currentPlayerStream}
-/>
+<Player modalOpen={playerModalOpen} name={currentPlayerName} stream={currentPlayerStream} />
 
 {#if $templates[templateIdx].groups[groupIdx].viewerChannels != null}
 	<section class="channels grid grid-cols-2 gap-2 p-1">
 		{#each $templates[templateIdx].groups[groupIdx].viewerChannels as channel (channel.id)}
 			<div
-				class="channel w-content max-w-content card preset-filled-surface-100-900 preset-outlined-primary-500 border border-primary-900 card-hover grid h-32 grid-cols-5"
+				class="channel w-content max-w-content card preset-filled-surface-100-900 preset-outlined-primary-500 border-primary-900 card-hover grid h-32 grid-cols-5 border"
 			>
 				<img class="h-auto max-h-32 w-auto self-center p-4" src={channel.logo} alt="Logo" />
-				<div class="col-span-3 mb-1 ml-4 mr-4 mt-1 self-center">
+				<div class="col-span-3 mt-1 mr-4 mb-1 ml-4 self-center">
 					<span class="h4 font-bold text-zinc-300 drop-shadow-md">
 						{channel.name}
 					</span>
@@ -146,14 +139,14 @@
 						{channel.programme}
 					</div>
 					{#if channel.start != '' && channel.end != ''}
-						<div class="flex w-full mt-2 drop-shadow-md">
+						<div class="mt-2 flex w-full drop-shadow-md">
 							<Progress
 								value={getProgress(channel.start, channel.end)}
 								max={100}
 								meterBg="preset-filled-primary-500"
 								trackBg="preset-filled-surface-900-100"
-								height="h-2"
-							>{getProgress(channel.start, channel.end)}%</Progress>
+								height="h-2">{getProgress(channel.start, channel.end)}%</Progress
+							>
 						</div>
 					{/if}
 				</div>

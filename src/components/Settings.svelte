@@ -39,7 +39,7 @@
 			$settings.streaming.proxy.toString();
 		(document.querySelector('.settings_buffer input') as HTMLInputElement).value =
 			$settings.streaming.buffer.toString();
-			(document.querySelector('.settings_retryeos input') as HTMLInputElement).value =
+		(document.querySelector('.settings_retryeos input') as HTMLInputElement).value =
 			$settings.streaming.retryeos.toString();
 		(document.querySelector('.settings_useragent input') as HTMLInputElement).value =
 			$settings.streaming.useragent;
@@ -72,12 +72,19 @@
 		).value;
 		const inputType = (document.querySelector('.settings_type select') as HTMLInputElement).value;
 		const inputProxy = (document.querySelector('.settings_proxy select') as HTMLInputElement).value;
-		const inputBuffer = (document.querySelector('.settings_buffer input') as HTMLInputElement).value;
-		const inputRetryEOS = (document.querySelector('.settings_retryeos input') as HTMLInputElement).value;
-		const inputUserAgent = (document.querySelector('.settings_useragent input') as HTMLInputElement).value;
-		const inputTvgMatch = (document.querySelector('.settings_tvgmatch select') as HTMLInputElement).value;
-		const inputNameMatch = (document.querySelector('.settings_namematch select') as HTMLInputElement).value;
-		const inputNameScore = (document.querySelector('.settings_namescore input') as HTMLInputElement).value;
+		const inputBuffer = (document.querySelector('.settings_buffer input') as HTMLInputElement)
+			.value;
+		const inputRetryEOS = (document.querySelector('.settings_retryeos input') as HTMLInputElement)
+			.value;
+		const inputUserAgent = (document.querySelector('.settings_useragent input') as HTMLInputElement)
+			.value;
+		const inputTvgMatch = (document.querySelector('.settings_tvgmatch select') as HTMLInputElement)
+			.value;
+		const inputNameMatch = (
+			document.querySelector('.settings_namematch select') as HTMLInputElement
+		).value;
+		const inputNameScore = (document.querySelector('.settings_namescore input') as HTMLInputElement)
+			.value;
 		if (
 			inputAppName != '' &&
 			inputAppVersion != '' &&
@@ -143,10 +150,10 @@
 </script>
 
 <div class="card p-2">
-	<h1 class="h1 justify-center text-center mb-4">Settings</h1>
+	<h1 class="h1 mb-4 justify-center text-center">Settings</h1>
 	<div class="items-center space-y-4">
-		<div class="application-viewport card drop-shadow-lg space-y-4 p-4">
-			<h1 class="h3 justify-center text-start mb-2">Application</h1>
+		<div class="application-viewport card space-y-4 p-4 drop-shadow-lg">
+			<h1 class="h3 mb-2 justify-center text-start">Application</h1>
 			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<label class="settings_appname">
 					<span>App Name</span>
@@ -174,8 +181,8 @@
 				</label>
 			</div>
 		</div>
-		<div class="application-viewport card drop-shadow-lg space-y-4 p-4">
-			<h1 class="h3 justify-center text-start mb-2">Server</h1>
+		<div class="application-viewport card space-y-4 p-4 drop-shadow-lg">
+			<h1 class="h3 mb-2 justify-center text-start">Server</h1>
 			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<label class="settings_host">
 					<span>Server Host</span>
@@ -191,8 +198,8 @@
 				</label>
 			</div>
 		</div>
-		<div class="application-viewport card drop-shadow-lg space-y-4 p-4">
-			<h1 class="h3 justify-center text-start mb-2">Playlist</h1>
+		<div class="application-viewport card space-y-4 p-4 drop-shadow-lg">
+			<h1 class="h3 mb-2 justify-center text-start">Playlist</h1>
 			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<div class="w-full space-y-4">
 					<label class="settings_tvgmatch">
@@ -218,8 +225,8 @@
 				</label>
 			</div>
 		</div>
-		<div class="application-viewport card drop-shadow-lg space-y-4 p-4">
-			<h1 class="h3 justify-center text-start mb-2">Streaming</h1>
+		<div class="application-viewport card space-y-4 p-4 drop-shadow-lg">
+			<h1 class="h3 mb-2 justify-center text-start">Streaming</h1>
 			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<div class="w-full space-y-4">
 					<label class="settings_type">
@@ -253,7 +260,11 @@
 				</label>
 			</div>
 			<hr class="border-t-4!" />
-			<button type="button" class="btn preset-filled-primary-500 items-center" onclick={updateSettings}>
+			<button
+				type="button"
+				class="btn preset-filled-primary-500 items-center"
+				onclick={updateSettings}
+			>
 				<Icon icon="icon-park-outline:save-one" width="18" height="18" />
 				<span>Save Settings</span>
 			</button>

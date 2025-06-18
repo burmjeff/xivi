@@ -24,6 +24,7 @@ tests/
 Unit tests focus on testing individual functions or methods in isolation. They should be fast, reliable, and not depend on external services like databases or APIs.
 
 Example:
+
 ```go
 func TestUpdateDynamicGroup(t *testing.T) {
     // Test cases

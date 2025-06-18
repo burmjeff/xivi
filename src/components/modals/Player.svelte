@@ -8,7 +8,11 @@
 	import xivi from '@xivi/lib/assets/xivi.png';
 
 	// Component props
-	let { modalOpen = $bindable(), name, stream } = $props<{
+	let {
+		modalOpen = $bindable(),
+		name,
+		stream
+	} = $props<{
 		modalOpen: boolean;
 		name: string;
 		stream: string;
@@ -107,9 +111,9 @@
 			hlsInstance = new Hls({
 				// Basic settings
 				lowLatencyMode: true,
-				autoStartLoad: true,                // Auto start loading
-				startLevel: -1,                      // Auto-select quality level
-				enableWorker: true,                  // Use web workers
+				autoStartLoad: true, // Auto start loading
+				startLevel: -1, // Auto-select quality level
+				enableWorker: true, // Use web workers
 
 				// Manifest loading settings
 				manifestLoadingTimeOut: 5000,
@@ -121,32 +125,32 @@
 				fragLoadingTimeOut: 5000,
 				fragLoadingMaxRetry: 5,
 				fragLoadingRetryDelay: 500,
-				fragLoadingMaxRetryTimeout: 5000,    // Cap retry delay
-				startFragPrefetch: true,            // Prefetch fragments
+				fragLoadingMaxRetryTimeout: 5000, // Cap retry delay
+				startFragPrefetch: true, // Prefetch fragments
 
 				// Buffer settings
-				maxBufferLength: 30,                // Buffer length in seconds
-				maxMaxBufferLength: 60,             // Maximum buffer length
-				maxBufferHole: 0.1,                 // Max buffer hole in seconds
-				highBufferWatchdogPeriod: 1,        // High buffer watchdog period
-				abrEwmaDefaultEstimate: 500000,     // Default estimate for ABR
-				abrBandWidthFactor: 0.95,           // Bandwidth factor for ABR
-				abrBandWidthUpFactor: 0.7,          // Bandwidth up factor for ABR
+				maxBufferLength: 30, // Buffer length in seconds
+				maxMaxBufferLength: 60, // Maximum buffer length
+				maxBufferHole: 0.1, // Max buffer hole in seconds
+				highBufferWatchdogPeriod: 1, // High buffer watchdog period
+				abrEwmaDefaultEstimate: 500000, // Default estimate for ABR
+				abrBandWidthFactor: 0.95, // Bandwidth factor for ABR
+				abrBandWidthUpFactor: 0.7, // Bandwidth up factor for ABR
 
 				// Performance settings
-				testBandwidth: true,                // Test bandwidth for ABR
-				progressive: true,                  // Enable progressive loading
-				appendErrorMaxRetry: 5,             // Max retries for append errors
+				testBandwidth: true, // Test bandwidth for ABR
+				progressive: true, // Enable progressive loading
+				appendErrorMaxRetry: 5, // Max retries for append errors
 
 				// Live stream settings
-				liveBackBufferLength: 30,           // Live back buffer length
-				liveSyncDurationCount: 2,           // Number of segments to sync with live
-				liveMaxLatencyDurationCount: 10,    // Max latency duration count
+				liveBackBufferLength: 30, // Live back buffer length
+				liveSyncDurationCount: 2, // Number of segments to sync with live
+				liveMaxLatencyDurationCount: 10, // Max latency duration count
 
 				// Segment transition settings
-				maxFragLookUpTolerance: 0.15,       // Fragment lookup tolerance
-				maxStarvationDelay: 1,             // Max starvation delay
-				maxLoadingDelay: 1                 // Max loading delay
+				maxFragLookUpTolerance: 0.15, // Fragment lookup tolerance
+				maxStarvationDelay: 1, // Max starvation delay
+				maxLoadingDelay: 1 // Max loading delay
 			});
 
 			// Bind HLS to video element
@@ -161,7 +165,7 @@
 			hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
 				isLoading = false;
 				setupInProgress = false;
-				videoElement?.play().catch(error => {
+				videoElement?.play().catch((error) => {
 					console.error('Error auto-playing video:', error);
 				});
 			});
@@ -183,24 +187,24 @@
 			hlsInstance.on(Hls.Events.FRAG_BUFFERED, (_, data) => {
 				console.debug(`Fragment buffered: ${data.frag.sn} (${data.stats.total}ms)`);
 				if (videoElement && !videoElement.paused) {
-				const currentTime = videoElement.currentTime;
-				const buffered = videoElement.buffered;
-				
-				// Check if we need to force buffer update
-				if (buffered.length > 0) {
-					const bufferEnd = buffered.end(buffered.length - 1);
-					if (bufferEnd - currentTime < 2) {
-						hlsInstance?.startLoad(); // Force reload if buffer is low
+					const currentTime = videoElement.currentTime;
+					const buffered = videoElement.buffered;
+
+					// Check if we need to force buffer update
+					if (buffered.length > 0) {
+						const bufferEnd = buffered.end(buffered.length - 1);
+						if (bufferEnd - currentTime < 2) {
+							hlsInstance?.startLoad(); // Force reload if buffer is low
+						}
 					}
 				}
-    }
 			});
 
 			// Handle buffer appended
 			hlsInstance.on(Hls.Events.BUFFER_APPENDED, () => {
 				// Buffer appended, ensure playback continues
 				if (videoElement && videoElement.paused && !isLoading) {
-					videoElement.play().catch(e => console.debug('Auto-resume failed:', e));
+					videoElement.play().catch((e) => console.debug('Auto-resume failed:', e));
 				}
 			});
 
@@ -235,7 +239,7 @@
 			videoElement.addEventListener('loadedmetadata', () => {
 				isLoading = false;
 				setupInProgress = false;
-				videoElement?.play().catch(error => {
+				videoElement?.play().catch((error) => {
 					console.error('Error auto-playing video:', error);
 				});
 			});
@@ -279,23 +283,28 @@
 	{#snippet content()}
 		<!-- Loading indicator -->
 		{#if isLoading}
-		<div class="absolute inset-0 flex items-center justify-center bg-black/50">
-			<div class="flex items-center justify-center">
-				<div class="spinner-border animate-spin inline-block w-8 h-8 border-4 rounded-full border-primary-500 border-t-transparent" role="status"></div>
-				<span class="ml-2 text-white">Loading stream...</span>
+			<div class="absolute inset-0 flex items-center justify-center bg-black/50">
+				<div class="flex items-center justify-center">
+					<div
+						class="spinner-border border-primary-500 inline-block h-8 w-8 animate-spin rounded-full border-4 border-t-transparent"
+						role="status"
+					></div>
+					<span class="ml-2 text-white">Loading stream...</span>
+				</div>
 			</div>
-		</div>
 		{/if}
 
 		<!-- Error message -->
 		{#if hasError}
-		<div class="absolute inset-0 flex flex-col items-center justify-center bg-black/80 p-4 text-center">
-			<span class="text-xl text-error-500">Stream Error</span>
-			<p class="mt-2 text-white">{errorMessage}</p>
-			<button class="btn btn-sm variant-filled-primary mt-4" onclick={handleRetry}>
-				Retry
-			</button>
-		</div>
+			<div
+				class="absolute inset-0 flex flex-col items-center justify-center bg-black/80 p-4 text-center"
+			>
+				<span class="text-error-500 text-xl">Stream Error</span>
+				<p class="mt-2 text-white">{errorMessage}</p>
+				<button class="btn btn-sm variant-filled-primary mt-4" onclick={handleRetry}>
+					Retry
+				</button>
+			</div>
 		{/if}
 
 		<!-- Media Chrome player -->
@@ -314,7 +323,7 @@
 			<media-control-bar>
 				<media-play-button></media-play-button>
 				<media-seek-backward-button></media-seek-backward-button>
-    			<media-seek-forward-button ></media-seek-forward-button>
+				<media-seek-forward-button></media-seek-forward-button>
 				<media-mute-button></media-mute-button>
 				<media-volume-range></media-volume-range>
 				<media-time-range></media-time-range>
@@ -327,7 +336,7 @@
 </Modal>
 
 <style>
-	:global([data-scope="dialog"][data-part="content"]) {
+	:global([data-scope='dialog'][data-part='content']) {
 		max-width: 75vw !important;
 		max-height: 75vh !important;
 	}

@@ -1,123 +1,135 @@
 /*place global styles here */
 @import 'tailwindcss';
-@import "@skeletonlabs/skeleton";
-@import "@skeletonlabs/skeleton/optional/presets";
+@import '@skeletonlabs/skeleton';
+@import '@skeletonlabs/skeleton/optional/presets';
 /*Add your theme import for your theme: "xivi-theme" here */
 @import './xivi-theme.css';
 /*Dialog positioning fixes*/
 @import './dialog-fixes.css';
 
 @layer base {
-  *,
-  ::after,
-  ::before,
-  ::backdrop,
-  ::file-selector-button {
-    border-color: var(--color-gray-200, currentColor);
-  }
+	*,
+	::after,
+	::before,
+	::backdrop,
+	::file-selector-button {
+		border-color: var(--color-gray-200, currentColor);
+	}
 
-  /* Enhanced Typography */
-  html {
-    font-size: 16px;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
+	/* Enhanced Typography */
+	html {
+		font-size: 16px;
+		text-rendering: optimizeLegibility;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
 
-  body {
-    @apply text-surface-50;
-    line-height: 1.6;
-    letter-spacing: 0.015em;
-  }
+	body {
+		@apply text-surface-50;
+		line-height: 1.6;
+		letter-spacing: 0.015em;
+	}
 
-  a {
-    @apply text-primary-400 transition-colors duration-200;
-  }
+	a {
+		@apply text-primary-400 transition-colors duration-200;
+	}
 
-  a:hover {
-    @apply text-primary-300;
-  }
+	a:hover {
+		@apply text-primary-300;
+	}
 
-  /* Improved Form Elements */
-  input, select, textarea {
-    @apply bg-surface-800/50 border border-surface-600 rounded-md px-3 py-2 focus:ring-2 focus:ring-primary-500/30 focus:border-primary-500 transition-all duration-200;
-  }
+	/* Improved Form Elements */
+	input,
+	select,
+	textarea {
+		@apply bg-surface-800/50 border-surface-600 focus:ring-primary-500/30 focus:border-primary-500 rounded-md border px-3 py-2 transition-all duration-200 focus:ring-2;
+	}
 
-  button {
-    @apply transition-all duration-200;
-  }
+	button {
+		@apply transition-all duration-200;
+	}
 
-  /* Table Styling */
-  table {
-    @apply w-full border-collapse;
-  }
+	/* Table Styling */
+	table {
+		@apply w-full border-collapse;
+	}
 
-  th {
-    @apply text-left py-3 px-4 bg-surface-700/30 font-medium text-surface-200;
-  }
+	th {
+		@apply bg-surface-700/30 text-surface-200 px-4 py-3 text-left font-medium;
+	}
 
-  td {
-    @apply py-3 px-4 border-t border-surface-700/30;
-  }
+	td {
+		@apply border-surface-700/30 border-t px-4 py-3;
+	}
 
-  tr:hover td {
-    @apply bg-surface-700/10;
-  }
+	tr:hover td {
+		@apply bg-surface-700/10;
+	}
 
-  /* Scrollbar Styling */
-  ::-webkit-scrollbar {
-    @apply w-2 h-2;
-  }
+	/* Scrollbar Styling */
+	::-webkit-scrollbar {
+		@apply h-2 w-2;
+	}
 
-  ::-webkit-scrollbar-track {
-    @apply bg-surface-800/50;
-  }
+	::-webkit-scrollbar-track {
+		@apply bg-surface-800/50;
+	}
 
-  ::-webkit-scrollbar-thumb {
-    @apply bg-surface-600 rounded-full;
-  }
+	::-webkit-scrollbar-thumb {
+		@apply bg-surface-600 rounded-full;
+	}
 
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-surface-500;
-  }
+	::-webkit-scrollbar-thumb:hover {
+		@apply bg-surface-500;
+	}
 }
 
 @layer base {
-  html,
-  body {
-    @apply h-full overflow-hidden;
-  }
+	html,
+	body {
+		@apply h-full overflow-hidden;
+	}
 }
 
 /* Custom Utility Classes */
 @layer utilities {
-  /* Animation Utilities */
-  .animate-fade-in {
-    animation: fadeIn 0.3s ease-in-out;
-  }
+	/* Animation Utilities */
+	.animate-fade-in {
+		animation: fadeIn 0.3s ease-in-out;
+	}
 
-  .animate-slide-in {
-    animation: slideIn 0.3s ease-out;
-  }
+	.animate-slide-in {
+		animation: slideIn 0.3s ease-out;
+	}
 
-  /* Gradient Text */
-  .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-400 to-secondary-400;
-  }
+	/* Gradient Text */
+	.text-gradient {
+		@apply from-primary-400 to-secondary-400 bg-gradient-to-r bg-clip-text text-transparent;
+	}
 
-  /* Glass Effect */
-  .glass {
-    @apply bg-surface-800/30 backdrop-blur-md border border-surface-500/20;
-  }
+	/* Glass Effect */
+	.glass {
+		@apply bg-surface-800/30 border-surface-500/20 border backdrop-blur-md;
+	}
 }
 
 /* Animations */
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
 }
 
 @keyframes slideIn {
-  from { transform: translateY(10px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+	from {
+		transform: translateY(10px);
+		opacity: 0;
+	}
+	to {
+		transform: translateY(0);
+		opacity: 1;
+	}
 }

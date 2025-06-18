@@ -25,8 +25,8 @@
 		useFloating,
 		useClick,
 		useInteractions,
-		useRole,
-	} from "@skeletonlabs/floating-ui-svelte";
+		useRole
+	} from '@skeletonlabs/floating-ui-svelte';
 
 	const { parent, isNew, groupIdx, channelIdx } = $props();
 
@@ -35,7 +35,7 @@
 	let newImg = false;
 	let logoName: string;
 
-	let selectedTvgid = $state([""]); // For Combobox
+	let selectedTvgid = $state(['']);
 
 	interface TvgidOptions {
 		label: string;
@@ -57,15 +57,13 @@
 		tvgid: string;
 		logoid: number;
 		logo: string;
-	} = $state(
-		{
-			id: 0,
-			name: '',
-			tvgid: '',
-			logoid: 0,
-			logo: xivi
-		}
-	);
+	} = $state({
+		id: 0,
+		name: '',
+		tvgid: '',
+		logoid: 0,
+		logo: xivi
+	});
 
 	if (!isNew) {
 		formData = {
@@ -110,9 +108,7 @@
 	};
 
 	const getTvgids = async () => {
-		const response = await fetch(
-			`/api/epg/tvgids`
-		);
+		const response = await fetch(`/api/epg/tvgids`);
 		const data = await response.json();
 		return data.tvgids;
 	};
@@ -125,19 +121,18 @@
 		tvgidOptions = [];
 		const fetchedTvgids = await getTvgids();
 		if (fetchedTvgids !== null && typeof fetchedTvgids !== 'undefined') {
-			const tvgidList = fetchedTvgids
-				.map((tvgid: string) => {
-					return {
-						label: `${tvgid}`,
-						value: `${tvgid}`
-					};
-				});
+			const tvgidList = fetchedTvgids.map((tvgid: string) => {
+				return {
+					label: `${tvgid}`,
+					value: `${tvgid}`
+				};
+			});
 
 			if (tvgidList.length > 0) {
 				tvgidOptions.push(...tvgidList);
 			}
 		}
-		if (formData.tvgid != "") {
+		if (formData.tvgid != '') {
 			selectedTvgid[0] = formData.tvgid;
 		}
 
@@ -163,10 +158,10 @@
 		onOpenChange: (v) => {
 			logoPopupOpen = v;
 		},
-		placement: "right",
+		placement: 'right',
 		get middleware() {
 			return [offset(10), floatingFlip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
 
 	// Interactions for logo popup
@@ -192,14 +187,14 @@
 
 	function onUploadHandler(event: any) {
 		const reader = new FileReader();
-  		reader.onload = (event) => {
+		reader.onload = (event) => {
 			const image = event.target!.result;
 		};
 		reader.readAsDataURL(event.details.acceptedFiles[0]);
 		const result = reader.result;
 		if (result) {
 			const file = event.details.acceptedFiles[0];
-			logoName = file.name.replace(/\.[^/.]+$/, "");
+			logoName = file.name.replace(/\.[^/.]+$/, '');
 			formData.logo = result.toString();
 			newImg = true;
 		}
@@ -209,8 +204,6 @@
 		formData.logoid = logo.id;
 		formData.logo = logo.image;
 	}
-
-
 
 	async function onFormSubmit(): Promise<void> {
 		console.log('Form submitted with data:', formData);
@@ -223,8 +216,6 @@
 		console.log('Calling parent.onClose with formData:', formData);
 		parent.onClose(formData);
 	}
-
-
 
 	async function deleteChannel() {
 		try {
@@ -364,218 +355,205 @@
 </script>
 
 <div class="modal-channel">
-		{#if isNew}
-			<header class="text-center text-2xl font-bold mb-2">Add Channel</header>
-		{:else}
-			<header class="text-center text-2xl font-bold mb-2">Channel Settings</header>
-		{/if}
-		<form class="modal-form space-y-4 border border-surface-500 p-6 rounded-container bg-surface-800/20">
-			<div class="playlist_ch_items grid grid-cols-5 space-x-6">
-				<div class="form col-span-2 px-2">
-					<label class="channel_name">
-						<span>Channel Name</span>
-						<input
-							class="input variant-form-material"
-							type="text"
-							bind:value={formData.name}
-							placeholder=""
-						/>
-					</label>
-					<div class="channel_tvgid">
-						<span>Channel tvgid</span>
-						<Combobox
-							data={tvgidOptions}
-							value={selectedTvgid}
-							onValueChange={(e) => (selectedTvgid = e.value)}
-							label=""
-							placeholder="Select or type..."
-							positioning={{
-								placement: 'bottom-start',
-								flip: false,
-								overflowPadding: 8,
-								fitViewport: true
-							}}
-							contentBase="max-h-48 overflow-y-auto"
-						>
-							{#snippet item(item: {label: string; value: string})}
-								<div class="flex w-full justify-between space-x-2">
-									<span>{item.label}</span>
-								</div>
-							{/snippet}
-						</Combobox>
-					</div>
-					<div class="channel_logo">
-						<div class="grid w-64 grid-cols-2 items-center space-x-10 p-1">
-							<img class="h-auto max-h-32 w-auto" src={formData.logo} alt="Logo" />
-							<button
-								class="fill-primary-500 btn h-fit w-fit"
-								onclick={updateLogos}
-								bind:this={logoFloating.elements.reference}
-								{...logoInteractions.getReferenceProps()}
-							>Choose Logo</button
-							>
-						</div>
-					</div>
+	{#if isNew}
+		<header class="mb-2 text-center text-2xl font-bold">Add Channel</header>
+	{:else}
+		<header class="mb-2 text-center text-2xl font-bold">Channel Settings</header>
+	{/if}
+	<form
+		class="modal-form border-surface-500 rounded-container bg-surface-800/20 space-y-4 border p-6"
+	>
+		<div class="playlist_ch_items grid grid-cols-5 space-x-6">
+			<div class="form col-span-2 px-2">
+				<label class="channel_name">
+					<span>Channel Name</span>
+					<input
+						class="input variant-form-material"
+						type="text"
+						bind:value={formData.name}
+						placeholder=""
+					/>
+				</label>
+				<div class="channel_tvgid">
+					<span>Channel tvgid</span>
+					<Combobox
+						data={tvgidOptions}
+						value={selectedTvgid}
+						onValueChange={(e) => (selectedTvgid = e.value)}
+						label=""
+						placeholder="Select or type..."
+						positioning={{
+							placement: 'bottom-start',
+							flip: false,
+							overflowPadding: 8,
+							fitViewport: true
+						}}
+						contentBase="max-h-48 overflow-y-auto"
+					>
+						{#snippet item(item: { label: string; value: string })}
+							<div class="flex w-full justify-between space-x-2">
+								<span>{item.label}</span>
+							</div>
+						{/snippet}
+					</Combobox>
 				</div>
-				<div class="max-h-72 col-span-3 px-2">
-					<header class="justify-center text-center font-bold mb-2">Current Playlist Channels</header>
-					<div class="max-h-72 overflow-y-scroll">
-						<table class="table justify-center text-center shadow-md">
-							<thead>
-								<tr id="thead">
-									<th>Title</th>
-									<th>tvg-id</th>
-									<th>Remove</th>
-								</tr>
-							</thead>
-							<tbody
-								use:dndzone={{
-									items: $playlist_ch_items,
-									flipDurationMs,
-									type: dndTypeChannels,
-									transformDraggedElement
-								}}
-								onconsider={handleDndConsiderItem}
-								onfinalize={handleDndFinalizeItem}
-							>
-								{#if $playlist_ch_items != null && $playlist_ch_items.length > 0}
-									{#each $playlist_ch_items as channel, channelIdx (channel.id)}
-										<tr id="animate" animate:flip={{ duration: flipDurationMs }}>
-											<td>{channel.title}</td>
-											<td>{channel.tvg_id}</td>
-											<td class="h-4 w-5 items-center hover:bg-red-900">
-												<button
-													class="btn h-full max-h-4 w-full"
-													onclick={() => removeChannelItem(channel.id)}
-												>
-													<div>
-														<Icon icon="icon-park-outline:delete" />
-													</div>
-												</button>
-											</td>
-											{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-												<td
-													in:fade={{ duration: 200, easing: cubicIn }}
-													class="custom-shadow-item"
-												>
-													{channel.title}
-												</td>
-											{/if}
-										</tr>
-									{/each}
-								{:else}
-									<tr class="h-20"><td>No channels found</td></tr>
-								{/if}
-							</tbody>
-						</table>
+				<div class="channel_logo">
+					<div class="grid w-64 grid-cols-2 items-center space-x-10 p-1">
+						<img class="h-auto max-h-32 w-auto" src={formData.logo} alt="Logo" />
+						<button
+							class="fill-primary-500 btn h-fit w-fit"
+							onclick={updateLogos}
+							bind:this={logoFloating.elements.reference}
+							{...logoInteractions.getReferenceProps()}>Choose Logo</button
+						>
 					</div>
 				</div>
 			</div>
-			{#if !isNew}
-				<hr class="border-t-2!" />
-				<div class="max-h-80 overflow-y-scroll">
+			<div class="col-span-3 max-h-72 px-2">
+				<header class="mb-2 justify-center text-center font-bold">Current Playlist Channels</header>
+				<div class="max-h-72 overflow-y-scroll">
 					<table class="table justify-center text-center shadow-md">
 						<thead>
 							<tr id="thead">
 								<th>Title</th>
 								<th>tvg-id</th>
-								<th>Score</th>
+								<th>Remove</th>
 							</tr>
 						</thead>
-						<tbody use:dndzone={{
-							items: $playlistMatches,
-							flipDurationMs,
-							type: dndTypeChannels,
-							dropFromOthersDisabled
+						<tbody
+							use:dndzone={{
+								items: $playlist_ch_items,
+								flipDurationMs,
+								type: dndTypeChannels,
+								transformDraggedElement
 							}}
-							onconsider={handleDndConsiderMatch}
-							onfinalize={handleDndFinalizeMatch}
+							onconsider={handleDndConsiderItem}
+							onfinalize={handleDndFinalizeItem}
 						>
-							{#if $playlistMatches != null && $playlistMatches.length > 0}
-									{#each $playlistMatches as channel, channelIdx (channel.id)}
-										<tr id="animate" animate:flip={{ duration: flipDurationMs }}>
-											<td>{channel.name}</td>
-											<td>{channel.tvgid}</td>
-											<td>{channel.score}</td>
-
-											{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-												<td
-													in:fade={{ duration: 200, easing: cubicIn }}
-													class="custom-shadow-item"
-												>
-													{channel.name}
-												</td>
-											{/if}
-										</tr>
-									{/each}
+							{#if $playlist_ch_items != null && $playlist_ch_items.length > 0}
+								{#each $playlist_ch_items as channel, channelIdx (channel.id)}
+									<tr id="animate" animate:flip={{ duration: flipDurationMs }}>
+										<td>{channel.title}</td>
+										<td>{channel.tvg_id}</td>
+										<td class="h-4 w-5 items-center hover:bg-red-900">
+											<button
+												class="btn h-full max-h-4 w-full"
+												onclick={() => removeChannelItem(channel.id)}
+											>
+												<div>
+													<Icon icon="icon-park-outline:delete" />
+												</div>
+											</button>
+										</td>
+										{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+											<td in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
+												{channel.title}
+											</td>
+										{/if}
+									</tr>
+								{/each}
 							{:else}
 								<tr class="h-20"><td>No channels found</td></tr>
 							{/if}
 						</tbody>
 					</table>
 				</div>
-			{/if}
+			</div>
+		</div>
+		{#if !isNew}
+			<hr class="border-t-2!" />
+			<div class="max-h-80 overflow-y-scroll">
+				<table class="table justify-center text-center shadow-md">
+					<thead>
+						<tr id="thead">
+							<th>Title</th>
+							<th>tvg-id</th>
+							<th>Score</th>
+						</tr>
+					</thead>
+					<tbody
+						use:dndzone={{
+							items: $playlistMatches,
+							flipDurationMs,
+							type: dndTypeChannels,
+							dropFromOthersDisabled
+						}}
+						onconsider={handleDndConsiderMatch}
+						onfinalize={handleDndFinalizeMatch}
+					>
+						{#if $playlistMatches != null && $playlistMatches.length > 0}
+							{#each $playlistMatches as channel, channelIdx (channel.id)}
+								<tr id="animate" animate:flip={{ duration: flipDurationMs }}>
+									<td>{channel.name}</td>
+									<td>{channel.tvgid}</td>
+									<td>{channel.score}</td>
 
-		</form>
-		<footer class="modal-footer flex justify-between pt-2">
-			<div>
-				{#if !isNew}
-					<button class="btn preset-tonal-error" onclick={deleteChannel}>
-						<Icon icon="icon-park-outline:delete" width="20" height="20" />
-						<span>Delete</span>
-					</button>
-				{/if}
+									{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+										<td in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
+											{channel.name}
+										</td>
+									{/if}
+								</tr>
+							{/each}
+						{:else}
+							<tr class="h-20"><td>No channels found</td></tr>
+						{/if}
+					</tbody>
+				</table>
 			</div>
-			<div class="flex gap-4">
-				<button class="btn preset-outlined-surface-500" onclick={parent.onClose}>
-					Cancel
+		{/if}
+	</form>
+	<footer class="modal-footer flex justify-between pt-2">
+		<div>
+			{#if !isNew}
+				<button class="btn preset-tonal-error" onclick={deleteChannel}>
+					<Icon icon="icon-park-outline:delete" width="20" height="20" />
+					<span>Delete</span>
 				</button>
-				<button class="btn preset-filled-primary-500" onclick={onFormSubmit}>
-					Save
-				</button>
-			</div>
-		</footer>
+			{/if}
+		</div>
+		<div class="flex gap-4">
+			<button class="btn preset-outlined-surface-500" onclick={parent.onClose}> Cancel </button>
+			<button class="btn preset-filled-primary-500" onclick={onFormSubmit}> Save </button>
+		</div>
+	</footer>
 </div>
 
 {#if logoPopupOpen}
-<div
-	bind:this={logoFloating.elements.floating}
-	style={logoFloating.floatingStyles}
-	{...logoInteractions.getFloatingProps()}
-	class="floating popover-neutral logoList card p-2 shadow-2xl"
-	transition:fade={{ duration: 200 }}
->
-	<p class="h3 p-1 text-center font-bold">Choose Logo</p>
 	<div
-		class="h-fit max-h-96 w-fit overflow-y-scroll rounded-lg border-transparent bg-cover p-2 shadow-sm ring-4 ring-blue-500/50"
+		bind:this={logoFloating.elements.floating}
+		style={logoFloating.floatingStyles}
+		{...logoInteractions.getFloatingProps()}
+		class="floating popover-neutral logoList card p-2 shadow-2xl"
+		transition:fade={{ duration: 200 }}
 	>
-		{#if $logos != null && $logos.length > 0}
-			<section class="grid grid-cols-7 items-center justify-items-center space-x-4 space-y-1">
-				{#each $logos as logo, logoIdx (logo.id)}
-					<button
-						id="chooseImage"
-						class="btn h-auto w-20 items-center p-1"
-						onclick={() => chooseImage(logo)}
-					>
-						<img src={logo.image} alt="" />
-					</button>
-				{/each}
-			</section>
-		{/if}
+		<p class="h3 p-1 text-center font-bold">Choose Logo</p>
+		<div
+			class="h-fit max-h-96 w-fit overflow-y-scroll rounded-lg border-transparent bg-cover p-2 shadow-sm ring-4 ring-blue-500/50"
+		>
+			{#if $logos != null && $logos.length > 0}
+				<section class="grid grid-cols-7 items-center justify-items-center space-y-1 space-x-4">
+					{#each $logos as logo, logoIdx (logo.id)}
+						<button
+							id="chooseImage"
+							class="btn h-auto w-20 items-center p-1"
+							onclick={() => chooseImage(logo)}
+						>
+							<img src={logo.image} alt="" />
+						</button>
+					{/each}
+				</section>
+			{/if}
+		</div>
+		<div class="mt-2 text-center">
+			<FileUpload name="files" accept="image/*" onFileChange={onUploadHandler}>
+				<button class="btn preset-filled">
+					<span>Upload New Image</span>
+				</button>
+			</FileUpload>
+		</div>
+		<FloatingArrow bind:ref={elemArrow} context={logoFloating.context} fill="#1e293b" />
 	</div>
-	<div class="mt-2 text-center">
-		<FileUpload
-			name="files"
-			accept="image/*"
-			onFileChange={onUploadHandler}
-			>
-			<button class="btn preset-filled">
-				<span>Upload New Image</span>
-			  </button>
-		</FileUpload>
-	</div>
-	<FloatingArrow bind:ref={elemArrow} context={logoFloating.context} fill="#1e293b" />
-</div>
 {/if}
 
 <style>

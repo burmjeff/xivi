@@ -2,10 +2,7 @@
 <script lang="ts">
 	import TemplateChannel from './TemplateChannel.svelte';
 	import { onMount } from 'svelte';
-	import {
-		Accordion,
-		Modal
-	} from '@skeletonlabs/skeleton-svelte';
+	import { Accordion, Modal } from '@skeletonlabs/skeleton-svelte';
 	import { templateGroups } from '@xivi/stores/template_store';
 	import type { TemplateGroup } from '@xivi/data/template_entities';
 	import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
@@ -22,10 +19,10 @@
 		useFloating,
 		useHover,
 		useInteractions,
-		useRole,
-	} from "@skeletonlabs/floating-ui-svelte";
+		useRole
+	} from '@skeletonlabs/floating-ui-svelte';
 	import { flip as flipAnimation } from 'svelte/animate';
-	import { fade } from "svelte/transition";
+	import { fade } from 'svelte/transition';
 	import ChannelSettings from './modals/ChannelSettings.svelte';
 
 	let dndPlaylistId: number;
@@ -61,16 +58,16 @@
 		onOpenChange: (v) => {
 			tooltipAdd = v;
 		},
-		placement: "top",
+		placement: 'top',
 		get middleware() {
 			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
-	const tooltipRole = useRole(tooltipFloatingAdd.context, { role: "tooltip" });
+	const tooltipRole = useRole(tooltipFloatingAdd.context, { role: 'tooltip' });
 	const tooltipHover = useHover(tooltipFloatingAdd.context, { move: false });
 	const tooltipDismiss = useDismiss(tooltipFloatingAdd.context);
 	const tooltipInteractions = useInteractions([tooltipRole, tooltipHover, tooltipDismiss]);
-	
+
 	// Floating UI setup for edit tooltip
 	const editTooltipFloating = useFloating({
 		whileElementsMounted: autoUpdate,
@@ -80,18 +77,22 @@
 		onOpenChange: (v) => {
 			editTooltipOpen = v;
 		},
-		placement: "top",
+		placement: 'top',
 		get middleware() {
 			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
-	
+
 	// Interactions for edit tooltip
-	const editTooltipRole = useRole(editTooltipFloating.context, { role: "tooltip" });
+	const editTooltipRole = useRole(editTooltipFloating.context, { role: 'tooltip' });
 	const editTooltipHover = useHover(editTooltipFloating.context, { move: false });
 	const editTooltipDismiss = useDismiss(editTooltipFloating.context);
-	const editTooltipInteractions = useInteractions([editTooltipRole, editTooltipHover, editTooltipDismiss]);
-	
+	const editTooltipInteractions = useInteractions([
+		editTooltipRole,
+		editTooltipHover,
+		editTooltipDismiss
+	]);
+
 	// Floating UI setup for delete tooltip
 	const deleteTooltipFloating = useFloating({
 		whileElementsMounted: autoUpdate,
@@ -101,18 +102,22 @@
 		onOpenChange: (v) => {
 			deleteTooltipOpen = v;
 		},
-		placement: "top",
+		placement: 'top',
 		get middleware() {
 			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
-	
+
 	// Interactions for delete tooltip
-	const deleteTooltipRole = useRole(deleteTooltipFloating.context, { role: "tooltip" });
+	const deleteTooltipRole = useRole(deleteTooltipFloating.context, { role: 'tooltip' });
 	const deleteTooltipHover = useHover(deleteTooltipFloating.context, { move: false });
 	const deleteTooltipDismiss = useDismiss(deleteTooltipFloating.context);
-	const deleteTooltipInteractions = useInteractions([deleteTooltipRole, deleteTooltipHover, deleteTooltipDismiss]);
-	
+	const deleteTooltipInteractions = useInteractions([
+		deleteTooltipRole,
+		deleteTooltipHover,
+		deleteTooltipDismiss
+	]);
+
 	// Floating UI setup for add channel tooltip
 	const addChannelTooltipFloating = useFloating({
 		whileElementsMounted: autoUpdate,
@@ -122,17 +127,21 @@
 		onOpenChange: (v) => {
 			addChannelTooltipOpen = v;
 		},
-		placement: "top",
+		placement: 'top',
 		get middleware() {
 			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
-	
+
 	// Interactions for add channel tooltip
-	const addChannelTooltipRole = useRole(addChannelTooltipFloating.context, { role: "tooltip" });
+	const addChannelTooltipRole = useRole(addChannelTooltipFloating.context, { role: 'tooltip' });
 	const addChannelTooltipHover = useHover(addChannelTooltipFloating.context, { move: false });
 	const addChannelTooltipDismiss = useDismiss(addChannelTooltipFloating.context);
-	const addChannelTooltipInteractions = useInteractions([addChannelTooltipRole, addChannelTooltipHover, addChannelTooltipDismiss]);
+	const addChannelTooltipInteractions = useInteractions([
+		addChannelTooltipRole,
+		addChannelTooltipHover,
+		addChannelTooltipDismiss
+	]);
 
 	let modalDeleteOpen = $state(false);
 	let modalChannelOpen = $state(false);
@@ -296,7 +305,12 @@
 	function handleGroupSettingsClose(formData?: any) {
 		console.log('handleGroupSettingsClose called with formData:', formData);
 		if (formData) {
-			addTemplateGroup(formData, currentGroupData.groupIdx, currentGroupData.isNew, currentGroupData.group);
+			addTemplateGroup(
+				formData,
+				currentGroupData.groupIdx,
+				currentGroupData.isNew,
+				currentGroupData.group
+			);
 		}
 		modalGroupOpen = false;
 		console.log('modalGroupOpen set to false');
@@ -379,13 +393,15 @@
 	}
 </script>
 
-<section class="tmplgroups w-full h-full p-1">
-	<header class="tmplgroups-header flex items-center justify-center p-1 border-b border-surface-700/30">
-		<h4 class="h4 font-bold text-primary-400">Template Groups</h4>
+<section class="tmplgroups h-full w-full p-1">
+	<header
+		class="tmplgroups-header border-surface-700/30 flex items-center justify-center border-b p-1"
+	>
+		<h4 class="h4 text-primary-400 font-bold">Template Groups</h4>
 		<button
 			class="btn btn-md self-start"
 			onclick={(e) => {
-				modalGroupSettings(true, 0, undefined)
+				modalGroupSettings(true, 0, undefined);
 				e.stopPropagation();
 			}}
 			bind:this={tooltipFloatingAdd.elements.reference}
@@ -422,11 +438,15 @@
 			>
 				{#if $templateGroups.length > 0}
 					{#each $templateGroups as group, groupIdx (group.id)}
-						<div id="animate" class="card shadow-md mb-1" animate:flipAnimation={{ duration: flipDurationMs }}>
+						<div
+							id="animate"
+							class="card mb-1 shadow-md"
+							animate:flipAnimation={{ duration: flipDurationMs }}
+						>
 							<Accordion.Item value={group.name}>
 								{#snippet control()}
-									<div class="flex flex-row items-center w-full cursor-pointer">
-										<h4 class="text-lg flex-grow">{group.name}</h4>
+									<div class="flex w-full cursor-pointer flex-row items-center">
+										<h4 class="flex-grow text-lg">{group.name}</h4>
 										<div class="flex flex-row gap-1">
 											<button
 												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
@@ -447,7 +467,11 @@
 														transition:fade={{ duration: 200 }}
 													>
 														<p class="text-sm font-medium"><strong>Edit Group</strong></p>
-														<FloatingArrow bind:ref={elemArrow} context={editTooltipFloating.context} fill="#1e293b" />
+														<FloatingArrow
+															bind:ref={elemArrow}
+															context={editTooltipFloating.context}
+															fill="#1e293b"
+														/>
 													</div>
 												{/if}
 											</button>
@@ -470,7 +494,11 @@
 														transition:fade={{ duration: 200 }}
 													>
 														<p class="text-sm font-medium"><strong>Delete Group</strong></p>
-														<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#1e293b" />
+														<FloatingArrow
+															bind:ref={elemArrow}
+															context={deleteTooltipFloating.context}
+															fill="#1e293b"
+														/>
 													</div>
 												{/if}
 											</button>
@@ -493,7 +521,11 @@
 														transition:fade={{ duration: 200 }}
 													>
 														<p class="text-sm font-medium"><strong>Add Channel</strong></p>
-														<FloatingArrow bind:ref={elemArrow} context={addChannelTooltipFloating.context} fill="#1e293b" />
+														<FloatingArrow
+															bind:ref={elemArrow}
+															context={addChannelTooltipFloating.context}
+															fill="#1e293b"
+														/>
 													</div>
 												{/if}
 											</button>
@@ -501,7 +533,7 @@
 									</div>
 								{/snippet}
 								{#snippet panel()}
-										<TemplateChannel groupId={group.id} {groupIdx} />
+									<TemplateChannel groupId={group.id} {groupIdx} />
 								{/snippet}
 							</Accordion.Item>
 
@@ -513,10 +545,13 @@
 						</div>
 					{/each}
 				{:else}
-					<div class="flex flex-col items-center justify-center py-2 px-2 text-center">
+					<div class="flex flex-col items-center justify-center px-2 py-2 text-center">
 						<Icon icon="mdi:folder-off" class="text-surface-500 mb-3" width="48" height="48" />
-						<h3 class="text-xl font-medium text-surface-300 mb-2">No Groups Found</h3>
-						<p class="text-surface-400 max-w-md">Add your first group by clicking the "Add Template Group" button above or by dragging over a playlist group.</p>
+						<h3 class="text-surface-300 mb-2 text-xl font-medium">No Groups Found</h3>
+						<p class="text-surface-400 max-w-md">
+							Add your first group by clicking the "Add Template Group" button above or by dragging
+							over a playlist group.
+						</p>
 					</div>
 				{/if}
 			</section>
@@ -525,8 +560,8 @@
 </section>
 
 <Modal
-    open={modalGroupOpen}
-    onOpenChange={(e) => (modalGroupOpen = e.open)}
+	open={modalGroupOpen}
+	onOpenChange={(e) => (modalGroupOpen = e.open)}
 	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-100-900 shadow-xl"
 	backdropClasses="backdrop-blur-sm"
@@ -540,54 +575,56 @@
 			dynamic={currentGroupData.group?.dynamic ?? false}
 			dynamicgroup={currentGroupData.group?.dynamicgroup ?? 0}
 		/>
-    {/snippet}
+	{/snippet}
 </Modal>
 
 <Modal
-    open={modalDeleteOpen}
-    onOpenChange={(e) => (modalDeleteOpen = e.open)}
-    triggerBase="btn preset-tonal"
+	open={modalDeleteOpen}
+	onOpenChange={(e) => (modalDeleteOpen = e.open)}
+	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl"
 	backdropClasses="backdrop-blur-sm"
 >
 	{#snippet trigger()}{/snippet}
-    {#snippet content()}
+	{#snippet content()}
 		<header class="text-2xl font-bold">Please Confirm</header>
 		<article>Are you sure you wish to delete this group?</article>
 		<footer class="flex justify-end space-x-2">
-			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
+			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}
+				>Cancel</button
+			>
 			<button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
 		</footer>
-    {/snippet}
+	{/snippet}
 </Modal>
 
 <Modal
-    open={modalChannelOpen}
-    onOpenChange={(e) => (modalChannelOpen = e.open)}
-    triggerBase="btn preset-tonal"
+	open={modalChannelOpen}
+	onOpenChange={(e) => (modalChannelOpen = e.open)}
+	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-100-900 shadow-xl"
 	backdropClasses="backdrop-blur-sm"
 >
 	{#snippet trigger()}{/snippet}
-    {#snippet content()}
+	{#snippet content()}
 		<ChannelSettings
 			isNew={true}
 			channelIdx={null}
 			groupIdx={groupToAddChannel.idx}
 			parent={{ onClose: handleChannelClose }}
 		/>
-    {/snippet}
+	{/snippet}
 </Modal>
 
 <Modal
-    open={modalConvertOpen}
-    onOpenChange={(e) => (modalConvertOpen = e.open)}
-    triggerBase="btn preset-tonal"
+	open={modalConvertOpen}
+	onOpenChange={(e) => (modalConvertOpen = e.open)}
+	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl"
 	backdropClasses="backdrop-blur-sm"
 >
 	{#snippet trigger()}{/snippet}
-    {#snippet content()}
+	{#snippet content()}
 		<header class="text-2xl font-bold">Convert Playlist Group to Template Group</header>
 		<article>
 			<label class="label">
@@ -603,10 +640,14 @@
 			</label>
 		</article>
 		<footer class="flex justify-end gap-4">
-			<button class="btn preset-outlined-surface-500" onclick={() => handleConvertClose(false)}>Cancel</button>
-			<button class="btn preset-filled-primary-500" onclick={() => handleConvertClose(true)}>Submit</button>
+			<button class="btn preset-outlined-surface-500" onclick={() => handleConvertClose(false)}
+				>Cancel</button
+			>
+			<button class="btn preset-filled-primary-500" onclick={() => handleConvertClose(true)}
+				>Submit</button
+			>
 		</footer>
-    {/snippet}
+	{/snippet}
 </Modal>
 
 <style>

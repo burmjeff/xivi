@@ -162,7 +162,7 @@
 </script>
 
 {#if $templateGroups[groupIdx] != null && $templateGroups[groupIdx].channels != null}
-	<table class="templateChannel table ">
+	<table class="templateChannel table">
 		<thead>
 			<tr>
 				<th class="text-center">Logo</th>
@@ -187,7 +187,7 @@
 						animate:flip={{ duration: flipDurationMs }}
 						onclick={() => modalSettings(channelIdx)}
 					>
-						<td><img class="max-w-16 max-h-10" src={channel.logo} alt="Logo" /></td>
+						<td><img class="max-h-10 max-w-16" src={channel.logo} alt="Logo" /></td>
 						<td>{channel.name}</td>
 						<td>{channel.tvgid}</td>
 
@@ -206,10 +206,13 @@
 				{/each}
 			{:else}
 				<tr>
-					<td class="flex flex-col items-center justify-center py-2 px-2 text-center">
+					<td class="flex flex-col items-center justify-center px-2 py-2 text-center">
 						<Icon icon="mdi:folder-off" class="text-surface-500 mb-3" width="48" height="48" />
-						<h3 class="text-xl font-medium text-surface-300 mb-2">No Template Channels Found</h3>
-						<p class="text-surface-400 max-w-md">Add your first channel by clicking the "Add Channel" button above or dragging one over from a playlist.</p>
+						<h3 class="text-surface-300 mb-2 text-xl font-medium">No Template Channels Found</h3>
+						<p class="text-surface-400 max-w-md">
+							Add your first channel by clicking the "Add Channel" button above or dragging one over
+							from a playlist.
+						</p>
 					</td>
 				</tr>
 			{/if}
@@ -218,21 +221,21 @@
 {/if}
 
 <Modal
-    open={modalChannelOpen}
-    onOpenChange={(e) => (modalChannelOpen = e.open)}
-    triggerBase="btn preset-tonal"
+	open={modalChannelOpen}
+	onOpenChange={(e) => (modalChannelOpen = e.open)}
+	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-100-900 shadow-xl"
 	backdropClasses="backdrop-blur-sm"
 >
 	{#snippet trigger()}{/snippet}
-    {#snippet content()}
+	{#snippet content()}
 		<ChannelSettings
 			isNew={false}
 			channelIdx={currentChannelIdx}
-			groupIdx={groupIdx}
+			{groupIdx}
 			parent={{ onClose: handleChannelClose }}
 		/>
-    {/snippet}
+	{/snippet}
 </Modal>
 
 <style>
