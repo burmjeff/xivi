@@ -43,8 +43,7 @@
 	}
 </script>
 
-<section class="channels card justify-center p-1 flex flex-col h-full max-h-[90vh]">
-	<!-- Fixed header section -->
+<section class="channels card flex h-full max-h-[90vh] flex-col justify-center p-1">
 	<div class="flex-none">
 		<header class="channels-header flex items-center justify-center space-x-4">
 			<h3 class="h3 font-bold">Stream Viewer</h3>
@@ -74,17 +73,17 @@
 	</div>
 
 	<!-- Scrollable content section -->
-	<div class="flex-1 overflow-y-auto pb-4 px-2">
+	<div class="flex-1 overflow-y-auto px-2 pb-4">
 		{#if $templates[selected] != null && $templates[selected].groups != null}
 			<Accordion collapsible>
 				{#if $templates[selected].groups.length > 0}
 					{#each $templates[selected].groups as group, groupIdx (group.id)}
-						<div class="groups w-content justify-center p-1 card shadow-md mb-1">
+						<div class="groups w-content card mb-1 justify-center p-1 shadow-md">
 							<Accordion.Item value={group.name}>
 								{#snippet control()}
-										<div class="flex flex-row items-center w-full cursor-pointer">
-											<h4 class="text-lg flex-grow">{group.name}</h4>
-										</div>
+									<div class="flex w-full cursor-pointer flex-row items-center">
+										<h4 class="flex-grow text-lg">{group.name}</h4>
+									</div>
 								{/snippet}
 								{#snippet panel()}
 									<ViewerChannels templateIdx={selected} groupId={group.id} {groupIdx} />

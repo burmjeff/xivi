@@ -5,11 +5,7 @@
 	import { Accordion, Switch } from '@skeletonlabs/skeleton-svelte';
 	import { playlists } from '@xivi/stores/playlist_store';
 	import type { PlaylistGroup } from '@xivi/data/playlist_entities';
-	import {
-		dndzone,
-		TRIGGERS,
-		SHADOW_ITEM_MARKER_PROPERTY_NAME
-	} from 'svelte-dnd-action';
+	import { dndzone, TRIGGERS, SHADOW_ITEM_MARKER_PROPERTY_NAME } from 'svelte-dnd-action';
 	import { flip } from 'svelte/animate';
 	import { fade } from 'svelte/transition';
 	import { cubicIn } from 'svelte/easing';
@@ -27,7 +23,6 @@
 	let dndTypeGroups = 'groups';
 	let dndItem: PlaylistGroup;
 	let dndIdx: number;
-	// Accordion state for v3
 	let accordionValue = $state<string[]>([]);
 
 	const updatePlaylistGroups = async () => {
@@ -58,7 +53,7 @@
 					body: JSON.stringify(group)
 				});
 				if (response.ok) {
-					console.error("Updated playlist group: ", group);
+					console.error('Updated playlist group: ', group);
 				} else {
 					console.error('Error:', response.status, response.statusText);
 				}
@@ -107,20 +102,19 @@
 	}
 </script>
 
-
 {#if $playlists[playlistIdx].groups != null && $playlists[playlistIdx].groups.length > 0}
 	<Accordion collapsible value={accordionValue} onValueChange={(e) => (accordionValue = e.value)}>
 		<div id="accord" class="playlistgroups-viewport min-w-full overflow-auto">
 			<Accordion.Item value="disabled-groups" base="card shadow-md mb-1">
 				{#snippet control()}
-					<div class="flex flex-row items-center w-full cursor-pointer">
+					<div class="flex w-full cursor-pointer flex-row items-center">
 						<h4 class="w-full">DISABLED GROUPS</h4>
 					</div>
 				{/snippet}
 				{#snippet panel()}
 					{#each $playlists[playlistIdx].groups as group (group.id)}
 						{#if !group.enabled}
-							<div class="card shadow-md py-1 px-4 flex flex-row items-center w-full">
+							<div class="card flex w-full flex-row items-center px-4 py-1 shadow-md">
 								<span class="flex-grow">{group.name}</span>
 								<Switch
 									name="group_enabled"
@@ -132,7 +126,10 @@
 									thumbActive="translate-x-5"
 									thumbInactive="translate-x-1"
 									checked={group.enabled}
-									onCheckedChange={(e) => {group.enabled = e.checked; disableGroup(group)}}
+									onCheckedChange={(e) => {
+										group.enabled = e.checked;
+										disableGroup(group);
+									}}
 								/>
 							</div>
 						{/if}
@@ -151,11 +148,11 @@
 				onfinalize={handleDndFinalize}
 			>
 				{#each $playlists[playlistIdx].groups as group, groupIdx (group.id)}
-					<div id="animate" animate:flip={{ duration: flipDurationMs }} class="card shadow-md mb-1">
+					<div id="animate" animate:flip={{ duration: flipDurationMs }} class="card mb-1 shadow-md">
 						{#if group.enabled}
 							<Accordion.Item value={group.name}>
 								{#snippet control()}
-									<div class="flex flex-row items-center w-full cursor-pointer">
+									<div class="flex w-full cursor-pointer flex-row items-center">
 										<h4 class="flex-grow">{group.name}</h4>
 										<Switch
 											name="group_enabled"
@@ -167,7 +164,10 @@
 											thumbActive="translate-x-5"
 											thumbInactive="translate-x-1"
 											checked={group.enabled}
-											onCheckedChange={(e) => {group.enabled = e.checked; disableGroup(group)}}
+											onCheckedChange={(e) => {
+												group.enabled = e.checked;
+												disableGroup(group);
+											}}
 										/>
 									</div>
 								{/snippet}
@@ -187,12 +187,11 @@
 		</div>
 	</Accordion>
 {:else}
-	<div class="flex flex-col items-center justify-center py-2 px-2 text-center">
+	<div class="flex flex-col items-center justify-center px-2 py-2 text-center">
 		<Icon icon="mdi:folder-off" class="text-surface-500 mb-3" width="48" height="48" />
-		<h3 class="text-xl font-medium text-surface-300 mb-2">No Playlist Groups Found</h3>
+		<h3 class="text-surface-300 mb-2 text-xl font-medium">No Playlist Groups Found</h3>
 	</div>
 {/if}
-
 
 <style>
 	#animate {

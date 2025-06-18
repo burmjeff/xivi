@@ -80,7 +80,7 @@ func (m *MockDB) GetTmplChannelsByGroup(groupId int64) ([]models.TemplateChannel
 	if !exists {
 		return channels, nil
 	}
-	
+
 	for _, id := range channelIDs {
 		if channel, exists := m.TmplChannels[id]; exists {
 			channels = append(channels, *channel)
@@ -112,7 +112,7 @@ func (m *MockDB) CreateTmplGroupChannel(groupChannel models.TemplateGroupChannel
 // DeleteTmplChannel deletes a template channel
 func (m *MockDB) DeleteTmplChannel(id int64) error {
 	delete(m.TmplChannels, id)
-	
+
 	// Also remove from group-channel mappings
 	for groupID, channelIDs := range m.GroupChannelMap {
 		var newChannelIDs []int64
@@ -123,7 +123,7 @@ func (m *MockDB) DeleteTmplChannel(id int64) error {
 		}
 		m.GroupChannelMap[groupID] = newChannelIDs
 	}
-	
+
 	return nil
 }
 
@@ -220,7 +220,7 @@ func (m *MockDB) CleanPlaylistChannels(ctx context.Context, id int64) error {
 			validGroupIDs = append(validGroupIDs, group.ID)
 		}
 	}
-	
+
 	for channelID, channel := range m.PlChannels {
 		isValid := false
 		for _, groupID := range validGroupIDs {
@@ -266,7 +266,7 @@ func (m *MockDB) AddTestData() {
 		UpdatedAt: time.Now(),
 	}
 	m.Playlists[playlist.ID] = playlist
-	
+
 	// Add a test playlist group
 	playlistGroup := &models.PlaylistGroup{
 		ID:         1,
@@ -275,7 +275,7 @@ func (m *MockDB) AddTestData() {
 		Enabled:    true,
 	}
 	m.PlaylistGroups[playlistGroup.ID] = playlistGroup
-	
+
 	// Add a test template group linked to the playlist group
 	dynamicGroupId := playlistGroup.ID
 	templateGroup := &models.TemplateGroup{
@@ -285,14 +285,14 @@ func (m *MockDB) AddTestData() {
 		DynamicGroup: &dynamicGroupId,
 	}
 	m.TemplateGroups[templateGroup.ID] = templateGroup
-	
+
 	// Add a test template
 	template := &models.Template{
 		ID:   1,
 		Name: "Test Template",
 	}
 	m.Templates[template.ID] = template
-	
+
 	// Add a test playlist channel
 	tvgID := "test-channel"
 	playlistChannel := &models.PlaylistChannel{
@@ -306,7 +306,7 @@ func (m *MockDB) AddTestData() {
 		UpdatedAt: time.Now(),
 	}
 	m.PlChannels[playlistChannel.ID] = playlistChannel
-	
+
 	// Add a test template channel
 	templateChannel := &models.TemplateChannel{
 		ID:     1,
@@ -316,7 +316,7 @@ func (m *MockDB) AddTestData() {
 		Uuid:   "test-uuid",
 	}
 	m.TmplChannels[templateChannel.ID] = templateChannel
-	
+
 	// Link the template channel to the template group
 	m.GroupChannelMap[templateGroup.ID] = []int64{templateChannel.ID}
 }

@@ -2,10 +2,7 @@
 <script lang="ts">
 	import TemplateChannel from './TemplateChannel.svelte';
 	import { onMount } from 'svelte';
-	import {
-		Accordion,
-		Modal
-	} from '@skeletonlabs/skeleton-svelte';
+	import { Accordion, Modal } from '@skeletonlabs/skeleton-svelte';
 	import { templates } from '@xivi/stores/template_store';
 	import { templateGroups } from '@xivi/stores/template_store';
 	import type { TemplateGroup } from '@xivi/data/template_entities';
@@ -24,8 +21,8 @@
 		useFloating,
 		useHover,
 		useInteractions,
-		useRole,
-	} from "@skeletonlabs/floating-ui-svelte";
+		useRole
+	} from '@skeletonlabs/floating-ui-svelte';
 
 	interface Props {
 		templateId: number;
@@ -162,17 +159,21 @@
 		onOpenChange: (v: boolean) => {
 			deleteTooltipOpen = v;
 		},
-		placement: "top",
+		placement: 'top',
 		get middleware() {
 			return [offset(10), floatingFlip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
 
 	// Interactions for delete tooltip
-	const deleteTooltipRole = useRole(deleteTooltipFloating.context, { role: "tooltip" });
+	const deleteTooltipRole = useRole(deleteTooltipFloating.context, { role: 'tooltip' });
 	const deleteTooltipHover = useHover(deleteTooltipFloating.context, { move: false });
 	const deleteTooltipDismiss = useDismiss(deleteTooltipFloating.context);
-	const deleteTooltipInteractions = useInteractions([deleteTooltipRole, deleteTooltipHover, deleteTooltipDismiss]);
+	const deleteTooltipInteractions = useInteractions([
+		deleteTooltipRole,
+		deleteTooltipHover,
+		deleteTooltipDismiss
+	]);
 </script>
 
 <div id="accord" class="templategroups-viewport min-w-full overflow-auto">
@@ -190,37 +191,45 @@
 			>
 				{#if $templates[templateIdx].groups.length > 0}
 					{#each $templates[templateIdx].groups as group, groupIdx (group.id)}
-						<div id="animate" class="card shadow-md mb-1" animate:flip={{ duration: flipDurationMs }}>
+						<div
+							id="animate"
+							class="card mb-1 shadow-md"
+							animate:flip={{ duration: flipDurationMs }}
+						>
 							<Accordion.Item value={group.name}>
 								{#snippet control()}
-										<div class="flex flex-row items-center w-full cursor-pointer">
-											<h4 class="text-lg flex-grow">{group.name}</h4>
-											<div class="flex flex-row gap-1">
-												<button
-													class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
-													onclick={(e) => {
-														e.stopPropagation();
-														deletePrompt(group.id);
-													}}
-													bind:this={deleteTooltipFloating.elements.reference}
-													{...deleteTooltipInteractions.getReferenceProps()}
-												>
-													<Icon icon="icon-park-outline:delete" width="18" height="18" />
-													{#if deleteTooltipOpen}
-														<div
-															bind:this={deleteTooltipFloating.elements.floating}
-															style={deleteTooltipFloating.floatingStyles}
-															{...deleteTooltipInteractions.getFloatingProps()}
-															class="floating glass card p-2 shadow-lg"
-															transition:fade={{ duration: 200 }}
-														>
-															<p class="text-sm font-medium"><strong>Remove Group</strong></p>
-															<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#1e293b" />
-														</div>
-													{/if}
-												</button>
-											</div>
+									<div class="flex w-full cursor-pointer flex-row items-center">
+										<h4 class="flex-grow text-lg">{group.name}</h4>
+										<div class="flex flex-row gap-1">
+											<button
+												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+												onclick={(e) => {
+													e.stopPropagation();
+													deletePrompt(group.id);
+												}}
+												bind:this={deleteTooltipFloating.elements.reference}
+												{...deleteTooltipInteractions.getReferenceProps()}
+											>
+												<Icon icon="icon-park-outline:delete" width="18" height="18" />
+												{#if deleteTooltipOpen}
+													<div
+														bind:this={deleteTooltipFloating.elements.floating}
+														style={deleteTooltipFloating.floatingStyles}
+														{...deleteTooltipInteractions.getFloatingProps()}
+														class="floating glass card p-2 shadow-lg"
+														transition:fade={{ duration: 200 }}
+													>
+														<p class="text-sm font-medium"><strong>Remove Group</strong></p>
+														<FloatingArrow
+															bind:ref={elemArrow}
+															context={deleteTooltipFloating.context}
+															fill="#1e293b"
+														/>
+													</div>
+												{/if}
+											</button>
 										</div>
+									</div>
 								{/snippet}
 								{#snippet panel()}
 									<TemplateChannel groupId={group.id} {groupIdx} />
@@ -234,10 +243,12 @@
 						</div>
 					{/each}
 				{:else}
-					<div class="flex flex-col items-center justify-center py-2 px-2 text-center">
+					<div class="flex flex-col items-center justify-center px-2 py-2 text-center">
 						<Icon icon="mdi:folder-off" class="text-surface-500 mb-3" width="36" height="36" />
-						<h4 class="text-lg font-medium text-surface-300 mb-2">No Groups Found</h4>
-						<p class="text-surface-400 text-sm max-w-md">Add groups to this template to organize your channels.</p>
+						<h4 class="text-surface-300 mb-2 text-lg font-medium">No Groups Found</h4>
+						<p class="text-surface-400 max-w-md text-sm">
+							Add groups to this template to organize your channels.
+						</p>
 					</div>
 				{/if}
 			</section>
@@ -257,7 +268,9 @@
 		<header class="text-2xl font-bold">Please Confirm</header>
 		<article>Are you sure you wish to remove this group from template?</article>
 		<footer class="flex justify-end space-x-2">
-			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
+			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}
+				>Cancel</button
+			>
 			<button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
 		</footer>
 	{/snippet}

@@ -3,10 +3,7 @@
 	import TemplateGroup from './TemplateGroup.svelte';
 	import TemplateSettings from './modals/TemplateSettings.svelte';
 	import { onMount } from 'svelte';
-	import {
-		Accordion,
-		Modal
-	} from '@skeletonlabs/skeleton-svelte';
+	import { Accordion, Modal } from '@skeletonlabs/skeleton-svelte';
 	import {
 		FloatingArrow,
 		arrow,
@@ -17,8 +14,8 @@
 		useFloating,
 		useHover,
 		useInteractions,
-		useRole,
-	} from "@skeletonlabs/floating-ui-svelte";
+		useRole
+	} from '@skeletonlabs/floating-ui-svelte';
 	import { templates } from '@xivi/stores/template_store';
 	import Icon from '@iconify/svelte';
 	import { fade } from 'svelte/transition';
@@ -56,10 +53,10 @@
 		onOpenChange: (v) => {
 			templateSettingsOpen = v;
 		},
-		placement: "top",
+		placement: 'top',
 		get middleware() {
 			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
 
 	// Floating UI setup for add template tooltip
@@ -71,17 +68,21 @@
 		onOpenChange: (v) => {
 			addTemplateTooltipOpen = v;
 		},
-		placement: "top",
+		placement: 'top',
 		get middleware() {
 			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
 
 	// Interactions for add template tooltip
-	const addTemplateTooltipRole = useRole(addTemplateTooltipFloating.context, { role: "tooltip" });
+	const addTemplateTooltipRole = useRole(addTemplateTooltipFloating.context, { role: 'tooltip' });
 	const addTemplateTooltipHover = useHover(addTemplateTooltipFloating.context, { move: false });
 	const addTemplateTooltipDismiss = useDismiss(addTemplateTooltipFloating.context);
-	const addTemplateTooltipInteractions = useInteractions([addTemplateTooltipRole, addTemplateTooltipHover, addTemplateTooltipDismiss]);
+	const addTemplateTooltipInteractions = useInteractions([
+		addTemplateTooltipRole,
+		addTemplateTooltipHover,
+		addTemplateTooltipDismiss
+	]);
 
 	// Floating UI setup for edit tooltip
 	const editTooltipFloating = useFloating({
@@ -92,17 +93,21 @@
 		onOpenChange: (v) => {
 			editTooltipOpen = v;
 		},
-		placement: "top",
+		placement: 'top',
 		get middleware() {
 			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
 
 	// Interactions for edit tooltip
-	const editTooltipRole = useRole(editTooltipFloating.context, { role: "tooltip" });
+	const editTooltipRole = useRole(editTooltipFloating.context, { role: 'tooltip' });
 	const editTooltipHover = useHover(editTooltipFloating.context, { move: false });
 	const editTooltipDismiss = useDismiss(editTooltipFloating.context);
-	const editTooltipInteractions = useInteractions([editTooltipRole, editTooltipHover, editTooltipDismiss]);
+	const editTooltipInteractions = useInteractions([
+		editTooltipRole,
+		editTooltipHover,
+		editTooltipDismiss
+	]);
 
 	// Floating UI setup for delete tooltip
 	const deleteTooltipFloating = useFloating({
@@ -113,17 +118,21 @@
 		onOpenChange: (v) => {
 			deleteTooltipOpen = v;
 		},
-		placement: "top",
+		placement: 'top',
 		get middleware() {
 			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
 
 	// Interactions for delete tooltip
-	const deleteTooltipRole = useRole(deleteTooltipFloating.context, { role: "tooltip" });
+	const deleteTooltipRole = useRole(deleteTooltipFloating.context, { role: 'tooltip' });
 	const deleteTooltipHover = useHover(deleteTooltipFloating.context, { move: false });
 	const deleteTooltipDismiss = useDismiss(deleteTooltipFloating.context);
-	const deleteTooltipInteractions = useInteractions([deleteTooltipRole, deleteTooltipHover, deleteTooltipDismiss]);
+	const deleteTooltipInteractions = useInteractions([
+		deleteTooltipRole,
+		deleteTooltipHover,
+		deleteTooltipDismiss
+	]);
 
 	function modalTemplate(isNew: boolean, id: number, name: string) {
 		isNewTemplate = isNew;
@@ -217,9 +226,11 @@
 	}
 </script>
 
-<section class="templates w-full h-full p-1">
-	<header class="templates-header flex items-center justify-center p-1 border-b border-surface-700/30">
-		<h4 class="h4 font-bold text-primary-400">Templates</h4>
+<section class="templates h-full w-full p-1">
+	<header
+		class="templates-header border-surface-700/30 flex items-center justify-center border-b p-1"
+	>
+		<h4 class="h4 text-primary-400 font-bold">Templates</h4>
 		<button
 			class="btn btn-md self-start"
 			onclick={() => modalTemplate(true, 0, '')}
@@ -236,7 +247,11 @@
 					transition:fade={{ duration: 200 }}
 				>
 					<p class="text-sm font-medium"><strong>Create a new template</strong></p>
-					<FloatingArrow bind:ref={elemArrow} context={addTemplateTooltipFloating.context} fill="#1e293b" />
+					<FloatingArrow
+						bind:ref={elemArrow}
+						context={addTemplateTooltipFloating.context}
+						fill="#1e293b"
+					/>
 				</div>
 			{/if}
 		</button>
@@ -245,11 +260,11 @@
 		{#if $templates.length > 0}
 			<Accordion value={accordionItem} onValueChange={(e) => (accordionItem = e.value)} collapsible>
 				{#each $templates as template, templateIdx (template.id)}
-					<div class="card shadow-md mb-1">
-						<Accordion.Item value={template.name} >
+					<div class="card mb-1 shadow-md">
+						<Accordion.Item value={template.name}>
 							{#snippet control()}
-								<div class="flex flex-row items-center w-full cursor-pointer">
-									<h4 class="align-middle text-lg flex-grow">{template.name}</h4>
+								<div class="flex w-full cursor-pointer flex-row items-center">
+									<h4 class="flex-grow align-middle text-lg">{template.name}</h4>
 									<div class="flex flex-row gap-1">
 										<button
 											class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
@@ -270,14 +285,18 @@
 													transition:fade={{ duration: 200 }}
 												>
 													<p class="text-sm font-medium"><strong>Edit Template</strong></p>
-													<FloatingArrow bind:ref={elemArrow} context={editTooltipFloating.context} fill="#1e293b" />
+													<FloatingArrow
+														bind:ref={elemArrow}
+														context={editTooltipFloating.context}
+														fill="#1e293b"
+													/>
 												</div>
 											{/if}
 										</button>
 										<button
 											class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
 											onclick={(e) => {
-												deletePrompt(template.id)
+												deletePrompt(template.id);
 												e.stopPropagation();
 											}}
 											bind:this={deleteTooltipFloating.elements.reference}
@@ -293,7 +312,11 @@
 													transition:fade={{ duration: 200 }}
 												>
 													<p class="text-sm font-medium"><strong>Delete Template</strong></p>
-													<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#1e293b" />
+													<FloatingArrow
+														bind:ref={elemArrow}
+														context={deleteTooltipFloating.context}
+														fill="#1e293b"
+													/>
 												</div>
 											{/if}
 										</button>
@@ -308,10 +331,12 @@
 				{/each}
 			</Accordion>
 		{:else}
-			<div class="flex flex-col items-center justify-center py-2 px-2 text-center">
+			<div class="flex flex-col items-center justify-center px-2 py-2 text-center">
 				<Icon icon="mdi:folder-off" class="text-surface-500 mb-3" width="48" height="48" />
-				<h3 class="text-xl font-medium text-surface-300 mb-2">No Templates Found</h3>
-				<p class="text-surface-400 max-w-md">Create your first template by clicking the "Create Template" button above.</p>
+				<h3 class="text-surface-300 mb-2 text-xl font-medium">No Templates Found</h3>
+				<p class="text-surface-400 max-w-md">
+					Create your first template by clicking the "Create Template" button above.
+				</p>
 			</div>
 		{/if}
 	</div>
@@ -347,7 +372,9 @@
 		<header class="text-2xl font-bold">Please Confirm</header>
 		<article>Are you sure you wish to delete this template?</article>
 		<footer class="flex justify-end space-x-2">
-			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}>Cancel</button>
+			<button class="btn preset-outlined-surface-500" onclick={() => handleDeleteClose(false)}
+				>Cancel</button
+			>
 			<button class="btn preset-tonal-error" onclick={() => handleDeleteClose(true)}>Delete</button>
 		</footer>
 	{/snippet}

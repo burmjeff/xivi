@@ -6,19 +6,19 @@
 	import Icon from '@iconify/svelte';
 	import { Modal } from '@skeletonlabs/skeleton-svelte';
 	import {
-	FloatingArrow,
-	arrow,
-	autoUpdate,
-	flip,
-	offset,
-	useDismiss,
-	useFloating,
-	useHover,
-	useClick,
-	useInteractions,
-	useRole,
-	} from "@skeletonlabs/floating-ui-svelte";
-	import { fade } from "svelte/transition";
+		FloatingArrow,
+		arrow,
+		autoUpdate,
+		flip,
+		offset,
+		useDismiss,
+		useFloating,
+		useHover,
+		useClick,
+		useInteractions,
+		useRole
+	} from '@skeletonlabs/floating-ui-svelte';
+	import { fade } from 'svelte/transition';
 
 	const updateEpgs = async () => {
 		const response = await fetch('/api/epgs');
@@ -43,8 +43,8 @@
 	let refreshingEpgId = $state<number | null>(null);
 
 	let currentEpgIdx: number;
-	let editType: string = $state("");
-	let editValue: string = $state("");
+	let editType: string = $state('');
+	let editValue: string = $state('');
 	let epgToDelete: number | null = null;
 
 	// Format date to YYYY-MM-DD HH:MM
@@ -67,10 +67,10 @@
 		onOpenChange: (v) => {
 			tooltipopen = v;
 		},
-		placement: "top",
+		placement: 'top',
 		get middleware() {
 			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
 	const addFloating = useFloating({
 		whileElementsMounted: autoUpdate,
@@ -80,14 +80,14 @@
 		onOpenChange: (v) => {
 			addOpen = v;
 		},
-		placement: "top",
+		placement: 'top',
 		get middleware() {
 			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
 
 	// Interactions
-	const tooltipRole = useRole(tooltipFloating.context, { role: "tooltip" });
+	const tooltipRole = useRole(tooltipFloating.context, { role: 'tooltip' });
 	const tooltipHover = useHover(tooltipFloating.context, { move: false });
 	const tooltipDismiss = useDismiss(tooltipFloating.context);
 	const tooltipInteractions = useInteractions([tooltipRole, tooltipHover, tooltipDismiss]);
@@ -106,17 +106,21 @@
 		onOpenChange: (v) => {
 			editNameTooltipOpen = v;
 		},
-		placement: "top",
+		placement: 'top',
 		get middleware() {
 			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
 
 	// Interactions for edit name tooltip
-	const editNameTooltipRole = useRole(editNameTooltipFloating.context, { role: "tooltip" });
+	const editNameTooltipRole = useRole(editNameTooltipFloating.context, { role: 'tooltip' });
 	const editNameTooltipHover = useHover(editNameTooltipFloating.context, { move: false });
 	const editNameTooltipDismiss = useDismiss(editNameTooltipFloating.context);
-	const editNameTooltipInteractions = useInteractions([editNameTooltipRole, editNameTooltipHover, editNameTooltipDismiss]);
+	const editNameTooltipInteractions = useInteractions([
+		editNameTooltipRole,
+		editNameTooltipHover,
+		editNameTooltipDismiss
+	]);
 
 	// Floating UI setup for edit URL tooltip
 	const editUrlTooltipFloating = useFloating({
@@ -127,17 +131,21 @@
 		onOpenChange: (v) => {
 			editUrlTooltipOpen = v;
 		},
-		placement: "top",
+		placement: 'top',
 		get middleware() {
 			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
 
 	// Interactions for edit URL tooltip
-	const editUrlTooltipRole = useRole(editUrlTooltipFloating.context, { role: "tooltip" });
+	const editUrlTooltipRole = useRole(editUrlTooltipFloating.context, { role: 'tooltip' });
 	const editUrlTooltipHover = useHover(editUrlTooltipFloating.context, { move: false });
 	const editUrlTooltipDismiss = useDismiss(editUrlTooltipFloating.context);
-	const editUrlTooltipInteractions = useInteractions([editUrlTooltipRole, editUrlTooltipHover, editUrlTooltipDismiss]);
+	const editUrlTooltipInteractions = useInteractions([
+		editUrlTooltipRole,
+		editUrlTooltipHover,
+		editUrlTooltipDismiss
+	]);
 
 	// Floating UI setup for delete tooltip
 	const deleteTooltipFloating = useFloating({
@@ -148,17 +156,21 @@
 		onOpenChange: (v) => {
 			deleteTooltipOpen = v;
 		},
-		placement: "top",
+		placement: 'top',
 		get middleware() {
 			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
 
 	// Interactions for delete tooltip
-	const deleteTooltipRole = useRole(deleteTooltipFloating.context, { role: "tooltip" });
+	const deleteTooltipRole = useRole(deleteTooltipFloating.context, { role: 'tooltip' });
 	const deleteTooltipHover = useHover(deleteTooltipFloating.context, { move: false });
 	const deleteTooltipDismiss = useDismiss(deleteTooltipFloating.context);
-	const deleteTooltipInteractions = useInteractions([deleteTooltipRole, deleteTooltipHover, deleteTooltipDismiss]);
+	const deleteTooltipInteractions = useInteractions([
+		deleteTooltipRole,
+		deleteTooltipHover,
+		deleteTooltipDismiss
+	]);
 
 	// Floating UI setup for refresh tooltip
 	const refreshTooltipFloating = useFloating({
@@ -169,17 +181,21 @@
 		onOpenChange: (v) => {
 			refreshTooltipOpen = v;
 		},
-		placement: "top",
+		placement: 'top',
 		get middleware() {
 			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
 
 	// Interactions for refresh tooltip
-	const refreshTooltipRole = useRole(refreshTooltipFloating.context, { role: "tooltip" });
+	const refreshTooltipRole = useRole(refreshTooltipFloating.context, { role: 'tooltip' });
 	const refreshTooltipHover = useHover(refreshTooltipFloating.context, { move: false });
 	const refreshTooltipDismiss = useDismiss(refreshTooltipFloating.context);
-	const refreshTooltipInteractions = useInteractions([refreshTooltipRole, refreshTooltipHover, refreshTooltipDismiss]);
+	const refreshTooltipInteractions = useInteractions([
+		refreshTooltipRole,
+		refreshTooltipHover,
+		refreshTooltipDismiss
+	]);
 
 	function handleConfirm() {
 		if (editValue) {
@@ -221,7 +237,7 @@
 	}
 
 	function editPrompt(epgIdx: number, type: string): void {
-		let initialValue = type === "name" ? $epgs[epgIdx].name : $epgs[epgIdx].url;
+		let initialValue = type === 'name' ? $epgs[epgIdx].name : $epgs[epgIdx].url;
 		editModalOpen = true;
 		currentEpgIdx = epgIdx;
 		editType = type;
@@ -229,22 +245,22 @@
 	}
 
 	function deletePrompt(epgId: number): void {
-        epgToDelete = epgId;
-        deleteModalOpen = true;
-    }
+		epgToDelete = epgId;
+		deleteModalOpen = true;
+	}
 
 	function handleDelete() {
-        if (epgToDelete !== null) {
-            deleteEpg(epgToDelete);
-        }
-        deleteModalOpen = false;
-    }
+		if (epgToDelete !== null) {
+			deleteEpg(epgToDelete);
+		}
+		deleteModalOpen = false;
+	}
 
 	async function editEpg(epgIdx: number, type: string, newValue: string) {
-		if (type == "name") {
-			$epgs[epgIdx].name = newValue
-		} else if (type == "url") {
-			$epgs[epgIdx].url = newValue
+		if (type == 'name') {
+			$epgs[epgIdx].name = newValue;
+		} else if (type == 'url') {
+			$epgs[epgIdx].url = newValue;
 		}
 
 		try {
@@ -262,7 +278,6 @@
 			} else {
 				console.error('Error:', response.status, response.statusText);
 			}
-
 		} catch (error) {
 			console.log('Error updating epg:', error);
 		}
@@ -313,9 +328,9 @@
 	}
 </script>
 
-<section class="epgs w-full h-full p-1">
-	<header class="epgs-header flex items-center justify-center p-1 border-b border-surface-700/30">
-		<h4 class="h4 font-bold text-primary-400">Epgs</h4>
+<section class="epgs h-full w-full p-1">
+	<header class="epgs-header border-surface-700/30 flex items-center justify-center border-b p-1">
+		<h4 class="h4 text-primary-400 font-bold">Epgs</h4>
 		<button
 			class="btn btn-md self-start"
 			bind:this={tooltipFloating.elements.reference}
@@ -370,7 +385,7 @@
 	</header>
 	<div id="accord" class="epgs-viewport min-w-full overflow-auto">
 		{#if $epgs != null}
-			<table class="epgTable table ">
+			<table class="epgTable table">
 				<thead>
 					<tr>
 						<th class="text-center">Name</th>
@@ -390,7 +405,7 @@
 										<button
 											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
 											onclick={() => {
-												editPrompt(epgIdx, "name");
+												editPrompt(epgIdx, 'name');
 											}}
 											bind:this={editNameTooltipFloating.elements.reference}
 											{...editNameTooltipInteractions.getReferenceProps()}
@@ -405,7 +420,11 @@
 													transition:fade={{ duration: 200 }}
 												>
 													<p class="text-sm font-medium"><strong>Edit EPG Name</strong></p>
-													<FloatingArrow bind:ref={elemArrow} context={editNameTooltipFloating.context} fill="#1e293b" />
+													<FloatingArrow
+														bind:ref={elemArrow}
+														context={editNameTooltipFloating.context}
+														fill="#1e293b"
+													/>
 												</div>
 											{/if}
 										</button>
@@ -417,7 +436,7 @@
 										<button
 											class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
 											onclick={() => {
-												editPrompt(epgIdx, "url");
+												editPrompt(epgIdx, 'url');
 											}}
 											bind:this={editUrlTooltipFloating.elements.reference}
 											{...editUrlTooltipInteractions.getReferenceProps()}
@@ -432,7 +451,11 @@
 													transition:fade={{ duration: 200 }}
 												>
 													<p class="text-sm font-medium"><strong>Edit EPG URL</strong></p>
-													<FloatingArrow bind:ref={elemArrow} context={editUrlTooltipFloating.context} fill="#1e293b" />
+													<FloatingArrow
+														bind:ref={elemArrow}
+														context={editUrlTooltipFloating.context}
+														fill="#1e293b"
+													/>
 												</div>
 											{/if}
 										</button>
@@ -441,7 +464,7 @@
 								<td>
 									{formatDateTime(epg.updated_at)}
 								</td>
-								<td class="justify-center items-center">
+								<td class="items-center justify-center">
 									<button
 										class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
 										onclick={() => {
@@ -462,12 +485,16 @@
 												transition:fade={{ duration: 200 }}
 											>
 												<p class="text-sm font-medium"><strong>Refresh EPG</strong></p>
-												<FloatingArrow bind:ref={elemArrow} context={refreshTooltipFloating.context} fill="#1e293b" />
+												<FloatingArrow
+													bind:ref={elemArrow}
+													context={refreshTooltipFloating.context}
+													fill="#1e293b"
+												/>
 											</div>
 										{/if}
 									</button>
 								</td>
-								<td class="justify-center items-center">
+								<td class="items-center justify-center">
 									<button
 										class="btn-icon btn-icon-sm inset-y-0 bg-transparent!"
 										onclick={() => {
@@ -486,7 +513,11 @@
 												transition:fade={{ duration: 200 }}
 											>
 												<p class="text-sm font-medium"><strong>Delete EPG</strong></p>
-												<FloatingArrow bind:ref={elemArrow} context={deleteTooltipFloating.context} fill="#1e293b" />
+												<FloatingArrow
+													bind:ref={elemArrow}
+													context={deleteTooltipFloating.context}
+													fill="#1e293b"
+												/>
 											</div>
 										{/if}
 									</button>
@@ -509,35 +540,34 @@
 	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
 	backdropClasses="backdrop-blur-sm"
 >
-  	{#snippet trigger()}{/snippet}
-  	{#snippet content()}
+	{#snippet trigger()}{/snippet}
+	{#snippet content()}
 		<header class="flex justify-between">
 			<h2 class="h2">Edit EPG {editType}</h2>
 		</header>
 		<article>
 			<label class="label">
 				<span>New {editType}</span>
-				<input
-					class="input"
-					type="text"
-					bind:value={editValue}
-					placeholder="Enter new value"
-				/>
+				<input class="input" type="text" bind:value={editValue} placeholder="Enter new value" />
 			</label>
 		</article>
 		<footer class="flex justify-end gap-4">
-			<button type="button" class="btn preset-outlined-surface-500" onclick={editModalClose}>Cancel</button>
-			<button type="button" class="btn preset-filled-primary-500" onclick={handleConfirm}>Save</button>
+			<button type="button" class="btn preset-outlined-surface-500" onclick={editModalClose}
+				>Cancel</button
+			>
+			<button type="button" class="btn preset-filled-primary-500" onclick={handleConfirm}
+				>Save</button
+			>
 		</footer>
- 	{/snippet}
+	{/snippet}
 </Modal>
 
 <Modal
 	open={deleteModalOpen}
-    onOpenChange={(e) => (deleteModalOpen = e.open)}
-    triggerBase="btn preset-tonal"
-  	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
-  	backdropClasses="backdrop-blur-sm"
+	onOpenChange={(e) => (deleteModalOpen = e.open)}
+	triggerBase="btn preset-tonal"
+	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	backdropClasses="backdrop-blur-sm"
 >
 	{#snippet trigger()}{/snippet}
 	{#snippet content()}
@@ -545,12 +575,14 @@
 			<h2 class="h2">Confirm Delete</h2>
 		</header>
 		<article>
-			<p class="opacity-60">
-				Are you sure you wish to delete this EPG?
-			</p>
+			<p class="opacity-60">Are you sure you wish to delete this EPG?</p>
 		</article>
 		<footer class="flex justify-end gap-4">
-			<button type="button" class="btn preset-outlined-surface-500" onclick={() => deleteModalOpen = false}>Cancel</button>
+			<button
+				type="button"
+				class="btn preset-outlined-surface-500"
+				onclick={() => (deleteModalOpen = false)}>Cancel</button
+			>
 			<button type="button" class="btn preset-tonal-error" onclick={handleDelete}>Delete</button>
 		</footer>
 	{/snippet}

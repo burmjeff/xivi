@@ -2,12 +2,7 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte';
-
-	// Note: Svelte components don't need default exports
-	// They are automatically exported
-	import {
-		Switch,
-		Combobox } from '@skeletonlabs/skeleton-svelte';
+	import { Switch, Combobox } from '@skeletonlabs/skeleton-svelte';
 	import { playlists } from '@xivi/stores/playlist_store';
 	import type { PlaylistGroup } from '@xivi/data/playlist_entities';
 	import {
@@ -20,14 +15,14 @@
 		useFloating,
 		useHover,
 		useInteractions,
-		useRole,
-	} from "@skeletonlabs/floating-ui-svelte";
-	import { fade } from "svelte/transition";
+		useRole
+	} from '@skeletonlabs/floating-ui-svelte';
+	import { fade } from 'svelte/transition';
 
 	const { parent, isNew, name, dynamic, dynamicgroup } = $props();
 
 	// Initialize with empty string array for the Combobox, similar to ChannelSettings.svelte
-	let selectedOption = $state([""]);
+	let selectedOption = $state(['']);
 
 	// Log initial values in onMount to avoid state reference issues
 
@@ -55,13 +50,13 @@
 		formData = {
 			name: name,
 			dynamic: dynamic,
-			dynamicgroup: dynamicgroup,
+			dynamicgroup: dynamicgroup
 		};
 	} else {
 		formData = {
-			name: "",
+			name: '',
 			dynamic: false,
-			dynamicgroup: 0,
+			dynamicgroup: 0
 		};
 	}
 
@@ -108,20 +103,25 @@
 		onOpenChange: (v) => {
 			tooltipOpen = v;
 		},
-		placement: "top",
+		placement: 'top',
 		get middleware() {
 			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		},
+		}
 	});
 
 	// Interactions
-	const tooltipRole = useRole(tooltipFloating.context, { role: "tooltip" });
+	const tooltipRole = useRole(tooltipFloating.context, { role: 'tooltip' });
 	const tooltipHover = useHover(tooltipFloating.context, { move: false });
 	const tooltipDismiss = useDismiss(tooltipFloating.context);
 	const tooltipInteractions = useInteractions([tooltipRole, tooltipHover, tooltipDismiss]);
 
 	onMount(async () => {
-		console.log('GroupSettings onMount called with dynamic:', dynamic, 'dynamicgroup:', dynamicgroup);
+		console.log(
+			'GroupSettings onMount called with dynamic:',
+			dynamic,
+			'dynamicgroup:',
+			dynamicgroup
+		);
 		if ($playlists.length == 0) {
 			playlists.set(await updatePlaylists());
 		}
@@ -168,8 +168,8 @@
 					.map((group) => {
 						// Create a unique label by adding the group ID to ensure uniqueness
 						return {
-							label: `${$playlists[i].name} - ${group.name}`,// (ID: ${group.id})`,
-							value: group.id,
+							label: `${$playlists[i].name} - ${group.name}`, // (ID: ${group.id})`,
+							value: group.id
 						};
 					});
 
@@ -184,8 +184,6 @@
 		console.log('Setting initial dynamicgroup value:', formData.dynamicgroup);
 		console.log('Dynamic options available:', dynamicOptions);
 
-		// The issue is that dynamicOptions is empty at this point, even though we've added items to it
-		// Let's use setTimeout to ensure all reactivity updates have been processed
 		setTimeout(() => {
 			console.log('In setTimeout - Dynamic options available:', dynamicOptions);
 
@@ -202,7 +200,6 @@
 		}, 100); // Small delay to ensure dynamicOptions is populated
 
 		console.log(`Final dynamicOptions count: ${dynamicOptions.length}`);
-
 	});
 
 	async function onFormSubmit(): Promise<void> {
@@ -210,7 +207,7 @@
 		console.log('Selected option at form submit:', selectedOption);
 
 		if (formData.dynamic) {
-			if (selectedOption.length == 0 || selectedOption[0] === "") {
+			if (selectedOption.length == 0 || selectedOption[0] === '') {
 				console.log('No option selected, disabling dynamic group');
 				formData.dynamic = false;
 				formData.dynamicgroup = 0;
@@ -226,24 +223,20 @@
 	}
 
 	function onCancel(): void {
-        console.log('Cancel button clicked');
-        parent.onClose();
-    }
-
-
+		console.log('Cancel button clicked');
+		parent.onClose();
+	}
 </script>
 
 <div class="modal-group">
 	{#if isNew}
-		<header class="text-center text-2xl font-bold mb26">Add Group</header>
+		<header class="mb26 text-center text-2xl font-bold">Add Group</header>
 	{:else}
-		<header class="text-center text-2xl font-bold mb-2">Modify Group</header>
+		<header class="mb-2 text-center text-2xl font-bold">Modify Group</header>
 	{/if}
 	<div class="space-y-4">
 		<div class="form-group">
-			<label class="block text-sm font-medium mb-2" for="group_name">
-				Template Group Name
-			</label>
+			<label class="mb-2 block text-sm font-medium" for="group_name"> Template Group Name </label>
 			<input
 				id="group_name"
 				class="input w-full"
@@ -257,7 +250,7 @@
 		<div class="form-section">
 			<div class="form-row">
 				<div class="form-group-inline" bind:this={tooltipFloating.elements.reference}>
-					<label class="text-sm font-medium">Dynamic Group</label>
+					<span class="text-sm font-medium">Dynamic Group</span>
 					<Switch
 						name="dynamic"
 						base="flex"
@@ -275,33 +268,39 @@
 
 				<div class="form-group flex-1">
 					{#if formData.dynamic}
-						<label class="block text-sm font-medium mb-2">Select Playlist Group</label>
-						{#if dynamicOptions.length > 0}
-							<Combobox
-								data={dynamicOptions}
-								value={selectedOption}
-								defaultValue={selectedOption}
-								onValueChange={(e) => (selectedOption = e.value)}
-								label=""
-								placeholder="Select or type..."
-								positioning={{
-									placement: 'bottom-start',
-									flip: false,
-									overflowPadding: 8,
-									fitViewport: true
-								}}
-								contentBase="max-h-48 glass card overflow-y-auto p-2 shadow-lg"
+						<div class="combobox-wrapper">
+							<span id="playlist-group-label" class="mb-2 block text-sm font-medium"
+								>Select Playlist Group</span
 							>
-							{#snippet item(item: {label: string; value: string})}
-								<div class="flex w-full justify-between space-x-2">
-									<span>{item.label}</span>
+							{#if dynamicOptions.length > 0}
+								<Combobox
+									data={dynamicOptions}
+									value={selectedOption}
+									defaultValue={selectedOption}
+									onValueChange={(e) => (selectedOption = e.value)}
+									label=""
+									placeholder="Select or type..."
+									positioning={{
+										placement: 'bottom-start',
+										flip: false,
+										overflowPadding: 8,
+										fitViewport: true
+									}}
+									contentBase="max-h-48 glass card overflow-y-auto p-2 shadow-lg"
+								>
+									{#snippet item(item: { label: string; value: string })}
+										<div class="flex w-full justify-between space-x-2">
+											<span>{item.label}</span>
+										</div>
+									{/snippet}
+								</Combobox>
+							{:else}
+								<div class="input bg-surface-700/30 p-2 text-gray-500">
+									No playlist groups available
 								</div>
-							{/snippet}
-						</Combobox>
-					{:else}
-						<div class="input p-2 text-gray-500 bg-surface-700/30">No playlist groups available</div>
+							{/if}
+						</div>
 					{/if}
-				{/if}
 				</div>
 			</div>
 		</div>
@@ -311,7 +310,7 @@
 				bind:this={tooltipFloating.elements.floating}
 				style={tooltipFloating.floatingStyles}
 				{...tooltipInteractions.getFloatingProps()}
-				class="floating glass card p-2 shadow-lg z-50"
+				class="floating glass card z-50 p-2 shadow-lg"
 				transition:fade={{ duration: 200 }}
 			>
 				<p class="text-sm font-medium">
@@ -321,13 +320,9 @@
 			</div>
 		{/if}
 
-		<footer class="modal-footer flex justify-end gap-4 pt-4 border-t border-surface-600">
-			<button class="btn preset-outlined-surface-500 min-w-20" onclick={onCancel}>
-				Cancel
-			</button>
-			<button class="btn preset-filled-primary-500 min-w-20" onclick={onFormSubmit}>
-				Save
-			</button>
+		<footer class="modal-footer border-surface-600 flex justify-end gap-4 border-t pt-4">
+			<button class="btn preset-outlined-surface-500 min-w-20" onclick={onCancel}> Cancel </button>
+			<button class="btn preset-filled-primary-500 min-w-20" onclick={onFormSubmit}> Save </button>
 		</footer>
 	</div>
 </div>
@@ -378,7 +373,7 @@
 		min-width: 120px;
 	}
 
-	.form-group-inline label {
+	.form-group-inline span {
 		font-size: 0.875rem;
 		font-weight: 500;
 		color: var(--color-surface-200);

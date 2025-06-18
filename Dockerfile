@@ -61,7 +61,7 @@ gstreamer1.0-plugins-ugly \
 curl
 
 # Install ONNX Runtime
-RUN curl -L https://github.com/microsoft/onnxruntime/releases/download/v1.21.0/onnxruntime-linux-x64-1.21.0.tgz -o /tmp/onnxruntime.tgz && \
+RUN curl -L https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz -o /tmp/onnxruntime.tgz && \
     mkdir -p /usr/local/onnxruntime && \
     tar -xzf /tmp/onnxruntime.tgz -C /usr/local/onnxruntime --strip-components=1 && \
     rm /tmp/onnxruntime.tgz
