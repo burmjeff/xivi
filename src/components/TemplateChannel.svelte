@@ -28,8 +28,9 @@
 	let dndTypeChannels = 'channels';
 	let dndItem: TemplateChannel;
 	let dndIdx: number;
-	let shouldIgnoreDndEvents = false;
+	let shouldIgnoreDndEvents = $state(false);
 	const flipDurationMs = 150;
+	let isDragFromHandle = $state(false);
 
 	const updateTemplateChannels = async () => {
 		const response = await fetch(`/api/template/group/${groupId}/channels`);
@@ -151,13 +152,24 @@
 		}
 	}
 	function transformDraggedElement(
-		draggedEl: HTMLElement | undefined,
+		_draggedEl: HTMLElement | undefined,
 		data: Item | undefined,
-		index: number | undefined
+		_index: number | undefined
 	) {
 		if (!shouldIgnoreDndEvents) {
 			data!.isDragged = true;
 		}
+	}
+
+	// Reset drag state on global mouse up to handle edge cases
+	function handleGlobalMouseUp() {
+		isDragFromHandle = false;
+	}
+
+	// Add global event listener
+	if (typeof window !== 'undefined') {
+		window.addEventListener('mouseup', handleGlobalMouseUp);
+		window.addEventListener('pointerup', handleGlobalMouseUp);
 	}
 </script>
 
@@ -165,6 +177,7 @@
 	<table class="templateChannel table">
 		<thead>
 			<tr>
+				<th class="text-center">Drag</th>
 				<th class="text-center">Logo</th>
 				<th class="text-center">Name</th>
 				<th class="text-center">tvg-id</th>
@@ -175,7 +188,8 @@
 				items: $templateGroups[groupIdx].channels,
 				flipDurationMs,
 				type: dndTypeChannels,
-				transformDraggedElement
+				transformDraggedElement,
+				dragDisabled: !isDragFromHandle
 			}}
 			onconsider={handleDndConsider}
 			onfinalize={handleDndFinalize}
@@ -187,20 +201,32 @@
 						animate:flip={{ duration: flipDurationMs }}
 						onclick={() => modalSettings(channelIdx)}
 					>
+						<td>
+							<button
+								type="button"
+								class="drag-handle cursor-grab flex-shrink-0 px-2 py-1 hover:bg-surface-700/30 rounded btn-icon btn-icon-sm"
+								onclick={(e) => e.stopPropagation()}
+								onpointerdown={(e) => {
+									e.stopPropagation();
+									isDragFromHandle = true;
+									// Reset after a delay to allow drag to initiate
+									setTimeout(() => {
+										isDragFromHandle = false;
+									}, 100);
+								}}
+								aria-label="Drag to reorder"
+							>
+								<Icon icon="material-symbols:drag-indicator" width="16" height="16" class="text-surface-400" />
+							</button>
+						</td>
 						<td><img class="max-h-10 max-w-16" src={channel.logo} alt="Logo" /></td>
 						<td>{channel.name}</td>
 						<td>{channel.tvgid}</td>
 
-						{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
-							{#if channel.name}
-								<td in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
-									{channel.name}
-								</td>
-							{:else}
-								<td in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
-									{channel.name}
-								</td>
-							{/if}
+						{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME] && shouldIgnoreDndEvents}
+							<td in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
+								{channel.name}
+							</td>
 						{/if}
 					</tr>
 				{/each}
@@ -223,11 +249,9 @@
 <Modal
 	open={modalChannelOpen}
 	onOpenChange={(e) => (modalChannelOpen = e.open)}
-	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-100-900 shadow-xl"
 	backdropClasses="backdrop-blur-sm"
 >
-	{#snippet trigger()}{/snippet}
 	{#snippet content()}
 		<ChannelSettings
 			isNew={false}
@@ -260,5 +284,7 @@
 		background: lightblue;
 		opacity: 0.6;
 		margin: 0;
+		pointer-events: none; /* Prevent shadow items from being clickable */
+		z-index: 10; /* Ensure shadow items appear above other content */
 	}
 </style>

@@ -33,13 +33,14 @@
 	// State
 	let tooltipopen = $state(false);
 	let addOpen = $state(false);
-	let elemArrow: HTMLElement | null = $state(null);
+	let tooltipElemArrow: HTMLElement | null = $state(null);
+	let addElemArrow: HTMLElement | null = $state(null);
 	let editModalOpen = $state(false);
 	let deleteModalOpen = $state(false);
-	let editNameTooltipOpen = $state(false);
-	let editUrlTooltipOpen = $state(false);
-	let deleteTooltipOpen = $state(false);
-	let refreshTooltipOpen = $state(false);
+	let editNameTooltipOpen = $state<{ [key: number]: boolean }>({});
+	let editUrlTooltipOpen = $state<{ [key: number]: boolean }>({});
+	let deleteTooltipOpen = $state<{ [key: number]: boolean }>({});
+	let refreshTooltipOpen = $state<{ [key: number]: boolean }>({});
 	let refreshingEpgId = $state<number | null>(null);
 
 	let currentEpgIdx: number;
@@ -69,7 +70,7 @@
 		},
 		placement: 'top',
 		get middleware() {
-			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+			return [offset(10), flip(), tooltipElemArrow && arrow({ element: tooltipElemArrow })];
 		}
 	});
 	const addFloating = useFloating({
@@ -82,7 +83,7 @@
 		},
 		placement: 'top',
 		get middleware() {
-			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+			return [offset(10), flip(), addElemArrow && arrow({ element: addElemArrow })];
 		}
 	});
 
@@ -97,105 +98,34 @@
 	const addDismiss = useDismiss(addFloating.context);
 	const addInteractions = useInteractions([addRole, addClick, addDismiss]);
 
-	// Floating UI setup for edit name tooltip
-	const editNameTooltipFloating = useFloating({
-		whileElementsMounted: autoUpdate,
-		get open() {
-			return editNameTooltipOpen;
-		},
-		onOpenChange: (v) => {
-			editNameTooltipOpen = v;
-		},
-		placement: 'top',
-		get middleware() {
-			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		}
-	});
+	// Helper function to create floating UI for EPG buttons
+	function createTooltipFloating(epgId: number, tooltipType: 'editName' | 'editUrl' | 'delete' | 'refresh') {
+		const tooltipState = tooltipType === 'editName' ? editNameTooltipOpen :
+							 tooltipType === 'editUrl' ? editUrlTooltipOpen :
+							 tooltipType === 'delete' ? deleteTooltipOpen : refreshTooltipOpen;
 
-	// Interactions for edit name tooltip
-	const editNameTooltipRole = useRole(editNameTooltipFloating.context, { role: 'tooltip' });
-	const editNameTooltipHover = useHover(editNameTooltipFloating.context, { move: false });
-	const editNameTooltipDismiss = useDismiss(editNameTooltipFloating.context);
-	const editNameTooltipInteractions = useInteractions([
-		editNameTooltipRole,
-		editNameTooltipHover,
-		editNameTooltipDismiss
-	]);
+		return useFloating({
+			whileElementsMounted: autoUpdate,
+			get open() {
+				return tooltipState[epgId] || false;
+			},
+			onOpenChange: (v) => {
+				tooltipState[epgId] = v;
+			},
+			placement: 'top',
+			get middleware() {
+				return [offset(10), flip()];
+			}
+		});
+	}
 
-	// Floating UI setup for edit URL tooltip
-	const editUrlTooltipFloating = useFloating({
-		whileElementsMounted: autoUpdate,
-		get open() {
-			return editUrlTooltipOpen;
-		},
-		onOpenChange: (v) => {
-			editUrlTooltipOpen = v;
-		},
-		placement: 'top',
-		get middleware() {
-			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		}
-	});
-
-	// Interactions for edit URL tooltip
-	const editUrlTooltipRole = useRole(editUrlTooltipFloating.context, { role: 'tooltip' });
-	const editUrlTooltipHover = useHover(editUrlTooltipFloating.context, { move: false });
-	const editUrlTooltipDismiss = useDismiss(editUrlTooltipFloating.context);
-	const editUrlTooltipInteractions = useInteractions([
-		editUrlTooltipRole,
-		editUrlTooltipHover,
-		editUrlTooltipDismiss
-	]);
-
-	// Floating UI setup for delete tooltip
-	const deleteTooltipFloating = useFloating({
-		whileElementsMounted: autoUpdate,
-		get open() {
-			return deleteTooltipOpen;
-		},
-		onOpenChange: (v) => {
-			deleteTooltipOpen = v;
-		},
-		placement: 'top',
-		get middleware() {
-			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		}
-	});
-
-	// Interactions for delete tooltip
-	const deleteTooltipRole = useRole(deleteTooltipFloating.context, { role: 'tooltip' });
-	const deleteTooltipHover = useHover(deleteTooltipFloating.context, { move: false });
-	const deleteTooltipDismiss = useDismiss(deleteTooltipFloating.context);
-	const deleteTooltipInteractions = useInteractions([
-		deleteTooltipRole,
-		deleteTooltipHover,
-		deleteTooltipDismiss
-	]);
-
-	// Floating UI setup for refresh tooltip
-	const refreshTooltipFloating = useFloating({
-		whileElementsMounted: autoUpdate,
-		get open() {
-			return refreshTooltipOpen;
-		},
-		onOpenChange: (v) => {
-			refreshTooltipOpen = v;
-		},
-		placement: 'top',
-		get middleware() {
-			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		}
-	});
-
-	// Interactions for refresh tooltip
-	const refreshTooltipRole = useRole(refreshTooltipFloating.context, { role: 'tooltip' });
-	const refreshTooltipHover = useHover(refreshTooltipFloating.context, { move: false });
-	const refreshTooltipDismiss = useDismiss(refreshTooltipFloating.context);
-	const refreshTooltipInteractions = useInteractions([
-		refreshTooltipRole,
-		refreshTooltipHover,
-		refreshTooltipDismiss
-	]);
+	// Helper function to create interactions for EPG tooltips
+	function createTooltipInteractions(floating: any) {
+		const role = useRole(floating.context, { role: 'tooltip' });
+		const hover = useHover(floating.context, { move: false });
+		const dismiss = useDismiss(floating.context);
+		return useInteractions([role, hover, dismiss]);
+	}
 
 	function handleConfirm() {
 		if (editValue) {
@@ -352,7 +282,7 @@
 				<p class="text-sm font-medium">
 					<strong>Add New EPG</strong>
 				</p>
-				<FloatingArrow bind:ref={elemArrow} context={tooltipFloating.context} fill="#1e293b" />
+				<FloatingArrow bind:ref={tooltipElemArrow} context={tooltipFloating.context} fill="#1e293b" />
 			</div>
 		{/if}
 		{#if addOpen}
@@ -360,7 +290,7 @@
 				bind:this={addFloating.elements.floating}
 				style={addFloating.floatingStyles}
 				{...addInteractions.getFloatingProps()}
-				class="floating popover-neutral"
+				class="floating glass card p-2 shadow-lg"
 				transition:fade={{ duration: 200 }}
 			>
 				<div class="card gap-4 p-4">
@@ -379,7 +309,7 @@
 						</label>
 					</div>
 				</div>
-				<FloatingArrow bind:ref={elemArrow} context={addFloating.context} fill="#1e293b" />
+				<FloatingArrow bind:ref={addElemArrow} context={addFloating.context} fill="#1e293b" />
 			</div>
 		{/if}
 	</header>
@@ -398,6 +328,14 @@
 				<tbody class="items-center">
 					{#if $epgs.length > 0}
 						{#each $epgs as epg, epgIdx (epg.id)}
+							{@const editNameFloating = createTooltipFloating(epg.id, 'editName')}
+							{@const editNameInteractions = createTooltipInteractions(editNameFloating)}
+							{@const editUrlFloating = createTooltipFloating(epg.id, 'editUrl')}
+							{@const editUrlInteractions = createTooltipInteractions(editUrlFloating)}
+							{@const refreshFloating = createTooltipFloating(epg.id, 'refresh')}
+							{@const refreshInteractions = createTooltipInteractions(refreshFloating)}
+							{@const deleteFloating = createTooltipFloating(epg.id, 'delete')}
+							{@const deleteInteractions = createTooltipInteractions(deleteFloating)}
 							<tr id="animate">
 								<td>
 									<div class="flex items-center justify-center gap-2">
@@ -407,24 +345,19 @@
 											onclick={() => {
 												editPrompt(epgIdx, 'name');
 											}}
-											bind:this={editNameTooltipFloating.elements.reference}
-											{...editNameTooltipInteractions.getReferenceProps()}
+											bind:this={editNameFloating.elements.reference}
+											{...editNameInteractions.getReferenceProps()}
 										>
 											<Icon icon="icon-park-outline:edit-one" width="18" height="18" />
-											{#if editNameTooltipOpen}
+											{#if editNameTooltipOpen[epg.id]}
 												<div
-													bind:this={editNameTooltipFloating.elements.floating}
-													style={editNameTooltipFloating.floatingStyles}
-													{...editNameTooltipInteractions.getFloatingProps()}
+													bind:this={editNameFloating.elements.floating}
+													style={editNameFloating.floatingStyles}
+													{...editNameInteractions.getFloatingProps()}
 													class="floating glass card p-2 shadow-lg"
 													transition:fade={{ duration: 200 }}
 												>
 													<p class="text-sm font-medium"><strong>Edit EPG Name</strong></p>
-													<FloatingArrow
-														bind:ref={elemArrow}
-														context={editNameTooltipFloating.context}
-														fill="#1e293b"
-													/>
 												</div>
 											{/if}
 										</button>
@@ -438,24 +371,19 @@
 											onclick={() => {
 												editPrompt(epgIdx, 'url');
 											}}
-											bind:this={editUrlTooltipFloating.elements.reference}
-											{...editUrlTooltipInteractions.getReferenceProps()}
+											bind:this={editUrlFloating.elements.reference}
+											{...editUrlInteractions.getReferenceProps()}
 										>
 											<Icon icon="icon-park-outline:edit-one" width="18" height="18" />
-											{#if editUrlTooltipOpen}
+											{#if editUrlTooltipOpen[epg.id]}
 												<div
-													bind:this={editUrlTooltipFloating.elements.floating}
-													style={editUrlTooltipFloating.floatingStyles}
-													{...editUrlTooltipInteractions.getFloatingProps()}
+													bind:this={editUrlFloating.elements.floating}
+													style={editUrlFloating.floatingStyles}
+													{...editUrlInteractions.getFloatingProps()}
 													class="floating glass card p-2 shadow-lg"
 													transition:fade={{ duration: 200 }}
 												>
 													<p class="text-sm font-medium"><strong>Edit EPG URL</strong></p>
-													<FloatingArrow
-														bind:ref={elemArrow}
-														context={editUrlTooltipFloating.context}
-														fill="#1e293b"
-													/>
 												</div>
 											{/if}
 										</button>
@@ -470,26 +398,21 @@
 										onclick={() => {
 											refreshEpg(epg.id);
 										}}
-										bind:this={refreshTooltipFloating.elements.reference}
-										{...refreshTooltipInteractions.getReferenceProps()}
+										bind:this={refreshFloating.elements.reference}
+										{...refreshInteractions.getReferenceProps()}
 										disabled={refreshingEpgId === epg.id}
 										class:animate-spin={refreshingEpgId === epg.id}
 									>
 										<Icon icon="icon-park-outline:refresh-one" width="18" height="18" />
-										{#if refreshTooltipOpen}
+										{#if refreshTooltipOpen[epg.id]}
 											<div
-												bind:this={refreshTooltipFloating.elements.floating}
-												style={refreshTooltipFloating.floatingStyles}
-												{...refreshTooltipInteractions.getFloatingProps()}
+												bind:this={refreshFloating.elements.floating}
+												style={refreshFloating.floatingStyles}
+												{...refreshInteractions.getFloatingProps()}
 												class="floating glass card p-2 shadow-lg"
 												transition:fade={{ duration: 200 }}
 											>
 												<p class="text-sm font-medium"><strong>Refresh EPG</strong></p>
-												<FloatingArrow
-													bind:ref={elemArrow}
-													context={refreshTooltipFloating.context}
-													fill="#1e293b"
-												/>
 											</div>
 										{/if}
 									</button>
@@ -500,24 +423,19 @@
 										onclick={() => {
 											deletePrompt(epg.id);
 										}}
-										bind:this={deleteTooltipFloating.elements.reference}
-										{...deleteTooltipInteractions.getReferenceProps()}
+										bind:this={deleteFloating.elements.reference}
+										{...deleteInteractions.getReferenceProps()}
 									>
 										<Icon icon="icon-park-outline:delete" width="18" height="18" />
-										{#if deleteTooltipOpen}
+										{#if deleteTooltipOpen[epg.id]}
 											<div
-												bind:this={deleteTooltipFloating.elements.floating}
-												style={deleteTooltipFloating.floatingStyles}
-												{...deleteTooltipInteractions.getFloatingProps()}
+												bind:this={deleteFloating.elements.floating}
+												style={deleteFloating.floatingStyles}
+												{...deleteInteractions.getFloatingProps()}
 												class="floating glass card p-2 shadow-lg"
 												transition:fade={{ duration: 200 }}
 											>
 												<p class="text-sm font-medium"><strong>Delete EPG</strong></p>
-												<FloatingArrow
-													bind:ref={elemArrow}
-													context={deleteTooltipFloating.context}
-													fill="#1e293b"
-												/>
 											</div>
 										{/if}
 									</button>
@@ -536,11 +454,9 @@
 <Modal
 	open={editModalOpen}
 	onOpenChange={(e) => (editModalOpen = e.open)}
-	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
 	backdropClasses="backdrop-blur-sm"
 >
-	{#snippet trigger()}{/snippet}
 	{#snippet content()}
 		<header class="flex justify-between">
 			<h2 class="h2">Edit EPG {editType}</h2>
@@ -565,11 +481,9 @@
 <Modal
 	open={deleteModalOpen}
 	onOpenChange={(e) => (deleteModalOpen = e.open)}
-	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
 	backdropClasses="backdrop-blur-sm"
 >
-	{#snippet trigger()}{/snippet}
 	{#snippet content()}
 		<header class="flex justify-between">
 			<h2 class="h2">Confirm Delete</h2>

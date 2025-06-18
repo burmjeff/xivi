@@ -8,39 +8,39 @@
 	let tabSet = $state('templates');
 </script>
 
-<div class="animate-fade-in">
+<div class="animate-fade-in relative">
 	<!-- Page Header -->
-	<header class="mb-1">
-		<h1 class="text-gradient mb-1 font-bold">Channel Management</h1>
+	<header class="relative z-10 mb-2">
+		<h1 class="text-gradient mb-1 font-bold text-4xl">Channel Management</h1>
 		<p class="text-surface-300">Manage your templates, groups, and playlists</p>
 	</header>
 
 	<!-- Enhanced Tabs -->
-	<div class="animate-slide-in">
-		<Tabs value={tabSet} onValueChange={(e) => (tabSet = e.value)} listJustify="justify-center">
+	<div class="animate-slide-in relative -mt-20 pt-8">
+		<Tabs value={tabSet} onValueChange={(e) => (tabSet = e.value)} listJustify="justify-end">
 			{#snippet list()}
-				<div class="border-surface-700/30 flex gap-1 border-b pb-1">
-					<Tabs.Control value="templates">
-						<div
-							class="hover:bg-surface-700/20 flex items-center gap-2 rounded-t-lg px-4 py-2 transition-all duration-200 {tabSet ===
-							'templates'
-								? 'bg-primary-900/30 text-primary-400 border-primary-500 border-b-2'
-								: ''}"
-						>
+				<div class="w-2/5 border-surface-700/30 flex gap-1 -mb-4 relative z-20">
+					<Tabs.Control
+						value="templates"
+						base="flex items-center gap-2 rounded-t-lg px-4 py-1 transition-all duration-200 backdrop-blur-sm cursor-pointer"
+						stateInactive="bg-surface-900/80 hover:bg-surface-700/20"
+						stateActive="bg-primary-900/50 text-primary-400 border-primary-500 border-b-2"
+					>
+						{#snippet lead()}
 							<Icon icon="mdi:file-document-outline" width="18" height="18" />
-							<span>Templates</span>
-						</div>
+						{/snippet}
+						Templates
 					</Tabs.Control>
-					<Tabs.Control value="playlists">
-						<div
-							class="hover:bg-surface-700/20 flex items-center gap-2 rounded-t-lg px-4 py-2 transition-all duration-200 {tabSet ===
-							'playlists'
-								? 'bg-primary-900/30 text-primary-400 border-primary-500 border-b-2'
-								: ''}"
-						>
+					<Tabs.Control
+						value="playlists"
+						base="flex items-center gap-2 rounded-t-lg px-4 py-1 transition-all duration-200 backdrop-blur-sm cursor-pointer"
+						stateInactive="bg-surface-900/80 hover:bg-surface-700/20"
+						stateActive="bg-primary-900/50 text-primary-400 border-primary-500 border-b-2"
+					>
+						{#snippet lead()}
 							<Icon icon="mdi:playlist-play" width="18" height="18" />
-							<span>Playlists</span>
-						</div>
+						{/snippet}
+						Playlists
 					</Tabs.Control>
 				</div>
 			{/snippet}

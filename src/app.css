@@ -1,10 +1,7 @@
-/*place global styles here */
 @import 'tailwindcss';
 @import '@skeletonlabs/skeleton';
 @import '@skeletonlabs/skeleton/optional/presets';
-/*Add your theme import for your theme: "xivi-theme" here */
 @import './xivi-theme.css';
-/*Dialog positioning fixes*/
 @import './dialog-fixes.css';
 
 @layer base {
@@ -107,9 +104,47 @@
 		@apply from-primary-400 to-secondary-400 bg-gradient-to-r bg-clip-text text-transparent;
 	}
 
-	/* Glass Effect */
+	/* Glass Effect - Base styling */
 	.glass {
-		@apply bg-surface-800/30 border-surface-500/20 border backdrop-blur-md;
+		background-color: rgba(30, 41, 59, 0.6); /* surface-800 equivalent */
+		border: 1px solid rgba(100, 116, 139, 0.3); /* surface-500 equivalent */
+		border-radius: 0.375rem;
+		/* Basic backdrop blur */
+		backdrop-filter: blur(8px);
+		-webkit-backdrop-filter: blur(8px);
+		/* Box shadow for depth */
+		box-shadow:
+			0 4px 16px rgba(0, 0, 0, 0.2),
+			inset 0 1px 0 rgba(255, 255, 255, 0.1);
+	}
+
+	/* Enhanced tooltip */
+	.glass p,
+	.glass strong,
+	.glass h2,
+	.glass h3,
+	.glass span,
+	.glass label {
+		text-shadow:
+			0 1px 2px rgba(0, 0, 0, 0.8),
+			0 0 4px rgba(0, 0, 0, 0.3);
+		color: rgb(248 250 252) !important;
+		font-weight: 600;
+	}
+
+	/* Floating tooltips */
+	.floating.glass {
+		z-index: 9999;
+		transform: translate3d(0, 0, 0);
+		will-change: transform, backdrop-filter;
+		backdrop-filter: blur(10px) !important;
+		-webkit-backdrop-filter: blur(10px) !important;
+		background-color: rgba(89, 90, 91, 0.8) !important;
+		border: 1px solid rgb(237, 148, 39) !important;
+		border-radius: 0.5rem;
+		box-shadow:
+			0 10px 40px rgba(0, 0, 0, 0.4),
+			inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
 	}
 }
 

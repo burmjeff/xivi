@@ -17,13 +17,14 @@
 	}
 
 	let { playlistId, playlistIdx }: Props = $props();
-	let shouldIgnoreDndEvents = false;
+	let shouldIgnoreDndEvents = $state(false);
 	const flipDurationMs = 150;
 	const dropFromOthersDisabled = true;
 	let dndTypeGroups = 'groups';
 	let dndItem: PlaylistGroup;
 	let dndIdx: number;
 	let accordionValue = $state<string[]>([]);
+	let isDragFromHandle = $state(false);
 
 	const updatePlaylistGroups = async () => {
 		const response = await fetch(`/api/playlist/${playlistId}/groups`);
@@ -100,6 +101,17 @@
 	) {
 		data!.playlist_id = playlistId;
 	}
+
+	// Reset drag state on global mouse up to handle edge cases
+	function handleGlobalMouseUp() {
+		isDragFromHandle = false;
+	}
+
+	// Add global event listener
+	if (typeof window !== 'undefined') {
+		window.addEventListener('mouseup', handleGlobalMouseUp);
+		window.addEventListener('pointerup', handleGlobalMouseUp);
+	}
 </script>
 
 {#if $playlists[playlistIdx].groups != null && $playlists[playlistIdx].groups.length > 0}
@@ -142,7 +154,8 @@
 					flipDurationMs,
 					dropFromOthersDisabled,
 					type: dndTypeGroups,
-					transformDraggedElement
+					transformDraggedElement,
+					dragDisabled: !isDragFromHandle
 				}}
 				onconsider={handleDndConsider}
 				onfinalize={handleDndFinalize}
@@ -153,29 +166,55 @@
 							<Accordion.Item value={group.name}>
 								{#snippet control()}
 									<div class="flex w-full cursor-pointer flex-row items-center">
-										<h4 class="flex-grow">{group.name}</h4>
-										<Switch
-											name="group_enabled"
-											base="flex"
-											controlBase="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-											controlActive="bg-primary-500"
-											controlInactive="preset-filled-surface-200-800"
-											thumbBase="pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform"
-											thumbActive="translate-x-5"
-											thumbInactive="translate-x-1"
-											checked={group.enabled}
-											onCheckedChange={(e) => {
-												group.enabled = e.checked;
-												disableGroup(group);
+										<button
+											type="button"
+											class="drag-handle cursor-grab flex-shrink-0 px-2 py-1 hover:bg-surface-700/30 rounded"
+											onclick={(e) => e.stopPropagation()}
+											onpointerdown={(e) => {
+												e.stopPropagation();
+												isDragFromHandle = true;
+												// Reset after a delay to allow drag to initiate
+												setTimeout(() => {
+													isDragFromHandle = false;
+												}, 100);
 											}}
-										/>
+											aria-label="Drag to reorder"
+										>
+											<Icon icon="material-symbols:drag-indicator" width="16" height="16" class="text-surface-400" />
+										</button>
+										<h4 class="flex-grow">{group.name}</h4>
+										<span
+											role="presentation"
+											onclick={(e) => e.stopPropagation()}
+											onkeydown={(e) => {
+												if (e.key === 'Enter' || e.key === ' ') {
+													e.stopPropagation();
+												}
+											}}
+										>
+											<Switch
+												name="group_enabled"
+												base="flex"
+												controlBase="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+												controlActive="bg-primary-500"
+												controlInactive="preset-filled-surface-200-800"
+												thumbBase="pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform"
+												thumbActive="translate-x-5"
+												thumbInactive="translate-x-1"
+												checked={group.enabled}
+												onCheckedChange={(e) => {
+													group.enabled = e.checked;
+													disableGroup(group);
+												}}
+											/>
+										</span>
 									</div>
 								{/snippet}
 								{#snippet panel()}
 									<PlaylistChannel {playlistId} {playlistIdx} groupId={group.id} {groupIdx} />
 								{/snippet}
 							</Accordion.Item>
-							{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+							{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME] && shouldIgnoreDndEvents}
 								<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
 									{group.name}
 								</div>
@@ -209,5 +248,7 @@
 		background: lightblue;
 		opacity: 0.6;
 		margin: 0;
+		pointer-events: none; /* Prevent shadow items from being clickable */
+		z-index: 10; /* Ensure shadow items appear above other content */
 	}
 </style>

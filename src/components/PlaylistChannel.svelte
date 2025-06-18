@@ -25,9 +25,10 @@
 	let dndTypeChannels = 'channels';
 	let dndItem: PlaylistChannel;
 	let dndIdx: number;
-	let shouldIgnoreDndEvents = false;
+	let shouldIgnoreDndEvents = $state(false);
 	const flipDurationMs = 150;
 	const dropFromOthersDisabled = true;
+	let isDragFromHandle = $state(false);
 
 	const updatePlaylistChannels = async () => {
 		const response = await fetch(`/api/playlist/${playlistId}/group/${groupId}/channels`);
@@ -78,12 +79,24 @@
 			shouldIgnoreDndEvents = false;
 		}
 	}
+
+	// Reset drag state on global mouse up to handle edge cases
+	function handleGlobalMouseUp() {
+		isDragFromHandle = false;
+	}
+
+	// Add global event listener
+	if (typeof window !== 'undefined') {
+		window.addEventListener('mouseup', handleGlobalMouseUp);
+		window.addEventListener('pointerup', handleGlobalMouseUp);
+	}
 </script>
 
 {#if $playlists[playlistIdx].groups[groupIdx].channels != null && $playlists[playlistIdx].groups[groupIdx].channels.length > 0}
 	<table class="playlistChannel table">
 		<thead>
 			<tr>
+				<th class="text-center">Drag</th>
 				<th class="text-center">Logo</th>
 				<th class="text-center">Name</th>
 				<th class="text-center">tvg-id</th>
@@ -94,13 +107,32 @@
 				items: $playlists[playlistIdx].groups[groupIdx].channels,
 				flipDurationMs,
 				type: dndTypeChannels,
-				dropFromOthersDisabled
+				dropFromOthersDisabled,
+				dragDisabled: !isDragFromHandle
 			}}
 			onconsider={handleDndConsider}
 			onfinalize={handleDndFinalize}
 		>
 			{#each $playlists[playlistIdx].groups[groupIdx].channels as channel, channelIdx (channel.id)}
 				<tr id="animate" animate:flip={{ duration: flipDurationMs }}>
+					<td>
+						<button
+							type="button"
+							class="drag-handle cursor-grab flex-shrink-0 px-2 py-1 hover:bg-surface-700/30 rounded btn-icon btn-icon-sm"
+							onclick={(e) => e.stopPropagation()}
+							onpointerdown={(e) => {
+								e.stopPropagation();
+								isDragFromHandle = true;
+								// Reset after a delay to allow drag to initiate
+								setTimeout(() => {
+									isDragFromHandle = false;
+								}, 100);
+							}}
+							aria-label="Drag to reorder"
+						>
+							<Icon icon="material-symbols:drag-indicator" width="16" height="16" class="text-surface-400" />
+						</button>
+					</td>
 					<td
 						><img
 							class="max-h-10 max-w-16"
@@ -111,7 +143,7 @@
 					<td>{channel.title}</td>
 					<td>{channel.tvg_id}</td>
 
-					{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+					{#if channel[SHADOW_ITEM_MARKER_PROPERTY_NAME] && shouldIgnoreDndEvents}
 						<td in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
 							{channel.title}
 						</td>
@@ -149,5 +181,7 @@
 		background: lightblue;
 		opacity: 0.6;
 		margin: 0;
+		pointer-events: none; /* Prevent shadow items from being clickable */
+		z-index: 10; /* Ensure shadow items appear above other content */
 	}
 </style>
