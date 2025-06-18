@@ -8,7 +8,7 @@
 	<header class="mb-4">
 		<div class="flex items-center justify-between">
 			<div>
-				<h1 class="text-gradient mb-1 font-bold">EPG Management</h1>
+				<h1 class="text-gradient mb-1 font-bold text-4xl">EPG Management</h1>
 				<p class="text-surface-300">Manage your Electronic Program Guide sources</p>
 			</div>
 

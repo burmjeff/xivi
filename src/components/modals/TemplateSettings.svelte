@@ -48,7 +48,7 @@
 <style>
 	.modal-template {
 		min-width: 400px;
-		padding: 1.5rem;
+		padding: 0.2rem 0.5rem;
 	}
 
 	.form-group {
@@ -76,7 +76,7 @@
 
 	.modal-footer button {
 		font-weight: 500;
-		padding: 0.75rem 1.5rem;
+		padding: 0.4rem 2rem;
 	}
 
 	/* Mobile responsive */

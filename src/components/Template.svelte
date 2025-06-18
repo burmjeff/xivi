@@ -37,27 +37,11 @@
 	});
 
 	// Floating UI state
-	let templateSettingsOpen = $state(false);
 	let addTemplateTooltipOpen = $state(false);
-	let editTooltipOpen = $state(false);
-	let deleteTooltipOpen = $state(false);
-	let elemArrow: HTMLElement | null = $state(null);
+	let editTooltipOpen = $state<{ [key: number]: boolean }>({});
+	let deleteTooltipOpen = $state<{ [key: number]: boolean }>({});
+	let addTemplateElemArrow: HTMLElement | null = $state(null);
 	let accordionItem = $state<string[]>([]);
-
-	// Floating UI setup for template settings
-	const templateSettingsFloating = useFloating({
-		whileElementsMounted: autoUpdate,
-		get open() {
-			return templateSettingsOpen;
-		},
-		onOpenChange: (v) => {
-			templateSettingsOpen = v;
-		},
-		placement: 'top',
-		get middleware() {
-			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		}
-	});
 
 	// Floating UI setup for add template tooltip
 	const addTemplateTooltipFloating = useFloating({
@@ -70,7 +54,7 @@
 		},
 		placement: 'top',
 		get middleware() {
-			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+			return [offset(10), flip(), addTemplateElemArrow && arrow({ element: addTemplateElemArrow })];
 		}
 	});
 
@@ -84,55 +68,32 @@
 		addTemplateTooltipDismiss
 	]);
 
-	// Floating UI setup for edit tooltip
-	const editTooltipFloating = useFloating({
-		whileElementsMounted: autoUpdate,
-		get open() {
-			return editTooltipOpen;
-		},
-		onOpenChange: (v) => {
-			editTooltipOpen = v;
-		},
-		placement: 'top',
-		get middleware() {
-			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		}
-	});
+	// Helper function to create floating UI for template buttons
+	function createTooltipFloating(templateId: number, tooltipType: 'edit' | 'delete') {
+		const tooltipState = tooltipType === 'edit' ? editTooltipOpen : deleteTooltipOpen;
 
-	// Interactions for edit tooltip
-	const editTooltipRole = useRole(editTooltipFloating.context, { role: 'tooltip' });
-	const editTooltipHover = useHover(editTooltipFloating.context, { move: false });
-	const editTooltipDismiss = useDismiss(editTooltipFloating.context);
-	const editTooltipInteractions = useInteractions([
-		editTooltipRole,
-		editTooltipHover,
-		editTooltipDismiss
-	]);
+		return useFloating({
+			whileElementsMounted: autoUpdate,
+			get open() {
+				return tooltipState[templateId] || false;
+			},
+			onOpenChange: (v) => {
+				tooltipState[templateId] = v;
+			},
+			placement: 'top',
+			get middleware() {
+				return [offset(10), flip()];
+			}
+		});
+	}
 
-	// Floating UI setup for delete tooltip
-	const deleteTooltipFloating = useFloating({
-		whileElementsMounted: autoUpdate,
-		get open() {
-			return deleteTooltipOpen;
-		},
-		onOpenChange: (v) => {
-			deleteTooltipOpen = v;
-		},
-		placement: 'top',
-		get middleware() {
-			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		}
-	});
-
-	// Interactions for delete tooltip
-	const deleteTooltipRole = useRole(deleteTooltipFloating.context, { role: 'tooltip' });
-	const deleteTooltipHover = useHover(deleteTooltipFloating.context, { move: false });
-	const deleteTooltipDismiss = useDismiss(deleteTooltipFloating.context);
-	const deleteTooltipInteractions = useInteractions([
-		deleteTooltipRole,
-		deleteTooltipHover,
-		deleteTooltipDismiss
-	]);
+	// Helper function to create interactions for template tooltips
+	function createTooltipInteractions(floating: any) {
+		const role = useRole(floating.context, { role: 'tooltip' });
+		const hover = useHover(floating.context, { move: false });
+		const dismiss = useDismiss(floating.context);
+		return useInteractions([role, hover, dismiss]);
+	}
 
 	function modalTemplate(isNew: boolean, id: number, name: string) {
 		isNewTemplate = isNew;
@@ -248,7 +209,7 @@
 				>
 					<p class="text-sm font-medium"><strong>Create a new template</strong></p>
 					<FloatingArrow
-						bind:ref={elemArrow}
+						bind:ref={addTemplateElemArrow}
 						context={addTemplateTooltipFloating.context}
 						fill="#1e293b"
 					/>
@@ -260,6 +221,10 @@
 		{#if $templates.length > 0}
 			<Accordion value={accordionItem} onValueChange={(e) => (accordionItem = e.value)} collapsible>
 				{#each $templates as template, templateIdx (template.id)}
+					{@const editFloating = createTooltipFloating(template.id, 'edit')}
+					{@const editInteractions = createTooltipInteractions(editFloating)}
+					{@const deleteFloating = createTooltipFloating(template.id, 'delete')}
+					{@const deleteInteractions = createTooltipInteractions(deleteFloating)}
 					<div class="card mb-1 shadow-md">
 						<Accordion.Item value={template.name}>
 							{#snippet control()}
@@ -272,24 +237,19 @@
 												modalTemplate(false, template.id, template.name);
 												e.stopPropagation();
 											}}
-											bind:this={editTooltipFloating.elements.reference}
-											{...editTooltipInteractions.getReferenceProps()}
+											bind:this={editFloating.elements.reference}
+											{...editInteractions.getReferenceProps()}
 										>
 											<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
-											{#if editTooltipOpen}
+											{#if editTooltipOpen[template.id]}
 												<div
-													bind:this={editTooltipFloating.elements.floating}
-													style={editTooltipFloating.floatingStyles}
-													{...editTooltipInteractions.getFloatingProps()}
+													bind:this={editFloating.elements.floating}
+													style={editFloating.floatingStyles}
+													{...editInteractions.getFloatingProps()}
 													class="floating glass card p-2 shadow-lg"
 													transition:fade={{ duration: 200 }}
 												>
 													<p class="text-sm font-medium"><strong>Edit Template</strong></p>
-													<FloatingArrow
-														bind:ref={elemArrow}
-														context={editTooltipFloating.context}
-														fill="#1e293b"
-													/>
 												</div>
 											{/if}
 										</button>
@@ -299,24 +259,19 @@
 												deletePrompt(template.id);
 												e.stopPropagation();
 											}}
-											bind:this={deleteTooltipFloating.elements.reference}
-											{...deleteTooltipInteractions.getReferenceProps()}
+											bind:this={deleteFloating.elements.reference}
+											{...deleteInteractions.getReferenceProps()}
 										>
 											<Icon icon="icon-park-outline:delete" width="18" height="18" />
-											{#if deleteTooltipOpen}
+											{#if deleteTooltipOpen[template.id]}
 												<div
-													bind:this={deleteTooltipFloating.elements.floating}
-													style={deleteTooltipFloating.floatingStyles}
-													{...deleteTooltipInteractions.getFloatingProps()}
+													bind:this={deleteFloating.elements.floating}
+													style={deleteFloating.floatingStyles}
+													{...deleteInteractions.getFloatingProps()}
 													class="floating glass card p-2 shadow-lg"
 													transition:fade={{ duration: 200 }}
 												>
 													<p class="text-sm font-medium"><strong>Delete Template</strong></p>
-													<FloatingArrow
-														bind:ref={elemArrow}
-														context={deleteTooltipFloating.context}
-														fill="#1e293b"
-													/>
 												</div>
 											{/if}
 										</button>
@@ -345,11 +300,9 @@
 <Modal
 	open={TemplateModalOpen}
 	onOpenChange={(e) => (TemplateModalOpen = e.open)}
-	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-100-900 shadow-xl"
 	backdropClasses="backdrop-blur-sm"
 >
-	{#snippet trigger()}{/snippet}
 	{#snippet content()}
 		<TemplateSettings
 			parent={{ onClose: handleTemplateClose }}
@@ -363,11 +316,9 @@
 <Modal
 	open={deleteModalOpen}
 	onOpenChange={(e) => (deleteModalOpen = e.open)}
-	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl"
 	backdropClasses="backdrop-blur-sm"
 >
-	{#snippet trigger()}{/snippet}
 	{#snippet content()}
 		<header class="text-2xl font-bold">Please Confirm</header>
 		<article>Are you sure you wish to delete this template?</article>
@@ -382,7 +333,7 @@
 
 <style>
 	#accord {
-		max-height: 76vh;
-		height: 76vh;
+		max-height: 72vh;
+		height: 72vh;
 	}
 </style>

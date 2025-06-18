@@ -46,7 +46,7 @@
 	<!-- Header (spans both columns) -->
 	<header class="sticky top-0 z-10 col-span-2 shadow-md">
 		<!-- App Bar -->
-		<AppBar classes="h-16 justify-center bg-gradient-to-r from-surface-900 to-surface-800">
+		<AppBar classes="h-12 justify-center bg-gradient-to-r from-surface-900 to-surface-800">
 			{#snippet lead()}
 				<div class="flex items-center gap-2">
 					<img
@@ -73,7 +73,7 @@
 	</header>
 
 	<!-- Sidebar -->
-	<aside class="bg-surface-800/90 w-60 shadow-lg">
+	<aside class="bg-surface-800/90 w-52 shadow-lg">
 		<!-- Navigation -->
 		<nav class="px-4 py-6">
 			<ul class="space-y-1">
@@ -154,13 +154,13 @@
 	<!-- Main Content -->
 	<main class="bg-surface-900/30 overflow-auto">
 		<!-- Page Route Content -->
-		<div class="p-6">
+		<div class="p-4">
 			{@render children?.()}
 		</div>
 	</main>
 
 	<!-- Footer (spans both columns) -->
-	<footer class="bg-surface-900 text-surface-400 col-span-2 py-2 text-center text-sm">
+	<footer class="bg-surface-900 text-surface-400 col-span-2 py-1 text-center text-sm">
 		<div class="flex items-center justify-center gap-2">
 			<span>Xivi</span>
 			<span class="text-primary-400">•</span>

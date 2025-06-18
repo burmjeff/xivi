@@ -27,16 +27,17 @@
 
 	let dndPlaylistId: number;
 	let dndTypeGroups = 'groups';
-	let shouldIgnoreDndEvents = false;
+	let shouldIgnoreDndEvents = $state(false);
 	const flipDurationMs = 150;
 	let dndItem: TemplateGroup;
 	let dndIdx: number;
+	let isDragFromHandle = $state(false);
 
 	let tooltipAdd = $state(false);
-	let editTooltipOpen = $state(false);
-	let deleteTooltipOpen = $state(false);
-	let addChannelTooltipOpen = $state(false);
-	let elemArrow: HTMLElement | null = $state(null);
+	let editTooltipOpen = $state<{ [key: number]: boolean }>({});
+	let deleteTooltipOpen = $state<{ [key: number]: boolean }>({});
+	let addChannelTooltipOpen = $state<{ [key: number]: boolean }>({});
+	let addGroupElemArrow: HTMLElement | null = $state(null);
 	let accordionItem = $state<string[]>([]);
 
 	const updateTemplateGroups = async () => {
@@ -60,7 +61,7 @@
 		},
 		placement: 'top',
 		get middleware() {
-			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
+			return [offset(10), flip(), addGroupElemArrow && arrow({ element: addGroupElemArrow })];
 		}
 	});
 	const tooltipRole = useRole(tooltipFloatingAdd.context, { role: 'tooltip' });
@@ -68,80 +69,44 @@
 	const tooltipDismiss = useDismiss(tooltipFloatingAdd.context);
 	const tooltipInteractions = useInteractions([tooltipRole, tooltipHover, tooltipDismiss]);
 
-	// Floating UI setup for edit tooltip
-	const editTooltipFloating = useFloating({
-		whileElementsMounted: autoUpdate,
-		get open() {
-			return editTooltipOpen;
-		},
-		onOpenChange: (v) => {
-			editTooltipOpen = v;
-		},
-		placement: 'top',
-		get middleware() {
-			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		}
-	});
+	// Helper function to create floating UI for template group buttons
+	function createTooltipFloating(groupId: number, tooltipType: 'edit' | 'delete' | 'addChannel') {
+		const tooltipState = tooltipType === 'edit' ? editTooltipOpen :
+							 tooltipType === 'delete' ? deleteTooltipOpen : addChannelTooltipOpen;
 
-	// Interactions for edit tooltip
-	const editTooltipRole = useRole(editTooltipFloating.context, { role: 'tooltip' });
-	const editTooltipHover = useHover(editTooltipFloating.context, { move: false });
-	const editTooltipDismiss = useDismiss(editTooltipFloating.context);
-	const editTooltipInteractions = useInteractions([
-		editTooltipRole,
-		editTooltipHover,
-		editTooltipDismiss
-	]);
+		return useFloating({
+			whileElementsMounted: autoUpdate,
+			get open() {
+				return tooltipState[groupId] || false;
+			},
+			onOpenChange: (v) => {
+				tooltipState[groupId] = v;
+			},
+			placement: 'top',
+			get middleware() {
+				return [offset(10), flip()];
+			}
+		});
+	}
 
-	// Floating UI setup for delete tooltip
-	const deleteTooltipFloating = useFloating({
-		whileElementsMounted: autoUpdate,
-		get open() {
-			return deleteTooltipOpen;
-		},
-		onOpenChange: (v) => {
-			deleteTooltipOpen = v;
-		},
-		placement: 'top',
-		get middleware() {
-			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		}
-	});
+	// Helper function to create interactions for template group tooltips
+	function createTooltipInteractions(floating: any) {
+		const role = useRole(floating.context, { role: 'tooltip' });
+		const hover = useHover(floating.context, { move: false });
+		const dismiss = useDismiss(floating.context);
+		return useInteractions([role, hover, dismiss]);
+	}
 
-	// Interactions for delete tooltip
-	const deleteTooltipRole = useRole(deleteTooltipFloating.context, { role: 'tooltip' });
-	const deleteTooltipHover = useHover(deleteTooltipFloating.context, { move: false });
-	const deleteTooltipDismiss = useDismiss(deleteTooltipFloating.context);
-	const deleteTooltipInteractions = useInteractions([
-		deleteTooltipRole,
-		deleteTooltipHover,
-		deleteTooltipDismiss
-	]);
+	// Reset drag state on global mouse up to handle edge cases
+	function handleGlobalMouseUp() {
+		isDragFromHandle = false;
+	}
 
-	// Floating UI setup for add channel tooltip
-	const addChannelTooltipFloating = useFloating({
-		whileElementsMounted: autoUpdate,
-		get open() {
-			return addChannelTooltipOpen;
-		},
-		onOpenChange: (v) => {
-			addChannelTooltipOpen = v;
-		},
-		placement: 'top',
-		get middleware() {
-			return [offset(10), flip(), elemArrow && arrow({ element: elemArrow })];
-		}
-	});
-
-	// Interactions for add channel tooltip
-	const addChannelTooltipRole = useRole(addChannelTooltipFloating.context, { role: 'tooltip' });
-	const addChannelTooltipHover = useHover(addChannelTooltipFloating.context, { move: false });
-	const addChannelTooltipDismiss = useDismiss(addChannelTooltipFloating.context);
-	const addChannelTooltipInteractions = useInteractions([
-		addChannelTooltipRole,
-		addChannelTooltipHover,
-		addChannelTooltipDismiss
-	]);
+	// Add global event listener
+	if (typeof window !== 'undefined') {
+		window.addEventListener('mouseup', handleGlobalMouseUp);
+		window.addEventListener('pointerup', handleGlobalMouseUp);
+	}
 
 	let modalDeleteOpen = $state(false);
 	let modalChannelOpen = $state(false);
@@ -417,7 +382,7 @@
 					transition:fade={{ duration: 200 }}
 				>
 					<p class="text-sm font-medium"><strong>Create a Template Group</strong></p>
-					<FloatingArrow bind:ref={elemArrow} context={tooltipFloatingAdd.context} fill="#1e293b" />
+					<FloatingArrow bind:ref={addGroupElemArrow} context={tooltipFloatingAdd.context} fill="#1e293b" />
 				</div>
 			{/if}
 		</button>
@@ -431,13 +396,20 @@
 					items: $templateGroups,
 					flipDurationMs,
 					type: dndTypeGroups,
-					transformDraggedElement
+					transformDraggedElement,
+					dragDisabled: !isDragFromHandle
 				}}
 				onconsider={handleDndConsider}
 				onfinalize={handleDndFinalize}
 			>
 				{#if $templateGroups.length > 0}
 					{#each $templateGroups as group, groupIdx (group.id)}
+						{@const editFloating = createTooltipFloating(group.id, 'edit')}
+						{@const editInteractions = createTooltipInteractions(editFloating)}
+						{@const deleteFloating = createTooltipFloating(group.id, 'delete')}
+						{@const deleteInteractions = createTooltipInteractions(deleteFloating)}
+						{@const addChannelFloating = createTooltipFloating(group.id, 'addChannel')}
+						{@const addChannelInteractions = createTooltipInteractions(addChannelFloating)}
 						<div
 							id="animate"
 							class="card mb-1 shadow-md"
@@ -446,6 +418,22 @@
 							<Accordion.Item value={group.name}>
 								{#snippet control()}
 									<div class="flex w-full cursor-pointer flex-row items-center">
+										<button
+											type="button"
+											class="drag-handle cursor-grab flex-shrink-0 px-2 py-1 hover:bg-surface-700/30 rounded"
+											onclick={(e) => e.stopPropagation()}
+											onpointerdown={(e) => {
+												e.stopPropagation();
+												isDragFromHandle = true;
+												// Reset after a delay to allow drag to initiate
+												setTimeout(() => {
+													isDragFromHandle = false;
+												}, 100);
+											}}
+											aria-label="Drag to reorder"
+										>
+											<Icon icon="material-symbols:drag-indicator" width="16" height="16" class="text-surface-400" />
+										</button>
 										<h4 class="flex-grow text-lg">{group.name}</h4>
 										<div class="flex flex-row gap-1">
 											<button
@@ -454,24 +442,19 @@
 													e.stopPropagation();
 													modalGroupSettings(false, groupIdx, group);
 												}}
-												bind:this={editTooltipFloating.elements.reference}
-												{...editTooltipInteractions.getReferenceProps()}
+												bind:this={editFloating.elements.reference}
+												{...editInteractions.getReferenceProps()}
 											>
 												<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
-												{#if editTooltipOpen}
+												{#if editTooltipOpen[group.id]}
 													<div
-														bind:this={editTooltipFloating.elements.floating}
-														style={editTooltipFloating.floatingStyles}
-														{...editTooltipInteractions.getFloatingProps()}
+														bind:this={editFloating.elements.floating}
+														style={editFloating.floatingStyles}
+														{...editInteractions.getFloatingProps()}
 														class="floating glass card p-2 shadow-lg"
 														transition:fade={{ duration: 200 }}
 													>
 														<p class="text-sm font-medium"><strong>Edit Group</strong></p>
-														<FloatingArrow
-															bind:ref={elemArrow}
-															context={editTooltipFloating.context}
-															fill="#1e293b"
-														/>
 													</div>
 												{/if}
 											</button>
@@ -481,24 +464,19 @@
 													e.stopPropagation();
 													deletePrompt(group.id);
 												}}
-												bind:this={deleteTooltipFloating.elements.reference}
-												{...deleteTooltipInteractions.getReferenceProps()}
+												bind:this={deleteFloating.elements.reference}
+												{...deleteInteractions.getReferenceProps()}
 											>
 												<Icon icon="icon-park-outline:delete" width="18" height="18" />
-												{#if deleteTooltipOpen}
+												{#if deleteTooltipOpen[group.id]}
 													<div
-														bind:this={deleteTooltipFloating.elements.floating}
-														style={deleteTooltipFloating.floatingStyles}
-														{...deleteTooltipInteractions.getFloatingProps()}
+														bind:this={deleteFloating.elements.floating}
+														style={deleteFloating.floatingStyles}
+														{...deleteInteractions.getFloatingProps()}
 														class="floating glass card p-2 shadow-lg"
 														transition:fade={{ duration: 200 }}
 													>
 														<p class="text-sm font-medium"><strong>Delete Group</strong></p>
-														<FloatingArrow
-															bind:ref={elemArrow}
-															context={deleteTooltipFloating.context}
-															fill="#1e293b"
-														/>
 													</div>
 												{/if}
 											</button>
@@ -508,24 +486,19 @@
 													e.stopPropagation();
 													modalAddChannel(group.id, groupIdx);
 												}}
-												bind:this={addChannelTooltipFloating.elements.reference}
-												{...addChannelTooltipInteractions.getReferenceProps()}
+												bind:this={addChannelFloating.elements.reference}
+												{...addChannelInteractions.getReferenceProps()}
 											>
 												<Icon icon="icon-park-outline:add" width="18" height="18" />
-												{#if addChannelTooltipOpen}
+												{#if addChannelTooltipOpen[group.id]}
 													<div
-														bind:this={addChannelTooltipFloating.elements.floating}
-														style={addChannelTooltipFloating.floatingStyles}
-														{...addChannelTooltipInteractions.getFloatingProps()}
+														bind:this={addChannelFloating.elements.floating}
+														style={addChannelFloating.floatingStyles}
+														{...addChannelInteractions.getFloatingProps()}
 														class="floating glass card p-2 shadow-lg"
 														transition:fade={{ duration: 200 }}
 													>
 														<p class="text-sm font-medium"><strong>Add Channel</strong></p>
-														<FloatingArrow
-															bind:ref={elemArrow}
-															context={addChannelTooltipFloating.context}
-															fill="#1e293b"
-														/>
 													</div>
 												{/if}
 											</button>
@@ -537,7 +510,7 @@
 								{/snippet}
 							</Accordion.Item>
 
-							{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+							{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME] && shouldIgnoreDndEvents}
 								<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">
 									{group.name}
 								</div>
@@ -562,11 +535,9 @@
 <Modal
 	open={modalGroupOpen}
 	onOpenChange={(e) => (modalGroupOpen = e.open)}
-	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-100-900 shadow-xl"
 	backdropClasses="backdrop-blur-sm"
 >
-	{#snippet trigger()}{/snippet}
 	{#snippet content()}
 		<GroupSettings
 			parent={{ onClose: handleGroupSettingsClose }}
@@ -581,11 +552,9 @@
 <Modal
 	open={modalDeleteOpen}
 	onOpenChange={(e) => (modalDeleteOpen = e.open)}
-	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl"
 	backdropClasses="backdrop-blur-sm"
 >
-	{#snippet trigger()}{/snippet}
 	{#snippet content()}
 		<header class="text-2xl font-bold">Please Confirm</header>
 		<article>Are you sure you wish to delete this group?</article>
@@ -601,11 +570,9 @@
 <Modal
 	open={modalChannelOpen}
 	onOpenChange={(e) => (modalChannelOpen = e.open)}
-	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-100-900 shadow-xl"
 	backdropClasses="backdrop-blur-sm"
 >
-	{#snippet trigger()}{/snippet}
 	{#snippet content()}
 		<ChannelSettings
 			isNew={true}
@@ -619,11 +586,9 @@
 <Modal
 	open={modalConvertOpen}
 	onOpenChange={(e) => (modalConvertOpen = e.open)}
-	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl"
 	backdropClasses="backdrop-blur-sm"
 >
-	{#snippet trigger()}{/snippet}
 	{#snippet content()}
 		<header class="text-2xl font-bold">Convert Playlist Group to Template Group</header>
 		<article>
@@ -652,8 +617,8 @@
 
 <style>
 	#accord {
-		max-height: 76vh;
-		height: 76vh;
+		max-height: 72vh;
+		height: 72vh;
 	}
 	.custom-shadow-item {
 		position: absolute;
@@ -666,6 +631,8 @@
 		background: lightblue;
 		opacity: 0.6;
 		margin: 0;
+		pointer-events: none; /* Prevent shadow items from being clickable */
+		z-index: 10; /* Ensure shadow items appear above other content */
 	}
 	#animate {
 		position: relative;

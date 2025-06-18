@@ -524,7 +524,7 @@
 		bind:this={logoFloating.elements.floating}
 		style={logoFloating.floatingStyles}
 		{...logoInteractions.getFloatingProps()}
-		class="floating popover-neutral logoList card p-2 shadow-2xl"
+		class="floating glass logoList card p-2 shadow-2xl"
 		transition:fade={{ duration: 200 }}
 	>
 		<p class="h3 p-1 text-center font-bold">Choose Logo</p>
@@ -560,7 +560,7 @@
 	.modal-channel {
 		min-width: 800px;
 		max-width: 1200px;
-		padding: 1.0rem;
+		padding: 0.2rem 0.5rem;
 	}
 
 	.modal-form {
@@ -596,6 +596,7 @@
 		background: lightblue;
 		opacity: 0.6;
 		margin: 0;
+		pointer-events: none;
 	}
 
 	#thead {

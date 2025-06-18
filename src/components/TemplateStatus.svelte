@@ -214,7 +214,6 @@
 <Modal
 	open={modalOpen}
 	onOpenChange={(e) => (modalOpen = e.open)}
-	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-800 p-0 shadow-xl max-w-screen-sm border border-surface-700/50 rounded-lg overflow-hidden"
 	backdropClasses="backdrop-blur-sm"
 >

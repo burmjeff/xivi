@@ -94,7 +94,7 @@
 <div class="animate-fade-in">
 	<!-- Page Header -->
 	<header class="mb-6">
-		<h1 class="text-gradient mb-2 font-bold">System Dashboard</h1>
+		<h1 class="text-gradient mb-1 font-bold text-4xl">System Dashboard</h1>
 		<div class="flex items-end justify-between">
 			<div>
 				<p class="text-surface-300">Monitor your Xivi server status and templates</p>

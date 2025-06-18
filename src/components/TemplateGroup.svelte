@@ -12,8 +12,6 @@
 	import { cubicIn } from 'svelte/easing';
 	import Icon from '@iconify/svelte';
 	import {
-		FloatingArrow,
-		arrow,
 		autoUpdate,
 		flip as floatingFlip,
 		offset,
@@ -38,10 +36,10 @@
 	let dndItem: TemplateGroup;
 	let dndIdx: number;
 	let accordionItem = $state<string[]>([]);
+	let isDragFromHandle = $state(false);
 
 	// Floating UI state
-	let deleteTooltipOpen = $state(false);
-	let elemArrow: HTMLElement | null = $state(null);
+	let deleteTooltipOpen = $state<{ [key: number]: boolean }>({});
 
 	const updateTemplateGroups = async () => {
 		const response = await fetch(`/api/template/${templateId}/groups`);
@@ -143,37 +141,53 @@
 		}
 	}
 	function transformDraggedElement(
-		_draggedEl: HTMLElement | undefined,
+		draggedEl: HTMLElement | undefined,
 		data: Item | undefined,
 		_index: number | undefined
 	) {
 		if (!shouldIgnoreDndEvents) data!.isDragged = true;
 	}
 
-	// Floating UI setup for delete tooltip
-	const deleteTooltipFloating = useFloating({
-		whileElementsMounted: autoUpdate,
-		get open() {
-			return deleteTooltipOpen;
-		},
-		onOpenChange: (v: boolean) => {
-			deleteTooltipOpen = v;
-		},
-		placement: 'top',
-		get middleware() {
-			return [offset(10), floatingFlip(), elemArrow && arrow({ element: elemArrow })];
-		}
-	});
+	// Helper function to create floating UI for template group buttons
+	function createTooltipFloating(groupId: number, tooltipType: 'delete') {
+		const tooltipState = deleteTooltipOpen;
 
-	// Interactions for delete tooltip
-	const deleteTooltipRole = useRole(deleteTooltipFloating.context, { role: 'tooltip' });
-	const deleteTooltipHover = useHover(deleteTooltipFloating.context, { move: false });
-	const deleteTooltipDismiss = useDismiss(deleteTooltipFloating.context);
-	const deleteTooltipInteractions = useInteractions([
-		deleteTooltipRole,
-		deleteTooltipHover,
-		deleteTooltipDismiss
-	]);
+		return useFloating({
+			whileElementsMounted: autoUpdate,
+			get open() {
+				return tooltipState[groupId] || false;
+			},
+			onOpenChange: (v) => {
+				tooltipState[groupId] = v;
+			},
+			placement: 'top',
+			strategy: 'fixed',
+			get middleware() {
+				return [offset(10), floatingFlip()];
+			}
+		});
+	}
+
+	// Helper function to create interactions for template group tooltips
+	function createTooltipInteractions(floating: any) {
+		const role = useRole(floating.context, { role: 'tooltip' });
+		const hover = useHover(floating.context, { move: false });
+		const dismiss = useDismiss(floating.context);
+		return useInteractions([role, hover, dismiss]);
+	}
+
+	// Reset drag state on global mouse up to handle edge cases
+	function handleGlobalMouseUp() {
+		isDragFromHandle = false;
+	}
+
+	// Add global event listener
+	if (typeof window !== 'undefined') {
+		window.addEventListener('mouseup', handleGlobalMouseUp);
+		window.addEventListener('pointerup', handleGlobalMouseUp);
+	}
+
+
 </script>
 
 <div id="accord" class="templategroups-viewport min-w-full overflow-auto">
@@ -184,13 +198,16 @@
 					items: $templates[templateIdx].groups,
 					flipDurationMs,
 					type: dndTypeGroups,
-					transformDraggedElement
+					transformDraggedElement,
+					dragDisabled: !isDragFromHandle
 				}}
 				onconsider={handleDndConsider}
 				onfinalize={handleDndFinalize}
 			>
 				{#if $templates[templateIdx].groups.length > 0}
 					{#each $templates[templateIdx].groups as group, groupIdx (group.id)}
+						{@const deleteFloating = createTooltipFloating(group.id, 'delete')}
+						{@const deleteInteractions = createTooltipInteractions(deleteFloating)}
 						<div
 							id="animate"
 							class="card mb-1 shadow-md"
@@ -199,6 +216,20 @@
 							<Accordion.Item value={group.name}>
 								{#snippet control()}
 									<div class="flex w-full cursor-pointer flex-row items-center">
+										<button
+											class="drag-handle cursor-grab flex-shrink-0 px-2 py-1 hover:bg-surface-700/30 rounded"
+											onclick={(e) => e.stopPropagation()}
+											onpointerdown={(e) => {
+												e.stopPropagation();
+												isDragFromHandle = true;
+												// Reset after a delay to allow drag to initiate
+												setTimeout(() => {
+													isDragFromHandle = false;
+												}, 100);
+											}}
+										>
+											<Icon icon="material-symbols:drag-indicator" width="16" height="16" class="text-surface-400" />
+										</button>
 										<h4 class="flex-grow text-lg">{group.name}</h4>
 										<div class="flex flex-row gap-1">
 											<button
@@ -207,24 +238,19 @@
 													e.stopPropagation();
 													deletePrompt(group.id);
 												}}
-												bind:this={deleteTooltipFloating.elements.reference}
-												{...deleteTooltipInteractions.getReferenceProps()}
+												bind:this={deleteFloating.elements.reference}
+												{...deleteInteractions.getReferenceProps()}
 											>
 												<Icon icon="icon-park-outline:delete" width="18" height="18" />
-												{#if deleteTooltipOpen}
+												{#if deleteTooltipOpen[group.id]}
 													<div
-														bind:this={deleteTooltipFloating.elements.floating}
-														style={deleteTooltipFloating.floatingStyles}
-														{...deleteTooltipInteractions.getFloatingProps()}
-														class="floating glass card p-2 shadow-lg"
+														bind:this={deleteFloating.elements.floating}
+														style={deleteFloating.floatingStyles}
+														{...deleteInteractions.getFloatingProps()}
+														class="floating glass card p-2 shadow-lg z-[9999] pointer-events-none"
 														transition:fade={{ duration: 200 }}
 													>
 														<p class="text-sm font-medium"><strong>Remove Group</strong></p>
-														<FloatingArrow
-															bind:ref={elemArrow}
-															context={deleteTooltipFloating.context}
-															fill="#1e293b"
-														/>
 													</div>
 												{/if}
 											</button>
@@ -259,11 +285,9 @@
 <Modal
 	open={deleteModalOpen}
 	onOpenChange={(e) => (deleteModalOpen = e.open)}
-	triggerBase="btn preset-tonal"
 	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
 	backdropClasses="backdrop-blur-sm"
 >
-	{#snippet trigger()}{/snippet}
 	{#snippet content()}
 		<header class="text-2xl font-bold">Please Confirm</header>
 		<article>Are you sure you wish to remove this group from template?</article>
@@ -288,9 +312,26 @@
 		background: lightblue;
 		opacity: 0.6;
 		margin: 0;
+		pointer-events: none;
 	}
 	#animate {
 		position: relative;
 		text-align: center;
+	}
+
+	/* High z-index for floating tooltips to ensure they appear above everything */
+	:global(.floating) {
+		z-index: 9999 !important;
+		position: fixed !important;
+	}
+
+	/* Ensure accordion items don't clip tooltips */
+	:global(.accordion-item) {
+		overflow: visible !important;
+	}
+
+	/* Ensure card containers don't clip tooltips */
+	.card {
+		overflow: visible !important;
 	}
 </style>
