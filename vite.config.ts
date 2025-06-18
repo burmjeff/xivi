@@ -32,16 +32,13 @@ export default defineConfig({
 		port: 5173,
 		strictPort: true,
 		hmr: {
-			// Use WebSockets for HMR
-			protocol: 'ws',
-			// Increase timeout for stability
-			timeout: 5000,
-			// Disable overlay for better performance
-			overlay: false
+			// Enable HMR with default settings
+			overlay: true
 		},
-		// Disable file system polling for better performance
+		// Enable file system watching
 		watch: {
-			usePolling: false
+			usePolling: true,
+			interval: 1000
 		},
 		// Optimize proxy settings
 		proxy: {

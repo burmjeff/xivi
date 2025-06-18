@@ -361,9 +361,9 @@
 		<header class="mb-2 text-center text-2xl font-bold">Channel Settings</header>
 	{/if}
 	<form
-		class="modal-form border-surface-500 rounded-container bg-surface-800/20 space-y-4 border p-6"
+		class="modal-form border-surface-500 rounded-container bg-surface-800/20 space-y-2 border p-1"
 	>
-		<div class="playlist_ch_items grid grid-cols-5 space-x-6">
+		<div class="playlist_ch_items grid grid-cols-5 space-x-4">
 			<div class="form col-span-2 px-2">
 				<label class="channel_name">
 					<span>Channel Name</span>
@@ -560,7 +560,7 @@
 	.modal-channel {
 		min-width: 800px;
 		max-width: 1200px;
-		padding: 1.5rem;
+		padding: 1.0rem;
 	}
 
 	.modal-form {
@@ -570,14 +570,14 @@
 	}
 
 	.modal-footer {
-		margin-top: 2rem;
-		padding-top: 1rem;
+		margin-top: 0.5rem;
+		padding-top: 0.5rem;
 		border-top: 1px solid var(--color-surface-600);
 	}
 
 	.modal-footer button {
 		font-weight: 500;
-		padding: 0.75rem 1.5rem;
+		padding: 0.4rem 2rem;
 	}
 
 	#animate {
