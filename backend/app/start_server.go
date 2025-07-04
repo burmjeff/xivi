@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 
+	"xivi/backend/pkg/ssdp"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/platform/cron"
 	"xivi/backend/platform/database"
@@ -34,6 +35,11 @@ func StartServer(app *fiber.App) {
 	host := flag.String("host", settings.APP_SETTINGS.Host, "Server Host")
 	port := flag.Int("port", settings.APP_SETTINGS.Port, "Server Port")
 	settings.SERVER_PATH = fmt.Sprintf("%s:%d", *host, *port)
+
+	// Initialize SSDP service (after database is ready)
+	if err := ssdp.InitializeService(); err != nil {
+		log.Error().Msgf("Failed to initialize SSDP service: %v", err)
+	}
 
 	//Start Cronjobs
 	cron.RunCronJobs()

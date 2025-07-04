@@ -27,3 +27,13 @@ vector:
   parallel_batches: 10
   timeout: 90
   cache_size: 500
+
+upnp:
+  enabled: true
+  manufacturer: XIVI
+  model_name: XIVI-SSDP
+  model_number: XIVI-SSDP
+  firmware_name: xivi_ssdp
+  firmware_version: "20250101"
+  device_auth: "123456"
+  tuner_count: 6

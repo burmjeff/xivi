@@ -87,6 +87,12 @@ func PublicRoutes(a *fiber.App) {
 	router.Get("/stream/hls/:stream_id", controllers.GetHlsStream)
 	api.Get("/channels/hls/:group_id", controllers.GetHlsChannels)
 
+	// SSDP endpoints
+	router.Get("/discover.json", controllers.GetDiscover)          //discovery
+	router.Get("/lineup_status.json", controllers.GetLineupStatus) //lineup status
+	router.Get("/lineup.json", controllers.GetLineup)              //lineup
+	router.Post("/lineup.post", controllers.PostLineup)            //lineup POST
+
 	// App Routes
 	router.Use("/images", filesystem.New(filesystem.Config{
 		Root:   http.Dir(settings.LOGO_FILEPATH),
