@@ -10,6 +10,7 @@ var APP_SETTINGS = &AppSettings{
 	Playlist:    Playlist{},
 	Streaming:   Streaming{},
 	Vector:      Vector{},
+	UPnP:        UPnP{},
 }
 var SERVER_PATH = ""
 var CONFIG_PATH = "./config"
@@ -25,6 +26,7 @@ type AppSettings struct {
 	Playlist    `yaml:"playlist" json:"playlist"`
 	Streaming   `yaml:"streaming" json:"streaming"`
 	Vector      `yaml:"vector" json:"vector"`
+	UPnP        `yaml:"upnp" json:"upnp"`
 }
 
 type Application struct {
@@ -61,4 +63,15 @@ type Vector struct {
 	ParallelBatches int `yaml:"parallel_batches" json:"parallel_batches"`
 	Timeout         int `yaml:"timeout" json:"timeout"`
 	CacheSize       int `yaml:"cache_size" json:"cache_size"`
+}
+
+type UPnP struct {
+	Enabled         bool   `yaml:"enabled" json:"enabled"`
+	Manufacturer    string `yaml:"manufacturer" json:"manufacturer"`
+	ModelName       string `yaml:"model_name" json:"model_name"`
+	ModelNumber     string `yaml:"model_number" json:"model_number"`
+	FirmwareName    string `yaml:"firmware_name" json:"firmware_name"`
+	FirmwareVersion string `yaml:"firmware_version" json:"firmware_version"`
+	DeviceAuth      string `yaml:"device_auth" json:"device_auth"`
+	TunerCount      int    `yaml:"tuner_count" json:"tuner_count"`
 }
