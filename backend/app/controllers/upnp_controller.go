@@ -1,7 +1,8 @@
 package controllers
 
 import (
-	"fmt"
+	"strconv"
+	"xivi/backend/pkg/ssdp"
 	"xivi/backend/pkg/upnp"
 	"xivi/backend/platform/database"
 
@@ -9,107 +10,138 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Serves discovery data
-func GetDiscover(c *fiber.Ctx) error {
-	// Get the primary template (first available template)
-	templateID, err := getPrimaryTemplateID()
+// GetTemplateDiscover serves discovery data for a specific template
+func GetTemplateDiscover(c *fiber.Ctx) error {
+	templateID, err := strconv.ParseInt(c.Params("template_id"), 10, 64)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "No templates available",
+			"msg":   "Invalid template ID",
 		})
 	}
 
-	// Get template information
 	template, err := database.Db.GetTemplate(templateID)
 	if err != nil {
-		log.Error().Msgf("Failed to get template %d: %v", templateID, err)
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Template not found",
 		})
 	}
 
-	// Generate discovery data
-	discoverData := upnp.GenerateDiscoverData(templateID, template.Name, "")
+	// Generate template-specific discovery data
+	deviceUUID := ssdp.GenerateTemplateUUID(templateID)
+	discoverData := upnp.GenerateDiscoverData(templateID, template.Name, deviceUUID)
 
 	return c.JSON(discoverData)
 }
 
-// Serves channel lineup status
-func GetLineupStatus(c *fiber.Ctx) error {
+// GetTemplateLineupStatus serves lineup status for a specific template
+func GetTemplateLineupStatus(c *fiber.Ctx) error {
+	templateID, err := strconv.ParseInt(c.Params("template_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid template ID",
+		})
+	}
+
+	// Verify template exists
+	_, err = database.Db.GetTemplate(templateID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Template not found",
+		})
+	}
+
 	// Generate lineup status
 	status := upnp.GenerateLineupStatus()
 	return c.JSON(status)
 }
 
-// GetLineup serves channel lineup (aggregates all templates)
-func GetLineup(c *fiber.Ctx) error {
-	// Get all templates
-	templates, err := database.Db.GetTemplates()
+// GetTemplateLineup serves channel lineup for a specific template
+func GetTemplateLineup(c *fiber.Ctx) error {
+	templateID, err := strconv.ParseInt(c.Params("template_id"), 10, 64)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "Failed to get templates",
+			"msg":   "Invalid template ID",
 		})
 	}
 
-	if len(*templates) == 0 {
+	_, err = database.Db.GetTemplate(templateID)
+	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": true,
-			"msg":   "No templates available",
+			"msg":   "Template not found",
 		})
 	}
 
-	// Aggregate channels from all templates
-	allChannels := make([]upnp.Channel, 0)
-	channelNumber := 1
-
-	for _, template := range *templates {
-		// Get template channels
-		templateChannels, err := database.Db.GetTmplChannels(template.ID)
-		if err != nil {
-			log.Error().Msgf("Failed to get template channels for template %d: %v", template.ID, err)
-			continue // Skip this template but continue with others
-		}
-
-		// Convert to lineup format
-		for _, tc := range templateChannels {
-			channel := upnp.Channel{
-				ID:     tc.ID,
-				Name:   fmt.Sprintf("%s - %s", template.Name, tc.Name), // Prefix with template name
-				UUID:   tc.Uuid,
-				Number: channelNumber,
-			}
-			allChannels = append(allChannels, channel)
-			channelNumber++
-		}
+	// Get template channels
+	templateChannels, err := database.Db.GetTmplChannels(templateID)
+	if err != nil {
+		log.Error().Msgf("Failed to get template channels for template %d: %v", templateID, err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Failed to get template channels",
+		})
 	}
 
-	// Generate lineup with aggregated channels (use first template ID for compatibility)
-	templateID := (*templates)[0].ID
-	lineup := upnp.GenerateLineup(templateID, allChannels)
+	// Convert to lineup format
+	channels := make([]upnp.Channel, 0, len(templateChannels))
+	for i, tc := range templateChannels {
+		channel := upnp.Channel{
+			ID:     tc.ID,
+			Name:   tc.Name, // Don't prefix with template name for template-specific endpoint
+			UUID:   tc.Uuid,
+			Number: i + 1, // Sequential numbering starting from 1
+		}
+		channels = append(channels, channel)
+	}
+
+	// Generate lineup for this template
+	lineup := upnp.GenerateLineup(templateID, channels)
 
 	return c.JSON(lineup)
 }
 
-// PostLineup handles lineup POST requests at root level
-func PostLineup(c *fiber.Ctx) error {
+// PostTemplateLineup handles lineup POST requests for a specific template
+func PostTemplateLineup(c *fiber.Ctx) error {
+	templateID, err := strconv.ParseInt(c.Params("template_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid template ID",
+		})
+	}
+
+	// Verify template exists
+	_, err = database.Db.GetTemplate(templateID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Template not found",
+		})
+	}
+
 	// Clients expect this endpoint to exist but it can return empty
 	return c.SendString("")
 }
 
-// getPrimaryTemplateID returns the ID of the primary template (first available)
-func getPrimaryTemplateID() (int64, error) {
-	templates, err := database.Db.GetTemplates()
-	if err != nil {
-		return 0, err
+// GetDeviceDescription serves UPnP device description XML
+func GetDeviceDescription(c *fiber.Ctx) error {
+	deviceUUID := c.Params("device_uuid")
+
+	// Find device by UUID in SSDP service
+	service := ssdp.GetService()
+	device, exists := service.GetDevice(deviceUUID)
+	if !exists {
+		return c.Status(fiber.StatusNotFound).SendString("Device not found")
 	}
 
-	if len(*templates) == 0 {
-		return 0, fmt.Errorf("no templates available")
-	}
+	// Generate device description XML
+	deviceXML := upnp.GenerateDeviceDescriptionXML(device)
 
-	// Return the first template as primary
-	return (*templates)[0].ID, nil
+	c.Set("Content-Type", "application/xml")
+	return c.SendString(deviceXML)
 }

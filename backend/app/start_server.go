@@ -3,6 +3,9 @@ package app
 import (
 	"flag"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"xivi/backend/pkg/ssdp"
 	"xivi/backend/pkg/utils"
@@ -44,6 +47,35 @@ func StartServer(app *fiber.App) {
 	//Start Cronjobs
 	cron.RunCronJobs()
 	go cron.RunUpdates()
+
+	// Initialize SSDP service for UPnP discovery
+	if err := ssdp.InitializeService(); err != nil {
+		log.Error().Msgf("Failed to initialize SSDP service: %v", err)
+	}
+
+	// Register template devices for UPnP discovery
+	if err := ssdp.RegisterTemplateDevices(); err != nil {
+		log.Error().Msgf("Failed to register template devices: %v", err)
+	}
+
+	// Set up graceful shutdown
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-c
+		log.Info().Msg("Gracefully shutting down...")
+
+		// Shutdown SSDP service
+		if err := ssdp.ShutdownService(); err != nil {
+			log.Error().Msgf("Error shutting down SSDP service: %v", err)
+		}
+
+		// Shutdown Fiber app
+		if err := app.Shutdown(); err != nil {
+			log.Error().Msgf("Error shutting down server: %v", err)
+		}
+	}()
 
 	// Run server.
 	log.Printf("Server starting at http://%s ...\n", settings.SERVER_PATH)
