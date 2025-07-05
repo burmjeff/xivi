@@ -95,11 +95,18 @@ func CreateEpgXML(template models.Template) {
 					}
 				}
 
-				// Set icon URL
-				epgChannel.Icon.Src = fmt.Sprintf("http://%s:%d/%s",
-					settings.APP_SETTINGS.Server.Host,
-					settings.APP_SETTINGS.Server.Port,
-					GetLogoUrl(channel.Uuid))
+				// Set icon URL - get the logo from database to match M3U tvg-logo URL format
+				logo, err := database.Db.GetLogo(ctx, channel.LogoId)
+				if err != nil {
+					log.Warn().Str("channel", channel.Name).Msg("Failed to get logo for XMLTV channel icon")
+					// Use empty icon URL if logo not found
+					epgChannel.Icon.Src = ""
+				} else {
+					epgChannel.Icon.Src = fmt.Sprintf("http://%s:%d/%s",
+						settings.APP_SETTINGS.Server.Host,
+						settings.APP_SETTINGS.Server.Port,
+						GetLogoUrl(logo.Name))
+				}
 
 				channelChan <- *epgChannel
 			}
