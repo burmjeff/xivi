@@ -39,19 +39,9 @@ func StartServer(app *fiber.App) {
 	port := flag.Int("port", settings.APP_SETTINGS.Port, "Server Port")
 	settings.SERVER_PATH = fmt.Sprintf("%s:%d", *host, *port)
 
-	// Initialize SSDP service (after database is ready)
-	if err := ssdp.InitializeService(); err != nil {
-		log.Error().Msgf("Failed to initialize SSDP service: %v", err)
-	}
-
 	//Start Cronjobs
 	cron.RunCronJobs()
 	go cron.RunUpdates()
-
-	// Initialize SSDP service for UPnP discovery
-	if err := ssdp.InitializeService(); err != nil {
-		log.Error().Msgf("Failed to initialize SSDP service: %v", err)
-	}
 
 	// Register template devices for UPnP discovery
 	if err := ssdp.RegisterTemplateDevices(); err != nil {
@@ -65,11 +55,6 @@ func StartServer(app *fiber.App) {
 	go func() {
 		<-c
 		log.Info().Msg("Gracefully shutting down...")
-
-		// Shutdown SSDP service
-		if err := ssdp.ShutdownService(); err != nil {
-			log.Error().Msgf("Error shutting down SSDP service: %v", err)
-		}
 
 		// Shutdown Fiber app
 		if err := app.Shutdown(); err != nil {
