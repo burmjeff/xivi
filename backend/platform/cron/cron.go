@@ -174,10 +174,6 @@ func CleanPlaylist(playlist models.Playlist, startTime time.Time) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// Clean orphaned groups and channels first
-	if err := database.Db.CleanPlaylistGroups(ctx, playlist.ID); err != nil {
-		log.Error().Err(err).Int64("playlist_id", playlist.ID).Msg("Failed to clean playlist groups")
-	}
 	if err := database.Db.CleanPlaylistChannels(ctx, playlist.ID); err != nil {
 		log.Error().Err(err).Int64("playlist_id", playlist.ID).Msg("Failed to clean playlist channels")
 	}

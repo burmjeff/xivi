@@ -10,13 +10,8 @@ import (
 // SQL query constants
 const (
 	vacuumDBQuery = `PRAGMA incremental_vacuum;`
-	// Clean empty playlist groups for the specified playlist (groups with no channels)
-	cleanPlaylistGroupsQuery = `DELETE FROM playlistgroup
-		WHERE playlist_id = ?
-		AND id NOT IN (
-			SELECT DISTINCT group_id FROM playlistchannel
-			WHERE group_id IS NOT NULL
-		)`
+	// Groups will only be cleaned up manually or through explicit user actions
+	cleanPlaylistGroupsQuery = `SELECT 1 WHERE 0` // No-op query that does nothing
 	// Clean playlist channels that belong to disabled groups in the specified playlist
 	cleanPlaylistChannelsQuery = `DELETE FROM playlistchannel
 		WHERE group_id IN (
