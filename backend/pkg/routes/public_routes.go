@@ -87,11 +87,14 @@ func PublicRoutes(a *fiber.App) {
 	router.Get("/stream/hls/:stream_id", controllers.GetHlsStream)
 	api.Get("/channels/hls/:group_id", controllers.GetHlsChannels)
 
-	// SSDP endpoints
-	router.Get("/discover.json", controllers.GetDiscover)          //discovery
-	router.Get("/lineup_status.json", controllers.GetLineupStatus) //lineup status
-	router.Get("/lineup.json", controllers.GetLineup)              //lineup
-	router.Post("/lineup.post", controllers.PostLineup)            //lineup POST
+	// Template-specific SSDP endpoints
+	router.Get("/template/:template_id/discover.json", controllers.GetTemplateDiscover)          //template discovery
+	router.Get("/template/:template_id/lineup_status.json", controllers.GetTemplateLineupStatus) //template lineup status
+	router.Get("/template/:template_id/lineup.json", controllers.GetTemplateLineup)              //template lineup
+	router.Post("/template/:template_id/lineup.post", controllers.PostTemplateLineup)            //template lineup POST
+
+	// UPnP device description endpoints
+	router.Get("/upnp/device/:device_uuid.xml", controllers.GetDeviceDescription) //UPnP device description XML
 
 	// App Routes
 	router.Use("/images", filesystem.New(filesystem.Config{

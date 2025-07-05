@@ -3,6 +3,7 @@ package upnp
 import (
 	"fmt"
 	"strconv"
+	"xivi/backend/pkg/ssdp"
 	"xivi/backend/platform/settings"
 )
 
@@ -45,7 +46,7 @@ type Channel struct {
 
 // GenerateDiscoverData creates discovery data
 func GenerateDiscoverData(templateID int64, templateName, deviceUUID string) DiscoverData {
-	baseURL := fmt.Sprintf("http://%s:%d", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port)
+	baseURL := fmt.Sprintf("http://%s:%d/template/%d", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, templateID)
 
 	return DiscoverData{
 		FriendlyName:    fmt.Sprintf("%s - %s", settings.APP_SETTINGS.Application.AppName, templateName),
@@ -98,4 +99,47 @@ func GenerateLineup(templateID int64, channels []Channel) []LineupEntry {
 	}
 
 	return lineup
+}
+
+// GenerateDeviceDescriptionXML creates UPnP device description XML
+func GenerateDeviceDescriptionXML(device *ssdp.Device) string {
+	// Generate UPnP device description XML compliant with UPnP Device Architecture v1.0
+
+	xml := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+	<specVersion>
+		<major>1</major>
+		<minor>0</minor>
+	</specVersion>
+	<device>
+		<deviceType>%s</deviceType>
+		<friendlyName>%s</friendlyName>
+		<manufacturer>%s</manufacturer>
+		<modelDescription>%s</modelDescription>
+		<modelName>%s</modelName>
+		<modelNumber>%s</modelNumber>
+		<UDN>uuid:%s</UDN>
+		<serviceList>
+			<service>
+				<serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>
+				<serviceId>urn:upnp-org:serviceId:ContentDirectory</serviceId>
+				<controlURL>/upnp/control/content_directory</controlURL>
+				<eventSubURL>/upnp/event/content_directory</eventSubURL>
+				<SCPDURL>/upnp/scpd/content_directory.xml</SCPDURL>
+			</service>
+		</serviceList>
+		<presentationURL>%s</presentationURL>
+	</device>
+</root>`,
+		device.DeviceType,
+		device.FriendlyName,
+		device.Manufacturer,
+		fmt.Sprintf("%s Media Server", device.FriendlyName),
+		device.ModelName,
+		device.ModelNumber,
+		device.UUID,
+		device.BaseURL,
+	)
+
+	return xml
 }
