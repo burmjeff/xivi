@@ -40,8 +40,6 @@ type M3uParser struct {
 	channelPairs []ChannelURLPair
 	batchMutex   sync.Mutex
 	batchSize    int
-	// NEW: Channels that need vectorization after commit
-	pendingVectorization []models.PlaylistChannel
 }
 
 // Add a group creation semaphore to limit concurrent group creations
@@ -71,7 +69,6 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 	// Initialize batch processing with smaller batch size to reduce contention
 	m.batchSize = 25 // Further reduced from 50 to 25 to reduce transaction size and prevent deadlocks
 	m.channelPairs = make([]ChannelURLPair, 0, m.batchSize)
-	m.pendingVectorization = make([]models.PlaylistChannel, 0, m.batchSize)
 
 	//Check if matching playlist exists
 	m.matchedPlaylist = MatchDomain(playlist.ID)
@@ -151,10 +148,6 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 func (m *M3uParser) parseLines() {
 	chunkSize := 100 // Increased from 10 to 100 for better throughput
 	var wg sync.WaitGroup
-
-	// Create a buffered channel for vectorization with limited buffer to control concurrency
-	vectorIn := make(chan models.PlaylistChannel, 100) // Reduced from 500 to 100 to limit concurrency
-	go PlaylistVectorQueue(vectorIn)
 
 	re := CompileRegex("#EXTINF")
 
@@ -242,8 +235,7 @@ func (m *M3uParser) parseLines() {
 
 	log.Info().Msg("Waiting for all chunks to complete processing")
 	wg.Wait()
-	log.Info().Msg("All chunks processed, closing vector channel")
-	close(vectorIn)
+	log.Info().Msg("All chunks processed")
 }
 
 // flushBatches commits all pending database operations
@@ -262,8 +254,8 @@ func (m *M3uParser) flushBatches() {
 	maxRetries := 10                    // Increased from 5 to 10
 	baseDelay := 500 * time.Millisecond // Increased from 50ms to 500ms
 
-	// Prepare array to store channels with new IDs for vectorization
-	pendingVectors := make([]models.PlaylistChannel, 0, len(m.channelPairs))
+	// Prepare channels for matching after their rows have committed.
+	pendingMatches := make([]models.PlaylistChannel, 0, len(m.channelPairs))
 
 	for retry := 0; retry < maxRetries; retry++ {
 		// Only log retries after the first attempt
@@ -463,17 +455,17 @@ func (m *M3uParser) flushBatches() {
 			return
 		}
 
-		// Success - log and prepare channels for vectorization
+		// Success - log and prepare channels for matching.
 		log.Info().Msgf("Successfully committed batch of %d channel pairs (attempt %d)", len(m.channelPairs), retry+1)
 
-		// Collect channels with their new IDs for vectorization
+		// Collect channels with their new IDs for matching.
 		for _, pair := range m.channelPairs {
 			if id, exists := channelIDMap[pair.CorrelationID]; exists {
 				// Create a copy of the channel with the new ID
 				channelCopy := pair.Channel
 				channelCopy.ID = id
-				pendingVectors = append(pendingVectors, channelCopy)
-				log.Debug().Msgf("Added channel for vectorization: %s (ID: %d, correlation: %s)",
+				pendingMatches = append(pendingMatches, channelCopy)
+				log.Debug().Msgf("Added channel for matching: %s (ID: %d, correlation: %s)",
 					channelCopy.Title, channelCopy.ID, pair.CorrelationID)
 			}
 		}
@@ -481,14 +473,14 @@ func (m *M3uParser) flushBatches() {
 		// Clear the batches
 		m.channelPairs = make([]ChannelURLPair, 0, m.batchSize)
 
-		// Process vectorization in a separate goroutine to avoid holding the mutex
-		if len(pendingVectors) > 0 {
-			log.Info().Msgf("Starting vectorization for %d channels", len(pendingVectors))
-			vectorsToProcess := make([]models.PlaylistChannel, len(pendingVectors))
-			copy(vectorsToProcess, pendingVectors)
-			go m.processVectors(vectorsToProcess)
+		// Queue matching separately so the parser can release its batch lock.
+		if len(pendingMatches) > 0 {
+			log.Info().Msgf("Starting matching for %d channels", len(pendingMatches))
+			channelsToMatch := make([]models.PlaylistChannel, len(pendingMatches))
+			copy(channelsToMatch, pendingMatches)
+			go m.processMatches(channelsToMatch)
 		} else {
-			log.Warn().Msg("No channels to vectorize after batch processing")
+			log.Warn().Msg("No channels to match after batch processing")
 		}
 
 		return
@@ -763,46 +755,21 @@ func isValidURL(toTest string) bool {
 	return true
 }
 
-// processVectors handles vectorization for a batch of channels after they've been committed to the database
-func (m *M3uParser) processVectors(channels []models.PlaylistChannel) {
+// processMatches queues channels after their database rows have committed.
+func (m *M3uParser) processMatches(channels []models.PlaylistChannel) {
 	if len(channels) == 0 {
 		return
 	}
 
-	log.Info().Msgf("Processing vectors for %d channels", len(channels))
-
-	// Create a semaphore to limit concurrent processing
-	semaphore := make(chan struct{}, 5)
-	var wg sync.WaitGroup
+	log.Info().Msgf("Queueing matches for %d channels", len(channels))
 
 	for _, channel := range channels {
 		// Skip channels with no ID
 		if channel.ID == 0 {
-			log.Warn().Msg("Skipping vectorization for channel with ID 0")
+			log.Warn().Msg("Skipping matching for channel with ID 0")
 			continue
 		}
-
-		wg.Add(1)
-		go func(ch models.PlaylistChannel) {
-			defer wg.Done()
-
-			// Acquire semaphore
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-
-			// First update vector
-			vectorId := UpdatePlaylistVector(ch)
-
-			// Only proceed with matching if we got a valid vector ID
-			if vectorId > 0 {
-				// Then do matching with a short delay between operations
-				time.Sleep(50 * time.Millisecond)
-				MatchPlaylistChannel(ch)
-			}
-		}(channel)
+		MatchPlaylistChannel(channel)
 	}
-
-	// Wait for all vectorization to complete
-	wg.Wait()
-	log.Info().Msg("Vector processing completed")
+	log.Info().Msg("Match queueing completed")
 }

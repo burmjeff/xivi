@@ -10,10 +10,15 @@ type TemplateChannel struct {
 }
 
 type TemplateChannelItem struct {
-	ID                int64 `db:"id" json:"id"`
-	ChannelId         int64 `db:"channel_id" json:"channel_id" validate:"required"`
-	PlaylistChannelId int64 `db:"playlist_channel_id" json:"playlist_channel_id" validate:"required"`
-	Order             int64 `db:"orderr" json:"orderr"`
+	ID                int64    `db:"id" json:"id"`
+	ChannelId         int64    `db:"channel_id" json:"channel_id" validate:"required"`
+	PlaylistChannelId int64    `db:"playlist_channel_id" json:"playlist_channel_id" validate:"required"`
+	Order             int64    `db:"orderr" json:"orderr"`
+	MatchMethod       string   `db:"match_method" json:"match_method"`
+	MatchScore        *float64 `db:"match_score" json:"match_score"`
+	RunnerUpScore     *float64 `db:"runner_up_score" json:"runner_up_score"`
+	MatcherVersion    int      `db:"matcher_version" json:"matcher_version"`
+	ManualLocked      bool     `db:"manual_locked" json:"manual_locked"`
 }
 
 type TemplateChannelLogo struct {

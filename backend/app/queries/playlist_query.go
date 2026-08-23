@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 	"xivi/backend/app/models"
+	"xivi/backend/pkg/channelmatch"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
@@ -280,6 +281,34 @@ func (q *PlaylistQueries) GetPlChannels(playlistId int64) (*[]models.PlaylistCha
 	return channels, nil
 }
 
+// GetEnabledPlChannels returns only channels and groups eligible for matching.
+func (q *PlaylistQueries) GetEnabledPlChannels(playlistID int64) ([]models.PlaylistChannel, error) {
+	channels := []models.PlaylistChannel{}
+	query := `SELECT pc.* FROM playlistchannel pc
+	JOIN playlistgroup pg ON pg.id = pc.group_id
+	WHERE pg.playlist_id = ? AND pc.enabled = true AND pg.enabled = true
+	ORDER BY pc.id ASC`
+
+	if err := q.Select(&channels, query, playlistID); err != nil {
+		return nil, err
+	}
+	return channels, nil
+}
+
+// GetAllEnabledPlChannels returns channels eligible for automatic matching and suggestions.
+func (q *PlaylistQueries) GetAllEnabledPlChannels() ([]models.PlaylistChannel, error) {
+	channels := []models.PlaylistChannel{}
+	query := `SELECT pc.* FROM playlistchannel pc
+	JOIN playlistgroup pg ON pg.id = pc.group_id
+	WHERE pc.enabled = true AND pg.enabled = true
+	ORDER BY pc.id ASC`
+
+	if err := q.Select(&channels, query); err != nil {
+		return nil, err
+	}
+	return channels, nil
+}
+
 // Get Playlist channels by ID
 func (q *PlaylistQueries) GetChannelsByPl(id int64) (*[]models.PlaylistChannel, error) {
 	channels := &[]models.PlaylistChannel{}
@@ -344,11 +373,35 @@ func (q *PlaylistQueries) GetPlChannelsByName(name string) (*[]models.PlaylistCh
 func (q *PlaylistQueries) GetPlChannelsByTvgID(tvgid string) ([]models.PlaylistChannel, error) {
 	channels := []models.PlaylistChannel{}
 
-	query := `SELECT * FROM playlistchannel WHERE tvg_id = ?`
+	query := `SELECT pc.* FROM playlistchannel pc
+	JOIN playlistgroup pg ON pg.id = pc.group_id
+	WHERE LOWER(TRIM(pc.tvg_id)) = LOWER(TRIM(?))
+	AND pc.enabled = true AND pg.enabled = true
+	ORDER BY pc.id ASC`
 
-	err := q.Select(&channels, query, tvgid)
-	if err != nil {
+	if err := q.Select(&channels, query, tvgid); err != nil {
 		return nil, err
+	}
+	if len(channels) > 0 {
+		return channels, nil
+	}
+
+	// SQLite's built-in LOWER is ASCII-oriented. Fall back to Go's Unicode
+	// normalization only when the indexed/common path found nothing.
+	available := []models.PlaylistChannel{}
+	query = `SELECT pc.* FROM playlistchannel pc
+	JOIN playlistgroup pg ON pg.id = pc.group_id
+	WHERE pc.tvg_id IS NOT NULL
+	AND pc.enabled = true AND pg.enabled = true
+	ORDER BY pc.id ASC`
+	if err := q.Select(&available, query); err != nil {
+		return nil, err
+	}
+	target := channelmatch.NormalizeTvgID(tvgid)
+	for _, channel := range available {
+		if channel.TvgID != nil && channelmatch.NormalizeTvgID(*channel.TvgID) == target {
+			channels = append(channels, channel)
+		}
 	}
 
 	return channels, nil

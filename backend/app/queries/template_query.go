@@ -3,6 +3,7 @@ package queries
 import (
 	"database/sql"
 	"xivi/backend/app/models"
+	"xivi/backend/pkg/channelmatch"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
@@ -363,6 +364,17 @@ func (q *TemplateQueries) GetTmplChannel(id int64) (*models.TemplateChannel, err
 	return channel, nil
 }
 
+// GetAllTmplChannels returns every canonical template channel for matching.
+func (q *TemplateQueries) GetAllTmplChannels() ([]models.TemplateChannel, error) {
+	channels := []models.TemplateChannel{}
+	query := `SELECT * FROM templatechannel ORDER BY id ASC`
+
+	if err := q.Select(&channels, query); err != nil {
+		return nil, err
+	}
+	return channels, nil
+}
+
 // Get one template channel by given name.
 func (q *TemplateQueries) GetTmplChannelByName(name string) (*models.TemplateChannel, error) {
 	channel := &models.TemplateChannel{}
@@ -382,19 +394,23 @@ func (q *TemplateQueries) GetTmplChannelByName(name string) (*models.TemplateCha
 
 // Get template channels by tvgid.
 func (q *TemplateQueries) GetTmplChannelsBytvgid(tvgid *string) (*[]models.TemplateChannel, error) {
-	channels := &[]models.TemplateChannel{}
-
-	query := `SELECT * FROM templatechannel WHERE tvgid = ?`
-
-	err := q.Select(channels, query, tvgid)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, ErrNotFound
-		}
+	channels := []models.TemplateChannel{}
+	if tvgid == nil {
+		return &channels, nil
+	}
+	available := []models.TemplateChannel{}
+	if err := q.Select(&available, `SELECT * FROM templatechannel
+		WHERE tvgid IS NOT NULL ORDER BY id ASC`); err != nil {
 		return nil, err
 	}
 
-	return channels, nil
+	target := channelmatch.NormalizeTvgID(*tvgid)
+	for _, channel := range available {
+		if channel.TvgID != nil && channelmatch.NormalizeTvgID(*channel.TvgID) == target {
+			channels = append(channels, channel)
+		}
+	}
+	return &channels, nil
 }
 
 // Create a template channel by given Channel object.
@@ -502,12 +518,9 @@ func (q *TemplateQueries) TmplChannelExists(channelId int64, playlistId int64) (
 	var exists bool
 	query := `SELECT COUNT(*) > 0 FROM templatechannelitem tci
 	JOIN playlistchannel pc ON tci.playlist_channel_id = pc.id
-	JOIN template_group_channel tgc ON tci.channel_id = tgc.channel_id
-	JOIN templategroup tg ON tgc.group_id = tg.id
-	JOIN template_group_item tgi ON tg.id = tgi.group_id
-	JOIN template tm ON tgi.template_id = tm.id
+	JOIN playlistgroup pg ON pc.group_id = pg.id
 	WHERE tci.channel_id = ?
-	AND pc.playlist_id = ?`
+	AND pg.playlist_id = ?`
 
 	err := q.Get(&exists, query, channelId, playlistId)
 	if err != nil {
@@ -517,14 +530,99 @@ func (q *TemplateQueries) TmplChannelExists(channelId int64, playlistId int64) (
 	return exists, nil
 }
 
+// ChannelMatchRejected reports whether a user previously removed this stable
+// provider identity from the same canonical channel and playlist.
+func (q *TemplateQueries) ChannelMatchRejected(
+	channelID int64,
+	playlistID int64,
+	tvgID *string,
+	name string,
+) (bool, error) {
+	var exists bool
+	tvgIDNorm := ""
+	if tvgID != nil {
+		tvgIDNorm = channelmatch.NormalizeTvgID(*tvgID)
+	}
+	nameNorm := channelmatch.ParseName(name).Canonical
+	query := `SELECT COUNT(*) > 0 FROM channelmatchrejection
+	WHERE channel_id = ? AND playlist_id = ?
+	AND ((tvg_id_norm <> '' AND tvg_id_norm = ?) OR name_norm = ?)`
+
+	if err := q.Get(&exists, query, channelID, playlistID, tvgIDNorm, nameNorm); err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+// ClearChannelMatchRejection records an explicit manual acceptance by removing
+// any rejection for this provider identity.
+func (q *TemplateQueries) ClearChannelMatchRejection(channelID, playlistChannelID int64) error {
+	identity := struct {
+		TvgID      *string `db:"tvg_id"`
+		Name       string  `db:"title"`
+		PlaylistID int64   `db:"playlist_id"`
+	}{}
+	query := `SELECT pc.tvg_id, pc.title, pg.playlist_id
+	FROM playlistchannel pc
+	JOIN playlistgroup pg ON pg.id = pc.group_id
+	WHERE pc.id = ?`
+	if err := q.Get(&identity, query, playlistChannelID); err != nil {
+		return err
+	}
+
+	tvgIDNorm := ""
+	if identity.TvgID != nil {
+		tvgIDNorm = channelmatch.NormalizeTvgID(*identity.TvgID)
+	}
+	nameNorm := channelmatch.ParseName(identity.Name).Canonical
+	_, err := q.Exec(`DELETE FROM channelmatchrejection
+		WHERE channel_id = ? AND playlist_id = ?
+		AND ((tvg_id_norm <> '' AND tvg_id_norm = ?) OR name_norm = ?)`,
+		channelID, identity.PlaylistID, tvgIDNorm, nameNorm)
+	return err
+}
+
 // Create a template channel item by given Channel Item object.
 func (q *TemplateQueries) CreateTmplChannelItem(p *models.TemplateChannelItem) (int64, error) {
-	query := `INSERT INTO templatechannelitem VALUES (null, ?, ?, ?)`
+	query := `INSERT INTO templatechannelitem (
+		channel_id, playlist_channel_id, orderr, match_method, match_score,
+		runner_up_score, matcher_version, manual_locked
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 
-	res, err := q.Exec(query, p.ChannelId, p.PlaylistChannelId, p.Order)
-	if err != sql.ErrNoRows && err != nil {
+	matchMethod := p.MatchMethod
+	if matchMethod == "" {
+		matchMethod = "manual"
+	}
+	matcherVersion := p.MatcherVersion
+	if matcherVersion == 0 {
+		matcherVersion = 2
+	}
+	manualLocked := p.ManualLocked
+	if matchMethod == "manual" {
+		manualLocked = true
+	}
+
+	res, err := q.Exec(
+		query,
+		p.ChannelId,
+		p.PlaylistChannelId,
+		p.Order,
+		matchMethod,
+		p.MatchScore,
+		p.RunnerUpScore,
+		matcherVersion,
+		manualLocked,
+	)
+	if err != nil {
 		log.Warn().Err(err).Msg("CREATE TMPL CHANNEL ITEM")
 		return 0, err
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if rowsAffected == 0 {
+		return 0, sql.ErrNoRows
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
@@ -537,9 +635,32 @@ func (q *TemplateQueries) CreateTmplChannelItem(p *models.TemplateChannelItem) (
 
 // Update a template channel item by given Channel Item object.
 func (q *TemplateQueries) UpdateTmplChannelItem(id int64, p *models.TemplateChannelItem) error {
-	query := `UPDATE templatechannelitem SET channel_id = ?, playlist_channel_id = ? WHERE id = ?`
+	query := `UPDATE templatechannelitem SET
+	channel_id = ?, playlist_channel_id = ?, match_method = ?, match_score = ?,
+	runner_up_score = ?, matcher_version = ?, manual_locked = ?
+	WHERE id = ?`
 
-	_, err := q.Exec(query, p.ChannelId, p.PlaylistChannelId, id)
+	matchMethod := p.MatchMethod
+	if matchMethod == "" {
+		matchMethod = "manual"
+	}
+	matcherVersion := p.MatcherVersion
+	if matcherVersion == 0 {
+		matcherVersion = 2
+	}
+	manualLocked := p.ManualLocked || matchMethod == "manual"
+
+	_, err := q.Exec(
+		query,
+		p.ChannelId,
+		p.PlaylistChannelId,
+		matchMethod,
+		p.MatchScore,
+		p.RunnerUpScore,
+		matcherVersion,
+		manualLocked,
+		id,
+	)
 	if err != nil {
 		return err
 	}
@@ -549,15 +670,49 @@ func (q *TemplateQueries) UpdateTmplChannelItem(id int64, p *models.TemplateChan
 
 // Delete a template channel item by given object.
 func (q *TemplateQueries) DeleteTmplChannelItem(templateItem *models.TemplateChannelItem) error {
-	query := `DELETE FROM templatechannelitem 
-	WHERE channel_id = ? AND playlist_channel_id = ?`
+	return q.WithTransaction(func(tx *sqlx.Tx) error {
+		identity := struct {
+			TvgID      *string `db:"tvg_id"`
+			Name       string  `db:"title"`
+			PlaylistID int64   `db:"playlist_id"`
+		}{}
+		identityQuery := `SELECT pc.tvg_id, pc.title, pg.playlist_id
+		FROM templatechannelitem tci
+		JOIN playlistchannel pc ON pc.id = tci.playlist_channel_id
+		JOIN playlistgroup pg ON pg.id = pc.group_id
+		WHERE tci.channel_id = ? AND tci.playlist_channel_id = ?`
+		if err := tx.Get(&identity, identityQuery, templateItem.ChannelId, templateItem.PlaylistChannelId); err != nil {
+			return err
+		}
 
-	_, err := q.Exec(query, templateItem.ChannelId, templateItem.PlaylistChannelId)
-	if err != nil {
-		return err
-	}
+		tvgIDNorm := ""
+		if identity.TvgID != nil {
+			tvgIDNorm = channelmatch.NormalizeTvgID(*identity.TvgID)
+		}
+		nameNorm := channelmatch.ParseName(identity.Name).Canonical
+		if _, err := tx.Exec(`INSERT INTO channelmatchrejection (
+			channel_id, playlist_id, tvg_id_norm, name_norm
+		) VALUES (?, ?, ?, ?)
+		ON CONFLICT(channel_id, playlist_id, tvg_id_norm, name_norm) DO NOTHING`,
+			templateItem.ChannelId, identity.PlaylistID, tvgIDNorm, nameNorm); err != nil {
+			return err
+		}
 
-	return nil
+		result, err := tx.Exec(`DELETE FROM templatechannelitem
+			WHERE channel_id = ? AND playlist_channel_id = ?`,
+			templateItem.ChannelId, templateItem.PlaylistChannelId)
+		if err != nil {
+			return err
+		}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if rowsAffected == 0 {
+			return sql.ErrNoRows
+		}
+		return nil
+	})
 }
 
 // Get Template Group Items by Template ID

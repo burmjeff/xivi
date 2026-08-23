@@ -786,10 +786,7 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 	m3uTools := utils.NewM3uTools()
 	go m3uTools.AddChannel(templateChannel, group_id)
 
-	go func() {
-		utils.UpdateTemplateVector(templateChannel)
-		utils.MatchTemplateChannel(templateChannel)
-	}()
+	go utils.MatchTemplateChannel(templateChannel)
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
@@ -868,7 +865,7 @@ func UpdateTemplateChannel(c *fiber.Ctx) error {
 		})
 	}
 
-	go utils.UpdateTemplateVector(&templateChannelLogo.TemplateChannel)
+	go utils.MatchTemplateChannel(&templateChannelLogo.TemplateChannel)
 
 	// Return status 201.
 	return c.SendStatus(fiber.StatusCreated)
@@ -1115,6 +1112,9 @@ func AddChannelMatch(c *fiber.Ctx) error {
 	channelItem := &models.TemplateChannelItem{
 		ChannelId:         channel_id,
 		PlaylistChannelId: match_id,
+		MatchMethod:       "manual",
+		MatcherVersion:    2,
+		ManualLocked:      true,
 	}
 
 	// Create template channel.
@@ -1122,6 +1122,13 @@ func AddChannelMatch(c *fiber.Ctx) error {
 		if _, err := database.Db.CreateTmplChannelItem(channelItem); err != nil {
 			log.Error().Msgf("Failed to create channelItem:, %v", err)
 			// Return status 500 and error message.
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": true,
+				"msg":   err.Error(),
+			})
+		}
+		if err := database.Db.ClearChannelMatchRejection(channel_id, match_id); err != nil {
+			log.Error().Err(err).Msg("Failed to clear channel match rejection")
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": true,
 				"msg":   err.Error(),
