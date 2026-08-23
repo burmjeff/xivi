@@ -3,7 +3,8 @@
 <script lang="ts">
 	import PlaylistGroup from './PlaylistGroup.svelte';
 	import { onMount } from 'svelte';
-	import { Accordion, Modal } from '@skeletonlabs/skeleton-svelte';
+	import { Accordion } from '@skeletonlabs/skeleton-svelte';
+	import Modal from '@xivi/components/Modal.svelte';
 	import {
 		FloatingArrow,
 		arrow,
@@ -75,8 +76,12 @@
 
 	// Helper function to create floating UI for playlist buttons with unique arrow elements
 	function createTooltipFloating(playlistId: number, tooltipType: 'edit' | 'refresh' | 'delete') {
-		const tooltipState = tooltipType === 'edit' ? editTooltipOpen :
-							 tooltipType === 'refresh' ? refreshTooltipOpen : deleteTooltipOpen;
+		const tooltipState =
+			tooltipType === 'edit'
+				? editTooltipOpen
+				: tooltipType === 'refresh'
+					? refreshTooltipOpen
+					: deleteTooltipOpen;
 
 		return useFloating({
 			whileElementsMounted: autoUpdate,
@@ -100,8 +105,6 @@
 		const dismiss = useDismiss(floating.context);
 		return useInteractions([role, hover, dismiss]);
 	}
-
-
 
 	function getDate(dateStr: string) {
 		const date = new Date(dateStr);
@@ -281,85 +284,83 @@
 					{@const deleteInteractions = createTooltipInteractions(deleteFloating)}
 					<div class="card mb-1 shadow-md">
 						<Accordion.Item value={playlist.name}>
-							{#snippet control()}
-								<div class="flex w-full cursor-pointer flex-row items-center">
-									<h4 class="flex-grow text-lg">{playlist.name}</h4>
-									<div class="flex flex-row items-center gap-1">
-										<span class="p-1 text-xs text-green-600"
-											>Updated at: {getDate(playlist.updated_at)}</span
-										>
+							<Accordion.ItemTrigger class="flex w-full cursor-pointer flex-row items-center p-4">
+								<h4 class="flex-grow text-left text-lg">{playlist.name}</h4>
+								<div class="flex flex-row items-center gap-1">
+									<span class="p-1 text-xs text-green-600"
+										>Updated at: {getDate(playlist.updated_at)}</span
+									>
 
-										<button
-											class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
-											onclick={(e) => {
-												e.stopPropagation();
-												modalPlaylist(false, playlist.id, playlist.name, playlist.url);
-											}}
-											bind:this={editFloating.elements.reference}
-											{...editInteractions.getReferenceProps()}
-											><Icon icon="icon-park-outline:edit-two" width="18" height="18" />
-											{#if editTooltipOpen[playlist.id]}
-												<div
-													bind:this={editFloating.elements.floating}
-													style={editFloating.floatingStyles}
-													{...editInteractions.getFloatingProps()}
-													class="floating glass card p-2 shadow-lg"
-													transition:fade={{ duration: 200 }}
-												>
-													<p class="text-sm font-medium"><strong>Edit Playlist</strong></p>
-												</div>
-											{/if}
-										</button>
-										<button
-											class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
-											onclick={(e) => {
-												e.stopPropagation();
-												refreshPlaylist(playlist.id);
-											}}
-											disabled={refreshingPlaylistId === playlist.id}
-											class:animate-spin={refreshingPlaylistId === playlist.id}
-											bind:this={refreshFloating.elements.reference}
-											{...refreshInteractions.getReferenceProps()}
-											><Icon icon="icon-park-outline:refresh-one" width="18" height="18" />
-											{#if refreshTooltipOpen[playlist.id]}
-												<div
-													bind:this={refreshFloating.elements.floating}
-													style={refreshFloating.floatingStyles}
-													{...refreshInteractions.getFloatingProps()}
-													class="floating glass card p-2 shadow-lg"
-													transition:fade={{ duration: 200 }}
-												>
-													<p class="text-sm font-medium"><strong>Refresh Playlist</strong></p>
-												</div>
-											{/if}
-										</button>
-										<button
-											class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
-											onclick={(e) => {
-												e.stopPropagation();
-												deletePrompt(playlist);
-											}}
-											bind:this={deleteFloating.elements.reference}
-											{...deleteInteractions.getReferenceProps()}
-											><Icon icon="icon-park-outline:delete" width="18" height="18" />
-											{#if deleteTooltipOpen[playlist.id]}
-												<div
-													bind:this={deleteFloating.elements.floating}
-													style={deleteFloating.floatingStyles}
-													{...deleteInteractions.getFloatingProps()}
-													class="floating glass card p-2 shadow-lg"
-													transition:fade={{ duration: 200 }}
-												>
-													<p class="text-sm font-medium"><strong>Delete Playlist</strong></p>
-												</div>
-											{/if}
-										</button>
-									</div>
+									<button
+										class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+										onclick={(e) => {
+											e.stopPropagation();
+											modalPlaylist(false, playlist.id, playlist.name, playlist.url);
+										}}
+										bind:this={editFloating.elements.reference}
+										{...editInteractions.getReferenceProps()}
+										><Icon icon="icon-park-outline:edit-two" width="18" height="18" />
+										{#if editTooltipOpen[playlist.id]}
+											<div
+												bind:this={editFloating.elements.floating}
+												style={editFloating.floatingStyles}
+												{...editInteractions.getFloatingProps()}
+												class="floating glass card p-2 shadow-lg"
+												transition:fade={{ duration: 200 }}
+											>
+												<p class="text-sm font-medium"><strong>Edit Playlist</strong></p>
+											</div>
+										{/if}
+									</button>
+									<button
+										class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+										onclick={(e) => {
+											e.stopPropagation();
+											refreshPlaylist(playlist.id);
+										}}
+										disabled={refreshingPlaylistId === playlist.id}
+										class:animate-spin={refreshingPlaylistId === playlist.id}
+										bind:this={refreshFloating.elements.reference}
+										{...refreshInteractions.getReferenceProps()}
+										><Icon icon="icon-park-outline:refresh-one" width="18" height="18" />
+										{#if refreshTooltipOpen[playlist.id]}
+											<div
+												bind:this={refreshFloating.elements.floating}
+												style={refreshFloating.floatingStyles}
+												{...refreshInteractions.getFloatingProps()}
+												class="floating glass card p-2 shadow-lg"
+												transition:fade={{ duration: 200 }}
+											>
+												<p class="text-sm font-medium"><strong>Refresh Playlist</strong></p>
+											</div>
+										{/if}
+									</button>
+									<button
+										class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+										onclick={(e) => {
+											e.stopPropagation();
+											deletePrompt(playlist);
+										}}
+										bind:this={deleteFloating.elements.reference}
+										{...deleteInteractions.getReferenceProps()}
+										><Icon icon="icon-park-outline:delete" width="18" height="18" />
+										{#if deleteTooltipOpen[playlist.id]}
+											<div
+												bind:this={deleteFloating.elements.floating}
+												style={deleteFloating.floatingStyles}
+												{...deleteInteractions.getFloatingProps()}
+												class="floating glass card p-2 shadow-lg"
+												transition:fade={{ duration: 200 }}
+											>
+												<p class="text-sm font-medium"><strong>Delete Playlist</strong></p>
+											</div>
+										{/if}
+									</button>
 								</div>
-							{/snippet}
-							{#snippet panel()}
+							</Accordion.ItemTrigger>
+							<Accordion.ItemContent>
 								<PlaylistGroup playlistId={playlist.id} playlistIdx={index} />
-							{/snippet}
+							</Accordion.ItemContent>
 						</Accordion.Item>
 					</div>
 				{/each}

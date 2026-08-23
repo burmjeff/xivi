@@ -2,7 +2,8 @@
 <script lang="ts">
 	import TemplateChannel from './TemplateChannel.svelte';
 	import { onMount } from 'svelte';
-	import { Accordion, Modal } from '@skeletonlabs/skeleton-svelte';
+	import { Accordion } from '@skeletonlabs/skeleton-svelte';
+	import Modal from '@xivi/components/Modal.svelte';
 	import { templates } from '@xivi/stores/template_store';
 	import { templateGroups } from '@xivi/stores/template_store';
 	import type { TemplateGroup } from '@xivi/data/template_entities';
@@ -186,8 +187,6 @@
 		window.addEventListener('mouseup', handleGlobalMouseUp);
 		window.addEventListener('pointerup', handleGlobalMouseUp);
 	}
-
-
 </script>
 
 <div id="accord" class="templategroups-viewport min-w-full overflow-auto">
@@ -214,52 +213,55 @@
 							animate:flip={{ duration: flipDurationMs }}
 						>
 							<Accordion.Item value={group.name}>
-								{#snippet control()}
-									<div class="flex w-full cursor-pointer flex-row items-center">
+								<Accordion.ItemTrigger class="flex w-full cursor-pointer flex-row items-center p-4">
+									<button
+										class="drag-handle hover:bg-surface-700/30 mr-2 flex-shrink-0 cursor-grab rounded px-2 py-1"
+										onclick={(e) => e.stopPropagation()}
+										onpointerdown={(e) => {
+											e.stopPropagation();
+											isDragFromHandle = true;
+											// Reset after a delay to allow drag to initiate
+											setTimeout(() => {
+												isDragFromHandle = false;
+											}, 100);
+										}}
+									>
+										<Icon
+											icon="material-symbols:drag-indicator"
+											width="16"
+											height="16"
+											class="text-surface-400"
+										/>
+									</button>
+									<h4 class="flex-grow text-left text-lg">{group.name}</h4>
+									<div class="flex flex-row gap-1">
 										<button
-											class="drag-handle cursor-grab flex-shrink-0 px-2 py-1 hover:bg-surface-700/30 rounded"
-											onclick={(e) => e.stopPropagation()}
-											onpointerdown={(e) => {
+											class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+											onclick={(e) => {
 												e.stopPropagation();
-												isDragFromHandle = true;
-												// Reset after a delay to allow drag to initiate
-												setTimeout(() => {
-													isDragFromHandle = false;
-												}, 100);
+												deletePrompt(group.id);
 											}}
+											bind:this={deleteFloating.elements.reference}
+											{...deleteInteractions.getReferenceProps()}
 										>
-											<Icon icon="material-symbols:drag-indicator" width="16" height="16" class="text-surface-400" />
+											<Icon icon="icon-park-outline:delete" width="18" height="18" />
+											{#if deleteTooltipOpen[group.id]}
+												<div
+													bind:this={deleteFloating.elements.floating}
+													style={deleteFloating.floatingStyles}
+													{...deleteInteractions.getFloatingProps()}
+													class="floating glass card pointer-events-none z-[9999] p-2 shadow-lg"
+													transition:fade={{ duration: 200 }}
+												>
+													<p class="text-sm font-medium"><strong>Remove Group</strong></p>
+												</div>
+											{/if}
 										</button>
-										<h4 class="flex-grow text-lg">{group.name}</h4>
-										<div class="flex flex-row gap-1">
-											<button
-												class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
-												onclick={(e) => {
-													e.stopPropagation();
-													deletePrompt(group.id);
-												}}
-												bind:this={deleteFloating.elements.reference}
-												{...deleteInteractions.getReferenceProps()}
-											>
-												<Icon icon="icon-park-outline:delete" width="18" height="18" />
-												{#if deleteTooltipOpen[group.id]}
-													<div
-														bind:this={deleteFloating.elements.floating}
-														style={deleteFloating.floatingStyles}
-														{...deleteInteractions.getFloatingProps()}
-														class="floating glass card p-2 shadow-lg z-[9999] pointer-events-none"
-														transition:fade={{ duration: 200 }}
-													>
-														<p class="text-sm font-medium"><strong>Remove Group</strong></p>
-													</div>
-												{/if}
-											</button>
-										</div>
 									</div>
-								{/snippet}
-								{#snippet panel()}
+								</Accordion.ItemTrigger>
+								<Accordion.ItemContent>
 									<TemplateChannel groupId={group.id} {groupIdx} />
-								{/snippet}
+								</Accordion.ItemContent>
 							</Accordion.Item>
 							{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
 								<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">

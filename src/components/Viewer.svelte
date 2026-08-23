@@ -80,14 +80,12 @@
 					{#each $templates[selected].groups as group, groupIdx (group.id)}
 						<div class="groups w-content card mb-1 justify-center p-1 shadow-md">
 							<Accordion.Item value={group.name}>
-								{#snippet control()}
-									<div class="flex w-full cursor-pointer flex-row items-center">
-										<h4 class="flex-grow text-lg">{group.name}</h4>
-									</div>
-								{/snippet}
-								{#snippet panel()}
+								<Accordion.ItemTrigger class="flex w-full cursor-pointer flex-row items-center p-4">
+									<h4 class="flex-grow text-left text-lg">{group.name}</h4>
+								</Accordion.ItemTrigger>
+								<Accordion.ItemContent>
 									<ViewerChannels templateIdx={selected} groupId={group.id} {groupIdx} />
-								{/snippet}
+								</Accordion.ItemContent>
 							</Accordion.Item>
 						</div>
 					{/each}

@@ -253,46 +253,44 @@
 					<span class="text-sm font-medium">Dynamic Group</span>
 					<Switch
 						name="dynamic"
-						base="flex"
-						controlBase="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-						controlActive="bg-primary-500"
-						controlInactive="preset-filled-surface-200-800"
-						thumbBase="pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform"
-						thumbActive="translate-x-5"
-						thumbInactive="translate-x-1"
 						checked={formData.dynamic}
 						onCheckedChange={(e) => (formData.dynamic = e.checked)}
 						{...tooltipInteractions.getReferenceProps()}
-					/>
+					>
+						<Switch.Control
+							class="bg-surface-300 data-[state=checked]:bg-primary-500 relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+						>
+							<Switch.Thumb
+								class="pointer-events-none block h-5 w-5 translate-x-1 rounded-full bg-white shadow-lg ring-0 transition-transform data-[state=checked]:translate-x-5"
+							/>
+						</Switch.Control>
+					</Switch>
 				</div>
 
 				<div class="form-group flex-1">
 					{#if formData.dynamic}
 						<div class="combobox-wrapper">
-							<span id="playlist-group-label" class="mb-2 block text-sm font-medium"
-								>Select Playlist Group</span
-							>
 							{#if dynamicOptions.length > 0}
-								<Combobox
-									data={dynamicOptions}
-									value={selectedOption}
-									defaultValue={selectedOption}
-									onValueChange={(e) => (selectedOption = e.value)}
-									label=""
-									placeholder="Select or type..."
-									positioning={{
-										placement: 'bottom-start',
-										flip: false,
-										overflowPadding: 8,
-										fitViewport: true
-									}}
-									contentBase="max-h-48 glass card overflow-y-auto p-2 shadow-lg"
-								>
-									{#snippet item(item: { label: string; value: string })}
-										<div class="flex w-full justify-between space-x-2">
-											<span>{item.label}</span>
-										</div>
-									{/snippet}
+								<Combobox value={selectedOption} onValueChange={(e) => (selectedOption = e.value)}>
+									<Combobox.Label class="mb-2 block text-sm font-medium"
+										>Select Playlist Group</Combobox.Label
+									>
+									<div class="relative">
+										<Combobox.Input class="input w-full" placeholder="Select or type..." />
+									</div>
+									<Combobox.Content
+										class="glass card z-[9999] max-h-48 overflow-y-auto p-2 shadow-lg"
+									>
+										{#each dynamicOptions as option}
+											<Combobox.Item
+												value={option.value as any}
+												label={option.label}
+												class="hover:bg-surface-700/30 cursor-pointer rounded px-2 py-1"
+											>
+												{option.label}
+											</Combobox.Item>
+										{/each}
+									</Combobox.Content>
 								</Combobox>
 							{:else}
 								<div class="input bg-surface-700/30 p-2 text-gray-500">

@@ -1,0 +1,105 @@
+[data-theme='xivi'] {
+	/* Typography */
+	--text-scaling: 1;
+	--base-font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+	--base-font-size: 16px;
+	--base-line-height: 1.6;
+	--base-font-weight: 400;
+	--base-font-style: normal;
+	--base-letter-spacing: -0.01em;
+
+	--heading-font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+	--heading-font-weight: 600;
+	--heading-font-style: normal;
+	--heading-letter-spacing: -0.02em;
+
+	/* Colors - Zinc (Surface) & Violet (Primary) */
+
+	/* Primary - Violet */
+	--color-primary-50: 250 245 255;
+	/* #faf5ff */
+	--color-primary-100: 243 232 255;
+	/* #f3e8ff */
+	--color-primary-200: 233 213 255;
+	/* #e9d5ff */
+	--color-primary-300: 216 180 254;
+	/* #d8b4fe */
+	--color-primary-400: 192 132 252;
+	/* #c084fc */
+	--color-primary-500: 168 85 247;
+	/* #a855f7 */
+	--color-primary-600: 147 51 234;
+	/* #9333ea */
+	--color-primary-700: 126 34 206;
+	/* #7e22ce */
+	--color-primary-800: 107 33 168;
+	/* #6b21a8 */
+	--color-primary-900: 88 28 135;
+	/* #581c87 */
+	--color-primary-950: 59 7 100;
+	/* #3b0764 */
+
+	/* Surface - Zinc */
+	--color-surface-50: 250 250 250;
+	/* #fafafa */
+	--color-surface-100: 244 244 245;
+	/* #f4f4f5 */
+	--color-surface-200: 228 228 231;
+	/* #e4e4e7 */
+	--color-surface-300: 212 212 216;
+	/* #d4d4d8 */
+	--color-surface-400: 161 161 170;
+	/* #a1a1aa */
+	--color-surface-500: 113 113 122;
+	/* #71717a */
+	--color-surface-600: 82 82 91;
+	/* #52525b */
+	--color-surface-700: 63 63 70;
+	/* #3f3f46 */
+	--color-surface-800: 39 39 42;
+	/* #27272a */
+	--color-surface-900: 24 24 27;
+	/* #18181b */
+	--color-surface-950: 9 9 11;
+	/* #09090b */
+
+	/* Secondary - Slate */
+	--color-secondary-50: 248 250 252;
+	--color-secondary-100: 241 245 249;
+	--color-secondary-200: 226 232 240;
+	--color-secondary-300: 203 213 225;
+	--color-secondary-400: 148 163 184;
+	--color-secondary-500: 100 116 139;
+	--color-secondary-600: 71 85 105;
+	--color-secondary-700: 51 65 85;
+	--color-secondary-800: 30 41 59;
+	--color-secondary-900: 15 23 42;
+	--color-secondary-950: 2 6 23;
+
+	/* Tertiary - Emerald */
+	--color-tertiary-50: 236 253 245;
+	--color-tertiary-100: 209 250 229;
+	--color-tertiary-200: 167 243 208;
+	--color-tertiary-300: 110 231 183;
+	--color-tertiary-400: 52 211 153;
+	--color-tertiary-500: 16 185 129;
+	--color-tertiary-600: 5 150 105;
+	--color-tertiary-700: 4 120 87;
+	--color-tertiary-800: 6 95 70;
+	--color-tertiary-900: 6 78 59;
+	--color-tertiary-950: 2 44 34;
+
+	/* Status Colors */
+	--color-success-500: 34 197 94;
+	--color-warning-500: 234 179 8;
+	--color-error-500: 239 68 68;
+
+	/* Component Properties */
+	--radius-base: 0.5rem;
+	--radius-container: 0.75rem;
+	--border-width: 1px;
+
+	/* Skeleton UI Specific Overrides */
+	--on-primary: 255 255 255;
+	--on-surface: 255 255 255;
+}

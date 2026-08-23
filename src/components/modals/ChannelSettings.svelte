@@ -376,25 +376,24 @@
 				</label>
 				<div class="channel_tvgid">
 					<span>Channel tvgid</span>
-					<Combobox
-						data={tvgidOptions}
-						value={selectedTvgid}
-						onValueChange={(e) => (selectedTvgid = e.value)}
-						label=""
-						placeholder="Select or type..."
-						positioning={{
-							placement: 'bottom-start',
-							flip: false,
-							overflowPadding: 8,
-							fitViewport: true
-						}}
-						contentBase="max-h-48 overflow-y-auto"
-					>
-						{#snippet item(item: { label: string; value: string })}
-							<div class="flex w-full justify-between space-x-2">
-								<span>{item.label}</span>
-							</div>
-						{/snippet}
+					<Combobox value={selectedTvgid} onValueChange={(e) => (selectedTvgid = e.value)}>
+						<div class="relative">
+							<Combobox.Input
+								class="input variant-form-material w-full"
+								placeholder="Select or type..."
+							/>
+						</div>
+						<Combobox.Content class="glass card z-[9999] max-h-48 overflow-y-auto p-2 shadow-lg">
+							{#each tvgidOptions as option}
+								<Combobox.Item
+									value={option.value as any}
+									label={option.label}
+									class="hover:bg-surface-700/30 flex cursor-pointer justify-between rounded px-2 py-1"
+								>
+									<span>{option.label}</span>
+								</Combobox.Item>
+							{/each}
+						</Combobox.Content>
 					</Combobox>
 				</div>
 				<div class="channel_logo">

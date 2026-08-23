@@ -3,7 +3,7 @@
 <script lang="ts">
 	import 'media-chrome';
 	import Hls from 'hls.js';
-	import { Modal } from '@skeletonlabs/skeleton-svelte';
+	import Modal from '@xivi/components/Modal.svelte';
 	import { onMount } from 'svelte';
 	import xivi from '@xivi/lib/assets/xivi.png';
 

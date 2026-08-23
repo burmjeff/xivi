@@ -117,36 +117,35 @@
 {#if $playlists[playlistIdx].groups != null && $playlists[playlistIdx].groups.length > 0}
 	<Accordion collapsible value={accordionValue} onValueChange={(e) => (accordionValue = e.value)}>
 		<div id="accord" class="playlistgroups-viewport min-w-full overflow-auto">
-			<Accordion.Item value="disabled-groups" base="card shadow-md mb-1">
-				{#snippet control()}
-					<div class="flex w-full cursor-pointer flex-row items-center">
-						<h4 class="w-full">DISABLED GROUPS</h4>
-					</div>
-				{/snippet}
-				{#snippet panel()}
+			<Accordion.Item value="disabled-groups" class="card mb-1 shadow-md">
+				<Accordion.ItemTrigger class="flex w-full cursor-pointer flex-row items-center p-4">
+					<h4 class="w-full text-left">DISABLED GROUPS</h4>
+				</Accordion.ItemTrigger>
+				<Accordion.ItemContent>
 					{#each $playlists[playlistIdx].groups as group (group.id)}
 						{#if !group.enabled}
 							<div class="card flex w-full flex-row items-center px-4 py-1 shadow-md">
 								<span class="flex-grow">{group.name}</span>
 								<Switch
 									name="group_enabled"
-									base="flex"
-									controlBase="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-									controlActive="bg-primary-500"
-									controlInactive="preset-filled-surface-200-800"
-									thumbBase="pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform"
-									thumbActive="translate-x-5"
-									thumbInactive="translate-x-1"
 									checked={group.enabled}
 									onCheckedChange={(e) => {
 										group.enabled = e.checked;
 										disableGroup(group);
 									}}
-								/>
+								>
+									<Switch.Control
+										class="bg-surface-300 data-[state=checked]:bg-primary-500 relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+									>
+										<Switch.Thumb
+											class="pointer-events-none block h-5 w-5 translate-x-1 rounded-full bg-white shadow-lg ring-0 transition-transform data-[state=checked]:translate-x-5"
+										/>
+									</Switch.Control>
+								</Switch>
 							</div>
 						{/if}
 					{/each}
-				{/snippet}
+				</Accordion.ItemContent>
 			</Accordion.Item>
 			<section
 				use:dndzone={{
@@ -164,55 +163,59 @@
 					<div id="animate" animate:flip={{ duration: flipDurationMs }} class="card mb-1 shadow-md">
 						{#if group.enabled}
 							<Accordion.Item value={group.name}>
-								{#snippet control()}
-									<div class="flex w-full cursor-pointer flex-row items-center">
-										<button
-											type="button"
-											class="drag-handle cursor-grab flex-shrink-0 px-2 py-1 hover:bg-surface-700/30 rounded"
-											onclick={(e) => e.stopPropagation()}
-											onpointerdown={(e) => {
+								<Accordion.ItemTrigger class="flex w-full cursor-pointer flex-row items-center p-4">
+									<button
+										type="button"
+										class="drag-handle hover:bg-surface-700/30 mr-2 flex-shrink-0 cursor-grab rounded px-2 py-1"
+										onclick={(e) => e.stopPropagation()}
+										onpointerdown={(e) => {
+											e.stopPropagation();
+											isDragFromHandle = true;
+											// Reset after a delay to allow drag to initiate
+											setTimeout(() => {
+												isDragFromHandle = false;
+											}, 100);
+										}}
+										aria-label="Drag to reorder"
+									>
+										<Icon
+											icon="material-symbols:drag-indicator"
+											width="16"
+											height="16"
+											class="text-surface-400"
+										/>
+									</button>
+									<h4 class="flex-grow text-left">{group.name}</h4>
+									<span
+										role="presentation"
+										onclick={(e) => e.stopPropagation()}
+										onkeydown={(e) => {
+											if (e.key === 'Enter' || e.key === ' ') {
 												e.stopPropagation();
-												isDragFromHandle = true;
-												// Reset after a delay to allow drag to initiate
-												setTimeout(() => {
-													isDragFromHandle = false;
-												}, 100);
-											}}
-											aria-label="Drag to reorder"
-										>
-											<Icon icon="material-symbols:drag-indicator" width="16" height="16" class="text-surface-400" />
-										</button>
-										<h4 class="flex-grow">{group.name}</h4>
-										<span
-											role="presentation"
-											onclick={(e) => e.stopPropagation()}
-											onkeydown={(e) => {
-												if (e.key === 'Enter' || e.key === ' ') {
-													e.stopPropagation();
-												}
+											}
+										}}
+									>
+										<Switch
+											name="group_enabled"
+											checked={group.enabled}
+											onCheckedChange={(e) => {
+												group.enabled = e.checked;
+												disableGroup(group);
 											}}
 										>
-											<Switch
-												name="group_enabled"
-												base="flex"
-												controlBase="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-												controlActive="bg-primary-500"
-												controlInactive="preset-filled-surface-200-800"
-												thumbBase="pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform"
-												thumbActive="translate-x-5"
-												thumbInactive="translate-x-1"
-												checked={group.enabled}
-												onCheckedChange={(e) => {
-													group.enabled = e.checked;
-													disableGroup(group);
-												}}
-											/>
-										</span>
-									</div>
-								{/snippet}
-								{#snippet panel()}
+											<Switch.Control
+												class="bg-surface-300 data-[state=checked]:bg-primary-500 relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+											>
+												<Switch.Thumb
+													class="pointer-events-none block h-5 w-5 translate-x-1 rounded-full bg-white shadow-lg ring-0 transition-transform data-[state=checked]:translate-x-5"
+												/>
+											</Switch.Control>
+										</Switch>
+									</span>
+								</Accordion.ItemTrigger>
+								<Accordion.ItemContent>
 									<PlaylistChannel {playlistId} {playlistIdx} groupId={group.id} {groupIdx} />
-								{/snippet}
+								</Accordion.ItemContent>
 							</Accordion.Item>
 							{#if group[SHADOW_ITEM_MARKER_PROPERTY_NAME] && shouldIgnoreDndEvents}
 								<div in:fade={{ duration: 200, easing: cubicIn }} class="custom-shadow-item">

@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { templateGroups } from '@xivi/stores/template_store';
 	import type { TemplateChannel } from '@xivi/data/template_entities';
-	import { Modal } from '@skeletonlabs/skeleton-svelte';
+	import Modal from '@xivi/components/Modal.svelte';
 	import ChannelSettings from './modals/ChannelSettings.svelte';
 	import {
 		dndzone,

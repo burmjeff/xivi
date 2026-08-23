@@ -1,177 +1,51 @@
 <script lang="ts">
 	import '@xivi/app.css';
-	import { AppBar } from '@skeletonlabs/skeleton-svelte';
-	import xivi from '@xivi/lib/assets/xivi.png';
-	import Icon from '@iconify/svelte';
+	import Header from '$lib/components/layout/Header.svelte';
+	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 
-	interface Props {
-		children?: import('svelte').Snippet;
-	}
-
-	let { children }: Props = $props();
-
-	// Active route tracking
-	let currentPath = $state('/');
-
-	// Update active route on client-side
-	function updateCurrentPath() {
-		if (typeof window !== 'undefined') {
-			currentPath = window.location.pathname;
-		}
-	}
-
-	// Check if a route is active
-	function isActive(path: string): boolean {
-		return currentPath === path;
-	}
-
-	// Update on mount and navigation
-	$effect(() => {
-		updateCurrentPath();
-
-		if (typeof window !== 'undefined') {
-			// Listen for route changes
-			const handleRouteChange = () => updateCurrentPath();
-			window.addEventListener('popstate', handleRouteChange);
-
-			return () => {
-				window.removeEventListener('popstate', handleRouteChange);
-			};
-		}
-	});
+	let { children } = $props();
 </script>
 
-<!-- Semantic layout with Tailwind grid -->
-<div class="grid h-full grid-cols-[auto_1fr] grid-rows-[auto_1fr_auto]">
-	<!-- Header (spans both columns) -->
-	<header class="sticky top-0 z-10 col-span-2 shadow-md">
-		<!-- App Bar -->
-		<AppBar classes="h-12 justify-center bg-gradient-to-r from-surface-900 to-surface-800">
-			{#snippet lead()}
-				<div class="flex items-center gap-2">
-					<img
-						class="h-10 w-auto transition-transform duration-300 hover:scale-110"
-						src={xivi}
-						alt="Xivi Logo"
-					/>
-				</div>
-			{/snippet}
-			{#snippet trail()}
-				<div class="flex items-center gap-4">
-					<a
-						class="btn btn-sm bg-primary-700 hover:bg-primary-600 flex items-center gap-2 text-white transition-colors duration-200"
-						href="https://github.com/burmjeff/xivi"
-						target="_blank"
-						rel="noreferrer"
-					>
-						<Icon icon="mdi:github" width="18" height="18" />
-						<span>GitHub</span>
-					</a>
-				</div>
-			{/snippet}
-		</AppBar>
+<!-- Modern Layout Structure -->
+<div class="bg-surface-950 bg-grid-pattern text-surface-50 flex h-full flex-col overflow-hidden">
+	<!-- Header -->
+	<header class="z-20 shrink-0">
+		<Header />
 	</header>
 
-	<!-- Sidebar -->
-	<aside class="bg-surface-800/90 w-52 shadow-lg">
-		<!-- Navigation -->
-		<nav class="px-4 py-6">
-			<ul class="space-y-1">
-				<li>
-					<a
-						href="/"
-						class="flex items-center gap-3 rounded-lg px-4 py-3 transition-all duration-200 {isActive(
-							'/'
-						)
-							? 'bg-primary-900/50 text-primary-400 font-medium'
-							: 'hover:bg-surface-700/50'}"
-						onclick={() => (currentPath = '/')}
-					>
-						<Icon icon="mdi:home" width="20" height="20" />
-						<span>Status</span>
-					</a>
-				</li>
-				<li>
-					<a
-						href="/viewer"
-						class="flex items-center gap-3 rounded-lg px-4 py-3 transition-all duration-200 {isActive(
-							'/viewer'
-						)
-							? 'bg-primary-900/50 text-primary-400 font-medium'
-							: 'hover:bg-surface-700/50'}"
-						onclick={() => (currentPath = '/viewer')}
-					>
-						<Icon icon="mdi:television" width="20" height="20" />
-						<span>Viewer</span>
-					</a>
-				</li>
-				<li>
-					<a
-						href="/channels"
-						class="flex items-center gap-3 rounded-lg px-4 py-3 transition-all duration-200 {isActive(
-							'/channels'
-						)
-							? 'bg-primary-900/50 text-primary-400 font-medium'
-							: 'hover:bg-surface-700/50'}"
-						onclick={() => (currentPath = '/channels')}
-					>
-						<Icon icon="mdi:playlist-play" width="20" height="20" />
-						<span>Channel Management</span>
-					</a>
-				</li>
-				<li>
-					<a
-						href="/epg"
-						class="flex items-center gap-3 rounded-lg px-4 py-3 transition-all duration-200 {isActive(
-							'/epg'
-						)
-							? 'bg-primary-900/50 text-primary-400 font-medium'
-							: 'hover:bg-surface-700/50'}"
-						onclick={() => (currentPath = '/epg')}
-					>
-						<Icon icon="mdi:calendar-clock" width="20" height="20" />
-						<span>EPG</span>
-					</a>
-				</li>
-				<li>
-					<a
-						href="/settings"
-						class="flex items-center gap-3 rounded-lg px-4 py-3 transition-all duration-200 {isActive(
-							'/settings'
-						)
-							? 'bg-primary-900/50 text-primary-400 font-medium'
-							: 'hover:bg-surface-700/50'}"
-						onclick={() => (currentPath = '/settings')}
-					>
-						<Icon icon="mdi:cog" width="20" height="20" />
-						<span>Settings</span>
-					</a>
-				</li>
-			</ul>
-		</nav>
-	</aside>
+	<div class="flex flex-1 overflow-hidden">
+		<!-- Sidebar -->
+		<aside
+			class="border-surface-800/50 bg-surface-900/30 hidden w-64 shrink-0 border-r backdrop-blur-sm md:block"
+		>
+			<Sidebar />
+		</aside>
 
-	<!-- Main Content -->
-	<main class="bg-surface-900/30 overflow-auto">
-		<!-- Page Route Content -->
-		<div class="p-4">
-			{@render children?.()}
-		</div>
-	</main>
+		<!-- Main Content -->
+		<main class="relative flex-1 overflow-x-hidden overflow-y-auto scroll-smooth">
+			<div class="container mx-auto max-w-7xl p-6 lg:p-8">
+				{@render children?.()}
+			</div>
 
-	<!-- Footer (spans both columns) -->
-	<footer class="bg-surface-900 text-surface-400 col-span-2 py-1 text-center text-sm">
-		<div class="flex items-center justify-center gap-2">
-			<span>Xivi</span>
-			<span class="text-primary-400">•</span>
-			<span>v0.1.0</span>
-			<span class="text-primary-400">•</span>
-			<a
-				href="https://github.com/burmjeff/xivi/issues"
-				target="_blank"
-				rel="noreferrer"
-				class="hover:text-primary-400 transition-colors">Report Issue</a
+			<!-- Footer -->
+			<footer
+				class="border-surface-800/50 text-surface-400 mt-12 border-t py-6 text-center text-sm"
 			>
-		</div>
-	</footer>
+				<div class="flex items-center justify-center gap-3">
+					<span class="text-surface-300 font-medium">Xivi</span>
+					<span class="text-surface-700">•</span>
+					<span>v0.1.0</span>
+					<span class="text-surface-700">•</span>
+					<a
+						href="https://github.com/burmjeff/xivi/issues"
+						target="_blank"
+						rel="noreferrer"
+						class="hover:text-primary-400 transition-colors"
+					>
+						Report Issue
+					</a>
+				</div>
+			</footer>
+		</main>
+	</div>
 </div>

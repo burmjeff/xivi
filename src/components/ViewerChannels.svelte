@@ -140,13 +140,11 @@
 					</div>
 					{#if channel.start != '' && channel.end != ''}
 						<div class="mt-2 flex w-full drop-shadow-md">
-							<Progress
-								value={getProgress(channel.start, channel.end)}
-								max={100}
-								meterBg="preset-filled-primary-500"
-								trackBg="preset-filled-surface-900-100"
-								height="h-2">{getProgress(channel.start, channel.end)}%</Progress
-							>
+							<Progress value={getProgress(channel.start, channel.end)} max={100}>
+								<Progress.Track class="bg-surface-900/10 h-2 w-full overflow-hidden rounded-full">
+									<Progress.Range class="bg-primary-500 h-full transition-all" />
+								</Progress.Track>
+							</Progress>
 						</div>
 					{/if}
 				</div>

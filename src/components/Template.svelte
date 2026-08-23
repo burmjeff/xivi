@@ -3,7 +3,8 @@
 	import TemplateGroup from './TemplateGroup.svelte';
 	import TemplateSettings from './modals/TemplateSettings.svelte';
 	import { onMount } from 'svelte';
-	import { Accordion, Modal } from '@skeletonlabs/skeleton-svelte';
+	import { Accordion } from '@skeletonlabs/skeleton-svelte';
+	import Modal from '@xivi/components/Modal.svelte';
 	import {
 		FloatingArrow,
 		arrow,
@@ -227,60 +228,58 @@
 					{@const deleteInteractions = createTooltipInteractions(deleteFloating)}
 					<div class="card mb-1 shadow-md">
 						<Accordion.Item value={template.name}>
-							{#snippet control()}
-								<div class="flex w-full cursor-pointer flex-row items-center">
-									<h4 class="flex-grow align-middle text-lg">{template.name}</h4>
-									<div class="flex flex-row gap-1">
-										<button
-											class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
-											onclick={(e) => {
-												modalTemplate(false, template.id, template.name);
-												e.stopPropagation();
-											}}
-											bind:this={editFloating.elements.reference}
-											{...editInteractions.getReferenceProps()}
-										>
-											<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
-											{#if editTooltipOpen[template.id]}
-												<div
-													bind:this={editFloating.elements.floating}
-													style={editFloating.floatingStyles}
-													{...editInteractions.getFloatingProps()}
-													class="floating glass card p-2 shadow-lg"
-													transition:fade={{ duration: 200 }}
-												>
-													<p class="text-sm font-medium"><strong>Edit Template</strong></p>
-												</div>
-											{/if}
-										</button>
-										<button
-											class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
-											onclick={(e) => {
-												deletePrompt(template.id);
-												e.stopPropagation();
-											}}
-											bind:this={deleteFloating.elements.reference}
-											{...deleteInteractions.getReferenceProps()}
-										>
-											<Icon icon="icon-park-outline:delete" width="18" height="18" />
-											{#if deleteTooltipOpen[template.id]}
-												<div
-													bind:this={deleteFloating.elements.floating}
-													style={deleteFloating.floatingStyles}
-													{...deleteInteractions.getFloatingProps()}
-													class="floating glass card p-2 shadow-lg"
-													transition:fade={{ duration: 200 }}
-												>
-													<p class="text-sm font-medium"><strong>Delete Template</strong></p>
-												</div>
-											{/if}
-										</button>
-									</div>
+							<Accordion.ItemTrigger class="flex w-full cursor-pointer flex-row items-center p-4">
+								<h4 class="flex-grow text-left align-middle text-lg">{template.name}</h4>
+								<div class="flex flex-row gap-1">
+									<button
+										class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+										onclick={(e) => {
+											modalTemplate(false, template.id, template.name);
+											e.stopPropagation();
+										}}
+										bind:this={editFloating.elements.reference}
+										{...editInteractions.getReferenceProps()}
+									>
+										<Icon icon="icon-park-outline:edit-two" width="18" height="18" />
+										{#if editTooltipOpen[template.id]}
+											<div
+												bind:this={editFloating.elements.floating}
+												style={editFloating.floatingStyles}
+												{...editInteractions.getFloatingProps()}
+												class="floating glass card p-2 shadow-lg"
+												transition:fade={{ duration: 200 }}
+											>
+												<p class="text-sm font-medium"><strong>Edit Template</strong></p>
+											</div>
+										{/if}
+									</button>
+									<button
+										class="btn-icon btn-icon-md inset-y-0 bg-transparent!"
+										onclick={(e) => {
+											deletePrompt(template.id);
+											e.stopPropagation();
+										}}
+										bind:this={deleteFloating.elements.reference}
+										{...deleteInteractions.getReferenceProps()}
+									>
+										<Icon icon="icon-park-outline:delete" width="18" height="18" />
+										{#if deleteTooltipOpen[template.id]}
+											<div
+												bind:this={deleteFloating.elements.floating}
+												style={deleteFloating.floatingStyles}
+												{...deleteInteractions.getFloatingProps()}
+												class="floating glass card p-2 shadow-lg"
+												transition:fade={{ duration: 200 }}
+											>
+												<p class="text-sm font-medium"><strong>Delete Template</strong></p>
+											</div>
+										{/if}
+									</button>
 								</div>
-							{/snippet}
-							{#snippet panel()}
+							</Accordion.ItemTrigger>
+							<Accordion.ItemContent>
 								<TemplateGroup templateId={template.id} {templateIdx} />
-							{/snippet}
+							</Accordion.ItemContent>
 						</Accordion.Item>
 					</div>
 				{/each}

@@ -127,7 +127,8 @@
 					buffer: Number(inputBuffer),
 					retryeos: Number(inputRetryEOS),
 					useragent: inputUserAgent
-				}
+				},
+				upnp: $settings.upnp
 			};
 			window.console.log('SETTINGS: ', newSettings);
 

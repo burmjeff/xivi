@@ -1,7 +1,7 @@
 <!-- TemplateStatus.svelte -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Modal } from '@skeletonlabs/skeleton-svelte';
+	import Modal from '@xivi/components/Modal.svelte';
 	import { templates } from '@xivi/stores/template_store';
 	import Icon from '@iconify/svelte';
 	import { settings } from '@xivi/stores/settings_store';

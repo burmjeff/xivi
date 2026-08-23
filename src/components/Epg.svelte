@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import { epgs } from '@xivi/stores/epg_store';
 	import Icon from '@iconify/svelte';
-	import { Modal } from '@skeletonlabs/skeleton-svelte';
+	import Modal from '@xivi/components/Modal.svelte';
 	import {
 		FloatingArrow,
 		arrow,
