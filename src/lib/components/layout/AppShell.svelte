@@ -9,11 +9,14 @@
 		Database,
 		BookOpen,
 		Settings,
-		ArrowLeftRight
+		ArrowLeftRight,
+		PanelLeftClose,
+		PanelLeftOpen
 	} from '@lucide/svelte';
 	import SignalMark from '$lib/components/brand/SignalMark.svelte';
 	import CommandMenu from './CommandMenu.svelte';
 	import ThemeSwitcher from '$lib/components/ui/ThemeSwitcher.svelte';
+	import { preferences, setStudioNavCollapsed } from '$lib/state/preferences.svelte';
 	let { children } = $props();
 	let studio = $derived(page.url.pathname.startsWith('/studio'));
 	const watchNav = [
@@ -37,17 +40,44 @@
 
 <div class:studio-mode={studio} class:watch-mode={!studio} class="shell">
 	{#if studio}
-		<aside class="studio-rail">
-			<a class="rail-brand" href="/studio" aria-label="Xivi Studio"><SignalMark /></a>
-			<nav aria-label="Studio">
+		<aside class:collapsed={preferences.studioNavCollapsed} class="studio-rail">
+			<div class="rail-head">
+				<a class="rail-brand" href="/studio" aria-label="Xivi Studio"><SignalMark /></a>
+				<button
+					class="rail-toggle"
+					type="button"
+					aria-controls="studio-navigation"
+					aria-expanded={!preferences.studioNavCollapsed}
+					aria-label={preferences.studioNavCollapsed
+						? 'Expand Studio navigation'
+						: 'Collapse Studio navigation'}
+					title={preferences.studioNavCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+					onclick={() => setStudioNavCollapsed(!preferences.studioNavCollapsed)}
+				>
+					{#if preferences.studioNavCollapsed}<PanelLeftOpen size={19} />{:else}<PanelLeftClose
+							size={19}
+						/>{/if}
+				</button>
+			</div>
+			<nav id="studio-navigation" aria-label="Studio">
 				<span class="nav-label">Studio</span>{#each studioNav as item}{@const Icon = item.icon}<a
 						href={item.href}
-						class:active={active(item.href)}><Icon size={19} /><span>{item.label}</span></a
+						class:active={active(item.href)}
+						aria-label={preferences.studioNavCollapsed ? item.label : undefined}
+						title={preferences.studioNavCollapsed ? item.label : undefined}
+						><Icon size={19} /><span>{item.label}</span></a
 					>{/each}
 			</nav>
 			<div class="rail-bottom">
-				<div class="rail-command"><CommandMenu compact /></div>
-				<a href="/"><ArrowLeftRight size={18} /><span>Watch</span></a><ThemeSwitcher />
+				<div class="rail-command">
+					<CommandMenu compact iconOnly={preferences.studioNavCollapsed} />
+				</div>
+				<a
+					href="/"
+					aria-label={preferences.studioNavCollapsed ? 'Watch' : undefined}
+					title={preferences.studioNavCollapsed ? 'Watch' : undefined}
+					><ArrowLeftRight size={18} /><span>Watch</span></a
+				><ThemeSwitcher />
 			</div>
 		</aside>
 	{:else}
@@ -63,7 +93,13 @@
 		</header>
 	{/if}
 
-	<main class:studio-main={studio} class:watch-main={!studio}>{@render children?.()}</main>
+	<main
+		class:studio-main={studio}
+		class:studio-nav-collapsed={studio && preferences.studioNavCollapsed}
+		class:watch-main={!studio}
+	>
+		{@render children?.()}
+	</main>
 
 	{#if !studio}<nav class="watch-bottom" aria-label="Watch">
 			{#each watchNav as item}{@const Icon = item.icon}<a
@@ -142,9 +178,35 @@
 		border-right: 1px solid var(--line);
 		background: var(--surface);
 		padding: 1.1rem 0.8rem;
+		transition: width var(--layout) var(--ease-out);
+	}
+	.rail-head {
+		display: flex;
+		min-height: 4.4rem;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 0.4rem;
 	}
 	.rail-brand {
-		padding: 0.25rem 0.6rem 1.5rem;
+		min-width: 0;
+		padding: 0.25rem 0.6rem;
+	}
+	.rail-toggle {
+		display: grid;
+		width: 2.75rem;
+		height: 2.75rem;
+		flex: none;
+		place-items: center;
+		border: 1px solid transparent;
+		border-radius: 0.75rem;
+		background: transparent;
+		color: var(--muted);
+		cursor: pointer;
+	}
+	.rail-toggle:hover {
+		border-color: var(--line);
+		background: var(--surface-raised);
+		color: var(--text);
 	}
 	.studio-rail nav {
 		display: grid;
@@ -194,6 +256,47 @@
 		min-height: 100dvh;
 		margin-left: 15.5rem;
 		background: var(--deep);
+		transition: margin-left var(--layout) var(--ease-out);
+	}
+	.studio-rail.collapsed {
+		width: 5rem;
+		padding-inline: 0.65rem;
+	}
+	.studio-rail.collapsed .rail-head {
+		min-height: 6.8rem;
+		align-items: center;
+		flex-direction: column;
+		justify-content: flex-start;
+	}
+	.studio-rail.collapsed .rail-brand {
+		padding: 0;
+	}
+	.studio-rail.collapsed .rail-brand :global(.brand > span),
+	.studio-rail.collapsed .nav-label,
+	.studio-rail.collapsed nav a span,
+	.studio-rail.collapsed .rail-bottom > a span {
+		display: none;
+	}
+	.studio-rail.collapsed nav a,
+	.studio-rail.collapsed .rail-bottom > a {
+		width: 2.8rem;
+		justify-content: center;
+		gap: 0;
+		margin-inline: auto;
+		padding-inline: 0;
+	}
+	.studio-rail.collapsed .rail-bottom {
+		grid-template-columns: 1fr;
+		justify-items: center;
+	}
+	.studio-rail.collapsed .rail-command {
+		grid-column: 1;
+	}
+	.studio-rail.collapsed .rail-bottom > :global(button) {
+		justify-self: center;
+	}
+	.studio-main.studio-nav-collapsed {
+		margin-left: 5rem;
 	}
 	@media (max-width: 900px) {
 		.watch-header {
@@ -205,7 +308,8 @@
 		.studio-link {
 			display: none;
 		}
-		.studio-rail {
+		.studio-rail,
+		.studio-rail.collapsed {
 			position: sticky;
 			top: 0;
 			width: 100%;
@@ -218,6 +322,18 @@
 		}
 		.rail-brand {
 			padding: 0;
+		}
+		.rail-head,
+		.studio-rail.collapsed .rail-head {
+			min-height: 0;
+			align-items: center;
+			flex-direction: row;
+		}
+		.rail-toggle {
+			display: none;
+		}
+		.studio-rail.collapsed .rail-brand :global(.brand > span) {
+			display: inline;
 		}
 		.studio-rail nav {
 			display: flex;
@@ -235,7 +351,8 @@
 		.rail-bottom > a span {
 			display: none;
 		}
-		.rail-bottom {
+		.rail-bottom,
+		.studio-rail.collapsed .rail-bottom {
 			display: flex;
 			margin: 0;
 			border: 0;
@@ -244,7 +361,8 @@
 		.rail-command {
 			width: 2.75rem;
 		}
-		.studio-main {
+		.studio-main,
+		.studio-main.studio-nav-collapsed {
 			margin-left: 0;
 		}
 	}

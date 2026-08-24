@@ -22,7 +22,7 @@
 	import { api, params } from '$lib/api/client';
 	import type { GuideChannel, Paginated } from '$lib/api/types';
 
-	let { compact = false } = $props<{ compact?: boolean }>();
+	let { compact = false, iconOnly = false } = $props<{ compact?: boolean; iconOnly?: boolean }>();
 	let open = $state(false);
 	let query = $state('');
 	let status = $state('');
@@ -111,6 +111,7 @@
 
 <button
 	class:compact
+	class:icon-only={iconOnly}
 	class="command-trigger"
 	onclick={() => (open = true)}
 	aria-label="Open command menu"
@@ -214,6 +215,16 @@
 	}
 	.command-trigger.compact kbd {
 		margin-left: auto;
+	}
+	.command-trigger.compact.icon-only {
+		width: 2.75rem;
+		min-width: 2.75rem;
+		justify-content: center;
+		padding: 0;
+	}
+	.command-trigger.compact.icon-only span,
+	.command-trigger.compact.icon-only kbd {
+		display: none;
 	}
 	kbd {
 		display: inline-flex;
