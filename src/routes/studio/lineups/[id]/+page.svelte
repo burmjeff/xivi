@@ -27,6 +27,7 @@
 		LineupSummary,
 		MatchRejection,
 		MatchReview,
+		MatchSuggestion,
 		Paginated,
 		SourceChannel,
 		SourceGroup,
@@ -136,6 +137,15 @@
 		queryFn: () =>
 			api<Paginated<MatchReview>>(`/api/v2/studio/channels/${selectedChannelId}/matches`)
 	}));
+	const suggestionsQuery = createQuery(() => ({
+		queryKey: ['studio', 'channel-suggestions', selectedChannelId],
+		enabled: !!selectedChannelId,
+		queryFn: () =>
+			api<Paginated<MatchSuggestion>>(
+				`/api/v2/studio/channels/${selectedChannelId}/suggestions?limit=5`
+			),
+		staleTime: 30_000
+	}));
 	const rejectionsQuery = createQuery(() => ({
 		queryKey: ['studio', 'channel-rejections', selectedChannelId],
 		enabled: !!selectedChannelId,
@@ -151,6 +161,7 @@
 		logoSearch = $state(''),
 		logoPickerOpen = $state(false),
 		editorId = $state<number | null>(null),
+		suggestionAction = $state<number | null>(null),
 		saving = $state(false);
 	let selectedLogo = $derived((logosQuery.data?.logos ?? []).find((logo) => logo.id === editLogo));
 	let matchingLogos = $derived.by(() => {
@@ -515,10 +526,35 @@
 			message = `${source.name} is now a locked source variant.`;
 			await Promise.all([
 				client.invalidateQueries({ queryKey: ['studio', 'channel-variants', selectedChannelId] }),
+				client.invalidateQueries({
+					queryKey: ['studio', 'channel-suggestions', selectedChannelId]
+				}),
 				refreshWorkspace()
 			]);
 		} catch {
 			message = 'The source variant could not be attached.';
+		}
+	}
+	async function attachSuggestion(suggestion: MatchSuggestion) {
+		if (!selectedChannelId || suggestionAction !== null) return;
+		suggestionAction = suggestion.source_channel_id;
+		try {
+			await api(
+				`/api/v2/studio/channels/${selectedChannelId}/matches/${suggestion.source_channel_id}/accept`,
+				{ method: 'POST' }
+			);
+			message = `${suggestion.source_name} was added as a locked source variant.`;
+			await Promise.all([
+				client.invalidateQueries({ queryKey: ['studio', 'channel-variants', selectedChannelId] }),
+				client.invalidateQueries({
+					queryKey: ['studio', 'channel-suggestions', selectedChannelId]
+				}),
+				refreshWorkspace()
+			]);
+		} catch (error) {
+			message = requestError(error, 'The suggested source could not be attached.');
+		} finally {
+			suggestionAction = null;
 		}
 	}
 	async function rejectSource(source: MatchReview) {
@@ -531,6 +567,9 @@
 			message = `${source.source_name} was rejected and will not be automatically rematched.`;
 			await Promise.all([
 				client.invalidateQueries({ queryKey: ['studio', 'channel-variants', selectedChannelId] }),
+				client.invalidateQueries({
+					queryKey: ['studio', 'channel-suggestions', selectedChannelId]
+				}),
 				client.invalidateQueries({ queryKey: ['studio', 'channel-rejections', selectedChannelId] }),
 				refreshWorkspace()
 			]);
@@ -549,6 +588,9 @@
 					tvg_id: editTvg.trim() || null,
 					logo_id: editLogo
 				})
+			});
+			await client.invalidateQueries({
+				queryKey: ['studio', 'channel-suggestions', selectedChannel.id]
 			});
 			editorId = null;
 			await refreshWorkspace();
@@ -900,6 +942,59 @@
 								</dd>
 							</div>
 						</dl>
+					</section>
+					<section>
+						<div class="section-heading">
+							<div>
+								<h3>Suggested sources</h3>
+								<p>Best eligible matches from sources not already represented.</p>
+							</div>
+							<span>Top 5</span>
+						</div>
+						{#if suggestionsQuery.isPending}<div
+								class="suggestion-loading"
+								aria-label="Loading source suggestions"
+							>
+								{#each Array(3) as _}<div class="suggestion-skeleton skeleton"></div>{/each}
+							</div>{:else if suggestionsQuery.isError}<div class="suggestion-state">
+								<p>Suggestions could not be loaded.</p>
+								<button type="button" onclick={() => suggestionsQuery.refetch()}>Try again</button>
+							</div>{:else if suggestionsQuery.data?.items.length}<ol class="suggestions">
+								{#each suggestionsQuery.data.items as suggestion, index}<li>
+										<LogoTile
+											src={suggestion.logo_url}
+											name={suggestion.source_name}
+											size="sm"
+											contrast
+										/>
+										<span class="suggestion-copy">
+											<span class="suggestion-title">
+												<small>#{index + 1}</small>
+												<strong>{suggestion.source_name}</strong>
+											</span>
+											<small>{suggestion.playlist_name} · {suggestion.group_name}</small>
+											<span class="suggestion-score">
+												<strong>{Math.round(suggestion.score * 100)}%</strong>
+												<small>{suggestion.method.replaceAll('_', ' ')}</small>
+											</span>
+										</span>
+										<button
+											type="button"
+											disabled={suggestionAction !== null}
+											onclick={() => attachSuggestion(suggestion)}
+											aria-label={`Add ${suggestion.source_name} as a source variant`}
+										>
+											{#if suggestionAction === suggestion.source_channel_id}<RefreshCw
+													size={15}
+													class="spin"
+												/>{:else}<Plus size={16} />{/if}
+											<span>Add</span>
+										</button>
+									</li>{/each}
+							</ol>{:else}<p class="muted small">
+								No additional source matches were found. Attached playlists, disabled channels, and
+								rejected matches are excluded.
+							</p>{/if}
 					</section>
 					<section>
 						<h3>Ordered source variants</h3>
@@ -1579,6 +1674,143 @@
 		margin: 0.1rem 0 0;
 		font-size: 0.72rem;
 		font-weight: 750;
+	}
+	.section-heading {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 0.75rem;
+	}
+	.section-heading > div {
+		display: grid;
+		min-width: 0;
+		gap: 0.15rem;
+	}
+	.section-heading p {
+		margin: 0;
+		color: var(--muted);
+		font-size: 0.6rem;
+		line-height: 1.4;
+	}
+	.section-heading > span {
+		flex: none;
+		border-radius: 99px;
+		background: color-mix(in oklch, var(--aqua) 12%, var(--surface-raised));
+		padding: 0.25rem 0.45rem;
+		color: var(--aqua);
+		font-size: 0.55rem;
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+	.suggestion-loading,
+	.suggestions {
+		display: grid;
+		gap: 0.45rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.suggestion-skeleton {
+		height: 4.4rem;
+		border-radius: 0.7rem;
+	}
+	.suggestions li {
+		display: grid;
+		min-width: 0;
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 0.55rem;
+		border: 1px solid var(--line);
+		border-radius: 0.75rem;
+		background: color-mix(in oklch, var(--surface-raised) 72%, transparent);
+		padding: 0.55rem;
+	}
+	.suggestion-copy {
+		display: grid;
+		min-width: 0;
+		gap: 0.12rem;
+	}
+	.suggestion-copy > small {
+		overflow: hidden;
+		color: var(--muted);
+		font-size: 0.55rem;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.suggestion-title {
+		display: flex;
+		min-width: 0;
+		align-items: baseline;
+		gap: 0.3rem;
+	}
+	.suggestion-title small {
+		color: var(--aqua);
+		font-size: 0.52rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.suggestion-title strong {
+		overflow: hidden;
+		font-size: 0.68rem;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.suggestion-score {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		margin-top: 0.1rem;
+	}
+	.suggestion-score strong {
+		color: var(--aqua);
+		font-size: 0.62rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.suggestion-score small {
+		color: var(--muted);
+		font-size: 0.52rem;
+		text-transform: capitalize;
+	}
+	.suggestions li > button,
+	.suggestion-state button {
+		display: flex;
+		min-width: 2.75rem;
+		min-height: 2.75rem;
+		flex: none;
+		align-items: center;
+		justify-content: center;
+		gap: 0.25rem;
+		border: 1px solid color-mix(in oklch, var(--aqua) 42%, var(--line));
+		border-radius: 0.65rem;
+		background: color-mix(in oklch, var(--aqua) 11%, var(--surface-raised));
+		padding: 0 0.5rem;
+		color: var(--aqua);
+		font-size: 0.58rem;
+		font-weight: 800;
+		cursor: pointer;
+	}
+	.suggestions li > button:hover,
+	.suggestion-state button:hover {
+		background: var(--aqua);
+		color: var(--ink);
+	}
+	.suggestions li > button:disabled {
+		opacity: 0.5;
+		cursor: wait;
+	}
+	.suggestion-state {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.6rem;
+		border-radius: 0.7rem;
+		background: color-mix(in oklch, var(--error) 8%, var(--surface-raised));
+		padding: 0.55rem;
+	}
+	.suggestion-state p {
+		margin: 0;
+		color: var(--error);
+		font-size: 0.62rem;
 	}
 	.variants {
 		display: grid;

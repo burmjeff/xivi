@@ -4,6 +4,7 @@ package queries
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"testing"
@@ -29,6 +30,7 @@ func newExperienceTestDB(t *testing.T) *sqlx.DB {
 		`CREATE TABLE playlistchannel (id INTEGER PRIMARY KEY, tvg_id TEXT, tvg_name TEXT, tvg_logo TEXT, title TEXT, group_id INTEGER, enabled BOOLEAN)`,
 		`CREATE TABLE template_group_channel (group_id INTEGER, channel_id INTEGER, orderr INTEGER, PRIMARY KEY (group_id, channel_id), FOREIGN KEY (channel_id) REFERENCES templatechannel(id) ON DELETE CASCADE)`,
 		`CREATE TABLE templatechannelitem (id INTEGER PRIMARY KEY, channel_id INTEGER, playlist_channel_id INTEGER, orderr INTEGER, match_method TEXT, match_score REAL, runner_up_score REAL, matcher_version INTEGER, manual_locked BOOLEAN, FOREIGN KEY (channel_id) REFERENCES templatechannel(id) ON DELETE CASCADE)`,
+		`CREATE TABLE channelmatchrejection (id INTEGER PRIMARY KEY, channel_id INTEGER, playlist_id INTEGER, tvg_id_norm TEXT NOT NULL DEFAULT '', name_norm TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 		`CREATE TABLE logo (id INTEGER PRIMARY KEY, name TEXT)`,
 		`CREATE TABLE epgprogramme (id INTEGER PRIMARY KEY, start DATETIME, stop DATETIME, channel TEXT, "title.value" TEXT, subtitle TEXT, desc TEXT, categories TEXT)`,
 		`CREATE TABLE operation_job (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, resource TEXT, resource_id INTEGER, status TEXT DEFAULT 'queued', progress INTEGER DEFAULT 0, message TEXT DEFAULT '', error_code TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, finished_at DATETIME)`,
@@ -115,6 +117,63 @@ func TestStudioOverviewSeparatesUnmatchedAndLowConfidenceChannels(t *testing.T) 
 	low, lowTotal, err := query.GetWorkspaceChannels(context.Background(), 10, "", "low-confidence", 100, 0)
 	if err != nil || lowTotal != 1 || len(low) != 1 || low[0].Name != "Low confidence" {
 		t.Fatalf("unexpected low-confidence filter: total=%d rows=%#v err=%v", lowTotal, low, err)
+	}
+}
+
+func TestGetMatchSuggestionsRanksEligibleUnattachedSources(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'BBC World News', 'bbc.world', 0, 'bbc')`)
+	db.MustExec(`INSERT INTO playlist VALUES
+		(1, 'Already attached', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+		(2, 'TVG provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+		(3, 'Name provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+		(4, 'Fuzzy provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+		(5, 'Rejected provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+		(6, 'Disabled channel', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+		(7, 'Disabled group', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES
+		(10, 'News', 1, 1), (20, 'News', 2, 1), (30, 'News', 3, 1),
+		(40, 'News', 4, 1), (50, 'News', 5, 1), (60, 'News', 6, 1),
+		(70, 'News', 7, 0)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES
+		(100, 'bbc.world', 'BBC World News', 'https://logos.test/attached.png', 'BBC World News', 10, 1),
+		(200, 'BBC.WORLD', 'Different provider title', 'https://logos.test/tvg.png', 'Different provider title', 20, 1),
+		(300, NULL, 'BBC World News', NULL, 'BBC World News', 30, 1),
+		(400, NULL, 'BBC World News International', NULL, 'BBC World News International', 40, 1),
+		(500, NULL, 'BBC World News', NULL, 'BBC World News', 50, 1),
+		(600, NULL, 'BBC World News', NULL, 'BBC World News', 60, 0),
+		(700, NULL, 'BBC World News', NULL, 'BBC World News', 70, 1)`)
+	db.MustExec(`INSERT INTO templatechannelitem VALUES (1, 1, 100, 1, 'manual', 1, NULL, 2, 1)`)
+	db.MustExec(`INSERT INTO channelmatchrejection (id, channel_id, playlist_id, name_norm) VALUES (1, 1, 5, 'bbc world news')`)
+
+	suggestions, err := NewExperienceQueries(db).GetMatchSuggestions(context.Background(), 1, 5)
+	if err != nil {
+		t.Fatalf("GetMatchSuggestions failed: %v", err)
+	}
+	if len(suggestions) != 3 {
+		t.Fatalf("expected three eligible suggestions, got %#v", suggestions)
+	}
+	if suggestions[0].SourceChannelID != 200 || suggestions[0].Score != 1 || suggestions[0].Method != "exact_tvg_id" {
+		t.Fatalf("exact TVG-ID suggestion did not rank first: %#v", suggestions[0])
+	}
+	if suggestions[1].SourceChannelID != 300 || suggestions[1].Score != 1 || suggestions[1].Method != "exact_name" {
+		t.Fatalf("exact-name suggestion did not rank second: %#v", suggestions[1])
+	}
+	if suggestions[2].SourceChannelID != 400 || suggestions[2].Score >= 1 || suggestions[2].Method != "fuzzy_name" {
+		t.Fatalf("fuzzy suggestion was not ranked after exact matches: %#v", suggestions[2])
+	}
+	if suggestions[0].LogoURL == nil || *suggestions[0].LogoURL != "https://logos.test/tvg.png" {
+		t.Fatalf("source metadata was not preserved: %#v", suggestions[0])
+	}
+	if suggestions[0].RunnerUpScore == nil || *suggestions[0].RunnerUpScore != suggestions[1].Score {
+		t.Fatalf("runner-up confidence was not calculated: %#v", suggestions[0])
+	}
+}
+
+func TestGetMatchSuggestionsRequiresExistingChannel(t *testing.T) {
+	_, err := NewExperienceQueries(newExperienceTestDB(t)).GetMatchSuggestions(context.Background(), 999, 5)
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected sql.ErrNoRows for a missing channel, got %v", err)
 	}
 }
 

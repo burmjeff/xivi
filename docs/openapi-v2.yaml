@@ -374,6 +374,21 @@ paths:
           content:
             { application/json: { schema: { $ref: '#/components/schemas/MatchReviewPage' } } }
         default: { $ref: '#/components/responses/Error' }
+  /studio/channels/{channel_id}/suggestions:
+    get:
+      operationId: listChannelMatchSuggestions
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+        - name: limit
+          in: query
+          description: Number of ranked suggestions to return, capped at five.
+          schema: { type: integer, minimum: 1, maximum: 5, default: 5 }
+      responses:
+        '200':
+          description: Highest-confidence eligible source matches for a lineup channel.
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/MatchSuggestionPage' } } }
+        default: { $ref: '#/components/responses/Error' }
   /studio/channels/{channel_id}/rejections:
     get:
       operationId: listChannelMatchRejections
@@ -729,6 +744,31 @@ components:
         score: { type: number, format: double }
         runner_up_score: { type: number, format: double }
         manual_locked: { type: boolean }
+    MatchSuggestion:
+      type: object
+      required:
+        [
+          source_channel_id,
+          source_name,
+          group_id,
+          group_name,
+          playlist_id,
+          playlist_name,
+          method,
+          score
+        ]
+      properties:
+        source_channel_id: { type: integer, format: int64 }
+        source_name: { type: string }
+        tvg_id: { type: string }
+        logo_url: { type: string }
+        group_id: { type: integer, format: int64 }
+        group_name: { type: string }
+        playlist_id: { type: integer, format: int64 }
+        playlist_name: { type: string }
+        method: { type: string }
+        score: { type: number, format: double }
+        runner_up_score: { type: number, format: double }
     MatchRejection:
       type: object
       required: [id, channel_id, playlist_id, playlist_name, tvg_id, name, created_at]
@@ -862,6 +902,14 @@ components:
             type: object,
             properties:
               { items: { type: array, items: { $ref: '#/components/schemas/MatchReview' } } }
+          }
+    MatchSuggestionPage:
+      allOf:
+        - { $ref: '#/components/schemas/PageMetadata' }
+        - {
+            type: object,
+            properties:
+              { items: { type: array, items: { $ref: '#/components/schemas/MatchSuggestion' } } }
           }
     MatchRejectionPage:
       allOf:

@@ -148,6 +148,20 @@ type MatchReview struct {
 	ManualLocked    bool     `db:"manual_locked" json:"manual_locked"`
 }
 
+type MatchSuggestion struct {
+	SourceChannelID int64    `db:"source_channel_id" json:"source_channel_id"`
+	SourceName      string   `db:"source_name" json:"source_name"`
+	TVGID           *string  `db:"tvg_id" json:"tvg_id,omitempty"`
+	LogoURL         *string  `db:"logo_url" json:"logo_url,omitempty"`
+	GroupID         int64    `db:"group_id" json:"group_id"`
+	GroupName       string   `db:"group_name" json:"group_name"`
+	PlaylistID      int64    `db:"playlist_id" json:"playlist_id"`
+	PlaylistName    string   `db:"playlist_name" json:"playlist_name"`
+	Method          string   `db:"method" json:"method"`
+	Score           float64  `db:"score" json:"score"`
+	RunnerUpScore   *float64 `db:"runner_up_score" json:"runner_up_score,omitempty"`
+}
+
 type MatchRejection struct {
 	ID           int64     `db:"id" json:"id"`
 	ChannelID    int64     `db:"channel_id" json:"channel_id"`

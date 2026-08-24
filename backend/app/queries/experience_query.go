@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"xivi/backend/app/models"
+	"xivi/backend/pkg/channelmatch"
 	"xivi/backend/pkg/logoassets"
 
 	"github.com/jmoiron/sqlx"
@@ -331,6 +333,133 @@ func (q *ExperienceQueries) GetMatchReview(ctx context.Context, channelID *int64
 		return nil, 0, err
 	}
 	return rows, total, nil
+}
+
+type sourceMatchCandidate struct {
+	models.MatchSuggestion
+	Title string `db:"title"`
+}
+
+// GetMatchSuggestions ranks eligible sources for a lineup channel. Sources from
+// playlists that are already represented cannot be attached because the data
+// model permits one variant per playlist, so they are omitted before ranking.
+func (q *ExperienceQueries) GetMatchSuggestions(ctx context.Context, channelID int64, limit int) ([]models.MatchSuggestion, error) {
+	if limit < 1 {
+		return []models.MatchSuggestion{}, nil
+	}
+	if limit > 5 {
+		limit = 5
+	}
+
+	target := struct {
+		Name  string  `db:"name"`
+		TVGID *string `db:"tvgid"`
+	}{}
+	if err := q.GetContext(ctx, &target, `SELECT name, tvgid FROM templatechannel WHERE id = ?`, channelID); err != nil {
+		return nil, err
+	}
+
+	candidates := []sourceMatchCandidate{}
+	if err := q.SelectContext(ctx, &candidates, `SELECT pc.id AS source_channel_id,
+		COALESCE(NULLIF(pc.tvg_name, ''), pc.title) AS source_name, pc.title, pc.tvg_id,
+		pc.tvg_logo AS logo_url, pg.id AS group_id, pg.name AS group_name,
+		p.id AS playlist_id, p.name AS playlist_name
+		FROM playlistchannel pc
+		JOIN playlistgroup pg ON pg.id = pc.group_id
+		JOIN playlist p ON p.id = pg.playlist_id
+		WHERE pc.enabled = true AND pg.enabled = true
+		AND NOT EXISTS (
+			SELECT 1 FROM templatechannelitem attached
+			JOIN playlistchannel attached_pc ON attached_pc.id = attached.playlist_channel_id
+			JOIN playlistgroup attached_pg ON attached_pg.id = attached_pc.group_id
+			WHERE attached.channel_id = ? AND attached_pg.playlist_id = p.id
+		)
+		ORDER BY pc.id`, channelID); err != nil {
+		return nil, err
+	}
+
+	rejections := []struct {
+		PlaylistID int64  `db:"playlist_id"`
+		TVGID      string `db:"tvg_id_norm"`
+		Name       string `db:"name_norm"`
+	}{}
+	if err := q.SelectContext(ctx, &rejections, `SELECT playlist_id, tvg_id_norm, name_norm
+		FROM channelmatchrejection WHERE channel_id = ?`, channelID); err != nil {
+		return nil, err
+	}
+	rejected := func(candidate sourceMatchCandidate) bool {
+		tvgID := ""
+		if candidate.TVGID != nil {
+			tvgID = channelmatch.NormalizeTvgID(*candidate.TVGID)
+		}
+		name := channelmatch.ParseName(candidate.Title).Canonical
+		for _, rejection := range rejections {
+			if rejection.PlaylistID == candidate.PlaylistID &&
+				((rejection.TVGID != "" && rejection.TVGID == tvgID) || rejection.Name == name) {
+				return true
+			}
+		}
+		return false
+	}
+
+	eligible := make([]sourceMatchCandidate, 0, len(candidates))
+	rankCandidates := make([]channelmatch.Candidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if rejected(candidate) {
+			continue
+		}
+		eligible = append(eligible, candidate)
+		rankCandidates = append(rankCandidates, channelmatch.Candidate{ID: candidate.SourceChannelID, Name: candidate.Title})
+	}
+
+	rankedByID := make(map[int64]channelmatch.Result, len(eligible))
+	for _, result := range channelmatch.Rank(target.Name, rankCandidates, len(rankCandidates)) {
+		rankedByID[result.Candidate.ID] = result
+	}
+	targetTVGID := ""
+	if target.TVGID != nil {
+		targetTVGID = channelmatch.NormalizeTvgID(*target.TVGID)
+	}
+
+	results := make([]models.MatchSuggestion, 0, len(eligible))
+	for _, candidate := range eligible {
+		nameResult, nameMatched := rankedByID[candidate.SourceChannelID]
+		exactTVGID := targetTVGID != "" && candidate.TVGID != nil &&
+			channelmatch.NormalizeTvgID(*candidate.TVGID) == targetTVGID
+		if !nameMatched && !exactTVGID {
+			continue
+		}
+
+		suggestion := candidate.MatchSuggestion
+		if exactTVGID {
+			suggestion.Score = 1
+			suggestion.Method = channelmatch.MethodExactTvgID
+			if nameMatched && nameResult.Method == channelmatch.MethodExactName {
+				suggestion.Method = channelmatch.MethodTvgIDName
+			}
+		} else {
+			suggestion.Score = nameResult.Score
+			suggestion.Method = nameResult.Method
+		}
+		results = append(results, suggestion)
+	}
+
+	sort.SliceStable(results, func(i, j int) bool {
+		if results[i].Score == results[j].Score {
+			return results[i].SourceChannelID < results[j].SourceChannelID
+		}
+		return results[i].Score > results[j].Score
+	})
+	for index := range results {
+		if index+1 < len(results) {
+			runnerUp := results[index+1].Score
+			results[index].RunnerUpScore = &runnerUp
+		}
+	}
+	if len(results) > limit {
+		results = results[:limit]
+	}
+	return results, nil
 }
 
 func (q *ExperienceQueries) GetMatchRejections(ctx context.Context, channelID int64) ([]models.MatchRejection, error) {

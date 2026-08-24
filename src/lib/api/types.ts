@@ -12,6 +12,7 @@ export type SourceGroupImportResult = components['schemas']['SourceGroupImportRe
 export type WorkspaceChannel = components['schemas']['WorkspaceChannel'];
 export type SourceChannel = components['schemas']['SourceChannel'];
 export type MatchReview = components['schemas']['MatchReview'];
+export type MatchSuggestion = components['schemas']['MatchSuggestion'];
 export type MatchRejection = components['schemas']['MatchRejection'];
 export type OperationJob = components['schemas']['OperationJob'];
 export type StudioOverview = components['schemas']['StudioOverview'];

@@ -420,6 +420,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/studio/channels/{channel_id}/suggestions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listChannelMatchSuggestions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/studio/channels/{channel_id}/rejections': {
 		parameters: {
 			query?: never;
@@ -772,6 +788,24 @@ export interface components {
 			runner_up_score?: number;
 			manual_locked: boolean;
 		};
+		MatchSuggestion: {
+			/** Format: int64 */
+			source_channel_id: number;
+			source_name: string;
+			tvg_id?: string;
+			logo_url?: string;
+			/** Format: int64 */
+			group_id: number;
+			group_name: string;
+			/** Format: int64 */
+			playlist_id: number;
+			playlist_name: string;
+			method: string;
+			/** Format: double */
+			score: number;
+			/** Format: double */
+			runner_up_score?: number;
+		};
 		MatchRejection: {
 			/** Format: int64 */
 			id: number;
@@ -865,6 +899,9 @@ export interface components {
 		};
 		MatchReviewPage: components['schemas']['PageMetadata'] & {
 			items?: components['schemas']['MatchReview'][];
+		};
+		MatchSuggestionPage: components['schemas']['PageMetadata'] & {
+			items?: components['schemas']['MatchSuggestion'][];
 		};
 		MatchRejectionPage: components['schemas']['PageMetadata'] & {
 			items?: components['schemas']['MatchRejection'][];
@@ -1626,6 +1663,32 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['MatchReviewPage'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	listChannelMatchSuggestions: {
+		parameters: {
+			query?: {
+				/** @description Number of ranked suggestions to return, capped at five. */
+				limit?: number;
+			};
+			header?: never;
+			path: {
+				channel_id: components['parameters']['ChannelId'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Highest-confidence eligible source matches for a lineup channel. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['MatchSuggestionPage'];
 				};
 			};
 			default: components['responses']['Error'];

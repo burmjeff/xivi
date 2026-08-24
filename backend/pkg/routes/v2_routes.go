@@ -39,6 +39,7 @@ func V2Routes(a *fiber.App) {
 	v2.Patch("/studio/source-channels/enabled", controllers.V2SetStudioSourceChannelsEnabled)
 	v2.Get("/studio/review", controllers.V2StudioReview)
 	v2.Get("/studio/channels/:channel_id/matches", controllers.V2StudioReview)
+	v2.Get("/studio/channels/:channel_id/suggestions", controllers.V2StudioMatchSuggestions)
 	v2.Get("/studio/channels/:channel_id/rejections", controllers.V2StudioMatchRejections)
 	v2.Post("/studio/channels/:channel_id/matches/:source_channel_id/accept", controllers.V2AcceptStudioMatch)
 	v2.Post("/studio/channels/:channel_id/matches/:source_channel_id/reject", controllers.V2RejectStudioMatch)

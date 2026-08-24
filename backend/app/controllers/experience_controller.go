@@ -3,6 +3,7 @@ package controllers
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -480,6 +481,28 @@ func V2StudioMatchRejections(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusInternalServerError, "rejections_unavailable", "Match history could not be loaded.", true)
 	}
 	return c.JSON(fiber.Map{"items": items, "next_cursor": nil, "total": len(items)})
+}
+
+func V2StudioMatchSuggestions(c *fiber.Ctx) error {
+	channelID, err := parseID(c, "channel_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_channel", "The channel id is invalid.", false)
+	}
+	limit, _ := strconv.Atoi(c.Query("limit", "5"))
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 5 {
+		limit = 5
+	}
+	items, err := database.Db.GetMatchSuggestions(c.UserContext(), channelID, limit)
+	if errors.Is(err, sql.ErrNoRows) {
+		return v2Error(c, fiber.StatusNotFound, "channel_not_found", "That lineup channel was not found.", false)
+	}
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "suggestions_unavailable", "Source suggestions could not be loaded.", true)
+	}
+	return c.JSON(models.Paginated[models.MatchSuggestion]{Items: items, Total: int64(len(items))})
 }
 
 func V2AcceptStudioMatch(c *fiber.Ctx) error {
