@@ -12,6 +12,7 @@ import (
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/pkg/logoassets"
+	"xivi/backend/platform/settings"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
@@ -112,6 +113,49 @@ func TestGetGuideChannelsReturnsAnEmptyProgrammeArray(t *testing.T) {
 	}
 	if strings.Contains(string(payload), `"programmes":null`) {
 		t.Fatalf("guide contract emitted a null programme array: %s", payload)
+	}
+}
+
+func TestGetGuideChannelsUsesConfiguredTimezoneForProgrammeWindow(t *testing.T) {
+	originalTZ := settings.APP_SETTINGS.Application.TZ
+	settings.APP_SETTINGS.Application.TZ = "America/New_York"
+	t.Cleanup(func() { settings.APP_SETTINGS.Application.TZ = originalTZ })
+
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO template VALUES (1, 'Main')`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'Local', 0, NULL)`)
+	db.MustExec(`INSERT INTO template_group_item VALUES (1, 10, 1)`)
+	db.MustExec(`INSERT INTO logo VALUES (0, 'xivi_channel')`)
+	db.MustExec(`INSERT INTO templatechannel VALUES (100, 'ABC WPVI', 'ABCWPVI.us', 0, 'wpvi-uuid')`)
+	db.MustExec(`INSERT INTO template_group_channel VALUES (10, 100, 1)`)
+	db.MustExec(`INSERT INTO templatechannelitem VALUES (1, 100, 1000, 0, 'manual', 1, NULL, 2, 1)`)
+
+	location, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+	if err != nil {
+		t.Fatalf("load test timezone: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Minute)
+	insert := `INSERT INTO epgprogramme (id, start, stop, channel, "title.value", subtitle, desc, categories) VALUES (?, ?, ?, 'ABCWPVI.us', ?, '', '', '')`
+	db.MustExec(insert, 1, now.Add(-15*time.Minute).In(location), now.Add(15*time.Minute).In(location), "Current local programme")
+	db.MustExec(insert, 2, now.Add(15*time.Minute).In(location), now.Add(75*time.Minute).In(location), "Next local programme")
+
+	channels, total, err := NewExperienceQueries(db).GetGuideChannels(
+		context.Background(), 1, nil, "", now.Add(-30*time.Minute), now.Add(4*time.Hour), 100, 0,
+	)
+	if err != nil {
+		t.Fatalf("GetGuideChannels returned an error: %v", err)
+	}
+	if total != 1 || len(channels) != 1 {
+		t.Fatalf("expected one playable channel, total=%d len=%d", total, len(channels))
+	}
+	if len(channels[0].Programmes) != 2 {
+		t.Fatalf("expected current and next programmes in the UTC request window, got %#v", channels[0].Programmes)
+	}
+	if channels[0].Current == nil || channels[0].Current.Title != "Current local programme" {
+		t.Fatalf("expected the current local programme, got %#v", channels[0].Current)
+	}
+	if channels[0].Next == nil || channels[0].Next.Title != "Next local programme" {
+		t.Fatalf("expected the next local programme, got %#v", channels[0].Next)
 	}
 }
 

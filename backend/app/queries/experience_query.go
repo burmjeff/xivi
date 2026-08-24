@@ -10,6 +10,7 @@ import (
 	"xivi/backend/app/models"
 	"xivi/backend/pkg/channelmatch"
 	"xivi/backend/pkg/logoassets"
+	"xivi/backend/platform/settings"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -137,7 +138,7 @@ func (q *ExperienceQueries) GetGuideChannels(ctx context.Context, lineupID int64
 		       COALESCE(categories, '') AS categories, start, stop AS end
 		FROM epgprogramme
 		WHERE channel IN (?) AND start < ? AND stop > ?
-		ORDER BY channel, start`, tvgIDs, to, from)
+		ORDER BY channel, start`, tvgIDs, epgQueryTime(to), epgQueryTime(from))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -174,6 +175,17 @@ func (q *ExperienceQueries) GetGuideChannels(ctx context.Context, lineupID int64
 		}
 	}
 	return channels, total, nil
+}
+
+// EPG timestamps are persisted using the configured application timezone.
+// Keep query bounds in that same location so SQLite's DATETIME comparisons do
+// not compare UTC and local wall-clock representations as plain text.
+func epgQueryTime(value time.Time) time.Time {
+	location, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+	if err != nil {
+		location = time.UTC
+	}
+	return value.In(location)
 }
 
 func (q *ExperienceQueries) GetGuideChannel(ctx context.Context, channelID int64, from, to time.Time) (*models.GuideChannel, error) {
