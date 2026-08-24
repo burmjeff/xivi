@@ -20,6 +20,7 @@
 	import LogoTile from '$lib/components/brand/LogoTile.svelte';
 
 	let {
+		lineupId,
 		selectedGroup,
 		selectedChannelId,
 		selectedSourceId,
@@ -31,6 +32,7 @@
 		onCopyGroup,
 		onAddGroup
 	} = $props<{
+		lineupId: number;
 		selectedGroup?: StudioGroup;
 		selectedChannelId: number | null;
 		selectedSourceId: number | null;
@@ -47,6 +49,7 @@
 	let sourceViewport: HTMLDivElement,
 		searchInput = $state(''),
 		searchQuery = $state(''),
+		hideUsed = $state(false),
 		expandedGroupId = $state<number | null>(null),
 		lastSearchValue = '';
 
@@ -65,7 +68,9 @@
 			'studio',
 			'source-browser',
 			searchQuery ? 'search' : 'group',
-			searchQuery || expandedGroupId
+			searchQuery || expandedGroupId,
+			lineupId,
+			hideUsed
 		],
 		enabled: Boolean(searchQuery || expandedGroupId),
 		initialPageParam: '' as string,
@@ -74,6 +79,8 @@
 				`/api/v2/studio/source-channels${params({
 					q: searchQuery || undefined,
 					group_id: searchQuery ? undefined : expandedGroupId,
+					lineup_id: hideUsed ? lineupId : undefined,
+					unused_only: hideUsed || undefined,
 					cursor: typeof pageParam === 'string' && pageParam ? pageParam : undefined,
 					limit: 50
 				})}`
@@ -120,7 +127,9 @@
 				result.push({
 					key: 'search-empty',
 					kind: 'empty',
-					label: 'No source channels match this search.'
+					label: hideUsed
+						? 'No unused source channels match this search.'
+						: 'No source channels match this search.'
 				});
 			else if (channelsQuery.hasNextPage) result.push({ key: 'search-more', kind: 'more' });
 			return result;
@@ -149,7 +158,9 @@
 						result.push({
 							key: `group-${group.id}-empty`,
 							kind: 'empty',
-							label: 'This group has no channels.'
+							label: hideUsed
+								? 'Every channel in this group is already used in this lineup.'
+								: 'This group has no channels.'
 						});
 					else if (channelsQuery.hasNextPage)
 						result.push({ key: `group-${group.id}-more`, kind: 'more' });
@@ -239,8 +250,19 @@
 		/>
 	</label>
 	<div class="source-mode">
-		{#if searchInput.trim()}<span><Search size={13} />Results across every source group</span
-			>{:else}<span><Layers3 size={13} />Groups are collapsed until opened</span>{/if}
+		{#if searchInput.trim()}<span class="source-context"
+				><Search size={13} />Results across every source group</span
+			>{:else}<span class="source-context"
+				><Layers3 size={13} />Groups are collapsed until opened</span
+			>{/if}
+		<label
+			class:active={hideUsed}
+			class="source-filter"
+			title="Hide source channels already attached anywhere in this lineup"
+		>
+			<input type="checkbox" bind:checked={hideUsed} />
+			<span>Hide used</span>
+		</label>
 	</div>
 	<div class="source-list" bind:this={sourceViewport} aria-label="Source groups and channels">
 		{#if groupsQuery.isPending && !searchInput.trim()}
@@ -426,16 +448,46 @@
 		font-size: 0.75rem;
 	}
 	.source-mode {
-		min-height: 1.55rem;
+		display: flex;
+		min-height: 2rem;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.45rem;
 		border-bottom: 1px solid var(--line);
 		padding: 0 0.7rem 0.4rem;
 		color: var(--muted);
 		font-size: 0.58rem;
 	}
-	.source-mode span {
+	.source-context {
 		display: flex;
+		min-width: 0;
 		align-items: center;
 		gap: 0.3rem;
+	}
+	.source-filter {
+		display: flex;
+		min-height: 1.75rem;
+		flex: none;
+		align-items: center;
+		gap: 0.3rem;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--surface-raised);
+		padding: 0 0.45rem;
+		font-weight: 750;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+	.source-filter.active {
+		border-color: color-mix(in oklch, var(--aqua) 45%, var(--line));
+		background: color-mix(in oklch, var(--aqua) 10%, var(--surface-raised));
+		color: var(--aqua);
+	}
+	.source-filter input {
+		width: 0.8rem;
+		height: 0.8rem;
+		margin: 0;
+		accent-color: var(--aqua);
 	}
 	.source-list {
 		position: relative;

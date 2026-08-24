@@ -753,6 +753,7 @@
 	<div class:inspector-closed={!inspectorOpen} class="workbench-panes">
 		<aside class="source-pane">
 			<SourceBrowser
+				{lineupId}
 				{selectedGroup}
 				{selectedChannelId}
 				{selectedSourceId}

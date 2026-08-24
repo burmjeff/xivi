@@ -41,6 +41,14 @@ func optionalIntQuery(c *fiber.Ctx, name string) (*int64, error) {
 	return &id, nil
 }
 
+func optionalBoolQuery(c *fiber.Ctx, name string) (bool, error) {
+	value := c.Query(name)
+	if value == "" {
+		return false, nil
+	}
+	return strconv.ParseBool(value)
+}
+
 func pageParams(c *fiber.Ctx) (int, int) {
 	limit, _ := strconv.Atoi(c.Query("limit", "100"))
 	if limit < 1 {
@@ -431,8 +439,19 @@ func V2StudioSourceChannels(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The group id is invalid.", false)
 	}
+	lineupID, err := optionalIntQuery(c, "lineup_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
+	}
+	unusedOnly, err := optionalBoolQuery(c, "unused_only")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_filter", "The source usage filter is invalid.", false)
+	}
+	if unusedOnly && lineupID == nil {
+		return v2Error(c, fiber.StatusBadRequest, "lineup_required", "Choose a lineup before filtering used sources.", false)
+	}
 	limit, offset := pageParams(c)
-	items, total, err := database.Db.GetSourceChannels(c.UserContext(), playlistID, groupID, strings.TrimSpace(c.Query("q")), limit, offset)
+	items, total, err := database.Db.GetSourceChannels(c.UserContext(), playlistID, groupID, lineupID, unusedOnly, strings.TrimSpace(c.Query("q")), limit, offset)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "sources_unavailable", "Source channels could not be loaded.", true)
 	}

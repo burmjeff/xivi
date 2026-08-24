@@ -1615,6 +1615,10 @@ export interface operations {
 			query?: {
 				playlist_id?: number;
 				group_id?: components['parameters']['GroupId'];
+				/** @description Active lineup used to evaluate whether a source is already attached. */
+				lineup_id?: number;
+				/** @description Hide sources already attached as any channel variant in the active lineup. Requires lineup_id. */
+				unused_only?: boolean;
 				q?: components['parameters']['Search'];
 				cursor?: components['parameters']['Cursor'];
 				limit?: components['parameters']['Limit'];

@@ -267,7 +267,7 @@ func (q *ExperienceQueries) SetSourceChannelsEnabled(ctx context.Context, ids []
 	return err
 }
 
-func (q *ExperienceQueries) GetSourceChannels(ctx context.Context, playlistID, groupID *int64, search string, limit, offset int) ([]models.SourceChannel, int64, error) {
+func (q *ExperienceQueries) GetSourceChannels(ctx context.Context, playlistID, groupID, lineupID *int64, unusedOnly bool, search string, limit, offset int) ([]models.SourceChannel, int64, error) {
 	where, args := []string{"1 = 1"}, []any{}
 	if playlistID != nil {
 		where = append(where, "p.id = ?")
@@ -281,6 +281,16 @@ func (q *ExperienceQueries) GetSourceChannels(ctx context.Context, playlistID, g
 		where = append(where, "(LOWER(COALESCE(pc.tvg_name, pc.title)) LIKE ? OR LOWER(COALESCE(pc.tvg_id, '')) LIKE ?)")
 		term := "%" + strings.ToLower(search) + "%"
 		args = append(args, term, term)
+	}
+	if unusedOnly && lineupID != nil {
+		where = append(where, `pc.id NOT IN (
+			SELECT tci.playlist_channel_id
+			FROM template_group_item tgi
+			JOIN template_group_channel tgc ON tgc.group_id = tgi.group_id
+			JOIN templatechannelitem tci ON tci.channel_id = tgc.channel_id
+			WHERE tgi.template_id = ?
+		)`)
+		args = append(args, *lineupID)
 	}
 	whereSQL := strings.Join(where, " AND ")
 	var total int64

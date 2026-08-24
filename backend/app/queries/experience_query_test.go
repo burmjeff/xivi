@@ -171,6 +171,43 @@ func TestGetMatchSuggestionsRanksEligibleUnattachedSources(t *testing.T) {
 	}
 }
 
+func TestGetSourceChannelsCanHideSourcesUsedByTheActiveLineup(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO template VALUES (1, 'Main'), (2, 'Other')`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'Main group', 0, NULL), (20, 'Other group', 0, NULL)`)
+	db.MustExec(`INSERT INTO template_group_item VALUES (1, 10, 1), (2, 20, 1)`)
+	db.MustExec(`INSERT INTO templatechannel VALUES
+		(1, 'Used here', NULL, 0, 'used-here'),
+		(2, 'Used elsewhere', NULL, 0, 'used-elsewhere')`)
+	db.MustExec(`INSERT INTO template_group_channel VALUES (10, 1, 1), (20, 2, 1)`)
+	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES (30, 'Channels', 1, 1)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES
+		(100, NULL, 'Used here', NULL, 'Used here', 30, 1),
+		(101, NULL, 'Used elsewhere', NULL, 'Used elsewhere', 30, 1),
+		(102, NULL, 'Unused', NULL, 'Unused', 30, 1)`)
+	db.MustExec(`INSERT INTO templatechannelitem VALUES
+		(1, 1, 100, 1, 'manual', 1, NULL, 2, 1),
+		(2, 2, 101, 1, 'manual', 1, NULL, 2, 1)`)
+
+	lineupID := int64(1)
+	items, total, err := NewExperienceQueries(db).GetSourceChannels(context.Background(), nil, nil, &lineupID, true, "", 50, 0)
+	if err != nil {
+		t.Fatalf("GetSourceChannels failed: %v", err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("expected two sources unused by this lineup, total=%d items=%#v", total, items)
+	}
+	if items[0].ID != 102 || items[1].ID != 101 {
+		t.Fatalf("filter hid a source used only by another lineup or retained one used here: %#v", items)
+	}
+
+	all, allTotal, err := NewExperienceQueries(db).GetSourceChannels(context.Background(), nil, nil, &lineupID, false, "", 50, 0)
+	if err != nil || allTotal != 3 || len(all) != 3 {
+		t.Fatalf("unfiltered source catalog changed: total=%d items=%#v err=%v", allTotal, all, err)
+	}
+}
+
 func TestGetMatchSuggestionsRequiresExistingChannel(t *testing.T) {
 	_, _, err := NewExperienceQueries(newExperienceTestDB(t)).GetMatchSuggestions(context.Background(), 999, 5)
 	if !errors.Is(err, sql.ErrNoRows) {

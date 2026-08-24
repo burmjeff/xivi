@@ -321,6 +321,14 @@ paths:
       parameters:
         - { name: playlist_id, in: query, schema: { type: integer, format: int64 } }
         - $ref: '#/components/parameters/GroupId'
+        - name: lineup_id
+          in: query
+          description: Active lineup used to evaluate whether a source is already attached.
+          schema: { type: integer, format: int64 }
+        - name: unused_only
+          in: query
+          description: Hide sources already attached as any channel variant in the active lineup. Requires lineup_id.
+          schema: { type: boolean, default: false }
         - $ref: '#/components/parameters/Search'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
