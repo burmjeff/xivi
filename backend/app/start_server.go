@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -25,6 +26,11 @@ func StartServer(app *fiber.App) {
 	database.Db, err = database.OpenDBConnection()
 	if err != nil {
 		log.Fatal().Msgf("Failed to connect to database: %v", err)
+	}
+	if interrupted, reconcileErr := database.Db.FailIncompleteJobs(context.Background()); reconcileErr != nil {
+		log.Error().Err(reconcileErr).Msg("Failed to reconcile interrupted operation jobs")
+	} else if interrupted > 0 {
+		log.Warn().Int64("jobs", interrupted).Msg("Marked interrupted operation jobs as failed")
 	}
 
 	// Now that database is initialized, we can safely initialize the vector cache

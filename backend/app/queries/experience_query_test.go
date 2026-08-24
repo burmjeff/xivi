@@ -1118,3 +1118,58 @@ func TestOperationJobLifecycle(t *testing.T) {
 		t.Fatalf("unexpected completed job: %#v", finished)
 	}
 }
+
+func TestFailIncompleteJobs(t *testing.T) {
+	db := newExperienceTestDB(t)
+	query := NewExperienceQueries(db)
+	ctx := context.Background()
+	resourceID := int64(42)
+
+	queued, err := query.CreateJob(ctx, "refresh", "playlist", &resourceID, "Queued")
+	if err != nil {
+		t.Fatalf("CreateJob queued returned an error: %v", err)
+	}
+	running, err := query.CreateJob(ctx, "refresh", "epg", &resourceID, "Queued")
+	if err != nil {
+		t.Fatalf("CreateJob running returned an error: %v", err)
+	}
+	if err := query.UpdateJob(ctx, running.ID, "running", 10, "Importing", ""); err != nil {
+		t.Fatalf("UpdateJob running returned an error: %v", err)
+	}
+	completed, err := query.CreateJob(ctx, "publish", "lineup", &resourceID, "Queued")
+	if err != nil {
+		t.Fatalf("CreateJob completed returned an error: %v", err)
+	}
+	if err := query.UpdateJob(ctx, completed.ID, "succeeded", 100, "Published", ""); err != nil {
+		t.Fatalf("UpdateJob completed returned an error: %v", err)
+	}
+
+	count, err := query.FailIncompleteJobs(ctx)
+	if err != nil {
+		t.Fatalf("FailIncompleteJobs returned an error: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 interrupted jobs, got %d", count)
+	}
+
+	for _, id := range []int64{queued.ID, running.ID} {
+		job, getErr := query.GetJob(ctx, id)
+		if getErr != nil {
+			t.Fatalf("GetJob(%d) returned an error: %v", id, getErr)
+		}
+		if job.Status != "failed" || job.ErrorCode != "job_interrupted" || job.Progress != 100 || job.FinishedAt == nil {
+			t.Fatalf("unexpected interrupted job: %#v", job)
+		}
+		if !strings.Contains(job.Message, "Xivi restarted") {
+			t.Fatalf("interrupted job does not explain the restart: %#v", job)
+		}
+	}
+
+	unchanged, err := query.GetJob(ctx, completed.ID)
+	if err != nil {
+		t.Fatalf("GetJob completed returned an error: %v", err)
+	}
+	if unchanged.Status != "succeeded" || unchanged.ErrorCode != "" {
+		t.Fatalf("completed job was changed: %#v", unchanged)
+	}
+}

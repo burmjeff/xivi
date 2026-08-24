@@ -748,10 +748,10 @@ func launchV2Job(ctx context.Context, kind, resource string, resourceID int64, q
 	}
 	go func(jobID int64) {
 		ctx := context.Background()
-		_ = database.Db.UpdateJob(ctx, jobID, "running", 10, runningMessage, "")
+		persistV2JobUpdate(ctx, jobID, "running", 10, runningMessage, "")
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				_ = database.Db.UpdateJob(ctx, jobID, "failed", 100, "The operation stopped unexpectedly.", "worker_panic")
+				persistV2JobUpdate(ctx, jobID, "failed", 100, "The operation stopped unexpectedly.", "worker_panic")
 			}
 		}()
 		if workErr := work(); workErr != nil {
@@ -760,12 +760,25 @@ func launchV2Job(ctx context.Context, kind, resource string, resourceID int64, q
 				message = "The operation failed."
 			}
 			errorCode := fmt.Sprintf("%s_%s_failed", resource, kind)
-			_ = database.Db.UpdateJob(ctx, jobID, "failed", 100, message, errorCode)
+			persistV2JobUpdate(ctx, jobID, "failed", 100, message, errorCode)
 			return
 		}
-		_ = database.Db.UpdateJob(ctx, jobID, "succeeded", 100, successMessage, "")
+		persistV2JobUpdate(ctx, jobID, "succeeded", 100, successMessage, "")
 	}(job.ID)
 	return job, nil
+}
+
+func persistV2JobUpdate(ctx context.Context, jobID int64, status string, progress int, message, errorCode string) {
+	var err error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if err = database.Db.UpdateJob(ctx, jobID, status, progress, message, errorCode); err == nil {
+			return
+		}
+		if attempt < 3 {
+			time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
+		}
+	}
+	log.Error().Err(err).Int64("job_id", jobID).Str("status", status).Msg("Failed to persist operation job state")
 }
 
 func queueV2Job(c *fiber.Ctx, kind, resource string, resourceID int64, queuedMessage, runningMessage, successMessage string, work func() error) error {

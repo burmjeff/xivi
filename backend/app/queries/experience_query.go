@@ -767,6 +767,24 @@ func (q *ExperienceQueries) UpdateJob(ctx context.Context, id int64, status stri
 	return err
 }
 
+// FailIncompleteJobs closes jobs whose in-memory workers were lost when the
+// process stopped. Jobs are not resumable, so leaving them queued or running
+// after startup would make the activity feed report work that no longer exists.
+func (q *ExperienceQueries) FailIncompleteJobs(ctx context.Context) (int64, error) {
+	result, err := q.ExecContext(ctx, `UPDATE operation_job
+		SET status = 'failed',
+			progress = 100,
+			message = 'Interrupted because Xivi restarted before the operation finished. Run it again.',
+			error_code = 'job_interrupted',
+			updated_at = datetime('now'),
+			finished_at = datetime('now')
+		WHERE status IN ('queued', 'running')`)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 func (q *ExperienceQueries) MoveWorkspaceGroup(ctx context.Context, lineupID, groupID int64, beforeID, afterID *int64) error {
 	if (beforeID == nil) == (afterID == nil) {
 		return fmt.Errorf("exactly one of before_id or after_id is required")
