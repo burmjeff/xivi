@@ -104,9 +104,18 @@
 		<section class="metric review">
 			<CircleAlert /><span>Needs review</span><strong class="tabular"
 				>{overviewQuery.data.summary.review_count}</strong
-			><small>Low-confidence automatic matches</small><a href="/studio/lineups"
-				>Review matches <ExternalLink size={14} /></a
 			>
+			<div class="review-breakdown">
+				<a href="/studio/lineups?match=unmatched"
+					><b class="tabular">{overviewQuery.data.summary.unmatched_count}</b><span>Unmatched</span
+					></a
+				><a href="/studio/lineups?match=low-confidence"
+					><b class="tabular">{overviewQuery.data.summary.low_confidence_count}</b><span
+						>Low confidence</span
+					></a
+				>
+			</div>
+			<a href="/studio/lineups">Review matches <ExternalLink size={14} /></a>
 		</section>
 
 		<section class="panel output-panel">
@@ -242,6 +251,34 @@
 	}
 	.metric > small {
 		grid-column: 1/3;
+	}
+	.metric > .review-breakdown {
+		display: grid;
+		grid-column: 1/3;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.45rem;
+		margin-top: 0.25rem;
+	}
+	.review-breakdown a {
+		display: grid;
+		min-height: 2.75rem;
+		align-content: center;
+		border: 1px solid color-mix(in oklch, var(--ink) 15%, transparent);
+		border-radius: 0.65rem;
+		background: color-mix(in oklch, var(--ink) 5%, transparent);
+		padding: 0.35rem 0.5rem;
+		color: var(--ink);
+		text-decoration: none;
+	}
+	.review-breakdown a:hover {
+		background: color-mix(in oklch, var(--ink) 10%, transparent);
+	}
+	.review-breakdown b {
+		font-size: 0.85rem;
+	}
+	.review-breakdown span {
+		font-size: 0.6rem;
+		font-weight: 750;
 	}
 	.metric > a {
 		display: inline-flex;

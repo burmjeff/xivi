@@ -81,6 +81,43 @@ func TestGetGuideChannelsUsesWindowBoundariesAndSavedOrder(t *testing.T) {
 	}
 }
 
+func TestStudioOverviewSeparatesUnmatchedAndLowConfidenceChannels(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO template VALUES (1, 'Main')`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'News', 0, NULL)`)
+	db.MustExec(`INSERT INTO template_group_item VALUES (1, 10, 1)`)
+	db.MustExec(`INSERT INTO logo VALUES (0, 'xivi_channel')`)
+	db.MustExec(`INSERT INTO templatechannel VALUES
+		(1, 'Unmatched', NULL, 0, 'unmatched'),
+		(2, 'Low confidence', NULL, 0, 'low'),
+		(3, 'Healthy automatic', NULL, 0, 'healthy'),
+		(4, 'Manually resolved', NULL, 0, 'manual')`)
+	db.MustExec(`INSERT INTO template_group_channel VALUES (10, 1, 1), (10, 2, 2), (10, 3, 3), (10, 4, 4)`)
+	db.MustExec(`INSERT INTO templatechannelitem VALUES
+		(1, 2, 102, 1, 'name', 0.7, 0.6, 2, 0),
+		(2, 3, 103, 1, 'name', 0.95, 0.4, 2, 0),
+		(3, 4, 104, 1, 'name', 0.65, 0.6, 2, 0),
+		(4, 4, 105, 2, 'manual', 1, NULL, 2, 1)`)
+
+	query := NewExperienceQueries(db)
+	overview, err := query.GetStudioOverview(context.Background())
+	if err != nil {
+		t.Fatalf("GetStudioOverview failed: %v", err)
+	}
+	if overview.UnmatchedCount != 1 || overview.LowConfidenceCount != 1 || overview.ReviewCount != 2 {
+		t.Fatalf("unexpected match-health summary: %#v", overview)
+	}
+
+	unmatched, unmatchedTotal, err := query.GetWorkspaceChannels(context.Background(), 10, "", "unmatched", 100, 0)
+	if err != nil || unmatchedTotal != 1 || len(unmatched) != 1 || unmatched[0].Name != "Unmatched" {
+		t.Fatalf("unexpected unmatched filter: total=%d rows=%#v err=%v", unmatchedTotal, unmatched, err)
+	}
+	low, lowTotal, err := query.GetWorkspaceChannels(context.Background(), 10, "", "low-confidence", 100, 0)
+	if err != nil || lowTotal != 1 || len(low) != 1 || low[0].Name != "Low confidence" {
+		t.Fatalf("unexpected low-confidence filter: total=%d rows=%#v err=%v", lowTotal, low, err)
+	}
+}
+
 func TestMoveWorkspaceChannelRequiresOneAnchor(t *testing.T) {
 	db := newExperienceTestDB(t)
 	query := NewExperienceQueries(db)

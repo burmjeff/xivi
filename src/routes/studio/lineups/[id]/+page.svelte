@@ -41,6 +41,14 @@
 
 	const lineupId = Number(page.params.id),
 		client = useQueryClient();
+	type MatchFilter = '' | 'unmatched' | 'low-confidence';
+	function readMatchFilter(value: string | null): MatchFilter {
+		return value === 'unmatched' || value === 'low-confidence' ? value : '';
+	}
+	let matchFilter = $derived(readMatchFilter(page.url.searchParams.get('match')));
+	let matchFilterLabel = $derived(
+		matchFilter === 'unmatched' ? 'Unmatched channels' : 'Low-confidence matches'
+	);
 	const groupsKey = ['studio', 'lineup-groups', lineupId] as const;
 	const lineupsQuery = createQuery(() => ({
 		queryKey: ['studio', 'lineups'],
@@ -91,14 +99,15 @@
 		'studio',
 		'group-channels',
 		selectedGroupId,
-		channelSearch
+		channelSearch,
+		matchFilter
 	] as const);
 	const channelsQuery = createQuery(() => ({
 		queryKey: channelKey,
 		enabled: !!selectedGroupId,
 		queryFn: () =>
 			api<Paginated<WorkspaceChannel>>(
-				`/api/v2/studio/groups/${selectedGroupId}/channels${params({ q: channelSearch, limit: 500 })}`
+				`/api/v2/studio/groups/${selectedGroupId}/channels${params({ q: channelSearch, match: matchFilter, limit: 500 })}`
 			)
 	}));
 	const sourceGroupsQuery = createQuery(() => ({
@@ -714,6 +723,12 @@
 						placeholder="Filter lineup"
 					/></label
 				>
+				{#if matchFilter}<span class="match-filter">
+						<CircleAlert size={15} />{matchFilterLabel}<a
+							href={`/studio/lineups/${lineupId}${selectedGroupId ? `?group=${selectedGroupId}` : ''}`}
+							aria-label="Clear match-health filter"><X size={14} /></a
+						>
+					</span>{/if}
 				{#if selectedIds.size}
 					<span>{selectedIds.size} selected</span>
 					<select bind:value={batchTargetGroupId} aria-label="Move selected channels to group">
@@ -737,11 +752,15 @@
 					</div>{:else if channelsQuery.isPending}{#each Array(9) as _}<div
 							class="channel-skeleton skeleton"
 						></div>{/each}{:else if !channelsQuery.data?.total}<div class="pane-empty">
-						<h3>This group is ready</h3>
+						<h3>
+							{matchFilter ? `No ${matchFilterLabel.toLocaleLowerCase()}` : 'This group is ready'}
+						</h3>
 						<p>
-							{selectedGroupManaged
-								? 'Its connected source group currently has no available channels.'
-								: 'Add channels from the source browser. You can reorder them here at any time.'}
+							{matchFilter
+								? 'Choose another group or clear the match-health filter.'
+								: selectedGroupManaged
+									? 'Its connected source group currently has no available channels.'
+									: 'Add channels from the source browser. You can reorder them here at any time.'}
 						</p>
 					</div>{:else}{#each channelsQuery.data.items as channel, index (channel.id)}<WorkspaceRow
 							{channel}
@@ -1179,6 +1198,30 @@
 		background: transparent;
 		color: var(--text);
 		font-size: 0.75rem;
+	}
+	.match-filter {
+		display: inline-flex;
+		min-height: 2rem;
+		align-items: center;
+		gap: 0.35rem;
+		border-radius: 99px;
+		background: color-mix(in oklch, var(--sun) 16%, var(--surface-raised));
+		padding: 0.25rem 0.35rem 0.25rem 0.55rem;
+		color: var(--sun);
+		font-size: 0.65rem;
+		font-weight: 800;
+		white-space: nowrap;
+	}
+	.match-filter a {
+		display: grid;
+		width: 1.5rem;
+		height: 1.5rem;
+		place-items: center;
+		border-radius: 50%;
+		color: inherit;
+	}
+	.match-filter a:hover {
+		background: color-mix(in oklch, var(--sun) 18%, transparent);
 	}
 	.channel-list,
 	.inspector-pane {

@@ -798,6 +798,10 @@ export interface components {
 			mapped_channel_count: number;
 			/** Format: int64 */
 			review_count: number;
+			/** Format: int64 */
+			low_confidence_count: number;
+			/** Format: int64 */
+			unmatched_count: number;
 			/** Format: double */
 			epg_coverage: number;
 			/** Format: int64 */
@@ -921,6 +925,8 @@ export interface components {
 		SourceGroupIdPath: number;
 		GroupId: number;
 		Search: string;
+		/** @description Restrict lineup channels to a match-health state. */
+		MatchHealth: 'unmatched' | 'low-confidence';
 		Cursor: string;
 		Limit: number;
 	};
@@ -1340,6 +1346,8 @@ export interface operations {
 		parameters: {
 			query?: {
 				q?: components['parameters']['Search'];
+				/** @description Restrict lineup channels to a match-health state. */
+				match?: components['parameters']['MatchHealth'];
 				cursor?: components['parameters']['Cursor'];
 				limit?: components['parameters']['Limit'];
 			};

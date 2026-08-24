@@ -1,11 +1,20 @@
 <script lang="ts">
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { Plus, Rows3, Trash2, ArrowRight, Radio } from '@lucide/svelte';
+	import { page } from '$app/state';
+	import { Plus, Rows3, Trash2, ArrowRight, Radio, CircleAlert } from '@lucide/svelte';
 	import { api } from '$lib/api/client';
 	import type { LineupSummary, Paginated } from '$lib/api/types';
 	import StudioHeader from '$lib/components/studio/StudioHeader.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	const client = useQueryClient();
+	type MatchFilter = '' | 'unmatched' | 'low-confidence';
+	function readMatchFilter(value: string | null): MatchFilter {
+		return value === 'unmatched' || value === 'low-confidence' ? value : '';
+	}
+	let matchFilter = $derived(readMatchFilter(page.url.searchParams.get('match')));
+	let matchFilterLabel = $derived(
+		matchFilter === 'unmatched' ? 'unmatched channels' : 'low-confidence matches'
+	);
 	const query = createQuery(() => ({
 		queryKey: ['studio', 'lineups'],
 		queryFn: () => api<Paginated<LineupSummary>>('/api/v2/studio/lineups')
@@ -65,6 +74,11 @@
 		>
 	</form>
 </StudioHeader>
+{#if matchFilter}<div class="lineup-filter" role="status">
+		<CircleAlert size={18} />
+		<span>Choose a lineup to review its <strong>{matchFilterLabel}</strong>.</span>
+		<a href="/studio/lineups">Clear filter</a>
+	</div>{/if}
 {#if message}<p class="lineup-message" role="status">{message}</p>{/if}
 {#if query.isPending}<div class="lineup-grid">
 		{#each Array(4) as _}<div class="skeleton"></div>{/each}
@@ -103,8 +117,10 @@
 					</dl>
 				</div>
 				<div class="lineup-actions">
-					<a class="app-button app-button--secondary" href={`/studio/lineups/${lineup.id}`}
-						>Open workbench <ArrowRight size={17} /></a
+					<a
+						class="app-button app-button--secondary"
+						href={`/studio/lineups/${lineup.id}${matchFilter ? `?match=${matchFilter}` : ''}`}
+						>{matchFilter ? 'Review channels' : 'Open workbench'} <ArrowRight size={17} /></a
 					><a
 						class="app-button app-button--quiet app-button--icon"
 						href={`/?lineup=${lineup.id}`}
@@ -138,6 +154,24 @@
 		background: var(--surface);
 		padding: 0.7rem 1rem;
 		color: var(--muted);
+	}
+	.lineup-filter {
+		display: flex;
+		min-height: 3rem;
+		align-items: center;
+		gap: 0.6rem;
+		margin: 0 clamp(1.4rem, 3vw, 2.5rem) 1rem;
+		border: 1px solid color-mix(in oklch, var(--sun) 55%, var(--line));
+		border-radius: 0.8rem;
+		background: color-mix(in oklch, var(--sun) 12%, var(--surface));
+		padding: 0.55rem 0.75rem;
+		font-size: 0.75rem;
+	}
+	.lineup-filter span {
+		flex: 1;
+	}
+	.lineup-filter a {
+		font-weight: 800;
 	}
 	.lineup-grid {
 		display: grid;
@@ -205,6 +239,9 @@
 		.lineup-grid {
 			grid-template-columns: 1fr;
 			padding-inline: 1rem;
+		}
+		.lineup-filter {
+			margin-inline: 1rem;
 		}
 		.lineup-grid article {
 			min-height: 14rem;

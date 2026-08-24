@@ -221,6 +221,7 @@ paths:
       parameters:
         - { $ref: '#/components/parameters/GroupIdPath' }
         - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/MatchHealth'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -473,6 +474,11 @@ components:
       schema: { type: integer, format: int64 }
     GroupId: { name: group_id, in: query, schema: { type: integer, format: int64 } }
     Search: { name: q, in: query, schema: { type: string, maxLength: 255 } }
+    MatchHealth:
+      name: match
+      in: query
+      description: Restrict lineup channels to a match-health state.
+      schema: { type: string, enum: [unmatched, low-confidence] }
     Cursor: { name: cursor, in: query, schema: { type: string } }
     Limit:
       { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
@@ -744,6 +750,8 @@ components:
           lineup_channel_count,
           mapped_channel_count,
           review_count,
+          low_confidence_count,
+          unmatched_count,
           epg_coverage,
           logo_count
         ]
@@ -754,6 +762,8 @@ components:
         lineup_channel_count: { type: integer, format: int64 }
         mapped_channel_count: { type: integer, format: int64 }
         review_count: { type: integer, format: int64 }
+        low_confidence_count: { type: integer, format: int64 }
+        unmatched_count: { type: integer, format: int64 }
         epg_coverage: { type: number, format: double }
         logo_count: { type: integer, format: int64 }
     CoverageSummary:

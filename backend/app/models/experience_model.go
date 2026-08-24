@@ -165,6 +165,8 @@ type StudioOverview struct {
 	LineupChannelCount int64   `db:"lineup_channel_count" json:"lineup_channel_count"`
 	MappedChannelCount int64   `db:"mapped_channel_count" json:"mapped_channel_count"`
 	ReviewCount        int64   `db:"review_count" json:"review_count"`
+	LowConfidenceCount int64   `db:"low_confidence_count" json:"low_confidence_count"`
+	UnmatchedCount     int64   `db:"unmatched_count" json:"unmatched_count"`
 	EPGCoverage        float64 `db:"epg_coverage" json:"epg_coverage"`
 	LogoCount          int64   `db:"logo_count" json:"logo_count"`
 }

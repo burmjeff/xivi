@@ -190,8 +190,18 @@ func (q *ExperienceQueries) GetGuideChannel(ctx context.Context, channelID int64
 	return nil, sql.ErrNoRows
 }
 
-func (q *ExperienceQueries) GetWorkspaceChannels(ctx context.Context, groupID int64, search string, limit, offset int) ([]models.WorkspaceChannel, int64, error) {
+func (q *ExperienceQueries) GetWorkspaceChannels(ctx context.Context, groupID int64, search, matchHealth string, limit, offset int) ([]models.WorkspaceChannel, int64, error) {
 	where, args := "tgc.group_id = ?", []any{groupID}
+	switch matchHealth {
+	case "":
+	case "unmatched":
+		where += " AND NOT EXISTS (SELECT 1 FROM templatechannelitem health_item WHERE health_item.channel_id = tc.id)"
+	case "low-confidence":
+		where += ` AND NOT EXISTS (SELECT 1 FROM templatechannelitem locked_item WHERE locked_item.channel_id = tc.id AND locked_item.manual_locked = 1)
+			AND EXISTS (SELECT 1 FROM templatechannelitem review_item WHERE review_item.channel_id = tc.id AND review_item.manual_locked = 0 AND review_item.match_score IS NOT NULL AND review_item.match_score < 0.82)`
+	default:
+		return nil, 0, fmt.Errorf("unsupported match health filter %q", matchHealth)
+	}
 	if search != "" {
 		where += " AND (LOWER(tc.name) LIKE ? OR LOWER(COALESCE(tc.tvgid, '')) LIKE ?)"
 		term := "%" + strings.ToLower(search) + "%"
@@ -334,15 +344,29 @@ func (q *ExperienceQueries) GetMatchRejections(ctx context.Context, channelID in
 
 func (q *ExperienceQueries) GetStudioOverview(ctx context.Context) (*models.StudioOverview, error) {
 	row := &models.StudioOverview{}
-	query := `SELECT
+	query := `WITH match_health AS (
+		SELECT
+			(SELECT COUNT(*) FROM templatechannel tc WHERE NOT EXISTS (
+				SELECT 1 FROM templatechannelitem tci WHERE tci.channel_id = tc.id
+			)) AS unmatched_count,
+			(SELECT COUNT(*) FROM templatechannel tc WHERE
+				NOT EXISTS (SELECT 1 FROM templatechannelitem locked_item WHERE locked_item.channel_id = tc.id AND locked_item.manual_locked = 1)
+				AND EXISTS (SELECT 1 FROM templatechannelitem review_item WHERE review_item.channel_id = tc.id AND review_item.manual_locked = 0
+					AND review_item.match_score IS NOT NULL AND review_item.match_score < 0.82)
+			) AS low_confidence_count
+	)
+	SELECT
 		(SELECT COUNT(*) FROM template) AS lineup_count,
 		(SELECT COUNT(*) FROM playlist) AS source_count,
 		(SELECT COUNT(*) FROM playlistchannel) AS source_channel_count,
 		(SELECT COUNT(*) FROM templatechannel) AS lineup_channel_count,
 		(SELECT COUNT(*) FROM templatechannel WHERE tvgid IS NOT NULL AND tvgid != '') AS mapped_channel_count,
-		(SELECT COUNT(DISTINCT channel_id) FROM templatechannelitem WHERE manual_locked = 0 AND match_score IS NOT NULL AND match_score < 0.82) AS review_count,
+		match_health.unmatched_count + match_health.low_confidence_count AS review_count,
+		match_health.low_confidence_count,
+		match_health.unmatched_count,
 		CASE WHEN (SELECT COUNT(*) FROM templatechannel) = 0 THEN 0 ELSE ROUND(100.0 * (SELECT COUNT(*) FROM templatechannel WHERE tvgid IS NOT NULL AND tvgid != '') / (SELECT COUNT(*) FROM templatechannel), 1) END AS epg_coverage,
-		MAX((SELECT COUNT(*) FROM logo) - 1, 0) AS logo_count`
+		MAX((SELECT COUNT(*) FROM logo) - 1, 0) AS logo_count
+		FROM match_health`
 	if err := q.GetContext(ctx, row, query); err != nil {
 		return nil, err
 	}

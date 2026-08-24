@@ -409,8 +409,12 @@ func V2StudioGroupChannels(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The group id is invalid.", false)
 	}
+	matchHealth := strings.TrimSpace(c.Query("match"))
+	if matchHealth != "" && matchHealth != "unmatched" && matchHealth != "low-confidence" {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_match_filter", "Choose unmatched or low-confidence match health.", false)
+	}
 	limit, offset := pageParams(c)
-	items, total, err := database.Db.GetWorkspaceChannels(c.UserContext(), id, strings.TrimSpace(c.Query("q")), limit, offset)
+	items, total, err := database.Db.GetWorkspaceChannels(c.UserContext(), id, strings.TrimSpace(c.Query("q")), matchHealth, limit, offset)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "workspace_unavailable", "Lineup channels could not be loaded.", true)
 	}
