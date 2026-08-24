@@ -134,7 +134,7 @@
 				style={`transform:translateY(${virtualRow.start + 52}px);width:${timelineWidth + 196}px`}
 			>
 				<div class="channel-cell" role="rowheader">
-					<LogoTile src={channel.logo_url} name={channel.name} size="sm" /><span
+					<LogoTile src={channel.logo_url} name={channel.name} size="sm" unbounded /><span
 						><b>{channel.name}</b><small class="tabular"
 							>{channel.number} · {channel.group_name}</small
 						></span
@@ -176,7 +176,7 @@
 <div class="agenda" aria-label="Live programme agenda">
 	{#each channels as channel}<section>
 			<header>
-				<LogoTile src={channel.logo_url} name={channel.name} size="sm" />
+				<LogoTile src={channel.logo_url} name={channel.name} size="sm" unbounded />
 				<div><b>{channel.name}</b><small>{channel.number} · {channel.group_name}</small></div>
 				<a href={`/watch/channel/${channel.id}`}><Play size={17} fill="currentColor" />Play</a>
 			</header>
@@ -208,7 +208,7 @@
 		display: flex;
 		height: 52px;
 		border-bottom: 1px solid var(--line);
-		background: var(--surface);
+		background: var(--watch-card);
 	}
 	.ruler-channel {
 		position: sticky;
@@ -219,7 +219,7 @@
 		flex: none;
 		align-items: center;
 		border-right: 1px solid var(--line);
-		background: var(--surface);
+		background: var(--watch-card);
 		padding: 0.75rem;
 		color: var(--muted);
 		font-size: 0.7rem;
@@ -260,7 +260,7 @@
 		align-items: center;
 		gap: 0.55rem;
 		border-right: 1px solid var(--line);
-		background: var(--surface);
+		background: var(--watch-card);
 		padding: 0.65rem;
 	}
 	.channel-cell > span {
@@ -373,6 +373,7 @@
 	}
 	.agenda section {
 		border-bottom: 1px solid var(--line);
+		background: var(--watch-card);
 		padding: 1rem;
 	}
 	.agenda header {

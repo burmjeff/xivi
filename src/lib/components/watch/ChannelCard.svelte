@@ -18,7 +18,7 @@
 
 <article class:compact class="channel-card">
 	<div class="card-top">
-		<LogoTile src={channel.logo_url} name={channel.name} size={compact ? 'sm' : 'md'} />
+		<LogoTile src={channel.logo_url} name={channel.name} size={compact ? 'sm' : 'md'} unbounded />
 		<div class="identity">
 			<span class="channel-number tabular">{channel.number}</span>
 			<h3>{channel.name}</h3>
@@ -61,7 +61,7 @@
 		scroll-snap-align: start;
 		border: 1px solid var(--line);
 		border-radius: 1.25rem;
-		background: var(--surface);
+		background: var(--watch-card);
 		padding: 1rem;
 		transition:
 			transform var(--layout) var(--ease-out),

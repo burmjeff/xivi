@@ -3,12 +3,19 @@
 		src,
 		name,
 		size = 'md',
-		contrast = false
-	} = $props<{ src?: string; name: string; size?: 'sm' | 'md' | 'lg'; contrast?: boolean }>();
+		contrast = false,
+		unbounded = false
+	} = $props<{
+		src?: string;
+		name: string;
+		size?: 'sm' | 'md' | 'lg';
+		contrast?: boolean;
+		unbounded?: boolean;
+	}>();
 	let failed = $state(false);
 </script>
 
-<span class="logo-tile {size}" class:contrast title={name}>
+<span class="logo-tile {size}" class:contrast class:unbounded title={name}>
 	{#if src && !failed}
 		<img {src} alt="" onerror={() => (failed = true)} />
 	{:else}
@@ -66,5 +73,21 @@
 		padding: 0.22rem;
 		filter: drop-shadow(0 1px 1px oklch(16% 0.02 264 / 0.72))
 			drop-shadow(0 0 1px oklch(100% 0 0 / 0.45));
+	}
+	.logo-tile.unbounded {
+		overflow: visible;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+	}
+	.logo-tile.unbounded img {
+		width: 92%;
+		height: 92%;
+		filter: drop-shadow(0 1px 1px oklch(12% 0.02 264 / 0.62))
+			drop-shadow(0 0 1px oklch(100% 0 0 / 0.52));
+	}
+	:global(:root[data-theme='light']) .logo-tile.unbounded img {
+		filter: drop-shadow(0 1px 1px oklch(12% 0.02 264 / 0.82))
+			drop-shadow(0 0 2px oklch(12% 0.02 264 / 0.35));
 	}
 </style>

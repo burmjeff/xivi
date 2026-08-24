@@ -254,7 +254,12 @@
 			{/if}
 		</div>
 		{#if channelQuery.data}<div class="now-playing">
-				<LogoTile src={channelQuery.data.logo_url} name={channelQuery.data.name} size="lg" />
+				<LogoTile
+					src={channelQuery.data.logo_url}
+					name={channelQuery.data.name}
+					size="lg"
+					unbounded
+				/>
 				<div class="station">
 					<span class="tabular"
 						>Channel {channelQuery.data.number} · {channelQuery.data.group_name}</span
@@ -392,6 +397,7 @@
 		grid-template-columns: auto minmax(10rem, 0.55fr) minmax(18rem, 1.4fr) auto;
 		align-items: center;
 		gap: 1.25rem;
+		background: var(--watch-card);
 		padding: 1.25rem;
 	}
 	.station {

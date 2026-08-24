@@ -114,6 +114,7 @@
 						src={channel.logo_url}
 						name={channel.name}
 						size={preferences.channelView === 'grid' ? 'lg' : 'md'}
+						unbounded
 					/>
 					<div class="channel-copy">
 						<span class="channel-meta tabular">{channel.number} · {channel.group_name}</span>
@@ -162,7 +163,7 @@
 		display: flex;
 		border: 1px solid var(--line);
 		border-radius: 0.85rem;
-		background: var(--surface);
+		background: var(--watch-card);
 		padding: 0.25rem;
 	}
 	.view-toggle button {
@@ -246,7 +247,7 @@
 	}
 	.channel-directory article {
 		border: 1px solid var(--line);
-		background: var(--surface);
+		background: var(--watch-card);
 	}
 	.channel-directory.grid article {
 		display: grid;

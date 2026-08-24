@@ -21,6 +21,7 @@
 	--deep: oklch(25% 0.035 263);
 	--surface: oklch(29% 0.035 263);
 	--surface-raised: oklch(34% 0.04 263);
+	--watch-card: color-mix(in oklch, var(--periwinkle) 5%, var(--surface));
 	--paper: oklch(97.5% 0.008 105);
 	--text: oklch(97.5% 0.008 105);
 	--muted: oklch(75% 0.035 257);
@@ -47,6 +48,7 @@
 	--deep: oklch(94.5% 0.012 255);
 	--surface: oklch(98% 0.006 105);
 	--surface-raised: oklch(100% 0 0);
+	--watch-card: oklch(94.5% 0.018 255);
 	--text: oklch(19% 0.02 264);
 	--muted: oklch(48% 0.04 260);
 	--line: oklch(20% 0.03 260 / 0.13);
