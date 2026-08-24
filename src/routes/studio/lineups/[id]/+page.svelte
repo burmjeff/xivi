@@ -24,7 +24,7 @@
 		X,
 		CircleAlert
 	} from '@lucide/svelte';
-	import { api, params } from '$lib/api/client';
+	import { api, params, XiviAPIError } from '$lib/api/client';
 	import type {
 		LineupSummary,
 		MatchRejection,
@@ -64,6 +64,7 @@
 		syncSourceGroupId = $state(0),
 		syncGroupName = $state(''),
 		syncSearch = $state(''),
+		syncError = $state(''),
 		followGroupName = $state(true),
 		followChannelNames = $state(true),
 		syncSaving = $state(false),
@@ -166,52 +167,64 @@
 		if (!image) return undefined;
 		return image.startsWith('/') ? image : `/${image}`;
 	}
+	function requestError(error: unknown, fallback: string) {
+		return error instanceof XiviAPIError ? error.message : fallback;
+	}
 	function openSyncSettings(group: StudioGroup | null) {
 		syncGroup = group;
 		syncSourceGroupId = group?.source_link?.source_group_id ?? 0;
 		syncGroupName = group?.name ?? '';
 		syncSearch = '';
+		syncError = '';
 		followGroupName = group?.source_link?.follow_group_name ?? true;
 		followChannelNames = group?.source_link?.follow_channel_names ?? true;
 		syncDialogOpen = true;
 	}
 	function chooseSourceGroup(group: SourceGroup) {
 		syncSourceGroupId = group.id;
+		syncError = '';
 		if (!syncGroup && !syncGroupName.trim()) syncGroupName = group.name;
 	}
 	async function saveSyncSettings() {
 		if (!syncSourceGroupId || (!syncGroup && !syncGroupName.trim())) return;
+		syncError = '';
 		syncSaving = true;
 		try {
 			let groupID = syncGroup?.id;
 			if (!groupID) {
-				const response = await api<{ templategroup: StudioGroup }>('/api/template/group', {
-					method: 'POST',
+				const response = await api<{ group_id: number; job_id: number; status: string }>(
+					`/api/v2/studio/lineups/${lineupId}/groups`,
+					{
+						method: 'POST',
+						body: JSON.stringify({
+							name: syncGroupName.trim(),
+							source_link: {
+								source_group_id: syncSourceGroupId,
+								follow_group_name: followGroupName,
+								follow_channel_names: followChannelNames
+							}
+						})
+					}
+				);
+				groupID = response.group_id;
+				selectedGroupId = groupID;
+			} else {
+				await api(`/api/v2/studio/groups/${groupID}/source-link`, {
+					method: 'PUT',
 					body: JSON.stringify({
-						name: syncGroupName.trim(),
-						dynamic: false,
-						dynamicgroup: null
+						source_group_id: syncSourceGroupId,
+						follow_group_name: followGroupName,
+						follow_channel_names: followChannelNames
 					})
 				});
-				groupID = response.templategroup.id;
-				await api(`/api/template/${lineupId}/group/${groupID}/item`, { method: 'POST' });
-				selectedGroupId = groupID;
 			}
-			await api(`/api/v2/studio/groups/${groupID}/source-link`, {
-				method: 'PUT',
-				body: JSON.stringify({
-					source_group_id: syncSourceGroupId,
-					follow_group_name: followGroupName,
-					follow_channel_names: followChannelNames
-				})
-			});
 			syncDialogOpen = false;
 			selectedChannelId = null;
 			selectedIds = new Set();
 			await refreshWorkspace();
 			message = 'The source connection is saved and its first sync is running.';
-		} catch {
-			message = 'The source group could not be connected.';
+		} catch (error) {
+			syncError = requestError(error, 'The source group could not be connected.');
 		} finally {
 			syncSaving = false;
 		}
@@ -437,17 +450,17 @@
 		const name = prompt('Group name');
 		if (!name?.trim()) return;
 		try {
-			const response = await api<{ templategroup: StudioGroup }>('/api/template/group', {
-				method: 'POST',
-				body: JSON.stringify({ name: name.trim(), dynamic: false, dynamicgroup: null })
-			});
-			await api(`/api/template/${lineupId}/group/${response.templategroup.id}/item`, {
-				method: 'POST'
-			});
-			selectedGroupId = response.templategroup.id;
+			const response = await api<{ group_id: number }>(
+				`/api/v2/studio/lineups/${lineupId}/groups`,
+				{
+					method: 'POST',
+					body: JSON.stringify({ name: name.trim() })
+				}
+			);
+			selectedGroupId = response.group_id;
 			await refreshWorkspace();
-		} catch {
-			message = 'The group could not be created.';
+		} catch (error) {
+			message = requestError(error, 'The group could not be created.');
 		}
 	}
 	async function renameGroup(group: StudioGroup) {
@@ -458,18 +471,13 @@
 		const name = prompt('Rename group', group.name);
 		if (!name?.trim() || name.trim() === group.name) return;
 		try {
-			await api('/api/template/group', {
-				method: 'PUT',
-				body: JSON.stringify({
-					id: group.id,
-					name: name.trim(),
-					dynamic: group.dynamic,
-					dynamicgroup: group.dynamic_group_id ?? null
-				})
+			await api(`/api/v2/studio/groups/${group.id}`, {
+				method: 'PATCH',
+				body: JSON.stringify({ name: name.trim() })
 			});
 			await refreshWorkspace();
-		} catch {
-			message = 'The group could not be renamed.';
+		} catch (error) {
+			message = requestError(error, 'The group could not be renamed.');
 		}
 	}
 	async function removeGroup(group: StudioGroup) {
@@ -480,12 +488,12 @@
 		)
 			return;
 		try {
-			await api(`/api/template/group/${group.id}`, { method: 'DELETE' });
+			await api(`/api/v2/studio/groups/${group.id}`, { method: 'DELETE' });
 			selectedGroupId = null;
 			selectedChannelId = null;
 			await refreshWorkspace();
-		} catch {
-			message = 'The group could not be deleted.';
+		} catch (error) {
+			message = requestError(error, 'The group could not be deleted.');
 		}
 	}
 	async function publish() {
@@ -904,9 +912,17 @@
 				</div>
 			{/if}
 			<div class="sync-dialog-body">
+				{#if syncError}<div class="sync-error" role="alert">
+						<CircleAlert size={18} />{syncError}
+					</div>{/if}
 				{#if !syncGroup}<label class="sync-group-name">
 						<span>Lineup group name</span>
-						<input bind:value={syncGroupName} maxlength="255" placeholder="Group name" />
+						<input
+							bind:value={syncGroupName}
+							oninput={() => (syncError = '')}
+							maxlength="255"
+							placeholder="Group name"
+						/>
 					</label>{/if}
 				<label class="sync-search">
 					<Search size={16} /><span class="sr-only">Search source groups</span><input
@@ -1763,6 +1779,21 @@
 		gap: 0.7rem;
 		overflow-y: auto;
 		padding: 0.85rem 1rem 1rem;
+	}
+	.sync-error {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.55rem;
+		border: 1px solid color-mix(in oklch, var(--error) 40%, var(--line));
+		border-radius: 0.75rem;
+		background: color-mix(in oklch, var(--error) 10%, var(--surface));
+		padding: 0.7rem 0.8rem;
+		color: var(--error);
+		font-size: 0.78rem;
+		font-weight: 700;
+	}
+	.sync-error :global(svg) {
+		flex: 0 0 auto;
 	}
 	.sync-group-name {
 		display: grid;

@@ -392,6 +392,12 @@ func CreateTemplateGroup(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
+	if templateGroup.Dynamic || templateGroup.DynamicGroup != nil {
+		return c.Status(fiber.StatusGone).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Legacy dynamic groups have been retired. Create a synced group in Studio instead.",
+		})
+	}
 
 	// Create a new validator for a Template model.
 	validate := utils.NewValidator()
@@ -416,10 +422,6 @@ func CreateTemplateGroup(c *fiber.Ctx) error {
 	}
 
 	templateGroup.ID = id
-
-	if templateGroup.Dynamic {
-		go utils.UpdateDynamicGroup(*templateGroup)
-	}
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
@@ -629,6 +631,12 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
+	if templateGroup.Dynamic || templateGroup.DynamicGroup != nil {
+		return c.Status(fiber.StatusGone).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Legacy dynamic groups have been retired. Manage the source connection in Studio instead.",
+		})
+	}
 
 	// Create a new validator for a Template model.
 	validate := utils.NewValidator()
@@ -662,17 +670,6 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 		})
 	}
 
-	if (templateGroup.Dynamic != oldGroup.Dynamic && templateGroup.Dynamic) ||
-		(templateGroup.DynamicGroup != oldGroup.DynamicGroup && templateGroup.Dynamic) {
-		utils.UpdateDynamicGroup(*templateGroup)
-	} else if !templateGroup.Dynamic && oldGroup.Dynamic {
-		if _, linkErr := database.Db.GetSourceGroupLink(c.UserContext(), templateGroup.ID); linkErr == nil {
-			if disconnectErr := database.Db.DisconnectSourceGroup(c.UserContext(), templateGroup.ID, true); disconnectErr != nil {
-				log.Error().Err(disconnectErr).Int64("group_id", templateGroup.ID).Msg("Failed to disconnect source-backed group")
-			}
-		}
-	}
-
 	m3uTools := utils.NewM3uTools()
 	if templateGroupItems, err := database.Db.GetTmplGroupItemsByGroup(templateGroup.ID); err == nil {
 		go func() {
@@ -682,12 +679,7 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 				if err != nil {
 					continue
 				}
-				if templateGroup.Dynamic == oldGroup.Dynamic {
-					go m3uTools.UpdateGroup(template, templateGroup, *oldGroup)
-				} else {
-					go m3uTools.CreateM3u(*template)
-					go utils.CreateEpgXML(*template)
-				}
+				go m3uTools.UpdateGroup(template, templateGroup, *oldGroup)
 			}
 		}()
 	}

@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"context"
 	"path/filepath"
 	"strings"
 	"xivi/backend/app/models"
@@ -97,28 +96,4 @@ func MatchDomain(playlistId int64) int64 {
 		}
 	}
 	return 0
-}
-
-func UpdateDynamicGroup(group models.TemplateGroup) {
-	if !group.Dynamic || group.DynamicGroup == nil {
-		log.Debug().Int64("group_id", group.ID).Msg("Group is not dynamic or has no dynamicgroup")
-		return
-	}
-	playlistGroup, err := database.Db.GetPlGroup(*group.DynamicGroup)
-	if err != nil {
-		log.Warn().Err(err).Int64("group_id", group.ID).Int64("dynamicgroup_id", *group.DynamicGroup).Msg("Playlist group no longer exists; retaining the previous synced snapshot")
-		return
-	}
-	request := models.SourceGroupLinkRequest{
-		SourceGroupID:      playlistGroup.ID,
-		FollowGroupName:    true,
-		FollowChannelNames: true,
-	}
-	if err := database.Db.SetSourceGroupLink(context.Background(), group.ID, request); err != nil {
-		log.Error().Err(err).Int64("group_id", group.ID).Msg("Failed to preserve the dynamic group as a source link")
-		return
-	}
-	if _, err := database.Db.SyncSourceGroup(context.Background(), group.ID); err != nil {
-		log.Error().Err(err).Int64("group_id", group.ID).Msg("Failed to sync connected source group")
-	}
 }

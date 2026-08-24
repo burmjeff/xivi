@@ -39,13 +39,12 @@ func (q *ExperienceQueries) GetLineupSummaries(ctx context.Context) ([]models.Li
 func (q *ExperienceQueries) GetLineupGroups(ctx context.Context, lineupID int64) ([]models.StudioGroupSummary, error) {
 	rows := []models.StudioGroupSummary{}
 	query := `
-		SELECT tg.id, tg.name, tgi.orderr, COALESCE(tg.dynamic, 0) AS dynamic,
-		       tg.dynamicgroup, COUNT(tgc.channel_id) AS channel_count
+		SELECT tg.id, tg.name, tgi.orderr, COUNT(tgc.channel_id) AS channel_count
 		FROM template_group_item tgi
 		JOIN templategroup tg ON tg.id = tgi.group_id
 		LEFT JOIN template_group_channel tgc ON tgc.group_id = tg.id
 		WHERE tgi.template_id = ?
-		GROUP BY tg.id, tg.name, tgi.orderr, tg.dynamic, tg.dynamicgroup
+		GROUP BY tg.id, tg.name, tgi.orderr
 		ORDER BY tgi.orderr, tg.id`
 	if err := q.SelectContext(ctx, &rows, query, lineupID); err != nil {
 		return nil, err
@@ -59,8 +58,6 @@ func (q *ExperienceQueries) GetLineupGroups(ctx context.Context, lineupID int64)
 			return nil, err
 		}
 		rows[index].SourceLink = link
-		rows[index].Dynamic = true
-		rows[index].DynamicGroup = link.SourceGroupID
 	}
 	return rows, nil
 }

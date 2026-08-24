@@ -71,7 +71,11 @@ func OpenDBConnection() (*Queries, error) {
 }
 
 func getDB() (*sqlx.DB, error) {
-	connStr := fmt.Sprintf("%s/xivi.db?_journal_mode=WAL&_foreign_keys=on&_shared_cache=true&_recursive_triggers=false", settings.CONFIG_PATH)
+	// Begin explicit transactions with a write reservation. Several Studio
+	// operations validate their target before mutating it; deferred transactions
+	// can otherwise fail immediately while upgrading that read transaction to a
+	// writer, even when a busy timeout is configured.
+	connStr := fmt.Sprintf("%s/xivi.db?_journal_mode=WAL&_foreign_keys=on&_shared_cache=true&_recursive_triggers=false&_busy_timeout=10000&_txlock=immediate", settings.CONFIG_PATH)
 
 	db, err := sqlx.Open("sqlite3", connStr)
 	if err != nil {

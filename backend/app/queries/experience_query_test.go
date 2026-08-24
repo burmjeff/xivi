@@ -4,6 +4,7 @@ package queries
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -113,6 +114,81 @@ func TestMoveWorkspaceChannelReindexesBothDirections(t *testing.T) {
 	db.Select(&ids, `SELECT channel_id FROM template_group_channel WHERE group_id = 10 ORDER BY orderr`)
 	if got, want := ids, []int64{1, 2, 3}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Fatalf("unexpected order after upward move: %v", got)
+	}
+}
+
+func TestCreateStudioGroupRollsBackEveryStepWhenSourceLinkFails(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO template VALUES (1, 'Main')`)
+	query := NewExperienceQueries(db)
+	request := models.StudioGroupCreateRequest{
+		Name: "News",
+		SourceLink: &models.SourceGroupLinkRequest{
+			SourceGroupID:      999,
+			FollowGroupName:    true,
+			FollowChannelNames: true,
+		},
+	}
+	if _, err := query.CreateStudioGroup(context.Background(), 1, request); !errors.Is(err, ErrSourceGroupNotFound) {
+		t.Fatalf("expected a missing source error, got %v", err)
+	}
+	for _, table := range []string{"templategroup", "template_group_item", "lineup_group_source_link"} {
+		var count int
+		db.Get(&count, `SELECT COUNT(*) FROM `+table)
+		if count != 0 {
+			t.Fatalf("%s retained %d rows after the transaction failed", table, count)
+		}
+	}
+}
+
+func TestCreateStudioGroupAtomicallyAttachesLineupAndSource(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO template VALUES (1, 'Main')`)
+	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'Provider News', 1, 1)`)
+	query := NewExperienceQueries(db)
+	groupID, err := query.CreateStudioGroup(context.Background(), 1, models.StudioGroupCreateRequest{
+		Name: "News",
+		SourceLink: &models.SourceGroupLinkRequest{
+			SourceGroupID:      20,
+			FollowGroupName:    true,
+			FollowChannelNames: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateStudioGroup failed: %v", err)
+	}
+	var state struct {
+		Name          string `db:"name"`
+		Order         int64  `db:"orderr"`
+		SourceGroupID int64  `db:"source_group_id"`
+		Dynamic       bool   `db:"dynamic"`
+	}
+	if err := db.Get(&state, `SELECT tg.name, tg.dynamic, tgi.orderr, l.source_group_id
+		FROM templategroup tg
+		JOIN template_group_item tgi ON tgi.group_id = tg.id
+		JOIN lineup_group_source_link l ON l.group_id = tg.id
+		WHERE tg.id = ? AND tgi.template_id = 1`, groupID); err != nil {
+		t.Fatalf("atomic group state was incomplete: %v", err)
+	}
+	if state.Name != "News" || state.Order != 1 || state.SourceGroupID != 20 || state.Dynamic {
+		t.Fatalf("unexpected atomic group state: %#v", state)
+	}
+}
+
+func TestDeleteStudioGroupRemovesOnlyOrphanedCanonicalChannels(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'One', 0, NULL), (20, 'Two', 0, NULL)`)
+	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'Shared', NULL, 0, 'shared'), (2, 'Owned', NULL, 0, 'owned')`)
+	db.MustExec(`INSERT INTO template_group_channel VALUES (10, 1, 1), (10, 2, 2), (20, 1, 1)`)
+	query := NewExperienceQueries(db)
+	if err := query.DeleteStudioGroup(context.Background(), 10); err != nil {
+		t.Fatalf("DeleteStudioGroup failed: %v", err)
+	}
+	var ids []int64
+	db.Select(&ids, `SELECT id FROM templatechannel ORDER BY id`)
+	if len(ids) != 1 || ids[0] != 1 {
+		t.Fatalf("shared and orphaned channels were cleaned incorrectly: %v", ids)
 	}
 }
 

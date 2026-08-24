@@ -31,8 +31,12 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 		}
 		throw new XiviAPIError(response.status, detail);
 	}
-	if (response.status === 204) return undefined as T;
-	return response.json() as Promise<T>;
+	if (response.status === 204 || response.headers.get('content-length') === '0')
+		return undefined as T;
+	const contentType = response.headers.get('content-type') ?? '';
+	if (contentType.includes('json')) return response.json() as Promise<T>;
+	const text = await response.text();
+	return (text || undefined) as T;
 }
 
 export function params(values: Record<string, string | number | boolean | undefined | null>) {

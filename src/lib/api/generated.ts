@@ -141,7 +141,7 @@ export interface paths {
 		};
 		get: operations['listStudioLineupGroups'];
 		put?: never;
-		post?: never;
+		post: operations['createStudioGroup'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -162,6 +162,22 @@ export interface paths {
 		options?: never;
 		head?: never;
 		patch?: never;
+		trace?: never;
+	};
+	'/studio/groups/{group_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['deleteStudioGroup'];
+		options?: never;
+		head?: never;
+		patch: operations['updateStudioGroup'];
 		trace?: never;
 	};
 	'/studio/groups/{group_id}/source-link': {
@@ -563,12 +579,23 @@ export interface components {
 			name: string;
 			/** Format: int64 */
 			order: number;
-			dynamic: boolean;
-			/** Format: int64 */
-			dynamic_group_id?: number;
 			/** Format: int64 */
 			channel_count: number;
 			source_link?: components['schemas']['SourceGroupLink'];
+		};
+		StudioGroupCreateRequest: {
+			name: string;
+			source_link?: components['schemas']['SourceGroupLinkRequest'];
+		};
+		StudioGroupUpdateRequest: {
+			name: string;
+		};
+		StudioGroupCreateResult: {
+			/** Format: int64 */
+			group_id: number;
+			/** Format: int64 */
+			job_id?: number;
+			status?: string;
 		};
 		SourceGroup: {
 			/** Format: int64 */
@@ -1014,6 +1041,42 @@ export interface operations {
 			default: components['responses']['Error'];
 		};
 	};
+	createStudioGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				lineup_id: components['parameters']['LineupId'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['StudioGroupCreateRequest'];
+			};
+		};
+		responses: {
+			/** @description Manual lineup group created and attached atomically. */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['StudioGroupCreateResult'];
+				};
+			};
+			/** @description Source-linked lineup group created atomically and initial sync queued. */
+			202: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['StudioGroupCreateResult'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
 	listSourceGroups: {
 		parameters: {
 			query?: {
@@ -1036,6 +1099,52 @@ export interface operations {
 				content: {
 					'application/json': components['schemas']['SourceGroupPage'];
 				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	deleteStudioGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				group_id: components['parameters']['GroupIdPath'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Lineup group deleted. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	updateStudioGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				group_id: components['parameters']['GroupIdPath'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['StudioGroupUpdateRequest'];
+			};
+		};
+		responses: {
+			/** @description Lineup group updated. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
 			};
 			default: components['responses']['Error'];
 		};

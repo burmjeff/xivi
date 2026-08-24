@@ -5,16 +5,19 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 	"xivi/backend/app/models"
+	"xivi/backend/app/queries"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/platform/cron"
 	"xivi/backend/platform/database"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/rs/zerolog/log"
 )
 
 func v2Error(c *fiber.Ctx, status int, code, message string, retryable bool) error {
@@ -192,6 +195,83 @@ func V2StudioLineupGroups(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"items": items, "next_cursor": nil, "total": len(items)})
 }
 
+func studioGroupError(c *fiber.Ctx, err error) error {
+	switch {
+	case errors.Is(err, queries.ErrLineupNotFound):
+		return v2Error(c, fiber.StatusNotFound, "lineup_not_found", "That lineup no longer exists.", false)
+	case errors.Is(err, queries.ErrStudioGroupNotFound):
+		return v2Error(c, fiber.StatusNotFound, "group_not_found", "That lineup group no longer exists.", false)
+	case errors.Is(err, queries.ErrSourceGroupNotFound):
+		return v2Error(c, fiber.StatusNotFound, "source_group_not_found", "That source group is no longer available. Refresh the source list and choose another group.", false)
+	case errors.Is(err, queries.ErrStudioGroupName):
+		return v2Error(c, fiber.StatusBadRequest, "group_name_required", "Enter a name for the lineup group.", false)
+	case strings.Contains(strings.ToLower(err.Error()), "unique constraint failed: templategroup.name"):
+		return v2Error(c, fiber.StatusConflict, "group_name_exists", "A lineup group already uses that name.", false)
+	case strings.Contains(strings.ToLower(err.Error()), "database is locked"):
+		return v2Error(c, fiber.StatusServiceUnavailable, "database_busy", "Xivi is finishing another update. Try again in a moment; no changes were saved.", true)
+	default:
+		log.Error().Err(err).Msg("Studio group operation failed")
+		return v2Error(c, fiber.StatusInternalServerError, "group_operation_failed", "The lineup group could not be saved.", true)
+	}
+}
+
+func V2CreateStudioGroup(c *fiber.Ctx) error {
+	lineupID, err := parseID(c, "lineup_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
+	}
+	request := models.StudioGroupCreateRequest{}
+	if err := c.BodyParser(&request); err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The lineup group request is invalid.", false)
+	}
+	request.Name = strings.TrimSpace(request.Name)
+	groupID, err := database.Db.CreateStudioGroup(c.UserContext(), lineupID, request)
+	if err != nil {
+		return studioGroupError(c, err)
+	}
+	if request.SourceLink == nil {
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{"group_id": groupID})
+	}
+	job, err := launchV2Job(c.UserContext(), "sync", "group", groupID, "Group sync queued.", "Reconciling the source group…", "Synced group updated.", func() error {
+		_, err := database.Db.SyncSourceGroup(context.Background(), groupID)
+		return err
+	})
+	if err != nil {
+		if cleanupErr := database.Db.DeleteStudioGroup(c.UserContext(), groupID); cleanupErr != nil {
+			log.Error().Err(cleanupErr).Int64("group_id", groupID).Msg("Failed to roll back a group after job creation failed")
+		}
+		return v2Error(c, fiber.StatusInternalServerError, "job_unavailable", "The source connection could not be queued; no group was created.", true)
+	}
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"group_id": groupID, "job_id": job.ID, "status": job.Status})
+}
+
+func V2UpdateStudioGroup(c *fiber.Ctx) error {
+	groupID, err := parseID(c, "group_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The group id is invalid.", false)
+	}
+	request := models.StudioGroupUpdateRequest{}
+	if err := c.BodyParser(&request); err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The lineup group request is invalid.", false)
+	}
+	request.Name = strings.TrimSpace(request.Name)
+	if err := database.Db.UpdateStudioGroup(c.UserContext(), groupID, request); err != nil {
+		return studioGroupError(c, err)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func V2DeleteStudioGroup(c *fiber.Ctx) error {
+	groupID, err := parseID(c, "group_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The group id is invalid.", false)
+	}
+	if err := database.Db.DeleteStudioGroup(c.UserContext(), groupID); err != nil {
+		return studioGroupError(c, err)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
 func V2StudioSourceGroups(c *fiber.Ctx) error {
 	playlistID, err := optionalIntQuery(c, "playlist_id")
 	if err != nil {
@@ -215,7 +295,7 @@ func V2SetStudioGroupSourceLink(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_source_group", "Choose a source group to sync.", false)
 	}
 	if err := database.Db.SetSourceGroupLink(c.UserContext(), groupID, request); err != nil {
-		return v2Error(c, fiber.StatusUnprocessableEntity, "source_link_failed", "The source group could not be connected.", false)
+		return studioGroupError(c, err)
 	}
 	return queueV2Job(c, "sync", "group", groupID, "Group sync queued.", "Reconciling the source group…", "Synced group updated.", func() error {
 		_, err := database.Db.SyncSourceGroup(context.Background(), groupID)
@@ -479,10 +559,10 @@ func V2UpdateStudioChannel(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-func queueV2Job(c *fiber.Ctx, kind, resource string, resourceID int64, queuedMessage, runningMessage, successMessage string, work func() error) error {
-	job, err := database.Db.CreateJob(c.UserContext(), kind, resource, &resourceID, queuedMessage)
+func launchV2Job(ctx context.Context, kind, resource string, resourceID int64, queuedMessage, runningMessage, successMessage string, work func() error) (*models.OperationJob, error) {
+	job, err := database.Db.CreateJob(ctx, kind, resource, &resourceID, queuedMessage)
 	if err != nil {
-		return v2Error(c, fiber.StatusInternalServerError, "job_unavailable", "The operation could not be queued.", true)
+		return nil, err
 	}
 	go func(jobID int64) {
 		ctx := context.Background()
@@ -503,6 +583,14 @@ func queueV2Job(c *fiber.Ctx, kind, resource string, resourceID int64, queuedMes
 		}
 		_ = database.Db.UpdateJob(ctx, jobID, "succeeded", 100, successMessage, "")
 	}(job.ID)
+	return job, nil
+}
+
+func queueV2Job(c *fiber.Ctx, kind, resource string, resourceID int64, queuedMessage, runningMessage, successMessage string, work func() error) error {
+	job, err := launchV2Job(c.UserContext(), kind, resource, resourceID, queuedMessage, runningMessage, successMessage, work)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "job_unavailable", "The operation could not be queued.", true)
+	}
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"job_id": job.ID, "status": job.Status})
 }
 

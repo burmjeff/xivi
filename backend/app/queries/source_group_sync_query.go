@@ -14,6 +14,13 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+var (
+	ErrLineupNotFound      = errors.New("lineup not found")
+	ErrStudioGroupNotFound = errors.New("studio group not found")
+	ErrSourceGroupNotFound = errors.New("source group not found")
+	ErrStudioGroupName     = errors.New("studio group name is required")
+)
+
 type sourceGroupRecord struct {
 	ID         int64  `db:"id"`
 	Name       string `db:"name"`
@@ -93,6 +100,97 @@ func (q *ExperienceQueries) IsSourceLinkedGroup(ctx context.Context, groupID int
 	return linked, err
 }
 
+// CreateStudioGroup creates the canonical group, attaches it to the lineup,
+// and optionally establishes its source subscription in one transaction. No
+// empty group can escape when any part of setup fails.
+func (q *ExperienceQueries) CreateStudioGroup(ctx context.Context, lineupID int64, request models.StudioGroupCreateRequest) (int64, error) {
+	if strings.TrimSpace(request.Name) == "" {
+		return 0, ErrStudioGroupName
+	}
+	var groupID int64
+	err := q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		var lineupExists bool
+		if err := tx.GetContext(ctx, &lineupExists, `SELECT EXISTS(SELECT 1 FROM template WHERE id = ?)`, lineupID); err != nil {
+			return err
+		}
+		if !lineupExists {
+			return ErrLineupNotFound
+		}
+		insert, err := tx.ExecContext(ctx, `INSERT INTO templategroup (name, dynamic, dynamicgroup) VALUES (?, false, NULL)`, strings.TrimSpace(request.Name))
+		if err != nil {
+			return err
+		}
+		groupID, err = insert.LastInsertId()
+		if err != nil {
+			return err
+		}
+		var position int64
+		if err := tx.GetContext(ctx, &position, `SELECT COALESCE(MAX(orderr), 0) + 1 FROM template_group_item WHERE template_id = ?`, lineupID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO template_group_item (template_id, group_id, orderr) VALUES (?, ?, ?)`, lineupID, groupID, position); err != nil {
+			return err
+		}
+		if request.SourceLink != nil {
+			if request.SourceLink.SourceGroupID < 1 {
+				return ErrSourceGroupNotFound
+			}
+			return setSourceGroupLinkTx(ctx, tx, groupID, *request.SourceLink)
+		}
+		return nil
+	})
+	return groupID, err
+}
+
+func (q *ExperienceQueries) UpdateStudioGroup(ctx context.Context, groupID int64, request models.StudioGroupUpdateRequest) error {
+	if strings.TrimSpace(request.Name) == "" {
+		return ErrStudioGroupName
+	}
+	result, err := q.ExecContext(ctx, `UPDATE templategroup SET name = ? WHERE id = ?`, strings.TrimSpace(request.Name), groupID)
+	if err != nil {
+		return err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated == 0 {
+		return ErrStudioGroupNotFound
+	}
+	return nil
+}
+
+func (q *ExperienceQueries) DeleteStudioGroup(ctx context.Context, groupID int64) error {
+	return q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		channelIDs := []int64{}
+		if err := tx.SelectContext(ctx, &channelIDs, `SELECT channel_id FROM template_group_channel WHERE group_id = ?`, groupID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM template_group_channel WHERE group_id = ?`, groupID); err != nil {
+			return err
+		}
+		result, err := tx.ExecContext(ctx, `DELETE FROM templategroup WHERE id = ?`, groupID)
+		if err != nil {
+			return err
+		}
+		deleted, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if deleted == 0 {
+			return ErrStudioGroupNotFound
+		}
+		for _, channelID := range channelIDs {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM templatechannel WHERE id = ? AND NOT EXISTS (
+				SELECT 1 FROM template_group_channel WHERE channel_id = ?
+			)`, channelID, channelID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (q *ExperienceQueries) SetSourceGroupLink(ctx context.Context, groupID int64, request models.SourceGroupLinkRequest) error {
 	if groupID < 1 || request.SourceGroupID < 1 {
 		return fmt.Errorf("a lineup group and source group are required")
@@ -103,13 +201,21 @@ func (q *ExperienceQueries) SetSourceGroupLink(ctx context.Context, groupID int6
 			return err
 		}
 		if !groupExists {
-			return sql.ErrNoRows
+			return ErrStudioGroupNotFound
 		}
-		source := sourceGroupRecord{}
-		if err := tx.GetContext(ctx, &source, `SELECT id, name, playlist_id FROM playlistgroup WHERE id = ?`, request.SourceGroupID); err != nil {
-			return err
+		return setSourceGroupLinkTx(ctx, tx, groupID, request)
+	})
+}
+
+func setSourceGroupLinkTx(ctx context.Context, tx *sqlx.Tx, groupID int64, request models.SourceGroupLinkRequest) error {
+	source := sourceGroupRecord{}
+	if err := tx.GetContext(ctx, &source, `SELECT id, name, playlist_id FROM playlistgroup WHERE id = ?`, request.SourceGroupID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrSourceGroupNotFound
 		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO lineup_group_source_link (
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO lineup_group_source_link (
 			group_id, playlist_id, source_group_id, source_group_name,
 			follow_group_name, follow_channel_names, status, last_error
 		) VALUES (?, ?, ?, ?, ?, ?, 'pending', '')
@@ -121,12 +227,7 @@ func (q *ExperienceQueries) SetSourceGroupLink(ctx context.Context, groupID int6
 			follow_channel_names = excluded.follow_channel_names,
 			status = 'pending',
 			last_error = ''`, groupID, source.PlaylistID, source.ID, source.Name, request.FollowGroupName, request.FollowChannelNames)
-		if err != nil {
-			return err
-		}
-		_, err = tx.ExecContext(ctx, `UPDATE templategroup SET dynamic = true, dynamicgroup = ? WHERE id = ?`, source.ID, groupID)
-		return err
-	})
+	return err
 }
 
 func (q *ExperienceQueries) DisconnectSourceGroup(ctx context.Context, groupID int64, retainChannels bool) error {
@@ -156,9 +257,6 @@ func (q *ExperienceQueries) DisconnectSourceGroup(ctx context.Context, groupID i
 			}
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM lineup_group_source_link WHERE group_id = ?`, groupID); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE templategroup SET dynamic = false, dynamicgroup = NULL WHERE id = ?`, groupID); err != nil {
 			return err
 		}
 		return reindexWorkspaceGroup(ctx, tx, groupID)
@@ -441,8 +539,7 @@ func (q *ExperienceQueries) syncResolvedSourceGroup(ctx context.Context, link *m
 			sourceGroup.ID, sourceGroup.Name, result.AddedCount, result.UpdatedCount, result.RemovedCount, link.GroupID); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, `UPDATE templategroup SET dynamic = true, dynamicgroup = ? WHERE id = ?`, sourceGroup.ID, link.GroupID)
-		return err
+		return nil
 	})
 	return result, err
 }

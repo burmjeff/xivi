@@ -15,8 +15,6 @@ type StudioGroupSummary struct {
 	ID           int64            `db:"id" json:"id"`
 	Name         string           `db:"name" json:"name"`
 	Order        int64            `db:"orderr" json:"order"`
-	Dynamic      bool             `db:"dynamic" json:"dynamic"`
-	DynamicGroup *int64           `db:"dynamicgroup" json:"dynamic_group_id,omitempty"`
 	ChannelCount int64            `db:"channel_count" json:"channel_count"`
 	SourceLink   *SourceGroupLink `json:"source_link,omitempty"`
 }
@@ -53,6 +51,15 @@ type SourceGroupLinkRequest struct {
 	SourceGroupID      int64 `json:"source_group_id"`
 	FollowGroupName    bool  `json:"follow_group_name"`
 	FollowChannelNames bool  `json:"follow_channel_names"`
+}
+
+type StudioGroupCreateRequest struct {
+	Name       string                  `json:"name"`
+	SourceLink *SourceGroupLinkRequest `json:"source_link,omitempty"`
+}
+
+type StudioGroupUpdateRequest struct {
+	Name string `json:"name"`
 }
 
 type SourceGroupSyncResult struct {

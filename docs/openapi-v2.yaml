@@ -98,6 +98,26 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/StudioGroupPage' }
         default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createStudioGroup
+      parameters: [{ $ref: '#/components/parameters/LineupId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StudioGroupCreateRequest' }
+      responses:
+        '201':
+          description: Manual lineup group created and attached atomically.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudioGroupCreateResult' }
+        '202':
+          description: Source-linked lineup group created atomically and initial sync queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudioGroupCreateResult' }
+        default: { $ref: '#/components/responses/Error' }
   /studio/source-groups:
     get:
       operationId: listSourceGroups
@@ -112,6 +132,24 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SourceGroupPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/groups/{group_id}:
+    patch:
+      operationId: updateStudioGroup
+      parameters: [{ $ref: '#/components/parameters/GroupIdPath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StudioGroupUpdateRequest' }
+      responses:
+        '204': { description: Lineup group updated. }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteStudioGroup
+      parameters: [{ $ref: '#/components/parameters/GroupIdPath' }]
+      responses:
+        '204': { description: Lineup group deleted. }
         default: { $ref: '#/components/responses/Error' }
   /studio/groups/{group_id}/source-link:
     put:
@@ -473,15 +511,31 @@ components:
         next: { $ref: '#/components/schemas/Programme' }
     StudioGroup:
       type: object
-      required: [id, name, order, dynamic, channel_count]
+      required: [id, name, order, channel_count]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
         order: { type: integer, format: int64 }
-        dynamic: { type: boolean }
-        dynamic_group_id: { type: integer, format: int64 }
         channel_count: { type: integer, format: int64 }
         source_link: { $ref: '#/components/schemas/SourceGroupLink' }
+    StudioGroupCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        source_link: { $ref: '#/components/schemas/SourceGroupLinkRequest' }
+    StudioGroupUpdateRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+    StudioGroupCreateResult:
+      type: object
+      required: [group_id]
+      properties:
+        group_id: { type: integer, format: int64 }
+        job_id: { type: integer, format: int64 }
+        status: { type: string }
     SourceGroup:
       type: object
       required: [id, name, playlist_id, playlist_name, channel_count, enabled, linked_group_count]
