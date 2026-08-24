@@ -21,6 +21,7 @@
 		StudioOverview
 	} from '$lib/api/types';
 	import StudioHeader from '$lib/components/studio/StudioHeader.svelte';
+	import { copyText } from '$lib/browser/clipboard';
 	const client = useQueryClient();
 	type OverviewResponse = { summary: StudioOverview; jobs: OperationJob[] };
 	type SystemResponse = {
@@ -58,9 +59,17 @@
 		publishing = $state<number | null>(null),
 		publishMessage = $state('');
 	async function copy(value: string) {
-		await navigator.clipboard.writeText(new URL(value, location.origin).href);
-		copied = value;
-		setTimeout(() => (copied = ''), 1400);
+		publishMessage = '';
+		try {
+			await copyText(new URL(value, location.origin).href);
+			copied = value;
+			publishMessage = 'Output address copied.';
+			setTimeout(() => {
+				if (copied === value) copied = '';
+			}, 1400);
+		} catch {
+			publishMessage = 'Clipboard access was blocked by the browser.';
+		}
 	}
 	async function publish(id: number) {
 		publishing = id;
