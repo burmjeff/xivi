@@ -12,12 +12,54 @@ type LineupSummary struct {
 }
 
 type StudioGroupSummary struct {
-	ID           int64  `db:"id" json:"id"`
-	Name         string `db:"name" json:"name"`
-	Order        int64  `db:"orderr" json:"order"`
-	Dynamic      bool   `db:"dynamic" json:"dynamic"`
-	DynamicGroup *int64 `db:"dynamicgroup" json:"dynamic_group_id,omitempty"`
-	ChannelCount int64  `db:"channel_count" json:"channel_count"`
+	ID           int64            `db:"id" json:"id"`
+	Name         string           `db:"name" json:"name"`
+	Order        int64            `db:"orderr" json:"order"`
+	Dynamic      bool             `db:"dynamic" json:"dynamic"`
+	DynamicGroup *int64           `db:"dynamicgroup" json:"dynamic_group_id,omitempty"`
+	ChannelCount int64            `db:"channel_count" json:"channel_count"`
+	SourceLink   *SourceGroupLink `json:"source_link,omitempty"`
+}
+
+// SourceGroup is a selectable group from an ingested playlist source.
+type SourceGroup struct {
+	ID               int64  `db:"id" json:"id"`
+	Name             string `db:"name" json:"name"`
+	PlaylistID       int64  `db:"playlist_id" json:"playlist_id"`
+	PlaylistName     string `db:"playlist_name" json:"playlist_name"`
+	ChannelCount     int64  `db:"channel_count" json:"channel_count"`
+	Enabled          bool   `db:"enabled" json:"enabled"`
+	LinkedGroupCount int64  `db:"linked_group_count" json:"linked_group_count"`
+}
+
+// SourceGroupLink describes the one-way subscription owned by a lineup group.
+type SourceGroupLink struct {
+	GroupID            int64      `db:"group_id" json:"group_id"`
+	PlaylistID         int64      `db:"playlist_id" json:"playlist_id"`
+	PlaylistName       string     `db:"playlist_name" json:"playlist_name"`
+	SourceGroupID      *int64     `db:"source_group_id" json:"source_group_id,omitempty"`
+	SourceGroupName    string     `db:"source_group_name" json:"source_group_name"`
+	FollowGroupName    bool       `db:"follow_group_name" json:"follow_group_name"`
+	FollowChannelNames bool       `db:"follow_channel_names" json:"follow_channel_names"`
+	Status             string     `db:"status" json:"status"`
+	LastSyncedAt       *time.Time `db:"last_synced_at" json:"last_synced_at,omitempty"`
+	LastError          string     `db:"last_error" json:"last_error,omitempty"`
+	AddedCount         int64      `db:"added_count" json:"added_count"`
+	UpdatedCount       int64      `db:"updated_count" json:"updated_count"`
+	RemovedCount       int64      `db:"removed_count" json:"removed_count"`
+}
+
+type SourceGroupLinkRequest struct {
+	SourceGroupID      int64 `json:"source_group_id"`
+	FollowGroupName    bool  `json:"follow_group_name"`
+	FollowChannelNames bool  `json:"follow_channel_names"`
+}
+
+type SourceGroupSyncResult struct {
+	GroupID      int64 `json:"group_id"`
+	AddedCount   int64 `json:"added_count"`
+	UpdatedCount int64 `json:"updated_count"`
+	RemovedCount int64 `json:"removed_count"`
 }
 
 // Programme uses correctly named start/end fields. The legacy EPG model has

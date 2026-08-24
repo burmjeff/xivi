@@ -47,7 +47,22 @@ func (q *ExperienceQueries) GetLineupGroups(ctx context.Context, lineupID int64)
 		WHERE tgi.template_id = ?
 		GROUP BY tg.id, tg.name, tgi.orderr, tg.dynamic, tg.dynamicgroup
 		ORDER BY tgi.orderr, tg.id`
-	return rows, q.SelectContext(ctx, &rows, query, lineupID)
+	if err := q.SelectContext(ctx, &rows, query, lineupID); err != nil {
+		return nil, err
+	}
+	for index := range rows {
+		link, err := q.GetSourceGroupLink(ctx, rows[index].ID)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		rows[index].SourceLink = link
+		rows[index].Dynamic = true
+		rows[index].DynamicGroup = link.SourceGroupID
+	}
+	return rows, nil
 }
 
 func (q *ExperienceQueries) GetGuideChannels(ctx context.Context, lineupID int64, groupID *int64, search string, from, to time.Time, limit, offset int) ([]models.GuideChannel, int64, error) {
@@ -260,7 +275,7 @@ func (q *ExperienceQueries) GetSourceChannels(ctx context.Context, playlistID, g
 		pc.tvg_logo AS logo_url, pc.enabled, pg.id AS group_id, pg.name AS group_name,
 		p.id AS playlist_id, p.name AS playlist_name
 		FROM playlistchannel pc JOIN playlistgroup pg ON pg.id = pc.group_id JOIN playlist p ON p.id = pg.playlist_id
-		WHERE ` + whereSQL + ` ORDER BY LOWER(p.name), LOWER(pg.name), LOWER(name), pc.id LIMIT ? OFFSET ?`
+		WHERE ` + whereSQL + ` ORDER BY LOWER(p.name), LOWER(pg.name), LOWER(COALESCE(NULLIF(pc.tvg_name, ''), pc.title)), pc.id LIMIT ? OFFSET ?`
 	rows := []models.SourceChannel{}
 	if err := q.SelectContext(ctx, &rows, query, append(args, limit, offset)...); err != nil {
 		return nil, 0, err

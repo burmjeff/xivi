@@ -4,8 +4,10 @@ package queries
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
+	"xivi/backend/app/models"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
@@ -16,6 +18,7 @@ func newExperienceTestDB(t *testing.T) *sqlx.DB {
 	db := sqlx.MustOpen("sqlite3", ":memory:?_foreign_keys=on&_loc=UTC")
 	t.Cleanup(func() { _ = db.Close() })
 	schema := []string{
+		`CREATE TABLE playlist (id INTEGER PRIMARY KEY, name TEXT NOT NULL, url TEXT, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE template (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`,
 		`CREATE TABLE templategroup (id INTEGER PRIMARY KEY, name TEXT NOT NULL, dynamic BOOLEAN, dynamicgroup INTEGER)`,
 		`CREATE TABLE template_group_item (template_id INTEGER, group_id INTEGER, orderr INTEGER)`,
@@ -27,6 +30,8 @@ func newExperienceTestDB(t *testing.T) *sqlx.DB {
 		`CREATE TABLE logo (id INTEGER PRIMARY KEY, name TEXT)`,
 		`CREATE TABLE epgprogramme (id INTEGER PRIMARY KEY, start DATETIME, stop DATETIME, channel TEXT, "title.value" TEXT, subtitle TEXT, desc TEXT, categories TEXT)`,
 		`CREATE TABLE operation_job (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, resource TEXT, resource_id INTEGER, status TEXT DEFAULT 'queued', progress INTEGER DEFAULT 0, message TEXT DEFAULT '', error_code TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, finished_at DATETIME)`,
+		`CREATE TABLE lineup_group_source_link (group_id INTEGER PRIMARY KEY, playlist_id INTEGER NOT NULL, source_group_id INTEGER, source_group_name TEXT NOT NULL, follow_group_name BOOLEAN NOT NULL DEFAULT 1, follow_channel_names BOOLEAN NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'pending', last_synced_at DATETIME, last_error TEXT NOT NULL DEFAULT '', added_count INTEGER NOT NULL DEFAULT 0, updated_count INTEGER NOT NULL DEFAULT 0, removed_count INTEGER NOT NULL DEFAULT 0, FOREIGN KEY (group_id) REFERENCES templategroup(id) ON DELETE CASCADE, FOREIGN KEY (playlist_id) REFERENCES playlist(id) ON DELETE CASCADE, FOREIGN KEY (source_group_id) REFERENCES playlistgroup(id) ON DELETE SET NULL)`,
+		`CREATE TABLE lineup_group_source_member (group_id INTEGER NOT NULL, template_channel_id INTEGER NOT NULL, source_channel_id INTEGER, source_identity TEXT NOT NULL, last_source_name TEXT NOT NULL DEFAULT '', PRIMARY KEY (group_id, template_channel_id), UNIQUE (group_id, source_identity), FOREIGN KEY (group_id) REFERENCES lineup_group_source_link(group_id) ON DELETE CASCADE, FOREIGN KEY (template_channel_id) REFERENCES templatechannel(id) ON DELETE CASCADE, FOREIGN KEY (source_channel_id) REFERENCES playlistchannel(id) ON DELETE SET NULL)`,
 	}
 	for _, statement := range schema {
 		db.MustExec(statement)
@@ -88,6 +93,7 @@ func TestMoveWorkspaceChannelRequiresOneAnchor(t *testing.T) {
 
 func TestMoveWorkspaceChannelReindexesBothDirections(t *testing.T) {
 	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'One', NULL, 0, 'one'), (2, 'Two', NULL, 0, 'two'), (3, 'Three', NULL, 0, 'three')`)
 	db.MustExec(`INSERT INTO template_group_channel VALUES (10, 1, 10), (10, 2, 20), (10, 3, 30)`)
 	query := NewExperienceQueries(db)
 	third := int64(3)
@@ -107,6 +113,86 @@ func TestMoveWorkspaceChannelReindexesBothDirections(t *testing.T) {
 	db.Select(&ids, `SELECT channel_id FROM template_group_channel WHERE group_id = 10 ORDER BY orderr`)
 	if got, want := ids, []int64{1, 2, 3}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Fatalf("unexpected order after upward move: %v", got)
+	}
+}
+
+func TestSourceGroupSyncReconcilesOwnedMembershipAndPreservesEnrichment(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'Provider News', 1, 1)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES
+		(100, 'alpha.tv', 'Provider Alpha', NULL, 'Alpha', 20, 1),
+		(101, NULL, 'Provider Local', NULL, 'Local', 20, 1)`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'News', 0, NULL)`)
+	query := NewExperienceQueries(db)
+	request := models.SourceGroupLinkRequest{SourceGroupID: 20, FollowGroupName: true, FollowChannelNames: true}
+	if err := query.SetSourceGroupLink(context.Background(), 10, request); err != nil {
+		t.Fatalf("SetSourceGroupLink failed: %v", err)
+	}
+	first, err := query.SyncSourceGroup(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("initial sync failed: %v", err)
+	}
+	if first.AddedCount != 2 || first.RemovedCount != 0 {
+		t.Fatalf("unexpected initial result: %#v", first)
+	}
+	var channels []struct {
+		ID     int64  `db:"id"`
+		Name   string `db:"name"`
+		TVGID  string `db:"tvgid"`
+		LogoID int64  `db:"logoid"`
+	}
+	db.Select(&channels, `SELECT tc.id, tc.name, COALESCE(tc.tvgid, '') AS tvgid, tc.logoid FROM templatechannel tc JOIN template_group_channel tgc ON tgc.channel_id = tc.id WHERE tgc.group_id = 10 ORDER BY tgc.orderr`)
+	if len(channels) != 2 || channels[0].Name != "Alpha" || channels[1].Name != "Local" {
+		t.Fatalf("source membership was not mirrored: %#v", channels)
+	}
+	alphaID := channels[0].ID
+	db.MustExec(`UPDATE templatechannel SET tvgid = 'custom.guide', logoid = 42 WHERE id = ?`, alphaID)
+	db.MustExec(`UPDATE playlistchannel SET title = 'Alpha Renamed', tvg_id = 'provider.changed' WHERE id = 100`)
+	db.MustExec(`DELETE FROM playlistchannel WHERE id = 101`)
+	second, err := query.SyncSourceGroup(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("second sync failed: %v", err)
+	}
+	if second.UpdatedCount != 1 || second.RemovedCount != 1 {
+		t.Fatalf("unexpected reconciliation result: %#v", second)
+	}
+	channels = nil
+	db.Select(&channels, `SELECT tc.id, tc.name, COALESCE(tc.tvgid, '') AS tvgid, tc.logoid FROM templatechannel tc JOIN template_group_channel tgc ON tgc.channel_id = tc.id WHERE tgc.group_id = 10 ORDER BY tgc.orderr`)
+	if len(channels) != 1 || channels[0].Name != "Alpha Renamed" || channels[0].TVGID != "custom.guide" || channels[0].LogoID != 42 {
+		t.Fatalf("source names or Xivi enrichment were reconciled incorrectly: %#v", channels)
+	}
+	link, err := query.GetSourceGroupLink(context.Background(), 10)
+	if err != nil || link.Status != "active" || link.RemovedCount != 1 || link.LastSyncedAt == nil {
+		t.Fatalf("unexpected link status: %#v err=%v", link, err)
+	}
+}
+
+func TestSourceGroupSyncRetainsLastSnapshotWhenSourceBecomesEmpty(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'Provider News', 1, 1)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES (100, 'alpha.tv', 'Provider Alpha', NULL, 'Alpha', 20, 1)`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'News', 0, NULL)`)
+	query := NewExperienceQueries(db)
+	if err := query.SetSourceGroupLink(context.Background(), 10, models.SourceGroupLinkRequest{SourceGroupID: 20, FollowGroupName: true, FollowChannelNames: true}); err != nil {
+		t.Fatalf("SetSourceGroupLink failed: %v", err)
+	}
+	if _, err := query.SyncSourceGroup(context.Background(), 10); err != nil {
+		t.Fatalf("initial sync failed: %v", err)
+	}
+	db.MustExec(`DELETE FROM playlistchannel WHERE group_id = 20`)
+	if _, err := query.SyncSourceGroup(context.Background(), 10); err == nil {
+		t.Fatal("expected an empty source group to fail safely")
+	}
+	var memberships int
+	db.Get(&memberships, `SELECT COUNT(*) FROM template_group_channel WHERE group_id = 10`)
+	if memberships != 1 {
+		t.Fatalf("last valid snapshot was not retained: %d memberships", memberships)
+	}
+	link, err := query.GetSourceGroupLink(context.Background(), 10)
+	if err != nil || link.Status != "error" || !strings.Contains(link.LastError, "previous lineup snapshot was retained") {
+		t.Fatalf("failure was not exposed on the source link: %#v err=%v", link, err)
 	}
 }
 

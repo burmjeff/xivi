@@ -148,6 +148,54 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/studio/source-groups': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listSourceGroups'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/groups/{group_id}/source-link': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['setGroupSourceLink'];
+		post?: never;
+		delete: operations['disconnectGroupSourceLink'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/groups/{group_id}/sync': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['syncSourceGroup'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/studio/groups/{group_id}/channels': {
 		parameters: {
 			query?: never;
@@ -520,6 +568,49 @@ export interface components {
 			dynamic_group_id?: number;
 			/** Format: int64 */
 			channel_count: number;
+			source_link?: components['schemas']['SourceGroupLink'];
+		};
+		SourceGroup: {
+			/** Format: int64 */
+			id: number;
+			name: string;
+			/** Format: int64 */
+			playlist_id: number;
+			playlist_name: string;
+			/** Format: int64 */
+			channel_count: number;
+			enabled: boolean;
+			/** Format: int64 */
+			linked_group_count: number;
+		};
+		SourceGroupLink: {
+			/** Format: int64 */
+			group_id: number;
+			/** Format: int64 */
+			playlist_id: number;
+			playlist_name: string;
+			/** Format: int64 */
+			source_group_id?: number;
+			source_group_name: string;
+			follow_group_name: boolean;
+			follow_channel_names: boolean;
+			/** @enum {string} */
+			status: 'pending' | 'active' | 'disconnected' | 'error';
+			/** Format: date-time */
+			last_synced_at?: string;
+			last_error?: string;
+			/** Format: int64 */
+			added_count: number;
+			/** Format: int64 */
+			updated_count: number;
+			/** Format: int64 */
+			removed_count: number;
+		};
+		SourceGroupLinkRequest: {
+			/** Format: int64 */
+			source_group_id: number;
+			follow_group_name: boolean;
+			follow_channel_names: boolean;
 		};
 		WorkspaceChannel: {
 			/** Format: int64 */
@@ -655,6 +746,11 @@ export interface components {
 			/** Format: date-time */
 			finished_at?: string;
 		};
+		OperationJobReference: {
+			/** Format: int64 */
+			job_id: number;
+			status: string;
+		};
 		LineupPage: components['schemas']['PageMetadata'] & {
 			items?: components['schemas']['LineupSummary'][];
 		};
@@ -669,6 +765,9 @@ export interface components {
 		};
 		SourceChannelPage: components['schemas']['PageMetadata'] & {
 			items?: components['schemas']['SourceChannel'][];
+		};
+		SourceGroupPage: components['schemas']['PageMetadata'] & {
+			items?: components['schemas']['SourceGroup'][];
 		};
 		MatchReviewPage: components['schemas']['PageMetadata'] & {
 			items?: components['schemas']['MatchReview'][];
@@ -910,6 +1009,105 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['StudioGroupPage'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	listSourceGroups: {
+		parameters: {
+			query?: {
+				playlist_id?: number;
+				q?: components['parameters']['Search'];
+				cursor?: components['parameters']['Cursor'];
+				limit?: components['parameters']['Limit'];
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Playlist groups available as one-way lineup subscriptions. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['SourceGroupPage'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	setGroupSourceLink: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				group_id: components['parameters']['GroupIdPath'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SourceGroupLinkRequest'];
+			};
+		};
+		responses: {
+			/** @description Source link saved and initial reconciliation queued. */
+			202: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['OperationJobReference'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	disconnectGroupSourceLink: {
+		parameters: {
+			query?: {
+				retain_channels?: boolean;
+			};
+			header?: never;
+			path: {
+				group_id: components['parameters']['GroupIdPath'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Source link disconnected. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	syncSourceGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				group_id: components['parameters']['GroupIdPath'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Reconciliation queued. */
+			202: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['OperationJobReference'];
 				};
 			};
 			default: components['responses']['Error'];

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { page } from '$app/state';
+	import { Dialog } from 'bits-ui';
 	import {
 		Search,
 		Plus,
@@ -18,7 +19,10 @@
 		MoreHorizontal,
 		Pencil,
 		ChevronDown,
-		Check
+		Check,
+		RadioTower,
+		X,
+		CircleAlert
 	} from '@lucide/svelte';
 	import { api, params } from '$lib/api/client';
 	import type {
@@ -27,6 +31,7 @@
 		MatchReview,
 		Paginated,
 		SourceChannel,
+		SourceGroup,
 		StudioGroup,
 		WorkspaceChannel
 	} from '$lib/api/types';
@@ -41,7 +46,8 @@
 	}));
 	const groupsQuery = createQuery(() => ({
 		queryKey: ['studio', 'lineup-groups', lineupId],
-		queryFn: () => api<Paginated<StudioGroup>>(`/api/v2/studio/lineups/${lineupId}/groups`)
+		queryFn: () => api<Paginated<StudioGroup>>(`/api/v2/studio/lineups/${lineupId}/groups`),
+		refetchInterval: 5000
 	}));
 	let lineup = $derived(lineupsQuery.data?.items.find((item) => item.id === lineupId));
 	let selectedGroupId = $state<number | null>(Number(page.url.searchParams.get('group')) || null),
@@ -53,6 +59,14 @@
 		selectedIds = $state(new Set<number>()),
 		batchTargetGroupId = $state(0),
 		message = $state(''),
+		syncDialogOpen = $state(false),
+		syncGroup = $state<StudioGroup | null>(null),
+		syncSourceGroupId = $state(0),
+		syncGroupName = $state(''),
+		syncSearch = $state(''),
+		followGroupName = $state(true),
+		followChannelNames = $state(true),
+		syncSaving = $state(false),
 		undo = $state<{
 			source: number;
 			target: number;
@@ -63,6 +77,10 @@
 		if (!selectedGroupId && groupsQuery.data?.items[0])
 			selectedGroupId = groupsQuery.data.items[0].id;
 	});
+	let selectedGroup = $derived(
+		groupsQuery.data?.items.find((group) => group.id === selectedGroupId)
+	);
+	let selectedGroupManaged = $derived(Boolean(selectedGroup?.source_link));
 	const channelKey = $derived([
 		'studio',
 		'group-channels',
@@ -84,6 +102,20 @@
 				`/api/v2/studio/source-channels${params({ q: sourceSearch, limit: 150 })}`
 			)
 	}));
+	const sourceGroupsQuery = createQuery(() => ({
+		queryKey: ['studio', 'source-groups'],
+		enabled: syncDialogOpen,
+		queryFn: () => api<Paginated<SourceGroup>>('/api/v2/studio/source-groups?limit=500')
+	}));
+	let matchingSourceGroups = $derived.by(() => {
+		const query = syncSearch.trim().toLocaleLowerCase();
+		return (sourceGroupsQuery.data?.items ?? []).filter(
+			(group) =>
+				!query ||
+				group.name.toLocaleLowerCase().includes(query) ||
+				group.playlist_name.toLocaleLowerCase().includes(query)
+		);
+	});
 	type Logo = { id: number; name: string; image: string };
 	type LogosResponse = { logos: Logo[] };
 	const logosQuery = createQuery(() => ({
@@ -134,12 +166,96 @@
 		if (!image) return undefined;
 		return image.startsWith('/') ? image : `/${image}`;
 	}
+	function openSyncSettings(group: StudioGroup | null) {
+		syncGroup = group;
+		syncSourceGroupId = group?.source_link?.source_group_id ?? 0;
+		syncGroupName = group?.name ?? '';
+		syncSearch = '';
+		followGroupName = group?.source_link?.follow_group_name ?? true;
+		followChannelNames = group?.source_link?.follow_channel_names ?? true;
+		syncDialogOpen = true;
+	}
+	function chooseSourceGroup(group: SourceGroup) {
+		syncSourceGroupId = group.id;
+		if (!syncGroup && !syncGroupName.trim()) syncGroupName = group.name;
+	}
+	async function saveSyncSettings() {
+		if (!syncSourceGroupId || (!syncGroup && !syncGroupName.trim())) return;
+		syncSaving = true;
+		try {
+			let groupID = syncGroup?.id;
+			if (!groupID) {
+				const response = await api<{ templategroup: StudioGroup }>('/api/template/group', {
+					method: 'POST',
+					body: JSON.stringify({
+						name: syncGroupName.trim(),
+						dynamic: false,
+						dynamicgroup: null
+					})
+				});
+				groupID = response.templategroup.id;
+				await api(`/api/template/${lineupId}/group/${groupID}/item`, { method: 'POST' });
+				selectedGroupId = groupID;
+			}
+			await api(`/api/v2/studio/groups/${groupID}/source-link`, {
+				method: 'PUT',
+				body: JSON.stringify({
+					source_group_id: syncSourceGroupId,
+					follow_group_name: followGroupName,
+					follow_channel_names: followChannelNames
+				})
+			});
+			syncDialogOpen = false;
+			selectedChannelId = null;
+			selectedIds = new Set();
+			await refreshWorkspace();
+			message = 'The source connection is saved and its first sync is running.';
+		} catch {
+			message = 'The source group could not be connected.';
+		} finally {
+			syncSaving = false;
+		}
+	}
+	async function syncNow(group: StudioGroup) {
+		if (!group.source_link) return;
+		try {
+			await api(`/api/v2/studio/groups/${group.id}/sync`, { method: 'POST' });
+			message = `Syncing “${group.name}”…`;
+			await refreshWorkspace();
+		} catch {
+			message = 'The group sync could not be started.';
+		}
+	}
+	async function disconnectSync(retainChannels: boolean) {
+		if (!syncGroup?.source_link) return;
+		const action = retainChannels ? 'keep its current channels' : 'remove its synced channels';
+		if (!confirm(`Disconnect “${syncGroup.name}” and ${action}?`)) return;
+		syncSaving = true;
+		try {
+			await api(
+				`/api/v2/studio/groups/${syncGroup.id}/source-link?retain_channels=${retainChannels}`,
+				{ method: 'DELETE' }
+			);
+			syncDialogOpen = false;
+			selectedChannelId = null;
+			selectedIds = new Set();
+			await refreshWorkspace();
+			message = retainChannels
+				? 'Source disconnected. The current channels are now manually managed.'
+				: 'Source disconnected and its synced channels were removed.';
+		} catch {
+			message = 'The source connection could not be removed.';
+		} finally {
+			syncSaving = false;
+		}
+	}
 
 	async function refreshWorkspace() {
 		await Promise.all([
 			client.invalidateQueries({ queryKey: ['studio', 'lineup-groups', lineupId] }),
 			client.invalidateQueries({ queryKey: ['studio', 'group-channels'] }),
-			client.invalidateQueries({ queryKey: ['studio', 'source-browser'] })
+			client.invalidateQueries({ queryKey: ['studio', 'source-browser'] }),
+			client.invalidateQueries({ queryKey: ['studio', 'source-groups'] })
 		]);
 	}
 	async function move(
@@ -148,7 +264,7 @@
 		placement: 'before' | 'after',
 		recordUndo = true
 	) {
-		if (!selectedGroupId || sourceId === targetId) return;
+		if (!selectedGroupId || selectedGroupManaged || sourceId === targetId) return;
 		const key = channelKey,
 			previous = client.getQueryData<Paginated<WorkspaceChannel>>(key);
 		if (!previous) return;
@@ -186,11 +302,13 @@
 		await move(action.source, action.target, action.placement, false);
 	}
 	function toggle(id: number) {
+		if (selectedGroupManaged) return;
 		const next = new Set(selectedIds);
 		next.has(id) ? next.delete(id) : next.add(id);
 		selectedIds = next;
 	}
 	async function removeChannel(id: number, label: string) {
+		if (selectedGroupManaged) return;
 		if (
 			!confirm(
 				`Remove “${label}”? This deletes the canonical channel and any source matches attached to it.`
@@ -209,6 +327,7 @@
 		}
 	}
 	async function removeSelected() {
+		if (selectedGroupManaged) return;
 		if (
 			!selectedIds.size ||
 			!confirm(`Remove ${selectedIds.size} selected channels? This cannot be undone.`)
@@ -227,7 +346,8 @@
 		}
 	}
 	async function moveSelected() {
-		if (!selectedGroupId || !batchTargetGroupId || !selectedIds.size) return;
+		if (selectedGroupManaged || !selectedGroupId || !batchTargetGroupId || !selectedIds.size)
+			return;
 		try {
 			await api(`/api/v2/studio/groups/${selectedGroupId}/channels/batch-move`, {
 				method: 'POST',
@@ -248,7 +368,7 @@
 		}
 	}
 	async function addSource(source: SourceChannel) {
-		if (!selectedGroupId) return;
+		if (!selectedGroupId || selectedGroupManaged) return;
 		try {
 			await api(`/api/v2/studio/groups/${selectedGroupId}/channels/batch-add`, {
 				method: 'POST',
@@ -331,6 +451,10 @@
 		}
 	}
 	async function renameGroup(group: StudioGroup) {
+		if (group.source_link) {
+			openSyncSettings(group);
+			return;
+		}
 		const name = prompt('Rename group', group.name);
 		if (!name?.trim() || name.trim() === group.name) return;
 		try {
@@ -429,11 +553,14 @@
 							</button>
 							<div class="source-actions">
 								<button
+									disabled={selectedGroupManaged}
 									onclick={(event) => {
 										event.stopPropagation();
 										addSource(source);
 									}}
-									title="Add as a new lineup channel"><Plus size={15} />Add</button
+									title={selectedGroupManaged
+										? 'Membership follows the connected source group'
+										: 'Add as a new lineup channel'}><Plus size={15} />Add</button
 								>{#if selectedChannelId}<button
 										onclick={(event) => {
 											event.stopPropagation();
@@ -452,9 +579,13 @@
 					<p class="eyebrow">Lineup canvas</p>
 					<h2>{lineup?.name}</h2>
 				</div>
-				<button class="app-button app-button--secondary" onclick={newGroup}
-					><Plus size={17} />Group</button
-				>
+				<div class="group-create-actions">
+					<button class="app-button app-button--secondary" onclick={() => openSyncSettings(null)}
+						><RadioTower size={17} />Sync group</button
+					><button class="app-button app-button--secondary" onclick={newGroup}
+						><Plus size={17} />Group</button
+					>
+				</div>
 			</header>
 			<div class="group-tabs">
 				{#each groupsQuery.data?.items ?? [] as group}<div
@@ -466,15 +597,42 @@
 								selectedChannelId = null;
 								selectedIds = new Set();
 							}}
-							>{group.name}<span>{group.channel_count}</span>{#if group.dynamic}<em>Dynamic</em
+							>{group.name}<span>{group.channel_count}</span>{#if group.source_link}<em
+									class:issue={group.source_link.status === 'error' ||
+										group.source_link.status === 'disconnected'}
+									>{group.source_link.status === 'active' ? 'Synced' : group.source_link.status}</em
 								>{/if}</button
-						><button class="group-menu" onclick={() => renameGroup(group)} title="Rename group"
-							><Pencil size={14} /></button
+						><button
+							class="group-menu"
+							onclick={() => (group.source_link ? openSyncSettings(group) : renameGroup(group))}
+							title={group.source_link ? 'Sync settings' : 'Rename group'}
+							>{#if group.source_link}<RadioTower size={14} />{:else}<Pencil
+									size={14}
+								/>{/if}</button
 						><button class="group-menu" onclick={() => removeGroup(group)} title="Delete group"
 							><Trash2 size={14} /></button
 						>
 					</div>{/each}
 			</div>
+			{#if selectedGroup?.source_link}
+				<div
+					class="sync-banner"
+					class:issue={selectedGroup.source_link.status === 'error' ||
+						selectedGroup.source_link.status === 'disconnected'}
+				>
+					<RadioTower size={18} />
+					<span
+						><strong>{selectedGroup.source_link.source_group_name}</strong><small
+							>{selectedGroup.source_link.playlist_name} · {selectedGroup.source_link.status ===
+							'active'
+								? 'Source controls membership and order'
+								: selectedGroup.source_link.last_error || 'Waiting for its first sync'}</small
+						></span
+					>
+					<button onclick={() => syncNow(selectedGroup)}><RefreshCw size={15} />Sync now</button>
+					<button onclick={() => openSyncSettings(selectedGroup)}>Settings</button>
+				</div>
+			{/if}
 			<div class="canvas-tools">
 				<label
 					><Search size={16} /><input
@@ -506,11 +664,16 @@
 							class="channel-skeleton skeleton"
 						></div>{/each}{:else if !channelsQuery.data?.total}<div class="pane-empty">
 						<h3>This group is ready</h3>
-						<p>Add channels from the source browser. You can reorder them here at any time.</p>
+						<p>
+							{selectedGroupManaged
+								? 'Its connected source group currently has no available channels.'
+								: 'Add channels from the source browser. You can reorder them here at any time.'}
+						</p>
 					</div>{:else}{#each channelsQuery.data.items as channel, index (channel.id)}<WorkspaceRow
 							{channel}
 							selected={channel.id === selectedChannelId}
 							checked={selectedIds.has(channel.id)}
+							managed={selectedGroupManaged}
 							previousId={channelsQuery.data.items[index - 1]?.id}
 							nextId={channelsQuery.data.items[index + 1]?.id}
 							firstId={channelsQuery.data.items[0]?.id}
@@ -539,9 +702,16 @@
 					>
 						<section>
 							<h3>Identity</h3>
-							<label>Channel name<input bind:value={editName} /></label><label
-								>TVG ID<input bind:value={editTvg} placeholder="Schedule ID" /></label
-							>
+							{#if selectedGroup?.source_link?.follow_channel_names}<p class="managed-note">
+									<RadioTower size={14} />Channel names follow the connected source. Turn this off
+									in sync settings to edit names manually.
+								</p>{/if}
+							<label
+								>Channel name<input
+									bind:value={editName}
+									disabled={selectedGroup?.source_link?.follow_channel_names}
+								/></label
+							><label>TVG ID<input bind:value={editTvg} placeholder="Schedule ID" /></label>
 							<div class="logo-field">
 								<span class="field-label">Logo</span>
 								<button
@@ -677,6 +847,7 @@
 						<h3>Destructive actions</h3>
 						<button
 							type="button"
+							disabled={selectedGroupManaged}
 							onclick={() => removeChannel(selectedChannel!.id, selectedChannel!.name)}
 							><Trash2 size={16} />Delete channel</button
 						>
@@ -691,6 +862,124 @@
 			</aside>{/if}
 	</div>
 </div>
+
+<Dialog.Root bind:open={syncDialogOpen}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="sync-overlay" />
+		<Dialog.Content class="sync-dialog" aria-describedby="sync-description">
+			<header class="sync-dialog-header">
+				<div>
+					<p class="eyebrow">One-way source subscription</p>
+					<Dialog.Title class="sync-title"
+						>{syncGroup ? `Sync settings · ${syncGroup.name}` : 'Create synced group'}</Dialog.Title
+					>
+				</div>
+				<Dialog.Close class="sync-close" aria-label="Close sync settings"
+					><X size={20} /></Dialog.Close
+				>
+			</header>
+			<Dialog.Description id="sync-description" class="sync-description">
+				Membership, order, and stream associations follow the selected source group. Guide and logo
+				enrichment remain yours.
+			</Dialog.Description>
+			{#if syncGroup?.source_link}
+				<div
+					class="sync-current"
+					class:issue={syncGroup.source_link.status === 'error' ||
+						syncGroup.source_link.status === 'disconnected'}
+				>
+					{#if syncGroup.source_link.status === 'error' || syncGroup.source_link.status === 'disconnected'}
+						<CircleAlert size={18} />
+					{:else}
+						<RadioTower size={18} />
+					{/if}
+					<span
+						><strong>{syncGroup.source_link.status}</strong><small
+							>{syncGroup.source_link.last_error ||
+								(syncGroup.source_link.last_synced_at
+									? `Last synced ${new Date(syncGroup.source_link.last_synced_at).toLocaleString()}`
+									: 'Waiting for its first sync')}</small
+						></span
+					>
+				</div>
+			{/if}
+			<div class="sync-dialog-body">
+				{#if !syncGroup}<label class="sync-group-name">
+						<span>Lineup group name</span>
+						<input bind:value={syncGroupName} maxlength="255" placeholder="Group name" />
+					</label>{/if}
+				<label class="sync-search">
+					<Search size={16} /><span class="sr-only">Search source groups</span><input
+						bind:value={syncSearch}
+						placeholder="Search source groups"
+					/>
+				</label>
+				<div class="source-group-options" role="radiogroup" aria-label="Source group">
+					{#if sourceGroupsQuery.isPending}
+						{#each Array(5) as _}<div class="source-group-skeleton skeleton"></div>{/each}
+					{:else if matchingSourceGroups.length}
+						{#each matchingSourceGroups as group}
+							<button
+								type="button"
+								role="radio"
+								aria-checked={syncSourceGroupId === group.id}
+								class:selected={syncSourceGroupId === group.id}
+								disabled={!group.enabled || group.channel_count === 0}
+								onclick={() => chooseSourceGroup(group)}
+							>
+								<span
+									><strong>{group.name}</strong><small
+										>{group.playlist_name} · {group.channel_count} channel{group.channel_count === 1
+											? ''
+											: 's'}{group.linked_group_count
+											? ` · ${group.linked_group_count} existing link${group.linked_group_count === 1 ? '' : 's'}`
+											: ''}</small
+									></span
+								>{#if syncSourceGroupId === group.id}<Check size={17} />{/if}
+							</button>
+						{/each}
+					{:else}
+						<p class="sync-empty">No source groups match this search.</p>
+					{/if}
+				</div>
+				<div class="sync-policies">
+					<label
+						><input type="checkbox" bind:checked={followGroupName} /><span
+							><strong>Follow source group name</strong><small
+								>Rename this lineup group when the provider renames its group.</small
+							></span
+						></label
+					>
+					<label
+						><input type="checkbox" bind:checked={followChannelNames} /><span
+							><strong>Follow source channel names</strong><small
+								>Names update automatically; TVG and logo enrichment stay unchanged.</small
+							></span
+						></label
+					>
+				</div>
+			</div>
+			<footer class="sync-dialog-footer">
+				{#if syncGroup?.source_link}<div class="disconnect-actions">
+						<button disabled={syncSaving} onclick={() => disconnectSync(true)}
+							>Disconnect & keep</button
+						>
+						<button class="danger" disabled={syncSaving} onclick={() => disconnectSync(false)}
+							>Disconnect & remove</button
+						>
+					</div>{/if}
+				<span></span>
+				<Dialog.Close class="app-button app-button--secondary">Cancel</Dialog.Close>
+				<button
+					class="app-button app-button--primary"
+					disabled={syncSaving || !syncSourceGroupId || (!syncGroup && !syncGroupName.trim())}
+					onclick={saveSyncSettings}
+					>{syncSaving ? 'Saving…' : syncGroup ? 'Save & sync' : 'Create & sync'}</button
+				>
+			</footer>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
 
 <style>
 	.workbench {
@@ -891,6 +1180,14 @@
 		font-weight: 750;
 		cursor: pointer;
 	}
+	.source-actions button:disabled {
+		opacity: 0.42;
+		cursor: not-allowed;
+	}
+	.group-create-actions {
+		display: flex;
+		gap: 0.4rem;
+	}
 	.group-tabs {
 		display: flex;
 		min-height: 3.2rem;
@@ -934,6 +1231,9 @@
 		font-style: normal;
 		text-transform: uppercase;
 	}
+	.group-tabs em.issue {
+		color: var(--error);
+	}
 	.group-tabs .group-menu {
 		display: none;
 		width: 1.8rem;
@@ -943,6 +1243,54 @@
 	.group-tabs > div.active .group-menu {
 		display: grid;
 		place-items: center;
+	}
+	.sync-banner {
+		display: grid;
+		min-height: 3.4rem;
+		grid-template-columns: auto minmax(0, 1fr) auto auto;
+		align-items: center;
+		gap: 0.65rem;
+		border-bottom: 1px solid color-mix(in oklch, var(--aqua) 35%, var(--line));
+		background: color-mix(in oklch, var(--aqua) 10%, var(--surface));
+		padding: 0.55rem 0.7rem;
+		color: var(--aqua);
+	}
+	.sync-banner.issue {
+		border-color: color-mix(in oklch, var(--error) 45%, var(--line));
+		background: color-mix(in oklch, var(--error) 9%, var(--surface));
+		color: var(--error);
+	}
+	.sync-banner > span {
+		display: grid;
+		min-width: 0;
+		color: var(--text);
+	}
+	.sync-banner strong,
+	.sync-banner small {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.sync-banner strong {
+		font-size: 0.7rem;
+	}
+	.sync-banner small {
+		color: var(--muted);
+		font-size: 0.58rem;
+	}
+	.sync-banner button {
+		display: flex;
+		min-height: 2.25rem;
+		align-items: center;
+		gap: 0.3rem;
+		border: 1px solid var(--line);
+		border-radius: 0.55rem;
+		background: var(--surface-raised);
+		padding: 0 0.55rem;
+		color: var(--text);
+		font-size: 0.62rem;
+		font-weight: 750;
+		cursor: pointer;
 	}
 	.canvas-tools {
 		display: flex;
@@ -1048,6 +1396,26 @@
 		background: var(--surface-raised);
 		padding: 0.5rem 0.65rem;
 		color: var(--text);
+	}
+	.inspector-pane input:disabled {
+		opacity: 0.62;
+		cursor: not-allowed;
+	}
+	.managed-note {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.45rem;
+		margin: 0;
+		border-radius: 0.6rem;
+		background: color-mix(in oklch, var(--aqua) 10%, var(--surface-raised));
+		padding: 0.55rem;
+		color: var(--muted);
+		font-size: 0.62rem;
+		line-height: 1.45;
+	}
+	.managed-note :global(svg) {
+		flex: none;
+		color: var(--aqua);
 	}
 	.inspector-pane > form {
 		width: 100%;
@@ -1295,6 +1663,249 @@
 		color: var(--error);
 		cursor: pointer;
 	}
+	.danger-zone button:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+	:global(.sync-overlay) {
+		position: fixed;
+		z-index: 90;
+		inset: 0;
+		background: rgb(8 10 15 / 0.74);
+	}
+	:global(.sync-dialog) {
+		position: fixed;
+		z-index: 91;
+		top: 50%;
+		left: 50%;
+		display: flex;
+		width: min(42rem, calc(100vw - 2rem));
+		max-height: min(48rem, calc(100dvh - 2rem));
+		transform: translate(-50%, -50%);
+		overflow: hidden;
+		flex-direction: column;
+		border: 1px solid var(--line);
+		border-radius: 1.15rem;
+		outline: none;
+		background: var(--surface-raised);
+		box-shadow: 0 28px 90px rgb(0 0 0 / 0.46);
+		color: var(--text);
+	}
+	.sync-dialog-header,
+	.sync-dialog-footer {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		border-bottom: 1px solid var(--line);
+		padding: 0.85rem 1rem;
+	}
+	.sync-dialog-header {
+		justify-content: space-between;
+	}
+	.sync-dialog-footer {
+		border-top: 1px solid var(--line);
+		border-bottom: 0;
+	}
+	.sync-dialog-footer > span {
+		flex: 1;
+	}
+	:global(.sync-title) {
+		margin: 0;
+		font-size: 1.25rem;
+	}
+	:global(.sync-close) {
+		display: grid;
+		width: 2.5rem;
+		height: 2.5rem;
+		flex: none;
+		place-items: center;
+		border: 0;
+		border-radius: 0.65rem;
+		background: transparent;
+		color: var(--muted);
+		cursor: pointer;
+	}
+	:global(.sync-description) {
+		margin: 0;
+		padding: 0.8rem 1rem 0;
+		color: var(--muted);
+		font-size: 0.72rem;
+		line-height: 1.5;
+	}
+	.sync-current {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		margin: 0.75rem 1rem 0;
+		border-radius: 0.7rem;
+		background: color-mix(in oklch, var(--aqua) 10%, var(--surface));
+		padding: 0.65rem;
+		color: var(--aqua);
+	}
+	.sync-current.issue {
+		background: color-mix(in oklch, var(--error) 10%, var(--surface));
+		color: var(--error);
+	}
+	.sync-current span {
+		display: grid;
+	}
+	.sync-current strong {
+		font-size: 0.7rem;
+		text-transform: capitalize;
+	}
+	.sync-current small {
+		color: var(--muted);
+		font-size: 0.62rem;
+	}
+	.sync-dialog-body {
+		display: grid;
+		min-height: 0;
+		gap: 0.7rem;
+		overflow-y: auto;
+		padding: 0.85rem 1rem 1rem;
+	}
+	.sync-group-name {
+		display: grid;
+		gap: 0.35rem;
+		color: var(--muted);
+		font-size: 0.65rem;
+		font-weight: 700;
+	}
+	.sync-group-name input,
+	.sync-search {
+		min-height: 2.7rem;
+		border: 1px solid var(--line);
+		border-radius: 0.7rem;
+		background: var(--surface);
+		color: var(--text);
+	}
+	.sync-group-name input {
+		padding: 0 0.7rem;
+	}
+	.sync-search {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		padding: 0 0.7rem;
+		color: var(--muted);
+	}
+	.sync-search input {
+		min-width: 0;
+		flex: 1;
+		border: 0;
+		outline: 0;
+		background: transparent;
+		color: var(--text);
+	}
+	.source-group-options {
+		display: grid;
+		max-height: 17rem;
+		gap: 0.35rem;
+		overflow-y: auto;
+		padding-right: 0.15rem;
+	}
+	.source-group-options button {
+		display: flex;
+		min-height: 3.5rem;
+		align-items: center;
+		gap: 0.65rem;
+		border: 1px solid var(--line);
+		border-radius: 0.7rem;
+		background: var(--surface);
+		padding: 0.6rem 0.75rem;
+		color: var(--text);
+		text-align: left;
+		cursor: pointer;
+	}
+	.source-group-options button.selected {
+		border-color: var(--aqua);
+		background: color-mix(in oklch, var(--aqua) 9%, var(--surface));
+	}
+	.source-group-options button:disabled {
+		opacity: 0.42;
+		cursor: not-allowed;
+	}
+	.source-group-options button span {
+		display: grid;
+		min-width: 0;
+		flex: 1;
+	}
+	.source-group-options button strong,
+	.source-group-options button small {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.source-group-options button strong {
+		font-size: 0.72rem;
+	}
+	.source-group-options button small {
+		color: var(--muted);
+		font-size: 0.61rem;
+	}
+	.source-group-skeleton {
+		height: 3.5rem;
+		border-radius: 0.7rem;
+	}
+	.sync-empty {
+		margin: 0;
+		padding: 1.5rem;
+		color: var(--muted);
+		font-size: 0.7rem;
+		text-align: center;
+	}
+	.sync-policies {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.45rem;
+	}
+	.sync-policies label {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.55rem;
+		border: 1px solid var(--line);
+		border-radius: 0.7rem;
+		background: var(--surface);
+		padding: 0.65rem;
+		cursor: pointer;
+	}
+	.sync-policies input {
+		width: 1rem;
+		height: 1rem;
+		flex: none;
+		accent-color: var(--aqua);
+	}
+	.sync-policies span {
+		display: grid;
+		gap: 0.15rem;
+	}
+	.sync-policies strong {
+		font-size: 0.66rem;
+	}
+	.sync-policies small {
+		color: var(--muted);
+		font-size: 0.58rem;
+		line-height: 1.4;
+	}
+	.disconnect-actions {
+		display: flex;
+		gap: 0.3rem;
+	}
+	.disconnect-actions button {
+		min-height: 2.5rem;
+		border: 1px solid var(--line);
+		border-radius: 0.65rem;
+		background: transparent;
+		padding: 0 0.6rem;
+		color: var(--muted);
+		font-size: 0.62rem;
+		font-weight: 700;
+		cursor: pointer;
+	}
+	.disconnect-actions button.danger {
+		border-color: color-mix(in oklch, var(--error) 40%, var(--line));
+		color: var(--error);
+	}
 	@media (max-width: 1150px) {
 		.workbench-panes {
 			grid-template-columns: 18rem 1fr;
@@ -1344,6 +1955,37 @@
 		}
 		.workbench-message + .workbench-panes {
 			height: calc(100dvh - 10.2rem);
+		}
+		.group-create-actions .app-button {
+			min-width: 0;
+			padding-inline: 0.55rem;
+			font-size: 0.62rem;
+		}
+		.sync-banner {
+			grid-template-columns: auto minmax(0, 1fr) auto;
+		}
+		.sync-banner button:last-child {
+			display: none;
+		}
+		:global(.sync-dialog) {
+			width: calc(100vw - 1rem);
+			max-height: calc(100dvh - 1rem);
+		}
+		.sync-policies {
+			grid-template-columns: 1fr;
+		}
+		.sync-dialog-footer {
+			align-items: stretch;
+			flex-wrap: wrap;
+		}
+		.sync-dialog-footer > span {
+			display: none;
+		}
+		.disconnect-actions {
+			width: 100%;
+		}
+		.disconnect-actions button {
+			flex: 1;
 		}
 	}
 </style>

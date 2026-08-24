@@ -192,6 +192,63 @@ func V2StudioLineupGroups(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"items": items, "next_cursor": nil, "total": len(items)})
 }
 
+func V2StudioSourceGroups(c *fiber.Ctx) error {
+	playlistID, err := optionalIntQuery(c, "playlist_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_source", "The source id is invalid.", false)
+	}
+	limit, offset := pageParams(c)
+	items, total, err := database.Db.GetSourceGroups(c.UserContext(), playlistID, strings.TrimSpace(c.Query("q")), limit, offset)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "source_groups_unavailable", "Source groups could not be loaded.", true)
+	}
+	return c.JSON(models.Paginated[models.SourceGroup]{Items: items, NextCursor: nextCursor(offset, len(items), total), Total: total})
+}
+
+func V2SetStudioGroupSourceLink(c *fiber.Ctx) error {
+	groupID, err := parseID(c, "group_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The group id is invalid.", false)
+	}
+	request := models.SourceGroupLinkRequest{}
+	if err := c.BodyParser(&request); err != nil || request.SourceGroupID < 1 {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_source_group", "Choose a source group to sync.", false)
+	}
+	if err := database.Db.SetSourceGroupLink(c.UserContext(), groupID, request); err != nil {
+		return v2Error(c, fiber.StatusUnprocessableEntity, "source_link_failed", "The source group could not be connected.", false)
+	}
+	return queueV2Job(c, "sync", "group", groupID, "Group sync queued.", "Reconciling the source group…", "Synced group updated.", func() error {
+		_, err := database.Db.SyncSourceGroup(context.Background(), groupID)
+		return err
+	})
+}
+
+func V2DeleteStudioGroupSourceLink(c *fiber.Ctx) error {
+	groupID, err := parseID(c, "group_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The group id is invalid.", false)
+	}
+	retainChannels := !strings.EqualFold(c.Query("retain_channels", "true"), "false")
+	if err := database.Db.DisconnectSourceGroup(c.UserContext(), groupID, retainChannels); err != nil {
+		return v2Error(c, fiber.StatusUnprocessableEntity, "source_disconnect_failed", "The source group could not be disconnected.", false)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func V2SyncStudioGroup(c *fiber.Ctx) error {
+	groupID, err := parseID(c, "group_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The group id is invalid.", false)
+	}
+	if _, err := database.Db.GetSourceGroupLink(c.UserContext(), groupID); err != nil {
+		return v2Error(c, fiber.StatusNotFound, "source_link_not_found", "This group is not connected to a source group.", false)
+	}
+	return queueV2Job(c, "sync", "group", groupID, "Group sync queued.", "Reconciling the source group…", "Synced group updated.", func() error {
+		_, err := database.Db.SyncSourceGroup(context.Background(), groupID)
+		return err
+	})
+}
+
 func V2StudioGroupChannels(c *fiber.Ctx) error {
 	id, err := parseID(c, "group_id")
 	if err != nil {
@@ -320,6 +377,11 @@ func V2MoveStudioChannel(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_channel", "The channel id is invalid.", false)
 	}
+	if linked, linkErr := database.Db.IsSourceLinkedGroup(c.UserContext(), groupID); linkErr != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "group_state_unavailable", "The group state could not be checked.", true)
+	} else if linked {
+		return v2Error(c, fiber.StatusConflict, "synced_group_managed", "Channel order is controlled by the connected source group.", false)
+	}
 	body := moveChannelRequest{}
 	if err := c.BodyParser(&body); err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_request", "The move request is invalid.", false)
@@ -334,6 +396,11 @@ func V2BatchAddStudioChannels(c *fiber.Ctx) error {
 	groupID, err := parseID(c, "group_id")
 	if err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The group id is invalid.", false)
+	}
+	if linked, linkErr := database.Db.IsSourceLinkedGroup(c.UserContext(), groupID); linkErr != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "group_state_unavailable", "The group state could not be checked.", true)
+	} else if linked {
+		return v2Error(c, fiber.StatusConflict, "synced_group_managed", "Channels are added by the connected source group.", false)
 	}
 	request := models.WorkspaceBatchAddRequest{}
 	if err := c.BodyParser(&request); err != nil || len(request.SourceChannelIDs) == 0 {
@@ -360,6 +427,11 @@ func V2BatchRemoveStudioChannels(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The group id is invalid.", false)
 	}
+	if linked, linkErr := database.Db.IsSourceLinkedGroup(c.UserContext(), groupID); linkErr != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "group_state_unavailable", "The group state could not be checked.", true)
+	} else if linked {
+		return v2Error(c, fiber.StatusConflict, "synced_group_managed", "Channels are removed by the connected source group.", false)
+	}
 	request := models.WorkspaceBatchRemoveRequest{}
 	if err := c.BodyParser(&request); err != nil || len(request.ChannelIDs) == 0 {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_selection", "Select at least one lineup channel.", false)
@@ -378,6 +450,13 @@ func V2BatchMoveStudioChannels(c *fiber.Ctx) error {
 	request := models.WorkspaceBatchMoveRequest{}
 	if err := c.BodyParser(&request); err != nil || len(request.ChannelIDs) == 0 || request.TargetGroupID < 1 {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_move", "Select channels and a destination group.", false)
+	}
+	for _, candidateGroupID := range []int64{groupID, request.TargetGroupID} {
+		if linked, linkErr := database.Db.IsSourceLinkedGroup(c.UserContext(), candidateGroupID); linkErr != nil {
+			return v2Error(c, fiber.StatusInternalServerError, "group_state_unavailable", "The group state could not be checked.", true)
+		} else if linked {
+			return v2Error(c, fiber.StatusConflict, "synced_group_managed", "Channels cannot be moved into or out of a synced group.", false)
+		}
 	}
 	if err := database.Db.BatchMoveWorkspaceChannels(c.UserContext(), groupID, request.TargetGroupID, request.ChannelIDs, request.BeforeID, request.AfterID); err != nil {
 		return v2Error(c, fiber.StatusUnprocessableEntity, "batch_move_failed", err.Error(), false)
@@ -436,12 +515,15 @@ func V2RefreshSource(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusNotFound, "source_not_found", "That playlist source was not found.", false)
 	}
-	return queueV2Job(c, "refresh", "playlist", id, "Playlist refresh queued.", "Importing playlist channels…", "Playlist refresh complete.", func() error {
+	return queueV2Job(c, "refresh", "playlist", id, "Playlist refresh queued.", "Importing channels and syncing connected groups…", "Playlist refresh complete.", func() error {
 		startedAt := time.Now()
 		parser := utils.M3uParser{}
-		parser.ParseM3u(*playlist)
+		if err := parser.ParseM3u(*playlist); err != nil {
+			return fmt.Errorf("playlist refresh failed: %w", err)
+		}
 		cron.CleanPlaylist(*playlist, startedAt)
-		return nil
+		_, err := database.Db.SyncSourceGroupsForPlaylist(context.Background(), playlist.ID)
+		return err
 	})
 }
 

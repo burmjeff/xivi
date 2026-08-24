@@ -245,7 +245,11 @@ func CreatePlaylist(c *fiber.Ctx) error {
 
 	//TODO async Parse m3u and insert channels
 	m3uParser := utils.M3uParser{}
-	go m3uParser.ParseM3u(*playlist)
+	go func() {
+		if err := m3uParser.ParseM3u(*playlist); err != nil {
+			log.Error().Err(err).Int64("playlist_id", playlist.ID).Msg("Initial playlist import failed")
+		}
+	}()
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
@@ -465,11 +469,17 @@ func RefreshPlaylist(c *fiber.Ctx) error {
 
 		// Parse the M3U file - this will update timestamps for existing channels
 		// and create new channels with current timestamps
-		m3uParser.ParseM3u(*playlist)
+		if err := m3uParser.ParseM3u(*playlist); err != nil {
+			log.Error().Err(err).Int64("playlist_id", playlist.ID).Msg("Playlist refresh failed; retaining the previous snapshot")
+			return
+		}
 
 		// Clean up stale channels - any channel not touched during parsing
 		// will have timestamps before startTime and will be removed
 		cron.CleanPlaylist(*playlist, startTime)
+		if _, err := database.Db.SyncSourceGroupsForPlaylist(context.Background(), playlist.ID); err != nil {
+			log.Error().Err(err).Int64("playlist_id", playlist.ID).Msg("One or more connected groups could not be synced")
+		}
 
 		log.Info().Int64("playlist_id", playlist.ID).Msg("Playlist refresh completed")
 	}()

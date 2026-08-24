@@ -16,7 +16,8 @@ tmp/
 /config/
 xivi.exe
 /models/
-/docs/
+/docs/*
+!/docs/openapi-v2.yaml
 xivi
 lib_build/
 serve/

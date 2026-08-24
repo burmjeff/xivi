@@ -1,0 +1,457 @@
+package queries
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"math"
+	"strconv"
+	"strings"
+	"xivi/backend/app/models"
+
+	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
+)
+
+type sourceGroupRecord struct {
+	ID         int64  `db:"id"`
+	Name       string `db:"name"`
+	PlaylistID int64  `db:"playlist_id"`
+}
+
+type syncSourceChannel struct {
+	ID    int64   `db:"id"`
+	Name  string  `db:"name"`
+	TVGID *string `db:"tvg_id"`
+}
+
+type sourceGroupMember struct {
+	TemplateChannelID int64         `db:"template_channel_id"`
+	SourceChannelID   sql.NullInt64 `db:"source_channel_id"`
+	SourceIdentity    string        `db:"source_identity"`
+	LastSourceName    string        `db:"last_source_name"`
+}
+
+type existingWorkspaceChannel struct {
+	ID    int64   `db:"id"`
+	Name  string  `db:"name"`
+	TVGID *string `db:"tvgid"`
+}
+
+func (q *ExperienceQueries) GetSourceGroups(ctx context.Context, playlistID *int64, search string, limit, offset int) ([]models.SourceGroup, int64, error) {
+	where := []string{"1 = 1"}
+	args := []any{}
+	if playlistID != nil {
+		where = append(where, "p.id = ?")
+		args = append(args, *playlistID)
+	}
+	if search != "" {
+		where = append(where, "(LOWER(pg.name) LIKE ? OR LOWER(p.name) LIKE ?)")
+		term := "%" + strings.ToLower(search) + "%"
+		args = append(args, term, term)
+	}
+	whereSQL := strings.Join(where, " AND ")
+	var total int64
+	if err := q.GetContext(ctx, &total, `SELECT COUNT(*) FROM playlistgroup pg JOIN playlist p ON p.id = pg.playlist_id WHERE `+whereSQL, args...); err != nil {
+		return nil, 0, err
+	}
+	items := []models.SourceGroup{}
+	query := `SELECT pg.id, pg.name, p.id AS playlist_id, p.name AS playlist_name, pg.enabled,
+		COUNT(DISTINCT pc.id) AS channel_count,
+		COUNT(DISTINCT l.group_id) AS linked_group_count
+		FROM playlistgroup pg
+		JOIN playlist p ON p.id = pg.playlist_id
+		LEFT JOIN playlistchannel pc ON pc.group_id = pg.id
+		LEFT JOIN lineup_group_source_link l ON l.source_group_id = pg.id
+		WHERE ` + whereSQL + `
+		GROUP BY pg.id, pg.name, p.id, p.name, pg.enabled
+		ORDER BY LOWER(p.name), LOWER(pg.name), pg.id LIMIT ? OFFSET ?`
+	if err := q.SelectContext(ctx, &items, query, append(args, limit, offset)...); err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
+func (q *ExperienceQueries) GetSourceGroupLink(ctx context.Context, groupID int64) (*models.SourceGroupLink, error) {
+	link := &models.SourceGroupLink{}
+	err := q.GetContext(ctx, link, `SELECT l.group_id, l.playlist_id, p.name AS playlist_name,
+		l.source_group_id, l.source_group_name, l.follow_group_name, l.follow_channel_names,
+		l.status, l.last_synced_at, l.last_error, l.added_count, l.updated_count, l.removed_count
+		FROM lineup_group_source_link l
+		JOIN playlist p ON p.id = l.playlist_id
+		WHERE l.group_id = ?`, groupID)
+	if err != nil {
+		return nil, err
+	}
+	return link, nil
+}
+
+func (q *ExperienceQueries) IsSourceLinkedGroup(ctx context.Context, groupID int64) (bool, error) {
+	var linked bool
+	err := q.GetContext(ctx, &linked, `SELECT EXISTS(SELECT 1 FROM lineup_group_source_link WHERE group_id = ?)`, groupID)
+	return linked, err
+}
+
+func (q *ExperienceQueries) SetSourceGroupLink(ctx context.Context, groupID int64, request models.SourceGroupLinkRequest) error {
+	if groupID < 1 || request.SourceGroupID < 1 {
+		return fmt.Errorf("a lineup group and source group are required")
+	}
+	return q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		var groupExists bool
+		if err := tx.GetContext(ctx, &groupExists, `SELECT EXISTS(SELECT 1 FROM templategroup WHERE id = ?)`, groupID); err != nil {
+			return err
+		}
+		if !groupExists {
+			return sql.ErrNoRows
+		}
+		source := sourceGroupRecord{}
+		if err := tx.GetContext(ctx, &source, `SELECT id, name, playlist_id FROM playlistgroup WHERE id = ?`, request.SourceGroupID); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO lineup_group_source_link (
+			group_id, playlist_id, source_group_id, source_group_name,
+			follow_group_name, follow_channel_names, status, last_error
+		) VALUES (?, ?, ?, ?, ?, ?, 'pending', '')
+		ON CONFLICT(group_id) DO UPDATE SET
+			playlist_id = excluded.playlist_id,
+			source_group_id = excluded.source_group_id,
+			source_group_name = excluded.source_group_name,
+			follow_group_name = excluded.follow_group_name,
+			follow_channel_names = excluded.follow_channel_names,
+			status = 'pending',
+			last_error = ''`, groupID, source.PlaylistID, source.ID, source.Name, request.FollowGroupName, request.FollowChannelNames)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE templategroup SET dynamic = true, dynamicgroup = ? WHERE id = ?`, source.ID, groupID)
+		return err
+	})
+}
+
+func (q *ExperienceQueries) DisconnectSourceGroup(ctx context.Context, groupID int64, retainChannels bool) error {
+	return q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		managedIDs := []int64{}
+		if err := tx.SelectContext(ctx, &managedIDs, `SELECT template_channel_id FROM lineup_group_source_member WHERE group_id = ?`, groupID); err != nil {
+			return err
+		}
+		var exists bool
+		if err := tx.GetContext(ctx, &exists, `SELECT EXISTS(SELECT 1 FROM lineup_group_source_link WHERE group_id = ?)`, groupID); err != nil {
+			return err
+		}
+		if !exists {
+			return sql.ErrNoRows
+		}
+		for _, channelID := range managedIDs {
+			if _, err := tx.ExecContext(ctx, `UPDATE templatechannelitem SET match_method = 'manual', manual_locked = true WHERE channel_id = ? AND match_method = 'source_group_sync'`, channelID); err != nil {
+				return err
+			}
+			if !retainChannels {
+				if _, err := tx.ExecContext(ctx, `DELETE FROM template_group_channel WHERE group_id = ? AND channel_id = ?`, groupID, channelID); err != nil {
+					return err
+				}
+				if _, err := tx.ExecContext(ctx, `DELETE FROM templatechannel WHERE id = ? AND NOT EXISTS (SELECT 1 FROM template_group_channel WHERE channel_id = ?)`, channelID, channelID); err != nil {
+					return err
+				}
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM lineup_group_source_link WHERE group_id = ?`, groupID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE templategroup SET dynamic = false, dynamicgroup = NULL WHERE id = ?`, groupID); err != nil {
+			return err
+		}
+		return reindexWorkspaceGroup(ctx, tx, groupID)
+	})
+}
+
+func (q *ExperienceQueries) SyncSourceGroup(ctx context.Context, groupID int64) (*models.SourceGroupSyncResult, error) {
+	link, err := q.GetSourceGroupLink(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	sourceGroup, err := q.resolveLinkedSourceGroup(ctx, link)
+	if err != nil {
+		_ = q.markSourceGroupLinkFailure(ctx, groupID, "disconnected", err)
+		return nil, err
+	}
+	result, err := q.syncResolvedSourceGroup(ctx, link, sourceGroup)
+	if err != nil {
+		_ = q.markSourceGroupLinkFailure(ctx, groupID, "error", err)
+		return nil, err
+	}
+	return result, nil
+}
+
+func (q *ExperienceQueries) SyncSourceGroupsForPlaylist(ctx context.Context, playlistID int64) ([]models.SourceGroupSyncResult, error) {
+	groupIDs := []int64{}
+	if err := q.SelectContext(ctx, &groupIDs, `SELECT group_id FROM lineup_group_source_link WHERE playlist_id = ? ORDER BY group_id`, playlistID); err != nil {
+		return nil, err
+	}
+	results := make([]models.SourceGroupSyncResult, 0, len(groupIDs))
+	errs := []error{}
+	for _, groupID := range groupIDs {
+		result, err := q.SyncSourceGroup(ctx, groupID)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("group %d: %w", groupID, err))
+			continue
+		}
+		results = append(results, *result)
+	}
+	return results, errors.Join(errs...)
+}
+
+func (q *ExperienceQueries) resolveLinkedSourceGroup(ctx context.Context, link *models.SourceGroupLink) (*sourceGroupRecord, error) {
+	if link.SourceGroupID != nil {
+		group := &sourceGroupRecord{}
+		if err := q.GetContext(ctx, group, `SELECT id, name, playlist_id FROM playlistgroup WHERE id = ? AND playlist_id = ?`, *link.SourceGroupID, link.PlaylistID); err == nil {
+			return group, nil
+		}
+	}
+	exact := &sourceGroupRecord{}
+	if err := q.GetContext(ctx, exact, `SELECT id, name, playlist_id FROM playlistgroup WHERE playlist_id = ? AND LOWER(name) = LOWER(?) ORDER BY id LIMIT 1`, link.PlaylistID, link.SourceGroupName); err == nil {
+		return exact, nil
+	}
+	memberIdentities := []string{}
+	if err := q.SelectContext(ctx, &memberIdentities, `SELECT source_identity FROM lineup_group_source_member WHERE group_id = ?`, link.GroupID); err != nil {
+		return nil, err
+	}
+	if len(memberIdentities) == 0 {
+		return nil, fmt.Errorf("source group %q is no longer available; reconnect it to continue syncing", link.SourceGroupName)
+	}
+	wanted := map[string]bool{}
+	for _, identity := range memberIdentities {
+		wanted[identity] = true
+	}
+	candidates := []sourceGroupRecord{}
+	if err := q.SelectContext(ctx, &candidates, `SELECT id, name, playlist_id FROM playlistgroup WHERE playlist_id = ? ORDER BY id`, link.PlaylistID); err != nil {
+		return nil, err
+	}
+	var best *sourceGroupRecord
+	bestScore, secondScore := 0.0, 0.0
+	bestMatches := 0
+	for index := range candidates {
+		channels, err := q.sourceGroupChannels(ctx, candidates[index].ID)
+		if err != nil {
+			return nil, err
+		}
+		identities := sourceChannelIdentities(channels)
+		matches := 0
+		for _, identity := range identities {
+			if wanted[identity] {
+				matches++
+			}
+		}
+		score := float64(matches) / math.Max(float64(len(wanted)), float64(len(identities)))
+		if score > bestScore {
+			secondScore = bestScore
+			bestScore, bestMatches, best = score, matches, &candidates[index]
+		} else if score > secondScore {
+			secondScore = score
+		}
+	}
+	if best != nil && bestMatches > 0 && bestScore >= 0.5 && bestScore-secondScore >= 0.1 {
+		return best, nil
+	}
+	return nil, fmt.Errorf("source group %q is no longer available and no unambiguous replacement was found", link.SourceGroupName)
+}
+
+func (q *ExperienceQueries) sourceGroupChannels(ctx context.Context, sourceGroupID int64) ([]syncSourceChannel, error) {
+	channels := []syncSourceChannel{}
+	err := q.SelectContext(ctx, &channels, `SELECT id, COALESCE(NULLIF(title, ''), NULLIF(tvg_name, ''), 'Untitled channel') AS name, tvg_id
+		FROM playlistchannel WHERE group_id = ? ORDER BY LOWER(name), id`, sourceGroupID)
+	return channels, err
+}
+
+func sourceChannelIdentities(channels []syncSourceChannel) []string {
+	bases := make([]string, len(channels))
+	counts := map[string]int{}
+	for index, channel := range channels {
+		base := "source:" + strconv.FormatInt(channel.ID, 10)
+		if channel.TVGID != nil && strings.TrimSpace(*channel.TVGID) != "" {
+			base = "tvg:" + strings.ToLower(strings.TrimSpace(*channel.TVGID))
+		}
+		bases[index] = base
+		counts[base]++
+	}
+	for index, base := range bases {
+		if counts[base] > 1 {
+			bases[index] = base + "#" + strconv.FormatInt(channels[index].ID, 10)
+		}
+	}
+	return bases
+}
+
+func (q *ExperienceQueries) syncResolvedSourceGroup(ctx context.Context, link *models.SourceGroupLink, sourceGroup *sourceGroupRecord) (*models.SourceGroupSyncResult, error) {
+	result := &models.SourceGroupSyncResult{GroupID: link.GroupID}
+	err := q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		channels := []syncSourceChannel{}
+		if err := tx.SelectContext(ctx, &channels, `SELECT id, COALESCE(NULLIF(title, ''), NULLIF(tvg_name, ''), 'Untitled channel') AS name, tvg_id
+			FROM playlistchannel WHERE group_id = ? ORDER BY LOWER(name), id`, sourceGroup.ID); err != nil {
+			return err
+		}
+		if len(channels) == 0 {
+			return fmt.Errorf("source group %q is empty; the previous lineup snapshot was retained", sourceGroup.Name)
+		}
+		identities := sourceChannelIdentities(channels)
+		members := []sourceGroupMember{}
+		if err := tx.SelectContext(ctx, &members, `SELECT template_channel_id, source_channel_id, source_identity, last_source_name
+			FROM lineup_group_source_member WHERE group_id = ?`, link.GroupID); err != nil {
+			return err
+		}
+		bySourceID := map[int64]*sourceGroupMember{}
+		byIdentity := map[string]*sourceGroupMember{}
+		for index := range members {
+			member := &members[index]
+			if member.SourceChannelID.Valid {
+				bySourceID[member.SourceChannelID.Int64] = member
+			}
+			byIdentity[member.SourceIdentity] = member
+		}
+		existing := []existingWorkspaceChannel{}
+		if err := tx.SelectContext(ctx, &existing, `SELECT tc.id, tc.name, tc.tvgid FROM templatechannel tc
+			JOIN template_group_channel tgc ON tgc.channel_id = tc.id WHERE tgc.group_id = ? ORDER BY tgc.orderr, tc.id`, link.GroupID); err != nil {
+			return err
+		}
+		existingByID := map[int64]existingWorkspaceChannel{}
+		claimed := map[int64]bool{}
+		for _, channel := range existing {
+			existingByID[channel.ID] = channel
+		}
+		for _, member := range members {
+			claimed[member.TemplateChannelID] = true
+		}
+		seenMembers := map[int64]bool{}
+		for index, source := range channels {
+			identity := identities[index]
+			member := bySourceID[source.ID]
+			if member == nil {
+				member = byIdentity[identity]
+			}
+			channelID := int64(0)
+			changed := false
+			created := false
+			if member != nil {
+				channelID = member.TemplateChannelID
+				changed = !member.SourceChannelID.Valid || member.SourceChannelID.Int64 != source.ID || member.SourceIdentity != identity || member.LastSourceName != source.Name
+			} else {
+				for _, candidate := range existing {
+					if claimed[candidate.ID] {
+						continue
+					}
+					matched := source.TVGID != nil && candidate.TVGID != nil && strings.EqualFold(strings.TrimSpace(*source.TVGID), strings.TrimSpace(*candidate.TVGID))
+					if !matched {
+						if err := tx.GetContext(ctx, &matched, `SELECT EXISTS(SELECT 1 FROM templatechannelitem WHERE channel_id = ? AND playlist_channel_id = ?)`, candidate.ID, source.ID); err != nil {
+							return err
+						}
+					}
+					if matched {
+						channelID = candidate.ID
+						claimed[channelID] = true
+						changed = true
+						break
+					}
+				}
+				if channelID == 0 {
+					insert, err := tx.ExecContext(ctx, `INSERT INTO templatechannel (name, tvgid, logoid, uuid) VALUES (?, ?, 0, ?)`, source.Name, source.TVGID, uuid.NewString())
+					if err != nil {
+						return err
+					}
+					channelID, err = insert.LastInsertId()
+					if err != nil {
+						return err
+					}
+					result.AddedCount++
+					created = true
+				}
+			}
+			current := existingByID[channelID]
+			if link.FollowChannelNames && current.Name != "" && current.Name != source.Name {
+				if _, err := tx.ExecContext(ctx, `UPDATE templatechannel SET name = ? WHERE id = ?`, source.Name, channelID); err != nil {
+					return err
+				}
+				changed = true
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO template_group_channel (group_id, channel_id, orderr) VALUES (?, ?, ?)`, link.GroupID, channelID, index+1); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE template_group_channel SET orderr = ? WHERE group_id = ? AND channel_id = ?`, index+1, link.GroupID, channelID); err != nil {
+				return err
+			}
+			if member == nil {
+				if _, err := tx.ExecContext(ctx, `INSERT INTO lineup_group_source_member (group_id, template_channel_id, source_channel_id, source_identity, last_source_name) VALUES (?, ?, ?, ?, ?)`, link.GroupID, channelID, source.ID, identity, source.Name); err != nil {
+					return err
+				}
+			} else {
+				if _, err := tx.ExecContext(ctx, `UPDATE lineup_group_source_member SET source_channel_id = ?, source_identity = ?, last_source_name = ? WHERE group_id = ? AND template_channel_id = ?`, source.ID, identity, source.Name, link.GroupID, channelID); err != nil {
+					return err
+				}
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM templatechannelitem WHERE channel_id = ? AND playlist_channel_id IN (
+				SELECT pc.id FROM playlistchannel pc JOIN playlistgroup pg ON pg.id = pc.group_id WHERE pg.playlist_id = ?
+			)`, channelID, link.PlaylistID); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO templatechannelitem (channel_id, playlist_channel_id, orderr, match_method, match_score, runner_up_score, matcher_version, manual_locked)
+				VALUES (?, ?, 1, 'source_group_sync', 1, NULL, 2, true)`, channelID, source.ID); err != nil {
+				return err
+			}
+			if !created && changed {
+				result.UpdatedCount++
+			}
+			seenMembers[channelID] = true
+		}
+		for _, member := range members {
+			if seenMembers[member.TemplateChannelID] {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM lineup_group_source_member WHERE group_id = ? AND template_channel_id = ?`, link.GroupID, member.TemplateChannelID); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM template_group_channel WHERE group_id = ? AND channel_id = ?`, link.GroupID, member.TemplateChannelID); err != nil {
+				return err
+			}
+			var stillUsed bool
+			if err := tx.GetContext(ctx, &stillUsed, `SELECT EXISTS(SELECT 1 FROM template_group_channel WHERE channel_id = ?)`, member.TemplateChannelID); err != nil {
+				return err
+			}
+			if stillUsed {
+				if _, err := tx.ExecContext(ctx, `UPDATE templatechannelitem SET match_method = 'manual', manual_locked = true WHERE channel_id = ? AND match_method = 'source_group_sync'`, member.TemplateChannelID); err != nil {
+					return err
+				}
+			} else if _, err := tx.ExecContext(ctx, `DELETE FROM templatechannel WHERE id = ?`, member.TemplateChannelID); err != nil {
+				return err
+			}
+			result.RemovedCount++
+		}
+		if link.FollowGroupName {
+			var conflict bool
+			if err := tx.GetContext(ctx, &conflict, `SELECT EXISTS(SELECT 1 FROM templategroup WHERE LOWER(name) = LOWER(?) AND id != ?)`, sourceGroup.Name, link.GroupID); err != nil {
+				return err
+			}
+			if !conflict {
+				if _, err := tx.ExecContext(ctx, `UPDATE templategroup SET name = ? WHERE id = ?`, sourceGroup.Name, link.GroupID); err != nil {
+					return err
+				}
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE lineup_group_source_link SET
+			source_group_id = ?, source_group_name = ?, status = 'active', last_synced_at = datetime('now'),
+			last_error = '', added_count = ?, updated_count = ?, removed_count = ? WHERE group_id = ?`,
+			sourceGroup.ID, sourceGroup.Name, result.AddedCount, result.UpdatedCount, result.RemovedCount, link.GroupID); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `UPDATE templategroup SET dynamic = true, dynamicgroup = ? WHERE id = ?`, sourceGroup.ID, link.GroupID)
+		return err
+	})
+	return result, err
+}
+
+func (q *ExperienceQueries) markSourceGroupLinkFailure(ctx context.Context, groupID int64, status string, syncErr error) error {
+	message := "The synced group could not be updated."
+	if syncErr != nil && strings.TrimSpace(syncErr.Error()) != "" {
+		message = syncErr.Error()
+	}
+	_, err := q.ExecContext(ctx, `UPDATE lineup_group_source_link SET status = ?, last_error = ? WHERE group_id = ?`, status, message, groupID)
+	return err
+}

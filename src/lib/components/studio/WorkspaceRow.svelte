@@ -25,6 +25,7 @@
 		channel,
 		selected = false,
 		checked = false,
+		managed = false,
 		previousId,
 		nextId,
 		firstId,
@@ -37,6 +38,7 @@
 		channel: WorkspaceChannel;
 		selected?: boolean;
 		checked?: boolean;
+		managed?: boolean;
 		previousId?: number;
 		nextId?: number;
 		firstId?: number;
@@ -50,8 +52,9 @@
 		handle: HTMLElement,
 		dragging = $state(false),
 		over = $state(false);
-	onMount(() =>
-		combine(
+	onMount(() => {
+		if (managed) return;
+		return combine(
 			draggable({
 				element: row,
 				dragHandle: handle,
@@ -78,8 +81,8 @@
 					}
 				}
 			})
-		)
-	);
+		);
+	});
 	let health = $derived(
 		channel.source_count === 0
 			? 'missing'
@@ -89,14 +92,16 @@
 	);
 </script>
 
-<article bind:this={row} class:selected class:dragging class:over>
+<article bind:this={row} class:selected class:dragging class:over class:managed>
 	<button
 		bind:this={handle}
 		class="drag-handle"
+		disabled={managed}
 		aria-label={`Drag ${channel.name} to reorder`}
-		title="Drag to reorder"><GripVertical size={17} /></button
+		title={managed ? 'Order follows the connected source group' : 'Drag to reorder'}
+		><GripVertical size={17} /></button
 	><label class="row-check"
-		><input type="checkbox" {checked} onchange={ontoggle} /><span class="sr-only"
+		><input type="checkbox" {checked} disabled={managed} onchange={ontoggle} /><span class="sr-only"
 			>Select {channel.name}</span
 		></label
 	><button class="row-main" onclick={onselect}
@@ -121,14 +126,18 @@
 	>
 	<div class="row-menu-slot">
 		<DropdownMenu.Root>
-			<DropdownMenu.Trigger class="row-menu-trigger" aria-label={`Move or remove ${channel.name}`}>
+			<DropdownMenu.Trigger
+				class="row-menu-trigger"
+				disabled={managed}
+				aria-label={`Move or remove ${channel.name}`}
+			>
 				<MoreHorizontal size={18} />
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Portal>
 				<DropdownMenu.Content class="row-action-menu" align="end" sideOffset={6}>
 					<DropdownMenu.Item
 						class="row-action-item"
-						disabled={!previousId || !firstId}
+						disabled={managed || !previousId || !firstId}
 						onSelect={() => {
 							if (firstId) onmove(channel.id, firstId, 'before');
 						}}
@@ -137,7 +146,7 @@
 					</DropdownMenu.Item>
 					<DropdownMenu.Item
 						class="row-action-item"
-						disabled={!previousId}
+						disabled={managed || !previousId}
 						onSelect={() => {
 							if (previousId) onmove(channel.id, previousId, 'before');
 						}}
@@ -146,7 +155,7 @@
 					</DropdownMenu.Item>
 					<DropdownMenu.Item
 						class="row-action-item"
-						disabled={!nextId}
+						disabled={managed || !nextId}
 						onSelect={() => {
 							if (nextId) onmove(channel.id, nextId, 'after');
 						}}
@@ -155,7 +164,7 @@
 					</DropdownMenu.Item>
 					<DropdownMenu.Item
 						class="row-action-item"
-						disabled={!nextId || !lastId}
+						disabled={managed || !nextId || !lastId}
 						onSelect={() => {
 							if (lastId) onmove(channel.id, lastId, 'after');
 						}}
@@ -163,7 +172,7 @@
 						<ChevronsDown size={16} /><span>Move to bottom</span>
 					</DropdownMenu.Item>
 					<DropdownMenu.Separator class="row-action-separator" />
-					<DropdownMenu.Item class="row-action-item danger" onSelect={onremove}>
+					<DropdownMenu.Item class="row-action-item danger" disabled={managed} onSelect={onremove}>
 						<Trash2 size={16} /><span>Remove channel</span>
 					</DropdownMenu.Item>
 				</DropdownMenu.Content>
@@ -194,6 +203,11 @@
 	}
 	article.dragging {
 		opacity: 0.45;
+	}
+	article.managed .drag-handle,
+	article.managed .row-check,
+	article.managed .row-menu-slot {
+		opacity: 0.38;
 	}
 	.drag-handle,
 	.row-menu-slot :global(.row-menu-trigger) {

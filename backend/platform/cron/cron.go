@@ -85,21 +85,16 @@ func UpdatePlaylists() {
 		startTime := time.Now()
 
 		m3uParser := utils.M3uParser{}
-		m3uParser.ParseM3u(playlist)
+		if err := m3uParser.ParseM3u(playlist); err != nil {
+			log.Error().Err(err).Int64("playlist_id", playlist.ID).Msg("Playlist refresh failed; retaining the previous snapshot")
+			continue
+		}
 		CleanPlaylist(playlist, startTime)
+		if _, err := database.Db.SyncSourceGroupsForPlaylist(context.Background(), playlist.ID); err != nil {
+			log.Error().Err(err).Int64("playlist_id", playlist.ID).Msg("One or more connected groups could not be synced")
+		}
 
 		log.Info().Str("playlist_name", playlist.Name).Int64("playlist_id", playlist.ID).Msg("Finished playlist update")
-	}
-
-	// Update all dynamic groups
-	if groups, err := database.Db.GetAllTmplGroups(); err != nil {
-		log.Err(err)
-	} else {
-		for _, group := range *groups {
-			if group.Dynamic && group.DynamicGroup != nil {
-				utils.UpdateDynamicGroup(group)
-			}
-		}
 	}
 
 	// get templates.

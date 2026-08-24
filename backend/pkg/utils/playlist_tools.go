@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"xivi/backend/app/models"
@@ -99,103 +100,25 @@ func MatchDomain(playlistId int64) int64 {
 }
 
 func UpdateDynamicGroup(group models.TemplateGroup) {
-	// Verify the group is dynamic and has a valid dynamicgroup
 	if !group.Dynamic || group.DynamicGroup == nil {
 		log.Debug().Int64("group_id", group.ID).Msg("Group is not dynamic or has no dynamicgroup")
 		return
 	}
-
-	// Verify the playlist group still exists
 	playlistGroup, err := database.Db.GetPlGroup(*group.DynamicGroup)
 	if err != nil {
-		log.Warn().Int64("group_id", group.ID).Int64("dynamicgroup_id", *group.DynamicGroup).Msg("Playlist group no longer exists, disabling dynamic connection")
-		// Playlist group no longer exists, disable dynamic connection
-		group.Dynamic = false
-		group.DynamicGroup = nil
-		if err := database.Db.UpdateTmplGroup(&group); err != nil {
-			log.Err(err).Msg("Failed to update template group")
-		}
+		log.Warn().Err(err).Int64("group_id", group.ID).Int64("dynamicgroup_id", *group.DynamicGroup).Msg("Playlist group no longer exists; retaining the previous synced snapshot")
 		return
 	}
-
-	// Get template channels for this group
-	tmplChannels, err := database.Db.GetTmplChannelsByGroup(group.ID)
-	if err != nil {
-		log.Debug().Int64("group_id", group.ID).Msg(err.Error())
-		// Continue with empty slice rather than returning
-		tmplChannels = []models.TemplateChannel{}
+	request := models.SourceGroupLinkRequest{
+		SourceGroupID:      playlistGroup.ID,
+		FollowGroupName:    true,
+		FollowChannelNames: true,
 	}
-
-	// Get playlist channels for the dynamic group
-	plChannels, err := database.Db.GetPlGroupChannels(*group.DynamicGroup)
-	if err != nil {
-		log.Warn().Int64("dynamicgroup_id", *group.DynamicGroup).Msg(err.Error())
+	if err := database.Db.SetSourceGroupLink(context.Background(), group.ID, request); err != nil {
+		log.Error().Err(err).Int64("group_id", group.ID).Msg("Failed to preserve the dynamic group as a source link")
 		return
 	}
-
-	// If the playlist group has no channels, log a warning but don't disconnect
-	if len(plChannels) == 0 {
-		log.Warn().Int64("group_id", group.ID).Int64("dynamicgroup_id", *group.DynamicGroup).Msg("Playlist group has no channels")
-	}
-
-	// Create a map of template channels by tvgID for faster lookups
-	tmplChannelsByTvgID := make(map[string]*models.TemplateChannel, len(tmplChannels))
-	for i := range tmplChannels {
-		if tmplChannels[i].TvgID != nil {
-			tmplChannelsByTvgID[*tmplChannels[i].TvgID] = &tmplChannels[i]
-		}
-	}
-
-	// Create a map to track which template channels are still needed
-	keepChannelIDs := make(map[int64]bool, len(tmplChannels))
-
-	// Process each playlist channel
-	for _, plChannel := range plChannels {
-		// Skip channels without tvgID
-		if plChannel.TvgID == nil {
-			continue
-		}
-
-		// Check if we already have a matching template channel
-		if tmplChannel, exists := tmplChannelsByTvgID[*plChannel.TvgID]; exists {
-			// Update the template channel name if needed
-			if tmplChannel.Name != plChannel.Title {
-				tmplChannel.Name = plChannel.Title
-				if err := database.Db.UpdateTmplChannel(*tmplChannel); err != nil {
-					log.Err(err).Int64("channel_id", tmplChannel.ID).Msg("Failed to update template channel")
-				}
-			}
-			// Mark this channel as needed
-			keepChannelIDs[tmplChannel.ID] = true
-		} else {
-			// Create a new template channel
-			channelID := ConvertPlChannel(plChannel)
-			if channelID > 0 {
-				tmplGroupChannel := models.TemplateGroupChannel{GroupId: group.ID, ChannelId: channelID}
-				err := database.Db.CreateTmplGroupChannel(tmplGroupChannel)
-				if err != nil {
-					log.Err(err).Int64("group_id", group.ID).Int64("channel_id", channelID).Msg("Failed to create template group channel")
-				}
-				// Mark this new channel as needed
-				keepChannelIDs[channelID] = true
-			}
-		}
-	}
-
-	// Remove template channels that are no longer needed
-	for _, tmplChannel := range tmplChannels {
-		if !keepChannelIDs[tmplChannel.ID] {
-			if err := database.Db.DeleteTmplChannel(tmplChannel.ID); err != nil {
-				log.Err(err).Int64("channel_id", tmplChannel.ID).Msg("Failed to delete template channel")
-			}
-		}
-	}
-
-	// Update the template group name if needed
-	if group.Name != playlistGroup.Name {
-		group.Name = playlistGroup.Name
-		if err := database.Db.UpdateTmplGroup(&group); err != nil {
-			log.Err(err).Int64("group_id", group.ID).Msg("Failed to update template group name")
-		}
+	if _, err := database.Db.SyncSourceGroup(context.Background(), group.ID); err != nil {
+		log.Error().Err(err).Int64("group_id", group.ID).Msg("Failed to sync connected source group")
 	}
 }

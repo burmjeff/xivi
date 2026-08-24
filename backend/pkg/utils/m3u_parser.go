@@ -61,17 +61,17 @@ func createGroupWithLimit(playlistId int64, groupName string) (int64, error) {
 	return database.Db.CreatePlGroup(playlistGroup)
 }
 
-// ParseM3u - Parses the content of local file/URL.
-func (m *M3uParser) ParseM3u(playlist models.Playlist) {
+// ParseM3u parses a playlist and reports acquisition/format failures so callers
+// never clean the last valid snapshot after a failed refresh.
+func (m *M3uParser) ParseM3u(playlist models.Playlist) error {
 	m.playlistID = playlist.ID
+	m.lines = nil
+	m.content = ""
 	log.Info().Msg("Parser started")
 
 	// Initialize batch processing with smaller batch size to reduce contention
 	m.batchSize = 25 // Further reduced from 50 to 25 to reduce transaction size and prevent deadlocks
 	m.channelPairs = make([]ChannelURLPair, 0, m.batchSize)
-
-	//Check if matching playlist exists
-	m.matchedPlaylist = MatchDomain(playlist.ID)
 
 	m.regexes = make(map[string]*regexp.Regexp)
 	m.regexes["file"] = CompileRegex(`(?m)^[a-zA-Z]:\\((?:.*?\\)*).*.[\d\w]{3,5}$|^(/[^/]*)+/?.[\d\w]{3,5}$`)
@@ -87,12 +87,16 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 		resp, err := http.Get(playlist.URL)
 		if err != nil {
 			log.Error().Msgf("Unable to get M3U FILE: %v", err)
-			return
+			return fmt.Errorf("download playlist: %w", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			return fmt.Errorf("download playlist: server returned %s", resp.Status)
 		}
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			log.Error().Msgf("Unable to get M3U FILE: %v", err)
-			return
+			return fmt.Errorf("read playlist response: %w", err)
 		}
 		m.content = string(body)
 	} else {
@@ -100,7 +104,7 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 		body, err := os.ReadFile(playlist.URL)
 		if err != nil {
 			log.Error().Msgf("Unable to get M3U FILE: %v", err)
-			return
+			return fmt.Errorf("read playlist file: %w", err)
 		}
 		m.content = string(body)
 	}
@@ -115,11 +119,25 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 
 	log.Info().Msgf("Loaded %d lines from m3u content", len(m.lines))
 
-	if len(m.lines) > 0 {
-		m.parseLines()
-	} else {
-		log.Info().Msg("No content to parse!!!")
+	if len(m.lines) == 0 {
+		return fmt.Errorf("playlist is empty")
 	}
+	extinf := CompileRegex("#EXTINF")
+	extinfCount := 0
+	for _, line := range m.lines {
+		if extinf.MatchString(line) {
+			extinfCount++
+		}
+	}
+	if extinfCount == 0 {
+		return fmt.Errorf("playlist contains no EXTINF channel entries")
+	}
+
+	// Only inspect related playlists after the new snapshot has been acquired and
+	// validated. A failed refresh must not depend on database state or begin any
+	// reconciliation work.
+	m.matchedPlaylist = MatchDomain(playlist.ID)
+	m.parseLines()
 
 	// Check if we have any remaining channels to process
 	m.batchMutex.Lock()
@@ -138,11 +156,13 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) {
 	playlist.UpdatedAt = time.Now()
 	if err := database.Db.UpdatePlaylist(playlist.ID, &playlist); err != nil {
 		log.Error().Msgf("Failed to update playlist: %v", err)
+		return fmt.Errorf("save playlist refresh time: %w", err)
 	} else {
 		log.Info().Msgf("Successfully updated playlist: %s (ID: %d)", playlist.Name, playlist.ID)
 	}
 
 	log.Info().Msg("Parser finished")
+	return nil
 }
 
 func (m *M3uParser) parseLines() {

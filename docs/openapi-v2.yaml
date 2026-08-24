@@ -1,0 +1,763 @@
+openapi: 3.1.0
+info:
+  title: Xivi Interface API
+  version: 2.0.0
+  description: Additive API for the Xivi Watch and Studio interfaces. Public device and output contracts remain unchanged.
+servers:
+  - url: /api/v2
+paths:
+  /watch/lineups:
+    get:
+      operationId: listWatchLineups
+      responses:
+        '200': { $ref: '#/components/responses/LineupPage' }
+  /watch/lineups/{lineup_id}/channels:
+    get:
+      operationId: listWatchChannels
+      parameters:
+        - $ref: '#/components/parameters/LineupId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { $ref: '#/components/responses/GuideChannelPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /watch/lineups/{lineup_id}/guide:
+    get:
+      operationId: getWatchGuide
+      parameters:
+        - $ref: '#/components/parameters/LineupId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/Search'
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { $ref: '#/components/responses/GuideChannelPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /watch/channels/{channel_id}:
+    get:
+      operationId: getWatchChannel
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+      responses:
+        '200':
+          description: Channel with the current guide window.
+          content: { application/json: { schema: { $ref: '#/components/schemas/GuideChannel' } } }
+        default: { $ref: '#/components/responses/Error' }
+  /search:
+    get:
+      operationId: searchXivi
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - { name: scope, in: query, schema: { type: string, enum: [all, channels, resources] } }
+        - { name: lineup_id, in: query, schema: { type: integer, format: int64 } }
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { $ref: '#/components/responses/GuideChannelPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/overview:
+    get:
+      operationId: getStudioOverview
+      responses:
+        '200':
+          description: Studio setup health and recent jobs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [summary, jobs]
+                properties:
+                  summary: { $ref: '#/components/schemas/StudioOverview' }
+                  jobs: { type: array, items: { $ref: '#/components/schemas/OperationJob' } }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/guide-data/coverage:
+    get:
+      operationId: getGuideCoverage
+      responses:
+        '200':
+          description: Guide mapping coverage.
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/CoverageSummary' } } }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/lineups:
+    get:
+      operationId: listStudioLineups
+      responses:
+        '200': { $ref: '#/components/responses/LineupPage' }
+  /studio/lineups/{lineup_id}/groups:
+    get:
+      operationId: listStudioLineupGroups
+      parameters: [{ $ref: '#/components/parameters/LineupId' }]
+      responses:
+        '200':
+          description: Ordered lineup groups.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudioGroupPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/source-groups:
+    get:
+      operationId: listSourceGroups
+      parameters:
+        - { name: playlist_id, in: query, schema: { type: integer, format: int64 } }
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Playlist groups available as one-way lineup subscriptions.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceGroupPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/groups/{group_id}/source-link:
+    put:
+      operationId: setGroupSourceLink
+      parameters: [{ $ref: '#/components/parameters/GroupIdPath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SourceGroupLinkRequest' }
+      responses:
+        '202':
+          description: Source link saved and initial reconciliation queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OperationJobReference' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: disconnectGroupSourceLink
+      parameters:
+        - { $ref: '#/components/parameters/GroupIdPath' }
+        - name: retain_channels
+          in: query
+          schema: { type: boolean, default: true }
+      responses:
+        '204': { description: Source link disconnected. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/groups/{group_id}/sync:
+    post:
+      operationId: syncSourceGroup
+      parameters: [{ $ref: '#/components/parameters/GroupIdPath' }]
+      responses:
+        '202':
+          description: Reconciliation queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OperationJobReference' }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/groups/{group_id}/channels:
+    get:
+      operationId: listWorkspaceChannels
+      parameters:
+        - { $ref: '#/components/parameters/GroupIdPath' }
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Ordered channels in a lineup group.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceChannelPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/groups/{group_id}/channels/batch-add:
+    post:
+      operationId: batchAddWorkspaceChannels
+      parameters: [{ $ref: '#/components/parameters/GroupIdPath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceBatchAddRequest' }
+      responses:
+        '201':
+          description: Canonical lineup channels created with manually locked source variants.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channel_ids, total]
+                properties:
+                  channel_ids: { type: array, items: { type: integer, format: int64 } }
+                  total: { type: integer }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/groups/{group_id}/channels/batch-remove:
+    post:
+      operationId: batchRemoveWorkspaceChannels
+      parameters: [{ $ref: '#/components/parameters/GroupIdPath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceBatchRemoveRequest' }
+      responses:
+        '204': { description: Canonical lineup channels removed. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/groups/{group_id}/channels/batch-move:
+    post:
+      operationId: batchMoveWorkspaceChannels
+      parameters: [{ $ref: '#/components/parameters/GroupIdPath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceBatchMoveRequest' }
+      responses:
+        '204': { description: Selected channels moved as an ordered block. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/groups/{group_id}/channels/{channel_id}/position:
+    patch:
+      operationId: moveWorkspaceChannel
+      parameters:
+        - { $ref: '#/components/parameters/GroupIdPath' }
+        - { $ref: '#/components/parameters/ChannelId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                before_id: { type: integer, format: int64 }
+                after_id: { type: integer, format: int64 }
+              oneOf:
+                - required: [before_id]
+                - required: [after_id]
+      responses:
+        '204': { description: Position saved. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/channels/{channel_id}:
+    patch:
+      operationId: updateWorkspaceChannel
+      parameters: [{ $ref: '#/components/parameters/ChannelId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceChannelUpdate' }
+      responses:
+        '204': { description: Channel saved. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/source-channels:
+    get:
+      operationId: listSourceChannels
+      parameters:
+        - { name: playlist_id, in: query, schema: { type: integer, format: int64 } }
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Source catalog channels.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceChannelPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/source-channels/enabled:
+    patch:
+      operationId: setSourceChannelsEnabled
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel_ids, enabled]
+              properties:
+                channel_ids: { type: array, minItems: 1, items: { type: integer, format: int64 } }
+                enabled: { type: boolean }
+      responses:
+        '204': { description: Enablement saved. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/review:
+    get:
+      operationId: listMatchReview
+      parameters:
+        - { name: channel_id, in: query, schema: { type: integer, format: int64 } }
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Low-confidence matches requiring review.
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/MatchReviewPage' } } }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/channels/{channel_id}/matches:
+    get:
+      operationId: listChannelMatches
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Ordered source matches for a lineup channel.
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/MatchReviewPage' } } }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/channels/{channel_id}/rejections:
+    get:
+      operationId: listChannelMatchRejections
+      parameters: [{ $ref: '#/components/parameters/ChannelId' }]
+      responses:
+        '200':
+          description: Durable source identities rejected for this channel.
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/MatchRejectionPage' } } }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/channels/{channel_id}/matches/{source_channel_id}/accept:
+    post:
+      operationId: acceptChannelMatch
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+        - $ref: '#/components/parameters/SourceChannelId'
+      responses:
+        '204': { description: Match accepted and manually locked. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/channels/{channel_id}/matches/{source_channel_id}/reject:
+    post:
+      operationId: rejectChannelMatch
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+        - $ref: '#/components/parameters/SourceChannelId'
+      responses:
+        '204': { description: Match rejected and its stable identity recorded. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/sources/{source_id}/refresh:
+    post:
+      operationId: refreshPlaylistSource
+      parameters: [{ $ref: '#/components/parameters/SourceId' }]
+      responses:
+        '202': { $ref: '#/components/responses/JobAccepted' }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/guide-data/sources/{source_id}/refresh:
+    post:
+      operationId: refreshGuideSource
+      parameters: [{ $ref: '#/components/parameters/SourceId' }]
+      responses:
+        '202': { $ref: '#/components/responses/JobAccepted' }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/lineups/{lineup_id}/publish:
+    post:
+      operationId: publishLineup
+      parameters: [{ $ref: '#/components/parameters/LineupId' }]
+      responses:
+        '202': { $ref: '#/components/responses/JobAccepted' }
+        default: { $ref: '#/components/responses/Error' }
+  /jobs:
+    get:
+      operationId: listJobs
+      responses:
+        '200':
+          description: Recent operation jobs.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OperationJobPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /jobs/{job_id}:
+    get:
+      operationId: getJob
+      parameters:
+        - { name: job_id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200':
+          description: Operation job.
+          content: { application/json: { schema: { $ref: '#/components/schemas/OperationJob' } } }
+        default: { $ref: '#/components/responses/Error' }
+  /events:
+    get:
+      operationId: subscribeToEvents
+      responses:
+        '200':
+          description: Resumable Server-Sent Event snapshots for jobs and resources.
+          content: { text/event-stream: { schema: { type: string } } }
+components:
+  parameters:
+    LineupId:
+      { name: lineup_id, in: path, required: true, schema: { type: integer, format: int64 } }
+    GroupIdPath:
+      { name: group_id, in: path, required: true, schema: { type: integer, format: int64 } }
+    ChannelId:
+      { name: channel_id, in: path, required: true, schema: { type: integer, format: int64 } }
+    SourceId:
+      { name: source_id, in: path, required: true, schema: { type: integer, format: int64 } }
+    SourceChannelId:
+      {
+        name: source_channel_id,
+        in: path,
+        required: true,
+        schema: { type: integer, format: int64 }
+      }
+    GroupId: { name: group_id, in: query, schema: { type: integer, format: int64 } }
+    Search: { name: q, in: query, schema: { type: string, maxLength: 255 } }
+    Cursor: { name: cursor, in: query, schema: { type: string } }
+    Limit:
+      { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+  responses:
+    Error:
+      description: Standard Xivi error.
+      content: { application/json: { schema: { $ref: '#/components/schemas/APIError' } } }
+    LineupPage:
+      description: Paginated lineups.
+      content: { application/json: { schema: { $ref: '#/components/schemas/LineupPage' } } }
+    GuideChannelPage:
+      description: Paginated channels.
+      content: { application/json: { schema: { $ref: '#/components/schemas/GuideChannelPage' } } }
+    JobAccepted:
+      description: Background operation accepted.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [job_id, status]
+            properties:
+              job_id: { type: integer, format: int64 }
+              status: { type: string, enum: [queued] }
+  schemas:
+    APIError:
+      type: object
+      required: [code, message, retryable]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        field_errors: { type: object, additionalProperties: { type: string } }
+        retryable: { type: boolean }
+    PageMetadata:
+      type: object
+      required: [items, total]
+      properties:
+        next_cursor: { type: [string, 'null'] }
+        total: { type: integer, format: int64 }
+    LineupSummary:
+      type: object
+      required: [id, name, group_count, channel_count, epg_coverage]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        group_count: { type: integer, format: int64 }
+        channel_count: { type: integer, format: int64 }
+        epg_coverage: { type: number, format: double }
+    Programme:
+      type: object
+      required: [id, channel_id, title, categories, start, end]
+      properties:
+        id: { type: integer, format: int64 }
+        channel_id: { type: string }
+        title: { type: string }
+        subtitle: { type: string }
+        description: { type: string }
+        categories: { type: array, items: { type: string } }
+        start: { type: string, format: date-time }
+        end: { type: string, format: date-time }
+    GuideChannel:
+      type: object
+      required: [id, number, name, group_id, group_name, stream_url, programmes]
+      properties:
+        id: { type: integer, format: int64 }
+        number: { type: integer, format: int64 }
+        name: { type: string }
+        tvg_id: { type: string }
+        logo_url: { type: string }
+        group_id: { type: integer, format: int64 }
+        group_name: { type: string }
+        stream_url: { type: string }
+        programmes: { type: array, items: { $ref: '#/components/schemas/Programme' } }
+        current: { $ref: '#/components/schemas/Programme' }
+        next: { $ref: '#/components/schemas/Programme' }
+    StudioGroup:
+      type: object
+      required: [id, name, order, dynamic, channel_count]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        order: { type: integer, format: int64 }
+        dynamic: { type: boolean }
+        dynamic_group_id: { type: integer, format: int64 }
+        channel_count: { type: integer, format: int64 }
+        source_link: { $ref: '#/components/schemas/SourceGroupLink' }
+    SourceGroup:
+      type: object
+      required: [id, name, playlist_id, playlist_name, channel_count, enabled, linked_group_count]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        playlist_id: { type: integer, format: int64 }
+        playlist_name: { type: string }
+        channel_count: { type: integer, format: int64 }
+        enabled: { type: boolean }
+        linked_group_count: { type: integer, format: int64 }
+    SourceGroupLink:
+      type: object
+      required:
+        - group_id
+        - playlist_id
+        - playlist_name
+        - source_group_name
+        - follow_group_name
+        - follow_channel_names
+        - status
+        - added_count
+        - updated_count
+        - removed_count
+      properties:
+        group_id: { type: integer, format: int64 }
+        playlist_id: { type: integer, format: int64 }
+        playlist_name: { type: string }
+        source_group_id: { type: integer, format: int64 }
+        source_group_name: { type: string }
+        follow_group_name: { type: boolean }
+        follow_channel_names: { type: boolean }
+        status: { type: string, enum: [pending, active, disconnected, error] }
+        last_synced_at: { type: string, format: date-time }
+        last_error: { type: string }
+        added_count: { type: integer, format: int64 }
+        updated_count: { type: integer, format: int64 }
+        removed_count: { type: integer, format: int64 }
+    SourceGroupLinkRequest:
+      type: object
+      required: [source_group_id, follow_group_name, follow_channel_names]
+      properties:
+        source_group_id: { type: integer, format: int64 }
+        follow_group_name: { type: boolean }
+        follow_channel_names: { type: boolean }
+    WorkspaceChannel:
+      type: object
+      required: [id, name, uuid, logo_id, order, source_count, match_method, manual_locked]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        tvg_id: { type: string }
+        uuid: { type: string }
+        logo_id: { type: integer, format: int64 }
+        logo_url: { type: string }
+        order: { type: integer, format: int64 }
+        source_count: { type: integer, format: int64 }
+        match_method: { type: string }
+        match_score: { type: number, format: double }
+        runner_up_score: { type: number, format: double }
+        manual_locked: { type: boolean }
+    WorkspaceChannelUpdate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        tvg_id: { type: [string, 'null'] }
+        logo_id: { type: [integer, 'null'], format: int64 }
+    WorkspaceBatchAddRequest:
+      type: object
+      required: [source_channel_ids]
+      properties:
+        source_channel_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, format: int64 }
+    WorkspaceBatchRemoveRequest:
+      type: object
+      required: [channel_ids]
+      properties:
+        channel_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, format: int64 }
+    WorkspaceBatchMoveRequest:
+      type: object
+      required: [channel_ids, target_group_id]
+      properties:
+        channel_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, format: int64 }
+        target_group_id: { type: integer, format: int64 }
+        before_id: { type: integer, format: int64 }
+        after_id: { type: integer, format: int64 }
+    SourceChannel:
+      type: object
+      required: [id, name, enabled, group_id, group_name, playlist_id, playlist_name]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        tvg_id: { type: string }
+        logo_url: { type: string }
+        enabled: { type: boolean }
+        group_id: { type: integer, format: int64 }
+        group_name: { type: string }
+        playlist_id: { type: integer, format: int64 }
+        playlist_name: { type: string }
+    MatchReview:
+      type: object
+      required:
+        [
+          channel_id,
+          channel_name,
+          source_channel_id,
+          source_name,
+          playlist_name,
+          method,
+          manual_locked
+        ]
+      properties:
+        channel_id: { type: integer, format: int64 }
+        channel_name: { type: string }
+        source_channel_id: { type: integer, format: int64 }
+        source_name: { type: string }
+        playlist_name: { type: string }
+        method: { type: string }
+        score: { type: number, format: double }
+        runner_up_score: { type: number, format: double }
+        manual_locked: { type: boolean }
+    MatchRejection:
+      type: object
+      required: [id, channel_id, playlist_id, playlist_name, tvg_id, name, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        channel_id: { type: integer, format: int64 }
+        playlist_id: { type: integer, format: int64 }
+        playlist_name: { type: string }
+        tvg_id: { type: string }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+    StudioOverview:
+      type: object
+      required:
+        [
+          lineup_count,
+          source_count,
+          source_channel_count,
+          lineup_channel_count,
+          mapped_channel_count,
+          review_count,
+          epg_coverage,
+          logo_count
+        ]
+      properties:
+        lineup_count: { type: integer, format: int64 }
+        source_count: { type: integer, format: int64 }
+        source_channel_count: { type: integer, format: int64 }
+        lineup_channel_count: { type: integer, format: int64 }
+        mapped_channel_count: { type: integer, format: int64 }
+        review_count: { type: integer, format: int64 }
+        epg_coverage: { type: number, format: double }
+        logo_count: { type: integer, format: int64 }
+    CoverageSummary:
+      type: object
+      required:
+        [
+          epg_channel_count,
+          programme_count,
+          mapped_channel_count,
+          lineup_channel_count,
+          coverage,
+          unmapped_epg_ids,
+          channels_without_tvg_id
+        ]
+      properties:
+        epg_channel_count: { type: integer, format: int64 }
+        programme_count: { type: integer, format: int64 }
+        mapped_channel_count: { type: integer, format: int64 }
+        lineup_channel_count: { type: integer, format: int64 }
+        coverage: { type: number, format: double }
+        unmapped_epg_ids: { type: array, items: { type: string } }
+        channels_without_tvg_id: { type: array, items: { type: string } }
+    OperationJob:
+      type: object
+      required: [id, kind, resource, status, progress, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        kind: { type: string }
+        resource: { type: string }
+        resource_id: { type: integer, format: int64 }
+        status: { type: string, enum: [queued, running, succeeded, failed, cancelled] }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        message: { type: string }
+        error_code: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+    OperationJobReference:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id: { type: integer, format: int64 }
+        status: { type: string }
+    LineupPage:
+      allOf:
+        - { $ref: '#/components/schemas/PageMetadata' }
+        - {
+            type: object,
+            properties:
+              { items: { type: array, items: { $ref: '#/components/schemas/LineupSummary' } } }
+          }
+    GuideChannelPage:
+      allOf:
+        - { $ref: '#/components/schemas/PageMetadata' }
+        - {
+            type: object,
+            properties:
+              { items: { type: array, items: { $ref: '#/components/schemas/GuideChannel' } } }
+          }
+    StudioGroupPage:
+      allOf:
+        - { $ref: '#/components/schemas/PageMetadata' }
+        - {
+            type: object,
+            properties:
+              { items: { type: array, items: { $ref: '#/components/schemas/StudioGroup' } } }
+          }
+    WorkspaceChannelPage:
+      allOf:
+        - { $ref: '#/components/schemas/PageMetadata' }
+        - {
+            type: object,
+            properties:
+              { items: { type: array, items: { $ref: '#/components/schemas/WorkspaceChannel' } } }
+          }
+    SourceChannelPage:
+      allOf:
+        - { $ref: '#/components/schemas/PageMetadata' }
+        - {
+            type: object,
+            properties:
+              { items: { type: array, items: { $ref: '#/components/schemas/SourceChannel' } } }
+          }
+    SourceGroupPage:
+      allOf:
+        - { $ref: '#/components/schemas/PageMetadata' }
+        - {
+            type: object,
+            properties:
+              { items: { type: array, items: { $ref: '#/components/schemas/SourceGroup' } } }
+          }
+    MatchReviewPage:
+      allOf:
+        - { $ref: '#/components/schemas/PageMetadata' }
+        - {
+            type: object,
+            properties:
+              { items: { type: array, items: { $ref: '#/components/schemas/MatchReview' } } }
+          }
+    MatchRejectionPage:
+      allOf:
+        - { $ref: '#/components/schemas/PageMetadata' }
+        - {
+            type: object,
+            properties:
+              { items: { type: array, items: { $ref: '#/components/schemas/MatchRejection' } } }
+          }
+    OperationJobPage:
+      allOf:
+        - { $ref: '#/components/schemas/PageMetadata' }
+        - {
+            type: object,
+            properties:
+              { items: { type: array, items: { $ref: '#/components/schemas/OperationJob' } } }
+          }

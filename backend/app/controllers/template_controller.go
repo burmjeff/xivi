@@ -665,6 +665,12 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 	if (templateGroup.Dynamic != oldGroup.Dynamic && templateGroup.Dynamic) ||
 		(templateGroup.DynamicGroup != oldGroup.DynamicGroup && templateGroup.Dynamic) {
 		utils.UpdateDynamicGroup(*templateGroup)
+	} else if !templateGroup.Dynamic && oldGroup.Dynamic {
+		if _, linkErr := database.Db.GetSourceGroupLink(c.UserContext(), templateGroup.ID); linkErr == nil {
+			if disconnectErr := database.Db.DisconnectSourceGroup(c.UserContext(), templateGroup.ID, true); disconnectErr != nil {
+				log.Error().Err(disconnectErr).Int64("group_id", templateGroup.ID).Msg("Failed to disconnect source-backed group")
+			}
+		}
 	}
 
 	m3uTools := utils.NewM3uTools()
