@@ -117,6 +117,9 @@
 		background: var(--deep);
 		color: var(--text);
 	}
+	.watch-mode {
+		--deep: var(--watch-canvas);
+	}
 	.watch-header {
 		position: sticky;
 		z-index: 50;

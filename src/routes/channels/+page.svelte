@@ -246,7 +246,7 @@
 		gap: 1rem;
 	}
 	.channel-directory article {
-		border: 1px solid var(--line);
+		border: 1px solid var(--watch-card-border);
 		background: var(--watch-card);
 	}
 	.channel-directory.grid article {
@@ -255,7 +255,15 @@
 		grid-template-rows: auto 1fr auto;
 		justify-items: start;
 		border-radius: 1.25rem;
+		box-shadow: var(--watch-card-shadow);
 		padding: 1.1rem;
+		transition:
+			transform var(--layout) var(--ease-out),
+			box-shadow var(--layout) var(--ease-out);
+	}
+	.channel-directory.grid article:hover {
+		transform: translateY(-3px);
+		box-shadow: var(--watch-card-shadow-hover);
 	}
 	.channel-copy {
 		min-width: 0;

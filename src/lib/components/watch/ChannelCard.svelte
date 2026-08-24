@@ -59,17 +59,20 @@
 		min-height: 16rem;
 		flex-direction: column;
 		scroll-snap-align: start;
-		border: 1px solid var(--line);
+		border: 1px solid var(--watch-card-border);
 		border-radius: 1.25rem;
 		background: var(--watch-card);
+		box-shadow: var(--watch-card-shadow);
 		padding: 1rem;
 		transition:
 			transform var(--layout) var(--ease-out),
-			border-color var(--micro);
+			border-color var(--micro),
+			box-shadow var(--layout) var(--ease-out);
 	}
 	.channel-card:hover {
 		transform: translateY(-4px);
 		border-color: color-mix(in oklch, var(--aqua) 50%, var(--line));
+		box-shadow: var(--watch-card-shadow-hover);
 	}
 	.channel-card.compact {
 		min-width: 17rem;

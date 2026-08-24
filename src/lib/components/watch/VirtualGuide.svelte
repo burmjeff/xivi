@@ -207,7 +207,7 @@
 		top: 0;
 		display: flex;
 		height: 52px;
-		border-bottom: 1px solid var(--line);
+		border-bottom: 1px solid var(--watch-card-border);
 		background: var(--watch-card);
 	}
 	.ruler-channel {
@@ -218,7 +218,7 @@
 		width: 196px;
 		flex: none;
 		align-items: center;
-		border-right: 1px solid var(--line);
+		border-right: 1px solid var(--watch-card-border);
 		background: var(--watch-card);
 		padding: 0.75rem;
 		color: var(--muted);
@@ -259,7 +259,7 @@
 		flex: none;
 		align-items: center;
 		gap: 0.55rem;
-		border-right: 1px solid var(--line);
+		border-right: 1px solid var(--watch-card-border);
 		background: var(--watch-card);
 		padding: 0.65rem;
 	}
@@ -372,7 +372,7 @@
 		display: none;
 	}
 	.agenda section {
-		border-bottom: 1px solid var(--line);
+		border-bottom: 1px solid var(--watch-card-border);
 		background: var(--watch-card);
 		padding: 1rem;
 	}

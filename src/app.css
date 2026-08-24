@@ -21,7 +21,11 @@
 	--deep: oklch(25% 0.035 263);
 	--surface: oklch(29% 0.035 263);
 	--surface-raised: oklch(34% 0.04 263);
+	--watch-canvas: oklch(25% 0.035 263);
 	--watch-card: color-mix(in oklch, var(--periwinkle) 5%, var(--surface));
+	--watch-card-border: var(--line);
+	--watch-card-shadow: 0 12px 28px oklch(10% 0.025 264 / 0.18);
+	--watch-card-shadow-hover: 0 18px 38px oklch(10% 0.025 264 / 0.25);
 	--paper: oklch(97.5% 0.008 105);
 	--text: oklch(97.5% 0.008 105);
 	--muted: oklch(75% 0.035 257);
@@ -48,7 +52,15 @@
 	--deep: oklch(94.5% 0.012 255);
 	--surface: oklch(98% 0.006 105);
 	--surface-raised: oklch(100% 0 0);
+	--watch-canvas: oklch(97.5% 0.006 95);
 	--watch-card: oklch(94.5% 0.018 255);
+	--watch-card-border: oklch(48% 0.045 260 / 0.18);
+	--watch-card-shadow:
+		0 12px 30px oklch(38% 0.055 260 / 0.1), 0 2px 7px oklch(38% 0.04 260 / 0.07),
+		inset 0 1px 0 oklch(100% 0 0 / 0.55);
+	--watch-card-shadow-hover:
+		0 18px 42px oklch(38% 0.06 260 / 0.15), 0 3px 9px oklch(38% 0.04 260 / 0.09),
+		inset 0 1px 0 oklch(100% 0 0 / 0.65);
 	--text: oklch(19% 0.02 264);
 	--muted: oklch(48% 0.04 260);
 	--line: oklch(20% 0.03 260 / 0.13);

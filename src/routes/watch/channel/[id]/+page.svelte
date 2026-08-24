@@ -397,7 +397,9 @@
 		grid-template-columns: auto minmax(10rem, 0.55fr) minmax(18rem, 1.4fr) auto;
 		align-items: center;
 		gap: 1.25rem;
+		border-top: 1px solid var(--watch-card-border);
 		background: var(--watch-card);
+		box-shadow: 0 -12px 30px oklch(10% 0.025 264 / 0.14);
 		padding: 1.25rem;
 	}
 	.station {
