@@ -16,7 +16,9 @@
 		History,
 		Unlink,
 		MoreHorizontal,
-		Pencil
+		Pencil,
+		ChevronDown,
+		Check
 	} from '@lucide/svelte';
 	import { api, params } from '$lib/api/client';
 	import type {
@@ -106,16 +108,32 @@
 	let editName = $state(''),
 		editTvg = $state(''),
 		editLogo = $state(0),
+		logoSearch = $state(''),
+		logoPickerOpen = $state(false),
 		editorId = $state<number | null>(null),
 		saving = $state(false);
+	let selectedLogo = $derived((logosQuery.data?.logos ?? []).find((logo) => logo.id === editLogo));
+	let matchingLogos = $derived.by(() => {
+		const query = logoSearch.trim().toLocaleLowerCase();
+		return (logosQuery.data?.logos ?? [])
+			.filter((logo) => !query || logo.name.toLocaleLowerCase().includes(query))
+			.sort((a, b) => Number(b.id === editLogo) - Number(a.id === editLogo));
+	});
+	let visibleLogos = $derived(matchingLogos.slice(0, 48));
 	$effect(() => {
 		if (selectedChannel && selectedChannel.id !== editorId) {
 			editorId = selectedChannel.id;
 			editName = selectedChannel.name;
 			editTvg = selectedChannel.tvg_id ?? '';
 			editLogo = selectedChannel.logo_id;
+			logoSearch = '';
+			logoPickerOpen = false;
 		}
 	});
+	function logoSrc(image?: string) {
+		if (!image) return undefined;
+		return image.startsWith('/') ? image : `/${image}`;
+	}
 
 	async function refreshWorkspace() {
 		await Promise.all([
@@ -523,13 +541,62 @@
 							<h3>Identity</h3>
 							<label>Channel name<input bind:value={editName} /></label><label
 								>TVG ID<input bind:value={editTvg} placeholder="Schedule ID" /></label
-							><label
-								>Logo<select bind:value={editLogo}
-									>{#each logosQuery.data?.logos ?? [] as logo}<option value={logo.id}
-											>{logo.name}</option
-										>{/each}</select
-								></label
-							><button class="app-button app-button--primary" disabled={saving || !editName.trim()}
+							>
+							<div class="logo-field">
+								<span class="field-label">Logo</span>
+								<button
+									type="button"
+									class="logo-picker-trigger"
+									aria-expanded={logoPickerOpen}
+									onclick={() => (logoPickerOpen = !logoPickerOpen)}
+								>
+									{#key editLogo}<LogoTile
+											src={logoSrc(selectedLogo?.image)}
+											name={selectedLogo?.name ?? 'Signal Tile'}
+											size="sm"
+										/>{/key}
+									<span class="logo-picker-copy">
+										<strong>{selectedLogo?.name ?? 'Signal Tile'}</strong>
+										<small>Browse {(logosQuery.data?.logos ?? []).length} logo assets</small>
+									</span>
+									<ChevronDown size={17} class={logoPickerOpen ? 'open' : ''} />
+								</button>
+								{#if logoPickerOpen}<div class="logo-picker-panel">
+										<label class="logo-search">
+											<Search size={15} />
+											<span class="sr-only">Search logos</span>
+											<input
+												bind:value={logoSearch}
+												placeholder="Search logos"
+												onkeydown={(event) => {
+													if (event.key === 'Enter') event.preventDefault();
+												}}
+											/>
+										</label>
+										{#if logosQuery.isPending}<div
+												class="logo-loading skeleton"
+											></div>{:else if visibleLogos.length}<div class="logo-options">
+												{#each visibleLogos as logo}<button
+														type="button"
+														class:selected={logo.id === editLogo}
+														aria-pressed={logo.id === editLogo}
+														aria-label={`Select ${logo.name} logo`}
+														onclick={() => {
+															editLogo = logo.id;
+															logoPickerOpen = false;
+														}}
+													>
+														<LogoTile src={logoSrc(logo.image)} name={logo.name} size="md" />
+														<span>{logo.name}</span>
+														{#if logo.id === editLogo}<Check size={15} />{/if}
+													</button>{/each}
+											</div>{:else}<p class="logo-empty">No logos match “{logoSearch}”.</p>{/if}
+										{#if matchingLogos.length > visibleLogos.length}<p class="logo-results">
+												Showing the first {visibleLogos.length} results. Refine your search to see more.
+											</p>{/if}
+									</div>{/if}
+							</div>
+							<button class="app-button app-button--primary" disabled={saving || !editName.trim()}
 								>{saving ? 'Saving…' : 'Save identity'}</button
 							>
 						</section>
@@ -666,7 +733,7 @@
 	.workbench-panes {
 		display: grid;
 		height: calc(100dvh - 4.4rem);
-		grid-template-columns: minmax(16rem, 22rem) minmax(26rem, 1fr) minmax(18rem, 23rem);
+		grid-template-columns: minmax(15rem, 20rem) minmax(23rem, 1fr) minmax(17rem, 21rem);
 	}
 	.workbench-message + .workbench-panes {
 		height: calc(100dvh - 7.1rem);
@@ -948,6 +1015,8 @@
 	.inspector-pane > form > section,
 	.inspector-pane > section {
 		display: grid;
+		width: 100%;
+		min-width: 0;
 		gap: 0.65rem;
 		border-bottom: 1px solid var(--line);
 		padding: 1rem;
@@ -958,18 +1027,165 @@
 	}
 	.inspector-pane label {
 		display: grid;
+		min-width: 0;
 		gap: 0.3rem;
 		color: var(--muted);
 		font-size: 0.65rem;
 	}
-	.inspector-pane input,
-	.inspector-pane select {
+	.inspector-pane input {
+		width: 100%;
+		min-width: 0;
+		max-width: 100%;
 		min-height: 2.6rem;
 		border: 1px solid var(--line);
 		border-radius: 0.65rem;
 		background: var(--surface-raised);
 		padding: 0.5rem 0.65rem;
 		color: var(--text);
+	}
+	.inspector-pane > form {
+		width: 100%;
+		min-width: 0;
+	}
+	.inspector-pane > form .app-button {
+		width: 100%;
+		min-width: 0;
+	}
+	.logo-field {
+		display: grid;
+		min-width: 0;
+		gap: 0.3rem;
+	}
+	.field-label {
+		color: var(--muted);
+		font-size: 0.65rem;
+	}
+	.logo-picker-trigger {
+		display: grid;
+		width: 100%;
+		min-width: 0;
+		min-height: 3.45rem;
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 0.65rem;
+		border: 1px solid var(--line);
+		border-radius: 0.75rem;
+		background: var(--surface-raised);
+		padding: 0.5rem;
+		text-align: left;
+		cursor: pointer;
+	}
+	.logo-picker-trigger:hover,
+	.logo-picker-trigger[aria-expanded='true'] {
+		border-color: color-mix(in oklch, var(--aqua) 55%, var(--line));
+		background: color-mix(in oklch, var(--aqua) 7%, var(--surface-raised));
+	}
+	.logo-picker-trigger > :global(svg) {
+		color: var(--muted);
+		transition: transform var(--layout) var(--ease-out);
+	}
+	.logo-picker-trigger > :global(svg.open) {
+		transform: rotate(180deg);
+	}
+	.logo-picker-copy {
+		display: grid;
+		min-width: 0;
+	}
+	.logo-picker-copy strong,
+	.logo-picker-copy small {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.logo-picker-copy strong {
+		font-size: 0.74rem;
+	}
+	.logo-picker-copy small {
+		color: var(--muted);
+		font-size: 0.58rem;
+	}
+	.logo-picker-panel {
+		display: grid;
+		min-width: 0;
+		gap: 0.55rem;
+		border: 1px solid var(--line);
+		border-radius: 0.8rem;
+		background: var(--deep);
+		padding: 0.55rem;
+	}
+	.logo-search {
+		display: flex !important;
+		min-height: 2.5rem;
+		align-items: center;
+		gap: 0.45rem !important;
+		border: 1px solid var(--line);
+		border-radius: 0.65rem;
+		background: var(--surface);
+		padding: 0 0.6rem;
+		color: var(--muted) !important;
+	}
+	.logo-search input {
+		min-height: 0;
+		border: 0;
+		outline: 0;
+		background: transparent;
+		padding: 0;
+	}
+	.logo-options {
+		display: grid;
+		max-height: 18rem;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.4rem;
+		overflow-y: auto;
+		padding-right: 0.15rem;
+	}
+	.logo-options button {
+		position: relative;
+		display: grid;
+		min-width: 0;
+		min-height: 5.6rem;
+		place-items: center;
+		align-content: center;
+		gap: 0.3rem;
+		border: 1px solid var(--line);
+		border-radius: 0.7rem;
+		background: var(--surface);
+		padding: 0.45rem;
+		cursor: pointer;
+	}
+	.logo-options button:hover,
+	.logo-options button.selected {
+		border-color: var(--aqua);
+		background: color-mix(in oklch, var(--aqua) 10%, var(--surface));
+	}
+	.logo-options button > span:not(:global(.logo-tile)) {
+		width: 100%;
+		overflow: hidden;
+		font-size: 0.61rem;
+		font-weight: 750;
+		text-align: center;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.logo-options button > :global(svg) {
+		position: absolute;
+		top: 0.35rem;
+		right: 0.35rem;
+		border-radius: 50%;
+		background: var(--aqua);
+		padding: 0.12rem;
+		color: var(--ink);
+	}
+	.logo-loading {
+		height: 8rem;
+		border-radius: 0.65rem;
+	}
+	.logo-empty,
+	.logo-results {
+		margin: 0;
+		color: var(--muted);
+		font-size: 0.6rem;
+		text-align: center;
 	}
 	.match-details {
 		display: grid;
