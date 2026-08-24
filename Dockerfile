@@ -99,5 +99,6 @@ COPY xivi_channel.png /xivi/xivi_channel.png
 VOLUME /xivi/config /xivi/serve
 
 EXPOSE $SERVER_PORT
+EXPOSE 65001/udp
 
 ENTRYPOINT ["/xivi/xivi"]

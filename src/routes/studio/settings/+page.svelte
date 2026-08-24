@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createQuery } from '@tanstack/svelte-query';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import {
 		Save,
 		RotateCcw,
@@ -14,6 +14,7 @@
 	import { api } from '$lib/api/client';
 	import StudioHeader from '$lib/components/studio/StudioHeader.svelte';
 	import { preferences, setTheme, type ThemePreference } from '$lib/state/preferences.svelte';
+	const client = useQueryClient();
 
 	type Settings = {
 		application: {
@@ -42,14 +43,7 @@
 		};
 		// Preserve legacy vector values while the settings endpoint still replaces the full document.
 		vector: { batch_size: number; parallel_batches: number; timeout: number; cache_size: number };
-		upnp: {
-			enabled: boolean;
-			manufacturer: string;
-			model_name: string;
-			model_number: string;
-			firmware_name: string;
-			firmware_version: string;
-			device_auth: string;
+		virtual_tuner: {
 			tuner_count: number;
 		};
 	};
@@ -103,8 +97,11 @@
 			if (settings.streaming.client_buffer_mb < 1)
 				next.client_buffer_mb = 'Reserve at least 1 MB per MPEG-TS viewer.';
 		}
-		if (section === 'devices' && settings.upnp.tuner_count < 1)
-			next.tuner_count = 'At least one tuner is required.';
+		if (
+			section === 'devices' &&
+			(settings.virtual_tuner.tuner_count < 1 || settings.virtual_tuner.tuner_count > 255)
+		)
+			next.tuner_count = 'Use between 1 and 255 tuners.';
 		if (section === 'scheduling' && settings.application.updatecron.trim().split(/\s+/).length < 5)
 			next.updatecron = 'Enter a valid five- or six-field cron expression.';
 		errors = next;
@@ -116,7 +113,10 @@
 		message = '';
 		try {
 			await api('/api/settings', { method: 'PUT', body: JSON.stringify(settings) });
-			message = `${section[0].toUpperCase()}${section.slice(1)} settings saved.${['server', 'devices'].includes(section) ? ' Restart Xivi to apply every change.' : ''}`;
+			if (section === 'devices') {
+				await client.invalidateQueries({ queryKey: ['studio', 'device-outputs'] });
+			}
+			message = `${section[0].toUpperCase()}${section.slice(1)} settings saved.${section === 'server' ? ' Restart Xivi to apply every change.' : ''}`;
 		} catch {
 			message = 'Settings could not be saved.';
 		} finally {
@@ -392,29 +392,24 @@
 			<header>
 				<Cast />
 				<div>
-					<p class="eyebrow">Devices / UPnP</p>
-					<h2>Network tuners <span class="restart">Restart</span></h2>
+					<p class="eyebrow">Devices / Virtual Tuner</p>
+					<h2>Virtual network tuners</h2>
 				</div>
 			</header>
 			<div class="fields">
-				<label class="switch-row"
-					><span
-						><strong>UPnP discovery</strong><small
-							>Advertise lineups as compatible tuner devices.</small
-						></span
-					><input type="checkbox" bind:checked={settings.upnp.enabled} /></label
-				><label>Manufacturer<input bind:value={settings.upnp.manufacturer} /></label><label
-					>Model name<input bind:value={settings.upnp.model_name} /></label
-				><label>Model number<input bind:value={settings.upnp.model_number} /></label><label
-					>Firmware name<input bind:value={settings.upnp.firmware_name} /></label
-				><label>Firmware version<input bind:value={settings.upnp.firmware_version} /></label><label
-					>Device auth<input bind:value={settings.upnp.device_auth} /></label
-				><label
-					>Tuner count<input
+				<p class="section-note">
+					Enable virtual tuners individually from <a href="/studio">Device outputs</a> on the Studio
+					overview.
+				</p>
+				<label
+					>Simultaneous tuners per lineup<input
 						type="number"
 						min="1"
-						bind:value={settings.upnp.tuner_count}
-					/>{#if errors.tuner_count}<em>{errors.tuner_count}</em>{/if}</label
+						max="255"
+						bind:value={settings.virtual_tuner.tuner_count}
+					/>{#if errors.tuner_count}<em>{errors.tuner_count}</em>{/if}<small
+						>Advertised capacity only; actual concurrency still depends on your source limits.</small
+					></label
 				>
 			</div>
 			<footer>
@@ -520,6 +515,19 @@
 		display: grid;
 		gap: 0.8rem;
 		padding: 1rem;
+	}
+	.section-note {
+		margin: 0;
+		border: 1px solid var(--line);
+		border-radius: 0.75rem;
+		background: var(--surface-raised);
+		padding: 0.7rem;
+		color: var(--muted);
+		font-size: 0.67rem;
+	}
+	.section-note a {
+		color: var(--periwinkle);
+		font-weight: 750;
 	}
 	.fields.two {
 		grid-template-columns: 1fr 1fr;

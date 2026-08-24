@@ -68,7 +68,6 @@ func UpdateSettings(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
-
 	// Return status 201.
 	return c.SendStatus(fiber.StatusCreated)
 }

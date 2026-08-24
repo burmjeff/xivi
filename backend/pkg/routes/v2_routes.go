@@ -5,8 +5,8 @@ import (
 	"xivi/backend/app/controllers"
 )
 
-// V2Routes is additive: public device, output and legacy JSON contracts remain
-// registered separately and unchanged.
+// V2Routes exposes the product interface API. Public media and virtual tuner
+// contracts are registered separately.
 func V2Routes(a *fiber.App) {
 	v2 := a.Group("/api/v2")
 	v2.Get("/watch/lineups", controllers.V2WatchLineups)
@@ -17,6 +17,8 @@ func V2Routes(a *fiber.App) {
 
 	v2.Get("/studio/overview", controllers.V2StudioOverview)
 	v2.Get("/studio/streaming/status", controllers.V2StreamingStatus)
+	v2.Get("/studio/device-outputs", controllers.V2DeviceOutputs)
+	v2.Patch("/studio/device-outputs/virtual-tuner/:lineup_id", controllers.V2SetLineupVirtualTunerEnabled)
 	v2.Get("/studio/guide-data/coverage", controllers.V2StudioCoverage)
 	v2.Get("/studio/lineups", controllers.V2StudioLineups)
 	v2.Get("/studio/lineups/:lineup_id/groups", controllers.V2StudioLineupGroups)

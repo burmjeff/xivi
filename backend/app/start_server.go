@@ -8,8 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"xivi/backend/pkg/ssdp"
 	"xivi/backend/pkg/utils"
+	"xivi/backend/pkg/virtualtuner"
 	"xivi/backend/platform/cron"
 	"xivi/backend/platform/database"
 	"xivi/backend/platform/settings"
@@ -49,10 +49,14 @@ func StartServer(app *fiber.App) {
 	cron.RunCronJobs()
 	go cron.RunUpdates()
 
-	// Register template devices for UPnP discovery
-	if err := ssdp.RegisterTemplateDevices(); err != nil {
-		log.Error().Msgf("Failed to register template devices: %v", err)
+	if err := virtualtuner.Reconfigure(); err != nil {
+		log.Error().Err(err).Msg("Failed to configure virtual tuner discovery")
 	}
+	defer func() {
+		if err := virtualtuner.Stop(); err != nil {
+			log.Error().Err(err).Msg("Failed to stop virtual tuner discovery")
+		}
+	}()
 
 	// Set up graceful shutdown
 	c := make(chan os.Signal, 1)

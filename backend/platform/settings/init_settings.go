@@ -125,15 +125,8 @@ func SetDefaults() (*AppSettings, error) {
 			Timeout:         90,
 			CacheSize:       500,
 		},
-		UPnP: UPnP{
-			Enabled:         false, // Disabled by default, user must enable
-			Manufacturer:    "XIVI",
-			ModelName:       "XIVI-SSDP",
-			ModelNumber:     "XIVI-SSDP",
-			FirmwareName:    "xivi_ssdp",
-			FirmwareVersion: "20250101",
-			DeviceAuth:      "123456",
-			TunerCount:      6,
+		VirtualTuner: VirtualTuner{
+			TunerCount: 6,
 		},
 	}
 

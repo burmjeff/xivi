@@ -24,6 +24,23 @@
 	import { copyText } from '$lib/browser/clipboard';
 	const client = useQueryClient();
 	type OverviewResponse = { summary: StudioOverview; jobs: OperationJob[] };
+	type TunerDevice = {
+		lineup_id: number;
+		lineup_name: string;
+		enabled: boolean;
+		device_id: string;
+		tuner_count: number;
+		base_url: string;
+		lineup_url: string;
+	};
+	type DeviceOutputsResponse = {
+		virtual_tuner: {
+			enabled_count: number;
+			running: boolean;
+			port: number;
+			devices: TunerDevice[];
+		};
+	};
 	type SystemResponse = {
 		status: {
 			uptime: string;
@@ -55,8 +72,13 @@
 		queryFn: () => api<StreamingStatus>('/api/v2/studio/streaming/status'),
 		refetchInterval: 5_000
 	}));
+	const deviceOutputsQuery = createQuery(() => ({
+		queryKey: ['studio', 'device-outputs'],
+		queryFn: () => api<DeviceOutputsResponse>('/api/v2/studio/device-outputs')
+	}));
 	let copied = $state(''),
 		publishing = $state<number | null>(null),
+		deviceSaving = $state<number | null>(null),
 		publishMessage = $state('');
 	async function copy(value: string) {
 		publishMessage = '';
@@ -82,6 +104,27 @@
 			publishMessage = 'Publishing could not be started.';
 		} finally {
 			publishing = null;
+		}
+	}
+	async function setVirtualTunerEnabled(lineupId: number, lineupName: string, enabled: boolean) {
+		deviceSaving = lineupId;
+		publishMessage = '';
+		try {
+			await api(`/api/v2/studio/device-outputs/virtual-tuner/${lineupId}`, {
+				method: 'PATCH',
+				body: JSON.stringify({ enabled })
+			});
+			await deviceOutputsQuery.refetch();
+			publishMessage = enabled
+				? `${lineupName} is now discoverable as a virtual tuner.`
+				: `${lineupName} is no longer advertised as a virtual tuner.`;
+		} catch {
+			publishMessage = enabled
+				? `${lineupName} could not be enabled. UDP port 65001 may already be in use.`
+				: `${lineupName} could not be disabled.`;
+			await deviceOutputsQuery.refetch();
+		} finally {
+			deviceSaving = null;
 		}
 	}
 	function jobLabel(job: OperationJob) {
@@ -160,34 +203,80 @@
 					<p class="eyebrow">Publication</p>
 					<h2>Device outputs</h2>
 				</div>
-				{#if publishMessage}<span class="publish-message" aria-live="polite">{publishMessage}</span
-					>{/if}
+				<div class="output-heading-actions">
+					{#if publishMessage}<span class="publish-message" aria-live="polite"
+							>{publishMessage}</span
+						>{/if}
+					<div class="tuner-summary">
+						<strong>Virtual Tuner</strong><small
+							class:error={(deviceOutputsQuery.data?.virtual_tuner.enabled_count ?? 0) > 0 &&
+								!deviceOutputsQuery.data?.virtual_tuner.running}
+							>{deviceOutputsQuery.data?.virtual_tuner.running
+								? `${deviceOutputsQuery.data.virtual_tuner.enabled_count} of ${deviceOutputsQuery.data.virtual_tuner.devices.length} lineups discoverable`
+								: (deviceOutputsQuery.data?.virtual_tuner.enabled_count ?? 0) > 0
+									? 'UDP port 65001 unavailable'
+									: 'No lineup tuners enabled'}</small
+						>
+					</div>
+				</div>
 			</header>
 			{#if lineupsQuery.data?.items.length}<div class="output-list">
-					{#each lineupsQuery.data.items as lineup}<article>
+					{#each lineupsQuery.data.items as lineup}{@const tuner =
+							deviceOutputsQuery.data?.virtual_tuner.devices.find(
+								(device) => device.lineup_id === lineup.id
+							)}
+						<article>
 							<div>
 								<strong>{lineup.name}</strong><small
 									>{lineup.channel_count} channels · {lineup.epg_coverage}% guide coverage</small
-								>
+								>{#if tuner?.enabled}<small class="tuner-id"
+										>Virtual tuner {tuner.device_id} · {tuner.tuner_count} connections</small
+									>{/if}
 							</div>
 							<div class="output-links">
-								<button onclick={() => copy(`/m3u/${lineup.name}.m3u`)}
-									>{#if copied === `/m3u/${lineup.name}.m3u`}<Check size={16} />{:else}<Copy
+								<label class="tuner-toggle">
+									<span><strong>Tuner</strong><small>{tuner?.enabled ? 'On' : 'Off'}</small></span>
+									<input
+										type="checkbox"
+										role="switch"
+										aria-label={`Enable virtual tuner for ${lineup.name}`}
+										checked={tuner?.enabled ?? false}
+										disabled={deviceSaving === lineup.id || deviceOutputsQuery.isPending || !tuner}
+										onchange={(event) =>
+											setVirtualTunerEnabled(
+												lineup.id,
+												lineup.name,
+												(event.currentTarget as HTMLInputElement).checked
+											)}
+									/>
+								</label>
+								<button onclick={() => copy(`/m3u/${lineup.name}.m3u`)}>
+									{#if copied === `/m3u/${lineup.name}.m3u`}<Check size={16} />{:else}<Copy
 											size={16}
-										/>{/if}M3U</button
-								><button onclick={() => copy(`/xmltv/${lineup.name}.xml`)}
-									>{#if copied === `/xmltv/${lineup.name}.xml`}<Check size={16} />{:else}<Copy
+										/>{/if}M3U
+								</button>
+								<button onclick={() => copy(`/xmltv/${lineup.name}.xml`)}>
+									{#if copied === `/xmltv/${lineup.name}.xml`}<Check size={16} />{:else}<Copy
 											size={16}
-										/>{/if}XMLTV</button
-								><button
+										/>{/if}XMLTV
+								</button>
+								{#if tuner?.enabled}
+									<button onclick={() => copy(tuner.base_url)}>
+										{#if copied === tuner.base_url}<Check size={16} />{:else}<Copy
+												size={16}
+											/>{/if}Tuner
+									</button>
+								{/if}
+								<button
 									class="publish"
 									disabled={publishing === lineup.id}
 									onclick={() => publish(lineup.id)}
-									><RefreshCw
+								>
+									<RefreshCw
 										class={publishing === lineup.id ? 'spin' : undefined}
 										size={16}
-									/>{publishing === lineup.id ? 'Publishing' : 'Publish'}</button
-								>
+									/>{publishing === lineup.id ? 'Publishing' : 'Publish'}
+								</button>
 							</div>
 						</article>{/each}
 				</div>{:else}<div class="empty-inline">
@@ -360,6 +449,91 @@
 	.output-panel {
 		grid-column: 1/4;
 		overflow: hidden;
+	}
+	.output-heading-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.8rem;
+	}
+	.tuner-toggle {
+		display: flex;
+		min-height: 2.7rem;
+		align-items: center;
+		gap: 0.7rem;
+		border: 1px solid var(--line);
+		border-radius: 0.8rem;
+		background: var(--surface-raised);
+		padding: 0.4rem 0.65rem;
+		cursor: pointer;
+	}
+	.tuner-summary {
+		display: grid;
+		text-align: right;
+	}
+	.tuner-summary strong {
+		font-size: 0.68rem;
+	}
+	.tuner-summary small {
+		color: var(--muted);
+		font-size: 0.56rem;
+	}
+	.tuner-summary small.error {
+		color: var(--error);
+	}
+	.tuner-toggle span {
+		display: grid;
+	}
+	.tuner-toggle strong {
+		font-size: 0.68rem;
+	}
+	.tuner-toggle small {
+		color: var(--muted);
+		font-size: 0.56rem;
+	}
+	.tuner-toggle input {
+		position: relative;
+		box-sizing: border-box;
+		width: 2.6rem;
+		height: 1.4rem;
+		appearance: none;
+		border: 1px solid color-mix(in oklch, var(--muted) 55%, var(--line));
+		border-radius: 999px;
+		background: var(--line);
+		cursor: pointer;
+		transition:
+			background 120ms ease-out,
+			border-color 120ms ease-out;
+	}
+	.tuner-toggle input::after {
+		position: absolute;
+		top: 0.15rem;
+		left: 0.15rem;
+		width: 0.98rem;
+		height: 0.98rem;
+		border-radius: 50%;
+		background: var(--surface);
+		box-shadow: 0 1px 3px color-mix(in oklch, var(--ink) 24%, transparent);
+		content: '';
+		transition: transform 120ms ease-out;
+	}
+	.tuner-toggle input:checked {
+		border-color: var(--aqua);
+		background: var(--aqua);
+	}
+	.tuner-toggle input:checked::after {
+		transform: translateX(1.18rem);
+	}
+	.tuner-toggle input:focus-visible {
+		outline: 3px solid color-mix(in oklch, var(--periwinkle) 48%, transparent);
+		outline-offset: 2px;
+	}
+	.tuner-toggle input:disabled {
+		cursor: wait;
+		opacity: 0.65;
+	}
+	.tuner-id {
+		color: var(--periwinkle) !important;
+		font-family: var(--font-mono, monospace);
 	}
 	.jobs-panel {
 		grid-column: 4;
@@ -620,6 +794,15 @@
 		.output-list article {
 			align-items: flex-start;
 			flex-direction: column;
+		}
+		.output-panel > header,
+		.output-heading-actions {
+			width: 100%;
+			align-items: stretch;
+			flex-direction: column;
+		}
+		.tuner-toggle {
+			justify-content: space-between;
 		}
 		.output-links {
 			width: 100%;

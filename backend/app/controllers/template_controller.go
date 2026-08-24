@@ -5,8 +5,8 @@ import (
 	"strconv"
 
 	"xivi/backend/app/models"
-	"xivi/backend/pkg/ssdp"
 	"xivi/backend/pkg/utils"
+	"xivi/backend/pkg/virtualtuner"
 	"xivi/backend/platform/database"
 
 	"github.com/gofiber/fiber/v2"
@@ -127,12 +127,6 @@ func CreateTemplate(c *fiber.Ctx) error {
 
 	template.ID = id
 
-	// Register SSDP device for the new template
-	if err := ssdp.RegisterTemplateDevice(*template); err != nil {
-		log.Error().Msgf("Failed to register SSDP device for template %s: %v", template.Name, err)
-		// Don't fail the template creation if SSDP registration fails
-	}
-
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
 		"error":    false,
@@ -234,12 +228,6 @@ func DeleteTemplate(c *fiber.Ctx) error {
 
 	go m3uTools.RemoveTemplate(template)
 
-	// Unregister SSDP device for the template
-	if err := ssdp.UnregisterTemplateDevice(template_id); err != nil {
-		log.Error().Msgf("Failed to unregister SSDP device for template %d: %v", template_id, err)
-		// Don't fail the template deletion if SSDP unregistration fails
-	}
-
 	// Delete template by given ID.
 	if err := database.Db.DeleteTemplate(template_id); err != nil {
 		// Return status 500 and error message.
@@ -247,6 +235,9 @@ func DeleteTemplate(c *fiber.Ctx) error {
 			"error": true,
 			"msg":   err.Error(),
 		})
+	}
+	if err := virtualtuner.Reconfigure(); err != nil {
+		log.Error().Err(err).Msg("Virtual tuner discovery could not be reconfigured after lineup deletion")
 	}
 
 	// Return status 204 no content.

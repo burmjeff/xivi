@@ -65,10 +65,10 @@ func (q *TemplateQueries) GetTemplate(id int64) (*models.Template, error) {
 // Create a template by given Template object.
 func (q *TemplateQueries) CreateTemplate(p *models.Template) (int64, error) {
 	// Define query string.
-	query := `INSERT INTO template VALUES (null, ?)`
+	query := `INSERT INTO template (name, virtual_tuner_enabled) VALUES (?, ?)`
 
 	// Send query to database.
-	res, err := q.Exec(query, p.Name)
+	res, err := q.Exec(query, p.Name, p.VirtualTunerEnabled)
 	if err != sql.ErrNoRows && err != nil {
 		return 0, err
 	}
@@ -81,6 +81,24 @@ func (q *TemplateQueries) CreateTemplate(p *models.Template) (int64, error) {
 
 	// This query returns nothing.
 	return id, nil
+}
+
+// SetTemplateVirtualTunerEnabled controls whether a lineup is exposed as a
+// virtual network tuner. Keeping this on the lineup prevents one setting from
+// unintentionally advertising every output.
+func (q *TemplateQueries) SetTemplateVirtualTunerEnabled(id int64, enabled bool) error {
+	result, err := q.Exec(`UPDATE template SET virtual_tuner_enabled = ? WHERE id = ?`, enabled, id)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // Update a template by given Template object.
@@ -312,13 +330,30 @@ func (q *TemplateQueries) GetTmplChannels(id int64) ([]models.TemplateChannel, e
 	JOIN template_group_channel tgc ON tc.id = tgc.channel_id
 	JOIN template_group_item tgi ON tgc.group_id = tgi.group_id
 	WHERE tgi.template_id = ?
-	ORDER BY tgc.orderr ASC`
+	ORDER BY tgi.orderr ASC, tgc.orderr ASC, tc.id ASC`
 
 	err := q.Select(&channels, query, id)
 	if err != nil {
 		return nil, err
 	}
 
+	return channels, nil
+}
+
+// GetPlayableTmplChannels returns the stable, published channel order while
+// omitting channels that have no source variant to tune.
+func (q *TemplateQueries) GetPlayableTmplChannels(id int64) ([]models.TemplateChannel, error) {
+	channels := []models.TemplateChannel{}
+	query := `SELECT tc.* FROM templatechannel tc
+	JOIN template_group_channel tgc ON tc.id = tgc.channel_id
+	JOIN template_group_item tgi ON tgc.group_id = tgi.group_id
+	WHERE tgi.template_id = ?
+	AND EXISTS (SELECT 1 FROM templatechannelitem tci WHERE tci.channel_id = tc.id)
+	ORDER BY tgi.orderr ASC, tgc.orderr ASC, tc.id ASC`
+
+	if err := q.Select(&channels, query, id); err != nil {
+		return nil, err
+	}
 	return channels, nil
 }
 

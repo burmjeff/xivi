@@ -116,6 +116,38 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/studio/device-outputs': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getDeviceOutputs'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/device-outputs/virtual-tuner/{lineup_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['setLineupVirtualTunerEnabled'];
+		trace?: never;
+	};
 	'/studio/guide-data/coverage': {
 		parameters: {
 			query?: never;
@@ -649,6 +681,27 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
 	schemas: {
+		VirtualTunerDevice: {
+			/** Format: int64 */
+			lineup_id: number;
+			lineup_name: string;
+			enabled: boolean;
+			device_id: string;
+			tuner_count: number;
+			/** Format: uri */
+			base_url: string;
+			/** Format: uri */
+			lineup_url: string;
+		};
+		DeviceOutputs: {
+			virtual_tuner: {
+				enabled_count: number;
+				running: boolean;
+				/** @constant */
+				port: 65001;
+				devices: components['schemas']['VirtualTunerDevice'][];
+			};
+		};
 		APIError: {
 			code: string;
 			message: string;
@@ -1229,6 +1282,56 @@ export interface operations {
 					'application/json': components['schemas']['StreamingStatus'];
 				};
 			};
+		};
+	};
+	getDeviceOutputs: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Virtual tuner state and the device generated for every lineup. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['DeviceOutputs'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	setLineupVirtualTunerEnabled: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				lineup_id: components['parameters']['LineupId'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': {
+					enabled: boolean;
+				};
+			};
+		};
+		responses: {
+			/** @description Updated virtual tuner state. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['DeviceOutputs'];
+				};
+			};
+			default: components['responses']['Error'];
 		};
 	};
 	getGuideCoverage: {

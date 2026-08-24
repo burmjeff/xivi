@@ -88,14 +88,12 @@ func PublicRoutes(a *fiber.App) {
 	router.Get("/stream/hls/:stream_id/:asset", controllers.GetHlsAsset)
 	api.Get("/channels/hls/:group_id", controllers.GetHlsChannels)
 
-	// Template-specific SSDP endpoints
-	router.Get("/template/:template_id/discover.json", controllers.GetTemplateDiscover)          //template discovery
-	router.Get("/template/:template_id/lineup_status.json", controllers.GetTemplateLineupStatus) //template lineup status
-	router.Get("/template/:template_id/lineup.json", controllers.GetTemplateLineup)              //template lineup
-	router.Post("/template/:template_id/lineup.post", controllers.PostTemplateLineup)            //template lineup POST
-
-	// UPnP device description endpoints
-	router.Get("/upnp/device/:device_uuid.xml", controllers.GetDeviceDescription) //UPnP device description XML
+	// Each enabled lineup is exposed as an independent virtual network tuner.
+	router.Get("/virtual-tuner/:lineup_id/discover.json", controllers.GetVirtualTunerDiscover)
+	router.Get("/virtual-tuner/:lineup_id/lineup_status.json", controllers.GetVirtualTunerLineupStatus)
+	router.Get("/virtual-tuner/:lineup_id/lineup.json", controllers.GetVirtualTunerLineup)
+	router.Post("/virtual-tuner/:lineup_id/lineup.post", controllers.PostVirtualTunerLineup)
+	router.Get("/virtual-tuner/:lineup_id/device.xml", controllers.GetVirtualTunerDeviceDescription)
 
 	// App Routes
 	router.Use("/images", filesystem.New(filesystem.Config{

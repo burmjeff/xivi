@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Xivi Interface API
   version: 2.0.0
-  description: Additive API for the Xivi Watch and Studio interfaces. Public device and output contracts remain unchanged.
+  description: Additive API for the Xivi Watch and Studio interfaces, including virtual tuner output controls.
 servers:
   - url: /api/v2
 paths:
@@ -82,6 +82,36 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/StreamingStatus' }
+  /studio/device-outputs:
+    get:
+      operationId: getDeviceOutputs
+      responses:
+        '200':
+          description: Virtual tuner state and the device generated for every lineup.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceOutputs' }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/device-outputs/virtual-tuner/{lineup_id}:
+    patch:
+      operationId: setLineupVirtualTunerEnabled
+      parameters: [{ $ref: '#/components/parameters/LineupId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '200':
+          description: Updated virtual tuner state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceOutputs' }
+        default: { $ref: '#/components/responses/Error' }
   /studio/guide-data/coverage:
     get:
       operationId: getGuideCoverage
@@ -595,6 +625,29 @@ components:
               job_id: { type: integer, format: int64 }
               status: { type: string, enum: [queued] }
   schemas:
+    VirtualTunerDevice:
+      type: object
+      required: [lineup_id, lineup_name, enabled, device_id, tuner_count, base_url, lineup_url]
+      properties:
+        lineup_id: { type: integer, format: int64 }
+        lineup_name: { type: string }
+        enabled: { type: boolean }
+        device_id: { type: string, pattern: '^[0-9A-F]{8}$' }
+        tuner_count: { type: integer, minimum: 1, maximum: 255 }
+        base_url: { type: string, format: uri }
+        lineup_url: { type: string, format: uri }
+    DeviceOutputs:
+      type: object
+      required: [virtual_tuner]
+      properties:
+        virtual_tuner:
+          type: object
+          required: [enabled_count, running, port, devices]
+          properties:
+            enabled_count: { type: integer, minimum: 0 }
+            running: { type: boolean }
+            port: { type: integer, const: 65001 }
+            devices: { type: array, items: { $ref: '#/components/schemas/VirtualTunerDevice' } }
     APIError:
       type: object
       required: [code, message, retryable]
