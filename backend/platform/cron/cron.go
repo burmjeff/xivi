@@ -156,7 +156,10 @@ func UpdateEpgs() {
 
 	for _, epg := range *epgs {
 		log.Log().Msgf("Updating EPG: %s", epg.Name)
-		utils.ParseEpg(&epg)
+		if err := utils.ParseEpg(&epg); err != nil {
+			log.Error().Err(err).Str("epg", epg.Name).Msg("EPG update failed")
+			continue
+		}
 		log.Log().Msgf("Finished Updating EPG: %s", epg.Name)
 	}
 

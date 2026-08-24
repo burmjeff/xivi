@@ -400,7 +400,7 @@ func V2UpdateStudioChannel(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-func queueV2Job(c *fiber.Ctx, kind, resource string, resourceID int64, queuedMessage, runningMessage, successMessage string, work func()) error {
+func queueV2Job(c *fiber.Ctx, kind, resource string, resourceID int64, queuedMessage, runningMessage, successMessage string, work func() error) error {
 	job, err := database.Db.CreateJob(c.UserContext(), kind, resource, &resourceID, queuedMessage)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "job_unavailable", "The operation could not be queued.", true)
@@ -413,7 +413,15 @@ func queueV2Job(c *fiber.Ctx, kind, resource string, resourceID int64, queuedMes
 				_ = database.Db.UpdateJob(ctx, jobID, "failed", 100, "The operation stopped unexpectedly.", "worker_panic")
 			}
 		}()
-		work()
+		if workErr := work(); workErr != nil {
+			message := strings.TrimSpace(workErr.Error())
+			if message == "" {
+				message = "The operation failed."
+			}
+			errorCode := fmt.Sprintf("%s_%s_failed", resource, kind)
+			_ = database.Db.UpdateJob(ctx, jobID, "failed", 100, message, errorCode)
+			return
+		}
 		_ = database.Db.UpdateJob(ctx, jobID, "succeeded", 100, successMessage, "")
 	}(job.ID)
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"job_id": job.ID, "status": job.Status})
@@ -428,11 +436,12 @@ func V2RefreshSource(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusNotFound, "source_not_found", "That playlist source was not found.", false)
 	}
-	return queueV2Job(c, "refresh", "playlist", id, "Playlist refresh queued.", "Importing playlist channels…", "Playlist refresh complete.", func() {
+	return queueV2Job(c, "refresh", "playlist", id, "Playlist refresh queued.", "Importing playlist channels…", "Playlist refresh complete.", func() error {
 		startedAt := time.Now()
 		parser := utils.M3uParser{}
 		parser.ParseM3u(*playlist)
 		cron.CleanPlaylist(*playlist, startedAt)
+		return nil
 	})
 }
 
@@ -445,9 +454,12 @@ func V2RefreshGuideSource(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusNotFound, "guide_source_not_found", "That guide source was not found.", false)
 	}
-	return queueV2Job(c, "refresh", "epg", id, "Guide refresh queued.", "Importing XMLTV schedule…", "Guide refresh complete.", func() {
-		utils.ParseEpg(epg)
+	return queueV2Job(c, "refresh", "epg", id, "Guide refresh queued.", "Importing XMLTV schedule…", "Guide refresh complete.", func() error {
+		if err := utils.ParseEpg(epg); err != nil {
+			return fmt.Errorf("guide refresh failed: %w", err)
+		}
 		cron.CleanupOldEpgProgrammes()
+		return nil
 	})
 }
 
@@ -460,9 +472,10 @@ func V2PublishLineup(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusNotFound, "lineup_not_found", "That lineup was not found.", false)
 	}
-	return queueV2Job(c, "publish", "lineup", id, "Publication queued.", "Building M3U and XMLTV outputs…", "Lineup published.", func() {
+	return queueV2Job(c, "publish", "lineup", id, "Publication queued.", "Building M3U and XMLTV outputs…", "Lineup published.", func() error {
 		utils.NewM3uTools().CreateM3u(*lineup)
 		utils.CreateEpgXML(*lineup)
+		return nil
 	})
 }
 

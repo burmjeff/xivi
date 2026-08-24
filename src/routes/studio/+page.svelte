@@ -156,14 +156,17 @@
 				<p class="eyebrow">Activity</p>
 				<h2>Recent jobs</h2>
 			</header>
-			{#if overviewQuery.data.jobs.length}<div class="jobs">
-					{#each overviewQuery.data.jobs as job}<article>
+			{#if overviewQuery.data.jobs.length}<div class="jobs" aria-live="polite">
+					{#each overviewQuery.data.jobs as job}<article class:failed={job.status === 'failed'}>
 							<span
 								class:failed={job.status === 'failed'}
 								class:complete={job.status === 'succeeded'}
+								aria-hidden="true"
 							></span>
 							<div><strong>{jobLabel(job)}</strong><small>{job.message || job.status}</small></div>
-							<b class="tabular">{job.progress}%</b>
+							<b class="tabular" class:failed={job.status === 'failed'}
+								>{job.status === 'failed' ? 'Failed' : `${job.progress}%`}</b
+							>
 						</article>{/each}
 				</div>{:else}<div class="empty-inline">
 					<p>No background work is running. Refreshes and publishing jobs will appear here.</p>
@@ -328,6 +331,10 @@
 	.jobs article > span.failed {
 		background: var(--error);
 	}
+	.jobs article.failed {
+		align-items: flex-start;
+		background: color-mix(in oklch, var(--error) 9%, transparent);
+	}
 	.jobs article > div {
 		display: grid;
 		min-width: 0;
@@ -343,8 +350,17 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
+	.jobs article.failed small {
+		overflow: visible;
+		color: var(--error);
+		overflow-wrap: anywhere;
+		white-space: normal;
+	}
 	.jobs b {
 		font-size: 0.7rem;
+	}
+	.jobs b.failed {
+		color: var(--error);
 	}
 	details {
 		border-top: 1px solid var(--line);

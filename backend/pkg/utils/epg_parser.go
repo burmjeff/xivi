@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -25,8 +26,10 @@ const (
 	MaxRetries         = 5   // Number of retries for database operations
 )
 
-// ParseEpg parses an EPG file and stores the data in the database
-func ParseEpg(epg *models.Epg) {
+// ParseEpg parses an EPG file and stores the data in the database.
+// Errors are returned so callers that track background work can report an
+// accurate failed state instead of treating a logged error as success.
+func ParseEpg(epg *models.Epg) error {
 	start := time.Now()
 	ctx := context.Background()
 
@@ -47,7 +50,7 @@ func ParseEpg(epg *models.Epg) {
 	epgItem, err := fetchAndParseEPG(ctx, epg, client)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to parse EPG data")
-		return
+		return fmt.Errorf("could not load guide data: %w", err)
 	}
 
 	// Process channels in batches
@@ -68,12 +71,14 @@ func ParseEpg(epg *models.Epg) {
 	err = database.Db.UpdateEpg(ctx, epg.ID, epg)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to update EPG timestamp")
+		return fmt.Errorf("could not finish the guide import: %w", err)
 	}
 
 	log.Info().Dur("duration", time.Since(start)).Msg("EPG Parser Finished")
 
 	// Generate EPG XML files for all templates in parallel
 	generateEPGFiles(ctx)
+	return nil
 }
 
 // fetchAndParseEPG fetches and parses the EPG data from a URL or file
@@ -95,6 +100,10 @@ func fetchAndParseEPG(ctx context.Context, epg *models.Epg, client *http.Client)
 		resp, err := client.Do(req)
 		if err != nil {
 			return models.EpgItem{}, err
+		}
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			resp.Body.Close()
+			return models.EpgItem{}, fmt.Errorf("guide source returned %s", resp.Status)
 		}
 
 		cleanup = func() { resp.Body.Close() }
