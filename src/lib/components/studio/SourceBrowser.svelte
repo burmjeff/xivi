@@ -48,7 +48,7 @@
 		searchInput = $state(''),
 		searchQuery = $state(''),
 		expandedGroupId = $state<number | null>(null),
-		lastBrowseKey = '';
+		lastSearchValue = '';
 
 	$effect(() => {
 		const value = searchInput.trim();
@@ -205,12 +205,9 @@
 			void channelsQuery.fetchNextPage();
 	});
 	$effect(() => {
-		const browseKey = searchInput.trim()
-			? `search:${searchQuery}`
-			: `group:${expandedGroupId ?? 0}`;
-		if (sourceViewport && lastBrowseKey && browseKey !== lastBrowseKey)
-			sourceViewport.scrollTop = 0;
-		lastBrowseKey = browseKey;
+		const searchValue = searchInput.trim();
+		if (sourceViewport && searchValue !== lastSearchValue) sourceViewport.scrollTop = 0;
+		lastSearchValue = searchValue;
 	});
 
 	function toggleGroup(group: SourceGroup) {
