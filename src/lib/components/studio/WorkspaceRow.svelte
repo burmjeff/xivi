@@ -100,7 +100,8 @@
 			>Select {channel.name}</span
 		></label
 	><button class="row-main" onclick={onselect}
-		><LogoTile src={channel.logo_url} name={channel.name} size="sm" /><span class="row-copy"
+		><LogoTile src={channel.logo_url} name={channel.name} size="sm" contrast /><span
+			class="row-copy"
 			><strong>{channel.name}</strong><small
 				>{channel.tvg_id || 'No TVG ID'} · {channel.source_count} source{channel.source_count === 1
 					? ''

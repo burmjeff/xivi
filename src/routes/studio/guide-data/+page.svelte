@@ -14,6 +14,7 @@
 	} from '@lucide/svelte';
 	import { api } from '$lib/api/client';
 	import type { CoverageSummary, LegacyEpg } from '$lib/api/types';
+	import LogoTile from '$lib/components/brand/LogoTile.svelte';
 	import StudioHeader from '$lib/components/studio/StudioHeader.svelte';
 
 	type EpgResponse = { epgs: LegacyEpg[]; count: number };
@@ -289,9 +290,12 @@
 		>
 		<div class="logo-grid">
 			{#each filteredLogos as logo}<article>
-					<div class="logo-image">
-						<img src={logo.image.startsWith('/') ? logo.image : `/${logo.image}`} alt="" />
-					</div>
+					<LogoTile
+						src={logo.image.startsWith('/') ? logo.image : `/${logo.image}`}
+						name={logo.name}
+						size="md"
+						contrast
+					/>
 					<strong>{logo.name}</strong><button
 						onclick={() => removeLogo(logo)}
 						aria-label={`Delete ${logo.name}`}><Trash2 size={15} /></button
@@ -530,21 +534,6 @@
 		border-right: 1px solid var(--line);
 		border-bottom: 1px solid var(--line);
 		padding: 0.6rem;
-	}
-	.logo-image {
-		display: grid;
-		width: 3rem;
-		height: 3rem;
-		place-items: center;
-		overflow: hidden;
-		border: 1px solid var(--line);
-		border-radius: 0.65rem;
-		background: var(--paper);
-	}
-	.logo-image img {
-		width: 100%;
-		height: 100%;
-		object-fit: contain;
 	}
 	.logos article strong {
 		overflow: hidden;

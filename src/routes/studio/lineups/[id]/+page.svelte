@@ -419,7 +419,7 @@
 							class:selected={source.id === selectedSourceId}
 						>
 							<button class="source-select" onclick={() => (selectedSourceId = source.id)}>
-								<LogoTile src={source.logo_url} name={source.name} size="sm" />
+								<LogoTile src={source.logo_url} name={source.name} size="sm" contrast />
 								<span class="source-copy">
 									<strong>{source.name}</strong><small
 										>{source.playlist_name} · {source.group_name}</small
@@ -554,6 +554,7 @@
 											src={logoSrc(selectedLogo?.image)}
 											name={selectedLogo?.name ?? 'Signal Tile'}
 											size="sm"
+											contrast
 										/>{/key}
 									<span class="logo-picker-copy">
 										<strong>{selectedLogo?.name ?? 'Signal Tile'}</strong>
@@ -586,7 +587,12 @@
 															logoPickerOpen = false;
 														}}
 													>
-														<LogoTile src={logoSrc(logo.image)} name={logo.name} size="md" />
+														<LogoTile
+															src={logoSrc(logo.image)}
+															name={logo.name}
+															size="md"
+															contrast
+														/>
 														<span>{logo.name}</span>
 														{#if logo.id === editLogo}<Check size={15} />{/if}
 													</button>{/each}
