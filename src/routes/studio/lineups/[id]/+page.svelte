@@ -2085,12 +2085,14 @@
 	}
 	.rejections li {
 		display: grid;
-		gap: 0.55rem;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 0.45rem;
 		border: 1px solid color-mix(in oklch, var(--error) 24%, var(--line));
 		border-left: 2px solid var(--error);
 		border-radius: 0.7rem;
 		background: color-mix(in oklch, var(--error) 5%, var(--surface-raised));
-		padding: 0.55rem;
+		padding: 0.45rem 0.5rem;
 	}
 	.rejection-main {
 		display: flex;
