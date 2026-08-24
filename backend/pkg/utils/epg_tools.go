@@ -25,9 +25,16 @@ const (
 
 // CreateEpgXML generates an EPG XML file for a template.
 func CreateEpgXML(template models.Template) error {
+	return CreateEpgXMLWithProgress(template, nil)
+}
+
+// CreateEpgXMLWithProgress generates an EPG XML file while reporting the
+// measurable stages of channel, programme, and output generation.
+func CreateEpgXMLWithProgress(template models.Template, reporter ProgressReporter) error {
 	start := time.Now()
 	ctx := context.Background()
 	log.Info().Str("template", template.Name).Msg("Creating EPG XML")
+	reportProgress(reporter, 5, "Loading lineup channels for XMLTV…")
 
 	// Initialize EPG item with metadata
 	epg := models.EpgItem{
@@ -46,6 +53,7 @@ func CreateEpgXML(template models.Template) error {
 		log.Warn().Int64("template_id", template.ID).Msg("No channels found for template")
 		return fmt.Errorf("could not build the XMLTV export: the lineup has no channels")
 	}
+	reportProgress(reporter, 10, fmt.Sprintf("Preparing %d XMLTV channels…", len(channels)))
 
 	// Ensure directory exists
 	if err := os.MkdirAll(settings.EPG_FILEPATH, 0755); err != nil {
@@ -121,8 +129,11 @@ func CreateEpgXML(template models.Template) error {
 	}()
 
 	// Collect channels
+	collectedChannels := 0
 	for channel := range channelChan {
 		epg.Channels = append(epg.Channels, channel)
+		collectedChannels++
+		reportProgress(reporter, 10+collectedChannels*20/len(channels), fmt.Sprintf("Preparing XMLTV channels… %d/%d", collectedChannels, len(channels)))
 	}
 
 	// Wait for channel collection to complete
@@ -192,8 +203,11 @@ func CreateEpgXML(template models.Template) error {
 	}()
 
 	// Collect programmes
+	collectedProgrammes := 0
 	for programmes := range programmeChan {
 		epg.Programmes = append(epg.Programmes, programmes...)
+		collectedProgrammes++
+		reportProgress(reporter, 30+collectedProgrammes*45/len(epg.Channels), fmt.Sprintf("Gathering schedules… %d/%d channels", collectedProgrammes, len(epg.Channels)))
 	}
 	for programmeErr := range programmeErrors {
 		log.Error().Err(programmeErr).Int64("template_id", template.ID).Msg("Failed to build XMLTV programmes")
@@ -201,12 +215,14 @@ func CreateEpgXML(template models.Template) error {
 	}
 
 	// Encode EPG to XML
+	reportProgress(reporter, 82, fmt.Sprintf("Encoding %d programmes to XMLTV…", len(epg.Programmes)))
 	if err := encoder.Encode(epg); err != nil {
 		log.Error().Err(err).Msg("Failed to encode EPG to XML")
 		return fmt.Errorf("could not encode the XMLTV export: %w", err)
 	}
 
 	// Flush buffer to file
+	reportProgress(reporter, 92, "Finalizing XMLTV output…")
 	if err := bufWriter.Flush(); err != nil {
 		log.Error().Err(err).Msg("Failed to flush XML buffer")
 		return fmt.Errorf("could not finish writing the XMLTV export: %w", err)
@@ -223,6 +239,7 @@ func CreateEpgXML(template models.Template) error {
 		return fmt.Errorf("could not replace the XMLTV export: %w", err)
 	}
 
+	reportProgress(reporter, 98, "XMLTV output is ready.")
 	log.Info().Str("template", template.Name).Dur("duration", time.Since(start)).Msg("EPG XML created successfully")
 	return nil
 }

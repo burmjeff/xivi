@@ -982,6 +982,7 @@ export interface components {
 			resource_id?: number;
 			/** @enum {string} */
 			status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+			/** @description Zero on a running job means the total work is not yet known. */
 			progress: number;
 			message?: string;
 			error_code?: string;

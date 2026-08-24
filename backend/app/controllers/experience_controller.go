@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/app/queries"
@@ -274,8 +275,12 @@ func V2CreateStudioGroup(c *fiber.Ctx) error {
 	if request.SourceLink == nil {
 		return c.Status(fiber.StatusCreated).JSON(fiber.Map{"group_id": groupID})
 	}
-	job, err := launchV2Job(c.UserContext(), "sync", "group", groupID, "Group sync queued.", "Reconciling the source group…", "Synced group updated.", func() error {
-		_, err := database.Db.SyncSourceGroup(context.Background(), groupID)
+	job, err := launchV2Job(c.UserContext(), "sync", "group", groupID, "Group sync queued.", "Reconciling the source group…", "Synced group updated.", func(report jobProgressFunc) error {
+		report(15, "Loading the source group connection…")
+		result, err := database.Db.SyncSourceGroup(context.Background(), groupID)
+		if err == nil {
+			report(92, fmt.Sprintf("Source group synchronized: %d added, %d updated, %d removed.", result.AddedCount, result.UpdatedCount, result.RemovedCount))
+		}
 		return err
 	})
 	if err != nil {
@@ -414,8 +419,12 @@ func V2SetStudioGroupSourceLink(c *fiber.Ctx) error {
 	if err := database.Db.SetSourceGroupLink(c.UserContext(), groupID, request); err != nil {
 		return studioGroupError(c, err)
 	}
-	return queueV2Job(c, "sync", "group", groupID, "Group sync queued.", "Reconciling the source group…", "Synced group updated.", func() error {
-		_, err := database.Db.SyncSourceGroup(context.Background(), groupID)
+	return queueV2Job(c, "sync", "group", groupID, "Group sync queued.", "Reconciling the source group…", "Synced group updated.", func(report jobProgressFunc) error {
+		report(15, "Loading the source group connection…")
+		result, err := database.Db.SyncSourceGroup(context.Background(), groupID)
+		if err == nil {
+			report(92, fmt.Sprintf("Source group synchronized: %d added, %d updated, %d removed.", result.AddedCount, result.UpdatedCount, result.RemovedCount))
+		}
 		return err
 	})
 }
@@ -440,8 +449,12 @@ func V2SyncStudioGroup(c *fiber.Ctx) error {
 	if _, err := database.Db.GetSourceGroupLink(c.UserContext(), groupID); err != nil {
 		return v2Error(c, fiber.StatusNotFound, "source_link_not_found", "This group is not connected to a source group.", false)
 	}
-	return queueV2Job(c, "sync", "group", groupID, "Group sync queued.", "Reconciling the source group…", "Synced group updated.", func() error {
-		_, err := database.Db.SyncSourceGroup(context.Background(), groupID)
+	return queueV2Job(c, "sync", "group", groupID, "Group sync queued.", "Reconciling the source group…", "Synced group updated.", func(report jobProgressFunc) error {
+		report(15, "Loading the source group connection…")
+		result, err := database.Db.SyncSourceGroup(context.Background(), groupID)
+		if err == nil {
+			report(92, fmt.Sprintf("Source group synchronized: %d added, %d updated, %d removed.", result.AddedCount, result.UpdatedCount, result.RemovedCount))
+		}
 		return err
 	})
 }
@@ -741,20 +754,59 @@ func V2UpdateStudioChannel(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-func launchV2Job(ctx context.Context, kind, resource string, resourceID int64, queuedMessage, runningMessage, successMessage string, work func() error) (*models.OperationJob, error) {
+type jobProgressFunc func(progress int, message string)
+
+type v2JobProgressReporter struct {
+	mu           sync.Mutex
+	jobID        int64
+	lastProgress int
+	lastMessage  string
+	lastWrite    time.Time
+}
+
+func (r *v2JobProgressReporter) report(progress int, message string, force bool) {
+	if progress < 0 {
+		progress = 0
+	}
+	if progress > 99 {
+		progress = 99
+	}
+	message = strings.TrimSpace(message)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if progress < r.lastProgress || (progress == r.lastProgress && message == r.lastMessage) {
+		return
+	}
+	now := time.Now()
+	if !force && !r.lastWrite.IsZero() && now.Sub(r.lastWrite) < 500*time.Millisecond {
+		return
+	}
+	r.lastProgress = progress
+	r.lastMessage = message
+	r.lastWrite = now
+	persistV2JobUpdate(context.Background(), r.jobID, "running", progress, message, "")
+}
+
+func (r *v2JobProgressReporter) Report(progress int, message string) {
+	r.report(progress, message, false)
+}
+
+func launchV2Job(ctx context.Context, kind, resource string, resourceID int64, queuedMessage, runningMessage, successMessage string, work func(jobProgressFunc) error) (*models.OperationJob, error) {
 	job, err := database.Db.CreateJob(ctx, kind, resource, &resourceID, queuedMessage)
 	if err != nil {
 		return nil, err
 	}
 	go func(jobID int64) {
 		ctx := context.Background()
-		persistV2JobUpdate(ctx, jobID, "running", 10, runningMessage, "")
+		reporter := &v2JobProgressReporter{jobID: jobID}
+		reporter.report(0, runningMessage, true)
 		defer func() {
 			if recovered := recover(); recovered != nil {
 				persistV2JobUpdate(ctx, jobID, "failed", 100, "The operation stopped unexpectedly.", "worker_panic")
 			}
 		}()
-		if workErr := work(); workErr != nil {
+		if workErr := work(reporter.Report); workErr != nil {
 			message := strings.TrimSpace(workErr.Error())
 			if message == "" {
 				message = "The operation failed."
@@ -781,7 +833,7 @@ func persistV2JobUpdate(ctx context.Context, jobID int64, status string, progres
 	log.Error().Err(err).Int64("job_id", jobID).Str("status", status).Msg("Failed to persist operation job state")
 }
 
-func queueV2Job(c *fiber.Ctx, kind, resource string, resourceID int64, queuedMessage, runningMessage, successMessage string, work func() error) error {
+func queueV2Job(c *fiber.Ctx, kind, resource string, resourceID int64, queuedMessage, runningMessage, successMessage string, work func(jobProgressFunc) error) error {
 	job, err := launchV2Job(c.UserContext(), kind, resource, resourceID, queuedMessage, runningMessage, successMessage, work)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "job_unavailable", "The operation could not be queued.", true)
@@ -798,14 +850,19 @@ func V2RefreshSource(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusNotFound, "source_not_found", "That playlist source was not found.", false)
 	}
-	return queueV2Job(c, "refresh", "playlist", id, "Playlist refresh queued.", "Importing channels and syncing connected groups…", "Playlist refresh complete.", func() error {
+	return queueV2Job(c, "refresh", "playlist", id, "Playlist refresh queued.", "Importing channels and syncing connected groups…", "Playlist refresh complete.", func(report jobProgressFunc) error {
 		startedAt := time.Now()
-		parser := utils.M3uParser{}
+		parser := utils.M3uParser{Progress: utils.ProgressReporter(report)}
 		if err := parser.ParseM3u(*playlist); err != nil {
 			return fmt.Errorf("playlist refresh failed: %w", err)
 		}
+		report(86, "Removing channels no longer present in the source…")
 		cron.CleanPlaylist(*playlist, startedAt)
-		_, err := database.Db.SyncSourceGroupsForPlaylist(context.Background(), playlist.ID)
+		report(92, "Synchronizing connected lineup groups…")
+		results, err := database.Db.SyncSourceGroupsForPlaylist(context.Background(), playlist.ID)
+		if err == nil {
+			report(98, fmt.Sprintf("Finalizing playlist refresh after syncing %d groups…", len(results)))
+		}
 		return err
 	})
 }
@@ -819,11 +876,13 @@ func V2RefreshGuideSource(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusNotFound, "guide_source_not_found", "That guide source was not found.", false)
 	}
-	return queueV2Job(c, "refresh", "epg", id, "Guide refresh queued.", "Importing XMLTV schedule…", "Guide refresh complete.", func() error {
-		if err := utils.ParseEpg(epg); err != nil {
+	return queueV2Job(c, "refresh", "epg", id, "Guide refresh queued.", "Importing XMLTV schedule…", "Guide refresh complete.", func(report jobProgressFunc) error {
+		if err := utils.ParseEpgWithProgress(epg, utils.ProgressReporter(report)); err != nil {
 			return fmt.Errorf("guide refresh failed: %w", err)
 		}
+		report(97, "Removing expired guide programmes…")
 		cron.CleanupOldEpgProgrammes()
+		report(99, "Finalizing guide refresh…")
 		return nil
 	})
 }
@@ -837,13 +896,23 @@ func V2PublishLineup(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusNotFound, "lineup_not_found", "That lineup was not found.", false)
 	}
-	return queueV2Job(c, "publish", "lineup", id, "Publication queued.", "Building M3U and XMLTV outputs…", "Lineup published.", func() error {
+	return queueV2Job(c, "publish", "lineup", id, "Publication queued.", "Building M3U and XMLTV outputs…", "Lineup published.", func(report jobProgressFunc) error {
+		report(15, "Building the ordered M3U output…")
 		if err := utils.NewM3uTools().CreateM3u(*lineup); err != nil {
 			return fmt.Errorf("M3U publication failed: %w", err)
 		}
-		if err := utils.CreateEpgXML(*lineup); err != nil {
+		report(45, "Building the XMLTV output…")
+		xmltvProgress := func(progress int, message string) {
+			mappedProgress := 45 + progress*52/100
+			if mappedProgress > 97 {
+				mappedProgress = 97
+			}
+			report(mappedProgress, message)
+		}
+		if err := utils.CreateEpgXMLWithProgress(*lineup, xmltvProgress); err != nil {
 			return fmt.Errorf("XMLTV publication failed: %w", err)
 		}
+		report(99, "Finalizing published outputs…")
 		return nil
 	})
 }
@@ -875,30 +944,39 @@ func V2Events(c *fiber.Ctx) error {
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
-		ticker := time.NewTicker(15 * time.Second)
-		defer ticker.Stop()
-		write := func() error {
+		write := func() (bool, error) {
 			jobs, err := database.Db.GetJobs(context.Background(), 10)
 			if err != nil {
-				return err
+				return false, err
 			}
 			payload, _ := json.Marshal(fiber.Map{"jobs": jobs, "at": time.Now().UTC()})
 			lastID := int64(0)
+			active := false
 			if len(jobs) > 0 {
 				lastID = jobs[0].ID
 			}
-			if _, err := fmt.Fprintf(w, "id: %d\nretry: 5000\nevent: snapshot\ndata: %s\n\n", lastID, payload); err != nil {
-				return err
+			for _, job := range jobs {
+				if job.Status == "queued" || job.Status == "running" {
+					active = true
+					break
+				}
 			}
-			return w.Flush()
+			if _, err := fmt.Fprintf(w, "id: %d\nretry: 5000\nevent: snapshot\ndata: %s\n\n", lastID, payload); err != nil {
+				return false, err
+			}
+			return active, w.Flush()
 		}
-		if write() != nil {
-			return
-		}
-		for range ticker.C {
-			if write() != nil {
+		for {
+			active, err := write()
+			if err != nil {
 				return
 			}
+			delay := 15 * time.Second
+			if active {
+				delay = 2 * time.Second
+			}
+			timer := time.NewTimer(delay)
+			<-timer.C
 		}
 	})
 	return nil

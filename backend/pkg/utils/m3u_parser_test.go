@@ -31,3 +31,32 @@ func TestParseM3uRejectsInvalidSnapshotsBeforeCleanup(t *testing.T) {
 		})
 	}
 }
+
+func TestParseM3uReportsIndeterminateAcquisition(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "playlist.m3u")
+	if err := os.WriteFile(path, []byte("#EXTM3U\n"), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	type update struct {
+		progress int
+		message  string
+	}
+	updates := []update{}
+	parser := M3uParser{Progress: func(progress int, message string) {
+		updates = append(updates, update{progress: progress, message: message})
+	}}
+	_ = parser.ParseM3u(models.Playlist{ID: 1, Name: "Test", URL: path})
+
+	if len(updates) < 2 {
+		t.Fatalf("expected acquisition progress updates, got %#v", updates)
+	}
+	for _, item := range updates {
+		if item.progress != 0 {
+			t.Fatalf("unknown acquisition work must remain indeterminate, got %#v", updates)
+		}
+	}
+	if !strings.Contains(updates[1].message, "Reading playlist") {
+		t.Fatalf("expected the active acquisition stage, got %#v", updates)
+	}
+}

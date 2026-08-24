@@ -87,6 +87,13 @@
 	function jobLabel(job: OperationJob) {
 		return `${job.kind} · ${job.resource}${job.resource_id ? ` ${job.resource_id}` : ''}`;
 	}
+	function jobProgressLabel(job: OperationJob) {
+		if (job.status === 'failed') return 'Failed';
+		if (job.status === 'succeeded') return '100%';
+		if (job.status === 'queued') return 'Queued';
+		if (job.progress <= 0) return 'Working';
+		return `${job.progress}%`;
+	}
 </script>
 
 <svelte:head><title>Studio · Xivi</title></svelte:head>
@@ -195,16 +202,19 @@
 				<h2>Recent jobs</h2>
 			</header>
 			{#if overviewQuery.data.jobs.length}<div class="jobs" aria-live="polite">
-					{#each overviewQuery.data.jobs as job}<article class:failed={job.status === 'failed'}>
+					{#each overviewQuery.data.jobs as job}<article
+							class:failed={job.status === 'failed'}
+							class:running={job.status === 'running'}
+							class:indeterminate={job.status === 'running' && job.progress <= 0}
+						>
 							<span
 								class:failed={job.status === 'failed'}
 								class:complete={job.status === 'succeeded'}
+								class:running={job.status === 'running'}
 								aria-hidden="true"
 							></span>
 							<div><strong>{jobLabel(job)}</strong><small>{job.message || job.status}</small></div>
-							<b class="tabular" class:failed={job.status === 'failed'}
-								>{job.status === 'failed' ? 'Failed' : `${job.progress}%`}</b
-							>
+							<b class="tabular" class:failed={job.status === 'failed'}>{jobProgressLabel(job)}</b>
 						</article>{/each}
 				</div>{:else}<div class="empty-inline">
 					<p>No background work is running. Refreshes and publishing jobs will appear here.</p>
@@ -425,6 +435,12 @@
 	.jobs article > span.failed {
 		background: var(--error);
 	}
+	.jobs article > span.running {
+		animation: job-pulse 1.4s ease-out infinite;
+	}
+	.jobs article.indeterminate > span.running {
+		box-shadow: 0 0 0 0.35rem color-mix(in oklch, var(--sun) 12%, transparent);
+	}
 	.jobs article.failed {
 		align-items: flex-start;
 		background: color-mix(in oklch, var(--error) 9%, transparent);
@@ -455,6 +471,20 @@
 	}
 	.jobs b.failed {
 		color: var(--error);
+	}
+	.jobs article.running b {
+		color: color-mix(in oklch, var(--sun) 75%, var(--text));
+	}
+	@keyframes job-pulse {
+		0%,
+		100% {
+			transform: scale(0.82);
+			opacity: 0.72;
+		}
+		50% {
+			transform: scale(1.12);
+			opacity: 1;
+		}
 	}
 	details {
 		border-top: 1px solid var(--line);

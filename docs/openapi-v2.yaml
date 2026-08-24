@@ -973,7 +973,11 @@ components:
         resource: { type: string }
         resource_id: { type: integer, format: int64 }
         status: { type: string, enum: [queued, running, succeeded, failed, cancelled] }
-        progress: { type: integer, minimum: 0, maximum: 100 }
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Zero on a running job means the total work is not yet known.
         message: { type: string }
         error_code: { type: string }
         created_at: { type: string, format: date-time }

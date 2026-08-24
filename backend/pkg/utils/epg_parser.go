@@ -5,12 +5,14 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
@@ -30,10 +32,17 @@ const (
 // Errors are returned so callers that track background work can report an
 // accurate failed state instead of treating a logged error as success.
 func ParseEpg(epg *models.Epg) error {
+	return ParseEpgWithProgress(epg, nil)
+}
+
+// ParseEpgWithProgress parses an EPG source while reporting indeterminate
+// acquisition/parsing work and determinate import phases.
+func ParseEpgWithProgress(epg *models.Epg, reporter ProgressReporter) error {
 	start := time.Now()
 	ctx := context.Background()
 
 	log.Info().Msg("EPG Parser started")
+	reportProgress(reporter, 0, "Downloading and reading XMLTV schedule…")
 
 	// Create a custom HTTP client with optimized settings
 	client := &http.Client{
@@ -47,23 +56,24 @@ func ParseEpg(epg *models.Epg) error {
 	}
 
 	// Parse the XML data
-	epgItem, err := fetchAndParseEPG(ctx, epg, client)
+	epgItem, err := fetchAndParseEPGWithProgress(ctx, epg, client, reporter)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to parse EPG data")
 		return fmt.Errorf("could not load guide data: %w", err)
 	}
+	reportProgress(reporter, 20, fmt.Sprintf("XMLTV loaded: %d channels and %d programmes.", len(epgItem.Channels), len(epgItem.Programmes)))
 
 	// Process channels in batches
 	if len(epgItem.Channels) > 0 {
 		log.Info().Int("count", len(epgItem.Channels)).Msg("Processing EPG channels")
-		processChannels(ctx, epgItem.Channels)
+		processChannels(ctx, epgItem.Channels, reporter)
 	}
 
 	// Process programmes in batches using improved workers with better retry logic
 	if len(epgItem.Programmes) > 0 {
 		log.Info().Int("count", len(epgItem.Programmes)).Msg("Processing EPG programmes")
 		// Use the improved version with better retry logic
-		processProgrammes(ctx, epgItem.Programmes)
+		processProgrammes(ctx, epgItem.Programmes, reporter)
 	}
 
 	// Update EPG timestamp
@@ -77,12 +87,20 @@ func ParseEpg(epg *models.Epg) error {
 	log.Info().Dur("duration", time.Since(start)).Msg("EPG Parser Finished")
 
 	// Generate EPG XML files for all templates in parallel
-	generateEPGFiles(ctx)
+	reportProgress(reporter, 86, "Rebuilding lineup guide outputs…")
+	if err := generateEPGFiles(ctx, reporter); err != nil {
+		return fmt.Errorf("guide data imported but lineup XMLTV outputs could not be rebuilt: %w", err)
+	}
+	reportProgress(reporter, 95, "Guide import saved.")
 	return nil
 }
 
 // fetchAndParseEPG fetches and parses the EPG data from a URL or file
 func fetchAndParseEPG(ctx context.Context, epg *models.Epg, client *http.Client) (models.EpgItem, error) {
+	return fetchAndParseEPGWithProgress(ctx, epg, client, nil)
+}
+
+func fetchAndParseEPGWithProgress(ctx context.Context, epg *models.Epg, client *http.Client, reporter ProgressReporter) (models.EpgItem, error) {
 	var reader io.Reader
 	var cleanup func()
 
@@ -153,11 +171,11 @@ func fetchAndParseEPG(ctx context.Context, epg *models.Epg, client *http.Client)
 	defer cleanup()
 
 	// Use optimized XML parsing
-	return parseXML(reader)
+	return parseXMLWithProgress(reader, reporter)
 }
 
 // processChannels processes EPG channels in batches
-func processChannels(ctx context.Context, channels []models.EpgChannel) {
+func processChannels(ctx context.Context, channels []models.EpgChannel, reporter ProgressReporter) {
 	// First, collect all channel IDs for efficient lookup
 	var newChannels []models.EpgChannel
 	var updateChannels []models.EpgChannel
@@ -237,6 +255,8 @@ func processChannels(ctx context.Context, channels []models.EpgChannel) {
 				}
 			}
 		}
+		progress := 20 + end*10/len(channels)
+		reportProgress(reporter, progress, fmt.Sprintf("Preparing guide channels… %d/%d", end, len(channels)))
 	}
 
 	// Insert new channels in batches
@@ -286,11 +306,30 @@ func processChannels(ctx context.Context, channels []models.EpgChannel) {
 			}
 		}
 	}
+	reportProgress(reporter, 32, fmt.Sprintf("Guide channels ready: %d processed.", len(channels)))
 }
 
 // processProgrammes processes EPG programmes in batches using worker pool
-func processProgrammes(ctx context.Context, programmes []models.EpgProgramme) {
+func processProgrammes(ctx context.Context, programmes []models.EpgProgramme, reporter ProgressReporter) {
 	numWorkers := 2
+	var completed atomic.Int64
+	var lastProgress atomic.Int64
+	total := int64(len(programmes))
+	completeProgramme := func() {
+		done := completed.Add(1)
+		progress := int64(32) + done*50/total
+		for {
+			previous := lastProgress.Load()
+			if progress <= previous || !lastProgress.CompareAndSwap(previous, progress) {
+				if progress <= previous {
+					return
+				}
+				continue
+			}
+			reportProgress(reporter, int(progress), fmt.Sprintf("Importing programmes… %d/%d", done, total))
+			return
+		}
+	}
 
 	// Create work distribution channels
 	jobs := make(chan models.EpgProgramme, 250) // Reduced from 500 to 250
@@ -301,7 +340,7 @@ func processProgrammes(ctx context.Context, programmes []models.EpgProgramme) {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			processProgrammeWorker(ctx, jobs, workerID)
+			processProgrammeWorker(ctx, jobs, workerID, completeProgramme)
 		}(w)
 	}
 
@@ -322,76 +361,36 @@ func processProgrammes(ctx context.Context, programmes []models.EpgProgramme) {
 }
 
 // processProgrammeWorker processes programmes from the jobs channel
-func processProgrammeWorker(ctx context.Context, jobs <-chan models.EpgProgramme, workerID int) {
+func processProgrammeWorker(ctx context.Context, jobs <-chan models.EpgProgramme, workerID int, complete func()) {
 	for programme := range jobs {
-		// Skip invalid programmes
-		if programme.Channel == "" || programme.Start == nil || programme.Stop == nil {
-			log.Warn().Str("title", programme.Title.Value).Msg("Skipping programme with missing required fields")
-			continue
-		}
-
-		// Ensure Title.Value is not empty
-		if programme.Title.Value == "" {
-			programme.Title.Value = "No Title"
-			log.Warn().Str("channel", programme.Channel).Msg("Empty Title.Value in programme, using default")
-		}
-
-		// Log the programme being processed
-		log.Debug().Str("channel", programme.Channel).Str("title", programme.Title.Value).Time("start", programme.Start.Time).Msg("Processing programme")
-
-		// Look up existing programme with retry logic
-		var existing *models.EpgProgramme
-		var err error
-
-		// Retry parameters
-		baseDelay := 200 * time.Millisecond
-
-		// Try to get the programme by exact time with retries
-		for retry := 0; retry < MaxRetries; retry++ {
-			existing, err = database.Db.GetProgrammeByExactTime(ctx, programme.Channel, programme.Start.Time, programme.Stop.Time)
-			if err == nil || !strings.Contains(err.Error(), "database is locked") {
-				break // Success or non-lock error
+		func() {
+			defer complete()
+			// Skip invalid programmes
+			if programme.Channel == "" || programme.Start == nil || programme.Stop == nil {
+				log.Warn().Str("title", programme.Title.Value).Msg("Skipping programme with missing required fields")
+				return
 			}
 
-			// Database lock error, retry with backoff
-			delay := baseDelay * time.Duration(1<<uint(retry))
-			time.Sleep(delay)
-		}
-
-		if err != nil {
-			// Create new programme with retry logic
-			var createErr error
-			for retry := 0; retry < MaxRetries; retry++ {
-				if existing == nil {
-					_, createErr = database.Db.CreateEpgProgramme(ctx, programme)
-					if createErr == nil || !strings.Contains(createErr.Error(), "database is locked") {
-						if createErr != nil {
-							log.Warn().Err(createErr).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to create programme")
-						}
-						break // Success or non-lock error
-					}
-				} else {
-					// Programme already exists, update it
-					updateErr := database.Db.UpdateEpgProgramme(ctx, existing.ID, &programme)
-					if updateErr == nil || !strings.Contains(updateErr.Error(), "database is locked") {
-						if updateErr != nil {
-							log.Warn().Err(updateErr).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to update programme-1")
-						}
-						break // Success or non-lock error
-					}
-				}
-				// Retry with backoff
-				delay := baseDelay * time.Duration(1<<uint(retry))
-				time.Sleep(delay)
+			// Ensure Title.Value is not empty
+			if programme.Title.Value == "" {
+				programme.Title.Value = "No Title"
+				log.Warn().Str("channel", programme.Channel).Msg("Empty Title.Value in programme, using default")
 			}
-		} else {
-			// Update existing programme with retry logic
+
+			// Log the programme being processed
+			log.Debug().Str("channel", programme.Channel).Str("title", programme.Title.Value).Time("start", programme.Start.Time).Msg("Processing programme")
+
+			// Look up existing programme with retry logic
+			var existing *models.EpgProgramme
+			var err error
+
+			// Retry parameters
+			baseDelay := 200 * time.Millisecond
+
+			// Try to get the programme by exact time with retries
 			for retry := 0; retry < MaxRetries; retry++ {
-				updateErr := database.Db.UpdateEpgProgramme(ctx, existing.ID, &programme)
-				if updateErr == nil || !strings.Contains(updateErr.Error(), "database is locked") {
-					if updateErr != nil {
-						log.Warn().Err(updateErr).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to update programme-2")
-					}
+				existing, err = database.Db.GetProgrammeByExactTime(ctx, programme.Channel, programme.Start.Time, programme.Stop.Time)
+				if err == nil || !strings.Contains(err.Error(), "database is locked") {
 					break // Success or non-lock error
 				}
 
@@ -399,43 +398,104 @@ func processProgrammeWorker(ctx context.Context, jobs <-chan models.EpgProgramme
 				delay := baseDelay * time.Duration(1<<uint(retry))
 				time.Sleep(delay)
 			}
-		}
+
+			if err != nil {
+				// Create new programme with retry logic
+				var createErr error
+				for retry := 0; retry < MaxRetries; retry++ {
+					if existing == nil {
+						_, createErr = database.Db.CreateEpgProgramme(ctx, programme)
+						if createErr == nil || !strings.Contains(createErr.Error(), "database is locked") {
+							if createErr != nil {
+								log.Warn().Err(createErr).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to create programme")
+							}
+							break // Success or non-lock error
+						}
+					} else {
+						// Programme already exists, update it
+						updateErr := database.Db.UpdateEpgProgramme(ctx, existing.ID, &programme)
+						if updateErr == nil || !strings.Contains(updateErr.Error(), "database is locked") {
+							if updateErr != nil {
+								log.Warn().Err(updateErr).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to update programme-1")
+							}
+							break // Success or non-lock error
+						}
+					}
+					// Retry with backoff
+					delay := baseDelay * time.Duration(1<<uint(retry))
+					time.Sleep(delay)
+				}
+			} else {
+				// Update existing programme with retry logic
+				for retry := 0; retry < MaxRetries; retry++ {
+					updateErr := database.Db.UpdateEpgProgramme(ctx, existing.ID, &programme)
+					if updateErr == nil || !strings.Contains(updateErr.Error(), "database is locked") {
+						if updateErr != nil {
+							log.Warn().Err(updateErr).Str("channel", programme.Channel).Str("title", programme.Title.Value).Msg("Failed to update programme-2")
+						}
+						break // Success or non-lock error
+					}
+
+					// Database lock error, retry with backoff
+					delay := baseDelay * time.Duration(1<<uint(retry))
+					time.Sleep(delay)
+				}
+			}
+		}()
 	}
 }
 
 // generateEPGFiles generates EPG XML files for all templates
-func generateEPGFiles(ctx context.Context) {
+func generateEPGFiles(ctx context.Context, reporter ProgressReporter) error {
 	templates, err := database.Db.GetTemplates()
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get templates for EPG generation")
-		return
+		return fmt.Errorf("could not load lineups for XMLTV generation: %w", err)
 	}
 
 	if templates == nil || len(*templates) == 0 {
 		log.Info().Msg("No templates found for EPG generation")
-		return
+		reportProgress(reporter, 94, "No lineup XMLTV outputs need rebuilding.")
+		return nil
 	}
 
 	log.Info().Int("count", len(*templates)).Msg("Generating EPG files for templates")
 
 	// Create a wait group to track completion
 	wg := sync.WaitGroup{}
+	var completed atomic.Int64
+	total := int64(len(*templates))
+	generationErrors := make(chan error, len(*templates))
 
 	// Process each template in a separate goroutine
 	for _, template := range *templates {
 		wg.Add(1)
 		go func(t models.Template) {
 			defer wg.Done()
-			CreateEpgXML(t)
+			if err := CreateEpgXML(t); err != nil {
+				generationErrors <- fmt.Errorf("lineup %q: %w", t.Name, err)
+			}
+			done := completed.Add(1)
+			reportProgress(reporter, 86+int(done)*8/int(total), fmt.Sprintf("Rebuilding lineup guide outputs… %d/%d", done, total))
 		}(template)
 	}
 
 	// Wait for all EPG files to be generated
 	wg.Wait()
+	close(generationErrors)
+	generationErrs := make([]error, 0, len(generationErrors))
+	for generationErr := range generationErrors {
+		generationErrs = append(generationErrs, generationErr)
+	}
+	return errors.Join(generationErrs...)
 }
 
 // parseXML parses XML data into an EpgItem
 func parseXML(xmlData io.Reader) (models.EpgItem, error) {
+	return parseXMLWithProgress(xmlData, nil)
+}
+
+func parseXMLWithProgress(xmlData io.Reader, reporter ProgressReporter) (models.EpgItem, error) {
 	var epg models.EpgItem
 
 	// Create a buffered reader
@@ -467,6 +527,9 @@ func parseXML(xmlData io.Reader) (models.EpgItem, error) {
 					return models.EpgItem{}, err
 				}
 				epg.Programmes = append(epg.Programmes, programme)
+				if len(epg.Programmes)%5000 == 0 {
+					reportProgress(reporter, 0, fmt.Sprintf("Reading XMLTV… %d programmes found.", len(epg.Programmes)))
+				}
 			}
 		}
 	}

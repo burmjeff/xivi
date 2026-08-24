@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
@@ -40,6 +41,7 @@ type M3uParser struct {
 	channelPairs []ChannelURLPair
 	batchMutex   sync.Mutex
 	batchSize    int
+	Progress     ProgressReporter
 }
 
 // Add a group creation semaphore to limit concurrent group creations
@@ -68,6 +70,7 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) error {
 	m.lines = nil
 	m.content = ""
 	log.Info().Msg("Parser started")
+	reportProgress(m.Progress, 0, "Opening playlist source…")
 
 	// Initialize batch processing with smaller batch size to reduce contention
 	m.batchSize = 25 // Further reduced from 50 to 25 to reduce transaction size and prevent deadlocks
@@ -84,6 +87,7 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) error {
 
 	if isValidURL(playlist.URL) {
 		log.Info().Msg("Started parsing m3u URL...")
+		reportProgress(m.Progress, 0, "Downloading playlist…")
 		resp, err := http.Get(playlist.URL)
 		if err != nil {
 			log.Error().Msgf("Unable to get M3U FILE: %v", err)
@@ -101,6 +105,7 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) error {
 		m.content = string(body)
 	} else {
 		log.Info().Msg("Started parsing m3u file...")
+		reportProgress(m.Progress, 0, "Reading playlist file…")
 		body, err := os.ReadFile(playlist.URL)
 		if err != nil {
 			log.Error().Msgf("Unable to get M3U FILE: %v", err)
@@ -132,12 +137,14 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) error {
 	if extinfCount == 0 {
 		return fmt.Errorf("playlist contains no EXTINF channel entries")
 	}
+	reportProgress(m.Progress, 18, fmt.Sprintf("Playlist loaded. Importing %d channels…", extinfCount))
 
 	// Only inspect related playlists after the new snapshot has been acquired and
 	// validated. A failed refresh must not depend on database state or begin any
 	// reconciliation work.
 	m.matchedPlaylist = MatchDomain(playlist.ID)
 	m.parseLines()
+	reportProgress(m.Progress, 78, "Finishing channel imports…")
 
 	// Check if we have any remaining channels to process
 	m.batchMutex.Lock()
@@ -148,6 +155,7 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) error {
 
 	// Ensure any remaining batched items are processed
 	m.flushBatches()
+	reportProgress(m.Progress, 83, "Saving playlist refresh details…")
 
 	// Log summary of processing
 	log.Info().Msgf("M3U parse completed for playlist ID %d", playlist.ID)
@@ -206,14 +214,23 @@ func (m *M3uParser) parseLines() {
 	}
 
 	log.Info().Msgf("Created %d chunks for processing", len(chunks))
+	reportProgress(m.Progress, 20, fmt.Sprintf("Importing channels… 0/%d", extinfoCount))
 
 	// Limit maximum concurrent chunk processing to 5
 	concurrencyLimit := make(chan struct{}, 3)
+	var processedEntries atomic.Int64
 	for chunkIndex, chunk := range chunks {
 		wg.Add(1)
 		concurrencyLimit <- struct{}{} // Acquire semaphore
 		go func(chunk []string, chunkIndex int) {
+			entriesInspected := 0
 			defer func() {
+				processed := processedEntries.Add(int64(entriesInspected))
+				progress := 20 + int(processed)*55/extinfoCount
+				if progress > 75 {
+					progress = 75
+				}
+				reportProgress(m.Progress, progress, fmt.Sprintf("Importing channels… %d/%d", processed, extinfoCount))
 				<-concurrencyLimit // Release semaphore
 				wg.Done()
 				log.Info().Msgf("Completed processing chunk %d", chunkIndex)
@@ -224,6 +241,7 @@ func (m *M3uParser) parseLines() {
 
 			for i := 0; i < len(chunk); i += 1 {
 				if re.Match([]byte(chunk[i])) {
+					entriesInspected++
 					// Sample part of the line to help debugging
 					lineSample := chunk[i]
 					if len(lineSample) > 50 {
