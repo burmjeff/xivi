@@ -241,7 +241,8 @@
 		grid-column: 1/3;
 	}
 	.metric > a {
-		display: flex;
+		display: inline-flex;
+		min-height: 1.5rem;
 		grid-column: 1/3;
 		align-items: center;
 		gap: 0.35rem;

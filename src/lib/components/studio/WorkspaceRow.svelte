@@ -6,12 +6,14 @@
 	} from '@atlaskit/pragmatic-drag-and-drop/adapter/element-adapter';
 	import { combine } from '@atlaskit/pragmatic-drag-and-drop/utils/combine';
 	import { announce } from '@atlaskit/pragmatic-drag-and-drop-live-region';
+	import { DropdownMenu } from 'bits-ui';
 	import {
 		GripVertical,
 		ChevronUp,
 		ChevronDown,
 		ChevronsUp,
 		ChevronsDown,
+		MoreHorizontal,
 		Trash2,
 		LockKeyhole,
 		CircleAlert,
@@ -116,33 +118,56 @@
 				size={16}
 			/>{:else}<CircleAlert size={16} />{/if}</span
 	>
-	<div class="move-buttons">
-		<button
-			disabled={!previousId || !firstId}
-			onclick={() => {
-				if (firstId) onmove(channel.id, firstId, 'before');
-			}}
-			aria-label={`Move ${channel.name} to top`}><ChevronsUp size={16} /></button
-		>
-		<button
-			disabled={!previousId}
-			onclick={() => {
-				if (previousId) onmove(channel.id, previousId, 'before');
-			}}
-			aria-label={`Move ${channel.name} up`}><ChevronUp size={16} /></button
-		><button
-			disabled={!nextId}
-			onclick={() => {
-				if (nextId) onmove(channel.id, nextId, 'after');
-			}}
-			aria-label={`Move ${channel.name} down`}><ChevronDown size={16} /></button
-		><button
-			disabled={!nextId || !lastId}
-			onclick={() => {
-				if (lastId) onmove(channel.id, lastId, 'after');
-			}}
-			aria-label={`Move ${channel.name} to bottom`}><ChevronsDown size={16} /></button
-		><button onclick={onremove} aria-label={`Remove ${channel.name}`}><Trash2 size={16} /></button>
+	<div class="row-menu-slot">
+		<DropdownMenu.Root>
+			<DropdownMenu.Trigger class="row-menu-trigger" aria-label={`Move or remove ${channel.name}`}>
+				<MoreHorizontal size={18} />
+			</DropdownMenu.Trigger>
+			<DropdownMenu.Portal>
+				<DropdownMenu.Content class="row-action-menu" align="end" sideOffset={6}>
+					<DropdownMenu.Item
+						class="row-action-item"
+						disabled={!previousId || !firstId}
+						onSelect={() => {
+							if (firstId) onmove(channel.id, firstId, 'before');
+						}}
+					>
+						<ChevronsUp size={16} /><span>Move to top</span>
+					</DropdownMenu.Item>
+					<DropdownMenu.Item
+						class="row-action-item"
+						disabled={!previousId}
+						onSelect={() => {
+							if (previousId) onmove(channel.id, previousId, 'before');
+						}}
+					>
+						<ChevronUp size={16} /><span>Move up</span>
+					</DropdownMenu.Item>
+					<DropdownMenu.Item
+						class="row-action-item"
+						disabled={!nextId}
+						onSelect={() => {
+							if (nextId) onmove(channel.id, nextId, 'after');
+						}}
+					>
+						<ChevronDown size={16} /><span>Move down</span>
+					</DropdownMenu.Item>
+					<DropdownMenu.Item
+						class="row-action-item"
+						disabled={!nextId || !lastId}
+						onSelect={() => {
+							if (lastId) onmove(channel.id, lastId, 'after');
+						}}
+					>
+						<ChevronsDown size={16} /><span>Move to bottom</span>
+					</DropdownMenu.Item>
+					<DropdownMenu.Separator class="row-action-separator" />
+					<DropdownMenu.Item class="row-action-item danger" onSelect={onremove}>
+						<Trash2 size={16} /><span>Remove channel</span>
+					</DropdownMenu.Item>
+				</DropdownMenu.Content>
+			</DropdownMenu.Portal>
+		</DropdownMenu.Root>
 	</div>
 </article>
 
@@ -170,13 +195,13 @@
 		opacity: 0.45;
 	}
 	.drag-handle,
-	.move-buttons button {
+	.row-menu-slot :global(.row-menu-trigger) {
 		display: grid;
-		width: 2rem;
-		height: 2rem;
+		width: 2.25rem;
+		height: 2.25rem;
 		place-items: center;
 		border: 0;
-		border-radius: 0.45rem;
+		border-radius: 0.55rem;
 		background: transparent;
 		color: var(--muted);
 		cursor: pointer;
@@ -241,16 +266,47 @@
 	.match-health.missing {
 		color: var(--error);
 	}
-	.move-buttons {
-		display: flex;
-	}
-	.move-buttons button:hover {
+	.row-menu-slot :global(.row-menu-trigger:hover),
+	.row-menu-slot :global(.row-menu-trigger[data-state='open']) {
 		background: var(--surface-raised);
 		color: var(--text);
 	}
-	.move-buttons button:disabled {
-		opacity: 0.25;
+	:global(.row-action-menu) {
+		z-index: 100;
+		min-width: 12rem;
+		border: 1px solid var(--line);
+		border-radius: 0.8rem;
+		background: var(--surface-raised);
+		padding: 0.35rem;
+		box-shadow: 0 18px 48px rgb(0 0 0 / 0.28);
+		color: var(--text);
+	}
+	:global(.row-action-item) {
+		display: flex;
+		min-height: 2.5rem;
+		align-items: center;
+		gap: 0.65rem;
+		border-radius: 0.55rem;
+		padding: 0.5rem 0.65rem;
+		outline: none;
+		font-size: 0.78rem;
+		font-weight: 720;
+		cursor: pointer;
+	}
+	:global(.row-action-item[data-highlighted]) {
+		background: color-mix(in oklch, var(--periwinkle) 14%, var(--surface-raised));
+	}
+	:global(.row-action-item[data-disabled]) {
+		opacity: 0.4;
 		cursor: not-allowed;
+	}
+	:global(.row-action-item.danger) {
+		color: var(--error);
+	}
+	:global(.row-action-separator) {
+		height: 1px;
+		margin: 0.3rem 0;
+		background: var(--line);
 	}
 	@media (max-width: 600px) {
 		article {
@@ -258,9 +314,6 @@
 		}
 		.drag-handle,
 		.match-health {
-			display: none;
-		}
-		.move-buttons button:last-child {
 			display: none;
 		}
 	}

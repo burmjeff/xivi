@@ -31,7 +31,7 @@
 		font-weight: 750;
 		cursor: pointer;
 	}
-	:global(svg) {
+	.lineup-picker :global(svg) {
 		position: absolute;
 		right: 0.75rem;
 		pointer-events: none;
