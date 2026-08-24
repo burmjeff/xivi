@@ -33,6 +33,7 @@
 			retryeos: number;
 			useragent: string;
 		};
+		// Preserve legacy vector values while the settings endpoint still replaces the full document.
 		vector: { batch_size: number; parallel_batches: number; timeout: number; cache_size: number };
 		upnp: {
 			enabled: boolean;
@@ -70,11 +71,11 @@
 				next.port = 'Use a port from 1 to 65535.';
 			if (settings.server.readtimeout < 1) next.readtimeout = 'Timeout must be positive.';
 		}
-		if (
-			section === 'matching' &&
-			(settings.playlist.name_score < 0 || settings.playlist.name_score > 1)
-		)
-			next.name_score = 'Use a score from 0 to 1.';
+		if (section === 'matching') {
+			const score = settings.playlist.name_score;
+			if (!Number.isFinite(score) || score < 0.01 || score > 1)
+				next.name_score = 'Use a score from 0.01 to 1.';
+		}
 		if (section === 'streaming' && settings.streaming.buffer < 0)
 			next.buffer = 'Buffer cannot be negative.';
 		if (section === 'devices' && settings.upnp.tuner_count < 1)
@@ -181,28 +182,17 @@
 						></span
 					><input type="checkbox" bind:checked={settings.playlist.name_match} /></label
 				><label
-					>Name confidence threshold<input
+					>Fuzzy auto-match threshold<input
 						type="number"
 						step="0.01"
-						min="0"
+						min="0.01"
 						max="1"
 						bind:value={settings.playlist.name_score}
-					/>{#if errors.name_score}<em>{errors.name_score}</em>{/if}</label
+					/>{#if errors.name_score}<em>{errors.name_score}</em>{/if}<small
+						>Only affects fuzzy name candidates. Unique exact names bypass this threshold; a fuzzy
+						match must also lead the runner-up by at least 0.05.</small
+					></label
 				>
-				<details>
-					<summary>Advanced vector matching</summary>
-					<div class="advanced">
-						<label>Batch size<input type="number" bind:value={settings.vector.batch_size} /></label
-						><label
-							>Parallel batches<input
-								type="number"
-								bind:value={settings.vector.parallel_batches}
-							/></label
-						><label>Timeout<input type="number" bind:value={settings.vector.timeout} /></label
-						><label>Cache size<input type="number" bind:value={settings.vector.cache_size} /></label
-						>
-					</div>
-				</details>
 			</div>
 			<footer>
 				<button
@@ -500,22 +490,6 @@
 		min-height: 0;
 		accent-color: var(--periwinkle);
 	}
-	details {
-		border: 1px solid var(--line);
-		border-radius: 0.7rem;
-		padding: 0.65rem;
-	}
-	summary {
-		cursor: pointer;
-		color: var(--text);
-		font-size: 0.7rem;
-	}
-	.advanced {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 0.6rem;
-		margin-top: 0.7rem;
-	}
 	.settings-card > footer {
 		display: flex;
 		justify-content: flex-end;
@@ -592,7 +566,6 @@
 			margin-inline: 1rem;
 		}
 		.fields.two,
-		.advanced,
 		.theme-options {
 			grid-template-columns: 1fr;
 		}
