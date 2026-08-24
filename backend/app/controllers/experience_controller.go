@@ -473,8 +473,12 @@ func V2PublishLineup(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusNotFound, "lineup_not_found", "That lineup was not found.", false)
 	}
 	return queueV2Job(c, "publish", "lineup", id, "Publication queued.", "Building M3U and XMLTV outputs…", "Lineup published.", func() error {
-		utils.NewM3uTools().CreateM3u(*lineup)
-		utils.CreateEpgXML(*lineup)
+		if err := utils.NewM3uTools().CreateM3u(*lineup); err != nil {
+			return fmt.Errorf("M3U publication failed: %w", err)
+		}
+		if err := utils.CreateEpgXML(*lineup); err != nil {
+			return fmt.Errorf("XMLTV publication failed: %w", err)
+		}
 		return nil
 	})
 }

@@ -34,43 +34,65 @@ func NewM3uTools() *M3uTools {
 	}
 }
 
-func (m *M3uTools) CreateM3u(template models.Template) {
+func (m *M3uTools) CreateM3u(template models.Template) error {
 	m.host = settings.APP_SETTINGS.Server.Host
 	m.port = settings.APP_SETTINGS.Server.Port
 	m.template = template
 
 	reader, err := m.marshall()
 	if err != nil {
-		log.Err(err)
-		return
+		log.Error().Err(err).Str("template", template.Name).Msg("Failed to build M3U")
+		return fmt.Errorf("could not build the M3U export: %w", err)
 	}
 
-	b := reader.(*bytes.Buffer)
+	b, ok := reader.(*bytes.Buffer)
+	if !ok {
+		return fmt.Errorf("could not build the M3U export: unexpected buffer type %T", reader)
+	}
+	if err := os.MkdirAll(settings.M3U_FILEPATH, 0755); err != nil {
+		log.Error().Err(err).Str("path", settings.M3U_FILEPATH).Msg("Failed to create M3U directory")
+		return fmt.Errorf("could not create the M3U output directory: %w", err)
+	}
 	filePath := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, template.Name)
 
-	// Use buffered writes for better performance
-	f, err := os.Create(filePath)
+	// Write to a temporary file so a failed publish cannot corrupt the last good export.
+	f, err := os.CreateTemp(settings.M3U_FILEPATH, ".xivi-*.m3u.tmp")
 	if err != nil {
-		log.Error().Msgf("Error creating file: %v", err)
-		return
+		log.Error().Err(err).Str("path", settings.M3U_FILEPATH).Msg("Failed to create temporary M3U file")
+		return fmt.Errorf("could not create the M3U export: %w", err)
 	}
-	defer f.Close()
+	tempFilePath := f.Name()
+	defer func() {
+		_ = f.Close()
+		_ = os.Remove(tempFilePath)
+	}()
+	if err := f.Chmod(0644); err != nil {
+		return fmt.Errorf("could not set M3U file permissions: %w", err)
+	}
 
 	w := bufio.NewWriter(f)
 	if _, err := w.Write(b.Bytes()); err != nil {
-		log.Error().Msgf("Error writing to file: %v", err)
-		return
+		log.Error().Err(err).Str("path", tempFilePath).Msg("Failed to write M3U file")
+		return fmt.Errorf("could not write the M3U export: %w", err)
 	}
 
 	if err := w.Flush(); err != nil {
-		log.Error().Msgf("Error flushing buffer: %v", err)
-		return
+		log.Error().Err(err).Str("path", tempFilePath).Msg("Failed to flush M3U file")
+		return fmt.Errorf("could not finish writing the M3U export: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("could not close the M3U export: %w", err)
+	}
+	if err := os.Rename(tempFilePath, filePath); err != nil {
+		log.Error().Err(err).Str("from", tempFilePath).Str("to", filePath).Msg("Failed to publish M3U file")
+		return fmt.Errorf("could not replace the M3U export: %w", err)
 	}
 
 	// Update cache with new content
 	m.fileCacheMux.Lock()
 	m.fileCache[template.Name] = strings.Split(b.String(), "\n")
 	m.fileCacheMux.Unlock()
+	return nil
 }
 
 // getFileContent returns the cached file content or reads from disk if not cached
@@ -344,7 +366,7 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 	_, err := writer.WriteString(fmt.Sprintf("#EXTM3U url-tvg=\"%s\" x-tvg-url=\"%s\"\n", xmltvURL, xmltvURL))
 	if err != nil {
 		log.Err(err)
-		return nil
+		return err
 	}
 
 	groups, err := database.Db.GetTmplGroups(m.template.ID)
@@ -357,13 +379,14 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 		log.Info().Msgf("M3U Creation: Found Template Group: %s", group.Name)
 		channels, err := database.Db.GetTmplChannelsByGroup(group.ID)
 		if err != nil {
-			log.Debug().Msg(err.Error())
-			continue
+			return fmt.Errorf("could not load channels for group %q: %w", group.Name, err)
 		}
 
 		for _, channel := range channels {
-			if items, err := database.Db.GetTmplChannelItemsByCh(channel.ID); items == nil {
-				log.Debug().Msgf("No Channel URL found... Not adding channel to M3U, %v", err)
+			if items, err := database.Db.GetTmplChannelItemsByCh(channel.ID); err != nil {
+				return fmt.Errorf("could not load sources for channel %q: %w", channel.Name, err)
+			} else if items == nil || len(*items) == 0 {
+				log.Debug().Str("channel", channel.Name).Msg("No channel URL found; omitting channel from M3U")
 			} else {
 				logo, err := database.Db.GetLogo(ctx, channel.LogoId)
 				if err != nil {
@@ -380,13 +403,15 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 				}
 
 				if _, err = writer.WriteString(fmt.Sprintf("#EXTINF:-1 tvg-chno=\"%d\" tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n%s\n", chNo, *channel.TvgID, *channel.TvgID, logoURL, group.Name, channel.Name, channelURL)); err != nil {
-					log.Err(err)
-					continue
+					return fmt.Errorf("could not encode channel %q: %w", channel.Name, err)
 				}
 				chNo++
 			}
 		}
 	}
 
+	if chNo == 1 {
+		return fmt.Errorf("the lineup has no playable channels with source variants")
+	}
 	return writer.Flush()
 }

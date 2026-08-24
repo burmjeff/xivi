@@ -23,8 +23,8 @@ const (
 	XMLBufferSize         = 4 * 1024 * 1024 // 4MB buffer for XML encoding
 )
 
-// CreateEpgXML generates an EPG XML file for a template
-func CreateEpgXML(template models.Template) {
+// CreateEpgXML generates an EPG XML file for a template.
+func CreateEpgXML(template models.Template) error {
 	start := time.Now()
 	ctx := context.Background()
 	log.Info().Str("template", template.Name).Msg("Creating EPG XML")
@@ -39,30 +39,36 @@ func CreateEpgXML(template models.Template) {
 	channels, err := database.Db.GetTmplChannels(template.ID)
 	if err != nil {
 		log.Error().Err(err).Int64("template_id", template.ID).Msg("Failed to get template channels")
-		return
+		return fmt.Errorf("could not load lineup channels for XMLTV: %w", err)
 	}
 
 	if len(channels) == 0 {
 		log.Warn().Int64("template_id", template.ID).Msg("No channels found for template")
-		return
+		return fmt.Errorf("could not build the XMLTV export: the lineup has no channels")
 	}
 
 	// Ensure directory exists
 	if err := os.MkdirAll(settings.EPG_FILEPATH, 0755); err != nil {
 		log.Error().Err(err).Str("path", settings.EPG_FILEPATH).Msg("Failed to create EPG directory")
-		return
+		return fmt.Errorf("could not create the XMLTV output directory: %w", err)
 	}
 
-	// Create temporary file first to avoid corrupting existing file if there's an error
-	tempFilePath := fmt.Sprintf("%s/%s.xml.tmp", settings.EPG_FILEPATH, template.Name)
+	// Create a unique temporary file first so concurrent publishes cannot collide.
 	finalFilePath := fmt.Sprintf("%s/%s.xml", settings.EPG_FILEPATH, template.Name)
 
-	file, err := os.Create(tempFilePath)
+	file, err := os.CreateTemp(settings.EPG_FILEPATH, ".xivi-*.xml.tmp")
 	if err != nil {
-		log.Error().Err(err).Str("path", tempFilePath).Msg("Failed to create temporary EPG file")
-		return
+		log.Error().Err(err).Str("path", settings.EPG_FILEPATH).Msg("Failed to create temporary EPG file")
+		return fmt.Errorf("could not create the XMLTV export: %w", err)
 	}
-	defer file.Close()
+	tempFilePath := file.Name()
+	defer func() {
+		_ = file.Close()
+		_ = os.Remove(tempFilePath)
+	}()
+	if err := file.Chmod(0644); err != nil {
+		return fmt.Errorf("could not set XMLTV file permissions: %w", err)
+	}
 
 	// Use buffered writer for better performance
 	bufWriter := bufio.NewWriterSize(file, XMLBufferSize)
@@ -72,7 +78,7 @@ func CreateEpgXML(template models.Template) {
 	// Write XML header
 	if _, err = bufWriter.WriteString(xml.Header); err != nil {
 		log.Error().Err(err).Msg("Failed to write XML header")
-		return
+		return fmt.Errorf("could not write the XMLTV header: %w", err)
 	}
 
 	// Process channels in parallel
@@ -124,6 +130,7 @@ func CreateEpgXML(template models.Template) {
 
 	// Process programmes for each channel
 	programmeChan := make(chan []models.EpgProgramme, len(epg.Channels))
+	programmeErrors := make(chan error, len(epg.Channels))
 	wg = sync.WaitGroup{}
 
 	// Start goroutines to fetch programmes for each channel
@@ -137,7 +144,11 @@ func CreateEpgXML(template models.Template) {
 
 			// Get programmes for this channel
 			epgProgrammes, err := database.Db.GetProgrammesBytvgid(ctx, ch.ChannelId)
-			if err != nil || epgProgrammes == nil || len(*epgProgrammes) == 0 {
+			if err != nil {
+				programmeErrors <- fmt.Errorf("could not load programmes for channel %q: %w", ch.DisplayName, err)
+				return
+			}
+			if epgProgrammes == nil || len(*epgProgrammes) == 0 {
 				log.Debug().Str("channel_id", ch.ChannelId).Msg("Generating default programmes")
 
 				// Generate default programmes if none exist
@@ -177,35 +188,43 @@ func CreateEpgXML(template models.Template) {
 	go func() {
 		wg.Wait()
 		close(programmeChan)
+		close(programmeErrors)
 	}()
 
 	// Collect programmes
 	for programmes := range programmeChan {
 		epg.Programmes = append(epg.Programmes, programmes...)
 	}
+	for programmeErr := range programmeErrors {
+		log.Error().Err(programmeErr).Int64("template_id", template.ID).Msg("Failed to build XMLTV programmes")
+		return programmeErr
+	}
 
 	// Encode EPG to XML
 	if err := encoder.Encode(epg); err != nil {
 		log.Error().Err(err).Msg("Failed to encode EPG to XML")
-		return
+		return fmt.Errorf("could not encode the XMLTV export: %w", err)
 	}
 
 	// Flush buffer to file
 	if err := bufWriter.Flush(); err != nil {
 		log.Error().Err(err).Msg("Failed to flush XML buffer")
-		return
+		return fmt.Errorf("could not finish writing the XMLTV export: %w", err)
 	}
 
 	// Close file before renaming
-	file.Close()
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("could not close the XMLTV export: %w", err)
+	}
 
 	// Rename temporary file to final file
 	if err := os.Rename(tempFilePath, finalFilePath); err != nil {
 		log.Error().Err(err).Str("from", tempFilePath).Str("to", finalFilePath).Msg("Failed to rename EPG file")
-		return
+		return fmt.Errorf("could not replace the XMLTV export: %w", err)
 	}
 
 	log.Info().Str("template", template.Name).Dur("duration", time.Since(start)).Msg("EPG XML created successfully")
+	return nil
 }
 
 // RemoveEpg removes an EPG file
