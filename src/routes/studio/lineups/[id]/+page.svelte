@@ -2126,28 +2126,26 @@
 		font-size: 0.58rem;
 	}
 	.rejection-actions {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.4rem;
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 0.3rem;
 	}
 	.rejection-actions > button {
 		display: flex;
-		min-width: 0;
-		min-height: 2.75rem;
+		min-height: 2rem;
 		align-items: center;
 		justify-content: center;
-		gap: 0.3rem;
+		gap: 0.25rem;
 		border: 1px solid var(--line);
-		border-radius: 0.6rem;
+		border-radius: 0.5rem;
 		background: var(--surface-raised);
-		padding: 0 0.45rem;
+		padding: 0 0.55rem;
 		color: var(--text);
-		font-size: 0.58rem;
+		font-size: 0.56rem;
 		font-weight: 800;
+		white-space: nowrap;
 		cursor: pointer;
-	}
-	.rejection-actions > button:only-child {
-		grid-column: 1 / -1;
 	}
 	.rejection-actions > button:hover {
 		border-color: color-mix(in oklch, var(--aqua) 50%, var(--line));
