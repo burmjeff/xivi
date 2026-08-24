@@ -164,7 +164,7 @@
 			case 'playlist':
 				return 38;
 			case 'group':
-				return 88;
+				return 62;
 			case 'channel':
 				return 66;
 			default:
@@ -478,12 +478,13 @@
 		font-size: 0.55rem;
 	}
 	.source-group-row {
-		display: grid;
+		position: relative;
+		display: flex;
 		height: 100%;
-		grid-template-rows: minmax(0, 1fr) 2rem;
+		align-items: center;
 		border-bottom: 1px solid var(--line);
 		background: var(--surface);
-		padding: 0.3rem 0.45rem 0.35rem;
+		padding: 0.3rem 0.45rem;
 	}
 	.source-group-row.disabled {
 		opacity: 0.48;
@@ -526,9 +527,19 @@
 		font-size: 0.57rem;
 	}
 	.group-actions {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
+		position: absolute;
+		top: 50%;
+		right: 0.45rem;
+		display: none;
+		grid-template-columns: repeat(3, 2rem);
 		gap: 0.25rem;
+		transform: translateY(-50%);
+		background: var(--surface);
+		padding-left: 0.4rem;
+	}
+	.source-group-row:hover .group-actions,
+	.source-group-row:focus-within .group-actions {
+		display: grid;
 	}
 	.group-actions button,
 	.channel-actions button,
@@ -550,6 +561,11 @@
 	.channel-actions button:disabled {
 		opacity: 0.42;
 		cursor: not-allowed;
+	}
+	.group-actions button {
+		width: 2rem;
+		padding: 0;
+		font-size: 0;
 	}
 	.source-channel-row {
 		position: relative;
@@ -665,6 +681,14 @@
 		}
 		:global(.spin) {
 			animation: none;
+		}
+	}
+	@media (hover: none) {
+		.group-disclosure {
+			padding-right: 7rem;
+		}
+		.group-actions {
+			display: grid;
 		}
 	}
 </style>
