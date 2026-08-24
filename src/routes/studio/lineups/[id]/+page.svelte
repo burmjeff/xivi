@@ -12,7 +12,6 @@
 		ChevronRight,
 		PanelRightClose,
 		LockKeyhole,
-		CircleGauge,
 		History,
 		Unlink,
 		MoreHorizontal,
@@ -20,7 +19,9 @@
 		Check,
 		RadioTower,
 		X,
-		CircleAlert
+		CircleAlert,
+		ArrowUp,
+		ArrowDown
 	} from '@lucide/svelte';
 	import { api, params, XiviAPIError } from '$lib/api/client';
 	import type {
@@ -162,6 +163,7 @@
 		logoPickerOpen = $state(false),
 		editorId = $state<number | null>(null),
 		suggestionAction = $state<number | null>(null),
+		variantAction = $state<number | null>(null),
 		rejectionAction = $state<string | null>(null),
 		saving = $state(false);
 	let selectedLogo = $derived((logosQuery.data?.logos ?? []).find((logo) => logo.id === editLogo));
@@ -558,6 +560,31 @@
 			suggestionAction = null;
 		}
 	}
+	async function moveVariant(
+		sourceChannelId: number,
+		targetSourceChannelId: number,
+		placement: 'before' | 'after'
+	) {
+		if (!selectedChannelId || variantAction !== null) return;
+		variantAction = sourceChannelId;
+		try {
+			await api(
+				`/api/v2/studio/channels/${selectedChannelId}/matches/${sourceChannelId}/position`,
+				{
+					method: 'PATCH',
+					body: JSON.stringify({ [`${placement}_id`]: targetSourceChannelId })
+				}
+			);
+			await client.invalidateQueries({
+				queryKey: ['studio', 'channel-variants', selectedChannelId]
+			});
+			message = 'Source failover order saved.';
+		} catch (error) {
+			message = requestError(error, 'The source variant could not be moved.');
+		} finally {
+			variantAction = null;
+		}
+	}
 	async function rejectSource(source: MatchReview) {
 		if (!selectedChannelId) return;
 		try {
@@ -859,7 +886,7 @@
 			</div>
 		</section>
 
-		{#if inspectorOpen}<aside class="inspector-pane">
+		{#if inspectorOpen}<aside class:empty={!selectedChannel} class="inspector-pane">
 				<header>
 					<p class="eyebrow">Inspector</p>
 					<h2>{selectedChannel?.name ?? 'No channel selected'}</h2>
@@ -981,8 +1008,12 @@
 					<section>
 						<div class="section-heading">
 							<div>
-								<h3>Suggested sources</h3>
-								<p>Best eligible matches from sources not already represented.</p>
+								<h3>{selectedChannel.source_count ? 'Suggested backups' : 'Suggested sources'}</h3>
+								<p>
+									{selectedChannel.source_count
+										? 'Additional matches that can join the failover stack.'
+										: 'Best eligible matches from the current source catalog.'}
+								</p>
 							</div>
 							<span>Top 5</span>
 						</div>
@@ -1026,32 +1057,81 @@
 											<span>Add</span>
 										</button>
 									</li>{/each}
-							</ol>{:else}<p class="muted small">
-								No additional source matches were found. Attached playlists, disabled channels, and
-								rejected matches are excluded.
+							</ol>{:else if selectedChannel.source_count}<p class="muted small">
+								No additional matching sources were found. Already attached, disabled, and rejected
+								source channels are excluded.
+							</p>{:else}<p class="muted small">
+								No current source resembles this channel or shares its TVG ID. The provider may have
+								renamed or removed it; use the Source Browser to search manually.
 							</p>{/if}
 					</section>
 					<section>
-						<h3>Ordered source variants</h3>
+						<div class="section-heading variant-heading">
+							<div>
+								<h3>Source failover order</h3>
+								<p>The primary is tried first; backups follow from top to bottom.</p>
+							</div>
+						</div>
 						{#if variantsQuery.isPending}<div
 								class="source-skeleton skeleton"
 							></div>{:else if variantsQuery.data?.items.length}<ol class="variants">
-								{#each variantsQuery.data.items as variant}<li>
-										<CircleGauge size={16} /><span
-											><strong>{variant.source_name}</strong><small
-												>{variant.playlist_name} · {variant.method}{variant.score !== undefined
+								{#each variantsQuery.data.items as variant, index}<li>
+										<LogoTile
+											src={variant.source_logo_url}
+											name={variant.source_name}
+											size="sm"
+											contrast
+										/>
+										<span class="variant-copy">
+											<span class="variant-title">
+												<em class:backup={index > 0}
+													>{index === 0 ? 'Primary' : `Backup ${index}`}</em
+												>
+												<strong>{variant.source_name}</strong>
+											</span>
+											<small
+												>{variant.playlist_name} · {variant.group_name} · {variant.method}{variant.score !==
+												undefined
 													? ` · ${Math.round(variant.score * 100)}%`
 													: ''}</small
-											></span
-										><button
-											type="button"
-											onclick={() => rejectSource(variant)}
-											aria-label={`Reject ${variant.source_name}`}><Unlink size={15} /></button
-										>
+											>
+										</span>
+										<span class="variant-actions">
+											<button
+												type="button"
+												disabled={variantAction !== null || index === 0}
+												onclick={() =>
+													moveVariant(
+														variant.source_channel_id,
+														variantsQuery.data!.items[index - 1].source_channel_id,
+														'before'
+													)}
+												aria-label={`Move ${variant.source_name} up`}><ArrowUp size={14} /></button
+											>
+											<button
+												type="button"
+												disabled={variantAction !== null ||
+													index === variantsQuery.data!.items.length - 1}
+												onclick={() =>
+													moveVariant(
+														variant.source_channel_id,
+														variantsQuery.data!.items[index + 1].source_channel_id,
+														'after'
+													)}
+												aria-label={`Move ${variant.source_name} down`}
+												><ArrowDown size={14} /></button
+											>
+											<button
+												type="button"
+												disabled={variantAction !== null}
+												onclick={() => rejectSource(variant)}
+												aria-label={`Reject ${variant.source_name}`}><Unlink size={14} /></button
+											>
+										</span>
 									</li>{/each}
 							</ol>{:else}<p class="muted small">
-								No source variants. Choose “Variant” in the source browser to add one and lock the
-								match.
+								No source variants. Search the Source Browser, then use “Add to failover stack” on a
+								channel.
 							</p>{/if}
 					</section>
 					{#if rejectionsQuery.data?.items.length}<section>
@@ -1252,12 +1332,19 @@
 
 <style>
 	.workbench {
+		display: flex;
 		height: 100dvh;
+		contain: strict;
+		overflow: clip;
+		flex-direction: column;
+	}
+	:global(html:has(.workbench)) {
 		overflow: hidden;
 	}
 	.workbench-bar {
 		display: flex;
 		height: 4.4rem;
+		flex: none;
 		align-items: center;
 		justify-content: space-between;
 		border-bottom: 1px solid var(--line);
@@ -1291,6 +1378,7 @@
 	.workbench-message {
 		display: flex;
 		height: 2.7rem;
+		flex: none;
 		align-items: center;
 		justify-content: center;
 		gap: 1rem;
@@ -1308,11 +1396,9 @@
 	}
 	.workbench-panes {
 		display: grid;
-		height: calc(100dvh - 4.4rem);
+		min-height: 0;
+		flex: 1;
 		grid-template-columns: minmax(15rem, 20rem) minmax(23rem, 1fr) minmax(17rem, 21rem);
-	}
-	.workbench-message + .workbench-panes {
-		height: calc(100dvh - 7.1rem);
 	}
 	.workbench-panes.inspector-closed {
 		grid-template-columns: minmax(16rem, 22rem) 1fr;
@@ -1893,23 +1979,60 @@
 		list-style: none;
 	}
 	.variants li {
-		display: flex;
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
 		align-items: center;
 		gap: 0.5rem;
 		border: 1px solid var(--line);
 		border-radius: 0.6rem;
 		padding: 0.5rem;
 	}
-	.variants li span {
+	.variant-copy {
 		display: grid;
+		gap: 0.16rem;
 		min-width: 0;
-		flex: 1;
 	}
-	.variants li > button {
+	.variant-title {
+		display: flex;
+		min-width: 0;
+		align-items: center;
+		gap: 0.35rem;
+	}
+	.variant-title em {
+		flex: none;
+		border-radius: 999px;
+		background: color-mix(in oklch, var(--aqua) 18%, var(--surface-raised));
+		padding: 0.16rem 0.35rem;
+		color: var(--text);
+		font-size: 0.5rem;
+		font-style: normal;
+		font-weight: 800;
+		letter-spacing: 0.02em;
+		text-transform: uppercase;
+	}
+	.variant-title em.backup {
+		background: color-mix(in oklch, var(--periwinkle) 16%, var(--surface-raised));
+	}
+	.variant-title strong,
+	.variant-copy small {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.variant-copy small {
+		color: var(--muted);
+	}
+	.variant-actions {
+		display: grid;
+		grid-column: 2;
+		grid-template-columns: repeat(3, 2rem);
+		justify-self: end;
+		gap: 0.18rem;
+	}
+	.variant-actions button {
 		display: grid;
 		width: 2rem;
 		height: 2rem;
-		flex: none;
 		place-items: center;
 		border: 0;
 		border-radius: 0.5rem;
@@ -1917,9 +2040,18 @@
 		color: var(--muted);
 		cursor: pointer;
 	}
-	.variants li > button:hover {
+	.variant-actions button:hover:not(:disabled),
+	.variant-actions button:focus-visible {
 		background: var(--surface-raised);
+		color: var(--text);
+	}
+	.variant-actions button:last-child:hover:not(:disabled),
+	.variant-actions button:last-child:focus-visible {
 		color: var(--error);
+	}
+	.variant-actions button:disabled {
+		opacity: 0.3;
+		cursor: not-allowed;
 	}
 	.variants strong {
 		font-size: 0.68rem;
@@ -2295,20 +2427,24 @@
 	}
 	@media (max-width: 1150px) {
 		.workbench-panes {
+			position: relative;
 			grid-template-columns: 18rem 1fr;
 		}
 		.inspector-pane {
-			position: fixed;
+			position: absolute;
 			z-index: 55;
-			top: 4.4rem;
-			right: 0;
-			bottom: 0;
+			inset: 0 0 0 auto;
 			width: min(23rem, 90vw);
 			border-left: 1px solid var(--line);
 			box-shadow: -20px 0 60px rgb(0 0 0/0.3);
 		}
-		.workbench-message + .workbench-panes .inspector-pane {
-			top: 7.1rem;
+		.inspector-pane.empty {
+			display: none;
+		}
+	}
+	@media (max-width: 900px) {
+		.workbench {
+			height: calc(100dvh - 4.25rem);
 		}
 	}
 	@media (max-width: 760px) {
@@ -2328,7 +2464,6 @@
 		}
 		.workbench-panes,
 		.workbench-panes.inspector-closed {
-			height: calc(100dvh - 7.5rem);
 			grid-template-columns: 1fr;
 		}
 		.source-pane {
@@ -2336,12 +2471,6 @@
 		}
 		.canvas-pane {
 			border: 0;
-		}
-		.inspector-pane {
-			top: 7.5rem;
-		}
-		.workbench-message + .workbench-panes {
-			height: calc(100dvh - 10.2rem);
 		}
 		.group-create-actions .app-button {
 			min-width: 0;

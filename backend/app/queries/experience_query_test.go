@@ -29,8 +29,9 @@ func newExperienceTestDB(t *testing.T) *sqlx.DB {
 		`CREATE TABLE playlistgroup (id INTEGER PRIMARY KEY, name TEXT, playlist_id INTEGER, enabled BOOLEAN)`,
 		`CREATE TABLE playlistchannel (id INTEGER PRIMARY KEY, tvg_id TEXT, tvg_name TEXT, tvg_logo TEXT, title TEXT, group_id INTEGER, enabled BOOLEAN)`,
 		`CREATE TABLE template_group_channel (group_id INTEGER, channel_id INTEGER, orderr INTEGER, PRIMARY KEY (group_id, channel_id), FOREIGN KEY (channel_id) REFERENCES templatechannel(id) ON DELETE CASCADE)`,
-		`CREATE TABLE templatechannelitem (id INTEGER PRIMARY KEY, channel_id INTEGER, playlist_channel_id INTEGER, orderr INTEGER, match_method TEXT, match_score REAL, runner_up_score REAL, matcher_version INTEGER, manual_locked BOOLEAN, FOREIGN KEY (channel_id) REFERENCES templatechannel(id) ON DELETE CASCADE)`,
-		`CREATE TABLE channelmatchrejection (id INTEGER PRIMARY KEY, channel_id INTEGER, playlist_id INTEGER, tvg_id_norm TEXT NOT NULL DEFAULT '', name_norm TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+		`CREATE TABLE templatechannelitem (id INTEGER PRIMARY KEY, channel_id INTEGER, playlist_channel_id INTEGER, orderr INTEGER, match_method TEXT, match_score REAL, runner_up_score REAL, matcher_version INTEGER, manual_locked BOOLEAN, FOREIGN KEY (channel_id) REFERENCES templatechannel(id) ON DELETE CASCADE, UNIQUE(channel_id, playlist_channel_id) ON CONFLICT IGNORE)`,
+		`CREATE TABLE channelmatchrejection (id INTEGER PRIMARY KEY, channel_id INTEGER, playlist_id INTEGER, tvg_id_norm TEXT NOT NULL DEFAULT '', name_norm TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(channel_id, playlist_id, tvg_id_norm, name_norm) ON CONFLICT IGNORE)`,
+		`CREATE TABLE channelurl (id INTEGER PRIMARY KEY, url TEXT, channel_id INTEGER, orderr INTEGER, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE logo (id INTEGER PRIMARY KEY, name TEXT)`,
 		`CREATE TABLE epgprogramme (id INTEGER PRIMARY KEY, start DATETIME, stop DATETIME, channel TEXT, "title.value" TEXT, subtitle TEXT, desc TEXT, categories TEXT)`,
 		`CREATE TABLE operation_job (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, resource TEXT, resource_id INTEGER, status TEXT DEFAULT 'queued', progress INTEGER DEFAULT 0, message TEXT DEFAULT '', error_code TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, finished_at DATETIME)`,
@@ -177,6 +178,109 @@ func TestGetMatchSuggestionsRequiresExistingChannel(t *testing.T) {
 	}
 }
 
+func TestGetMatchSuggestionsIncludesBackupFromRepresentedPlaylist(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'TYT Network', 'tyt.us', 0, 'tyt')`)
+	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES (10, 'News', 1, 1)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES
+		(100, 'tyt.us', 'TYT Network', NULL, 'TYT Network', 10, 1),
+		(101, 'tyt.us', 'TYT Network Backup', NULL, 'TYT Network Backup', 10, 1),
+		(102, 'tcm.us', 'TCM', NULL, 'TCM Cinema', 10, 1)`)
+	db.MustExec(`INSERT INTO templatechannelitem VALUES (1, 1, 100, 1, 'manual', 1, NULL, 2, 1)`)
+
+	suggestions, err := NewExperienceQueries(db).GetMatchSuggestions(context.Background(), 1, 5)
+	if err != nil {
+		t.Fatalf("GetMatchSuggestions failed: %v", err)
+	}
+	if len(suggestions) != 1 || suggestions[0].SourceChannelID != 101 {
+		t.Fatalf("expected the unattached source from the represented playlist, got %#v", suggestions)
+	}
+	if suggestions[0].Method != "exact_tvg_id_name" || suggestions[0].Score != 1 {
+		t.Fatalf("expected TVG-ID backup confidence, got %#v", suggestions[0])
+	}
+}
+
+func TestManualMatchStackAllowsSamePlaylistAndCanBeReordered(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`CREATE TRIGGER templatechannelitem_one_automatic_source_per_playlist
+		BEFORE INSERT ON templatechannelitem
+		WHEN COALESCE(NEW.manual_locked, false) = false AND EXISTS (
+			SELECT 1 FROM templatechannelitem existing
+			JOIN playlistchannel existing_pc ON existing_pc.id = existing.playlist_channel_id
+			JOIN playlistgroup existing_pg ON existing_pg.id = existing_pc.group_id
+			JOIN playlistchannel new_pc ON new_pc.id = NEW.playlist_channel_id
+			JOIN playlistgroup new_pg ON new_pg.id = new_pc.group_id
+			WHERE existing.channel_id = NEW.channel_id AND existing_pg.playlist_id = new_pg.playlist_id
+		) BEGIN SELECT RAISE(IGNORE); END`)
+	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'News', NULL, 0, 'news')`)
+	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES (10, 'News', 1, 1)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES
+		(100, 'news.tv', 'News primary', NULL, 'News primary', 10, 1),
+		(101, 'news.tv', 'News backup', NULL, 'News backup', 10, 1),
+		(102, 'news.tv', 'News automatic', NULL, 'News automatic', 10, 1)`)
+
+	query := NewExperienceQueries(db)
+	if err := query.AttachManualMatch(context.Background(), 1, 100); err != nil {
+		t.Fatalf("attaching the primary failed: %v", err)
+	}
+	if err := query.AttachManualMatch(context.Background(), 1, 101); err != nil {
+		t.Fatalf("attaching a same-playlist backup failed: %v", err)
+	}
+
+	primary := int64(100)
+	if err := query.MoveMatchVariant(context.Background(), 1, 101, &primary, nil); err != nil {
+		t.Fatalf("moving the backup to primary failed: %v", err)
+	}
+	var ordered []int64
+	if err := db.Select(&ordered, `SELECT playlist_channel_id FROM templatechannelitem WHERE channel_id = 1 ORDER BY orderr, id`); err != nil {
+		t.Fatal(err)
+	}
+	if len(ordered) != 2 || ordered[0] != 101 || ordered[1] != 100 {
+		t.Fatalf("unexpected failover order: %v", ordered)
+	}
+
+	db.MustExec(`INSERT INTO templatechannelitem
+		(channel_id, playlist_channel_id, orderr, match_method, matcher_version, manual_locked)
+		VALUES (1, 102, 3, 'exact_name', 2, false)`)
+	var count int
+	db.Get(&count, `SELECT COUNT(*) FROM templatechannelitem WHERE channel_id = 1`)
+	if count != 2 {
+		t.Fatalf("automatic matching added a second source from the represented playlist; count=%d", count)
+	}
+	if err := NewTemplateQueries(db).DeleteTmplChannelItem(&models.TemplateChannelItem{
+		ChannelId: 1, PlaylistChannelId: 101,
+	}); err != nil {
+		t.Fatalf("removing the primary variant failed: %v", err)
+	}
+	var remainingOrder int64
+	db.Get(&remainingOrder, `SELECT orderr FROM templatechannelitem WHERE channel_id = 1 AND playlist_channel_id = 100`)
+	if remainingOrder != 1 {
+		t.Fatalf("remaining variant order was not compacted: %d", remainingOrder)
+	}
+}
+
+func TestStreamSourcesFollowVariantThenURLOrder(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'News', NULL, 0, 'news-uuid')`)
+	db.MustExec(`INSERT INTO templatechannelitem VALUES
+		(1, 1, 100, 2, 'manual', 1, NULL, 2, 1),
+		(2, 1, 101, 1, 'manual', 1, NULL, 2, 1)`)
+	db.MustExec(`INSERT INTO channelurl VALUES
+		(1, 'primary-second', 101, 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+		(2, 'backup-first', 100, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+		(3, 'primary-first', 101, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+
+	channels, err := NewStreamQueries(db).GetChannelsbyUuid(context.Background(), "news-uuid")
+	if err != nil {
+		t.Fatalf("GetChannelsbyUuid failed: %v", err)
+	}
+	if len(*channels) != 3 || (*channels)[0].Url != "primary-first" || (*channels)[1].Url != "primary-second" || (*channels)[2].Url != "backup-first" {
+		t.Fatalf("unexpected source order: %#v", *channels)
+	}
+}
+
 func TestMatchRejectionRestoreResolvesOnlyUniqueEligibleSource(t *testing.T) {
 	db := newExperienceTestDB(t)
 	db.MustExec(`INSERT INTO playlist VALUES
@@ -219,7 +323,7 @@ func TestMatchRejectionRestoreResolvesOnlyUniqueEligibleSource(t *testing.T) {
 		t.Fatalf("ambiguous source should not be attachable: %#v", byID[2])
 	}
 	if byID[3].SourceChannelID != nil {
-		t.Fatalf("represented playlist should not be attachable: %#v", byID[3])
+		t.Fatalf("the exact source already attached should not be attachable again: %#v", byID[3])
 	}
 
 	deleted, err := query.DeleteMatchRejection(context.Background(), 1, 1)

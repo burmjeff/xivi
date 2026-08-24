@@ -324,11 +324,16 @@ func (q *ExperienceQueries) GetMatchReview(ctx context.Context, channelID *int64
 		return nil, 0, err
 	}
 	rows := []models.MatchReview{}
+	orderSQL := `tci.manual_locked DESC, COALESCE(tci.match_score, -1) DESC, LOWER(source_name), pc.id`
+	if channelID != nil {
+		orderSQL = `tci.orderr, tci.id`
+	}
 	query := `SELECT tc.id AS channel_id, tc.name AS channel_name, pc.id AS source_channel_id,
-		COALESCE(NULLIF(pc.tvg_name, ''), pc.title) AS source_name, p.name AS playlist_name,
-		tci.match_method AS method, tci.match_score AS score, tci.runner_up_score,
+		COALESCE(NULLIF(pc.tvg_name, ''), pc.title) AS source_name, pc.tvg_logo AS source_logo_url,
+		pg.id AS group_id, pg.name AS group_name, p.id AS playlist_id, p.name AS playlist_name,
+		tci.orderr, tci.match_method AS method, tci.match_score AS score, tci.runner_up_score,
 		tci.manual_locked ` + joinSQL + ` WHERE ` + whereSQL + `
-		ORDER BY tci.manual_locked DESC, COALESCE(tci.match_score, -1) DESC, LOWER(source_name), pc.id LIMIT ? OFFSET ?`
+		ORDER BY ` + orderSQL + ` LIMIT ? OFFSET ?`
 	if err := q.SelectContext(ctx, &rows, query, append(args, limit, offset)...); err != nil {
 		return nil, 0, err
 	}
@@ -340,9 +345,11 @@ type sourceMatchCandidate struct {
 	Title string `db:"title"`
 }
 
-// GetMatchSuggestions ranks eligible sources for a lineup channel. Sources from
-// playlists that are already represented cannot be attached because the data
-// model permits one variant per playlist, so they are omitted before ranking.
+const minimumSuggestedMatchScore = 0.55
+
+// GetMatchSuggestions ranks eligible sources for a lineup channel. Only the
+// exact sources already in the failover stack are omitted; a person may attach
+// another source from the same playlist as an explicit backup.
 func (q *ExperienceQueries) GetMatchSuggestions(ctx context.Context, channelID int64, limit int) ([]models.MatchSuggestion, error) {
 	if limit < 1 {
 		return []models.MatchSuggestion{}, nil
@@ -370,9 +377,7 @@ func (q *ExperienceQueries) GetMatchSuggestions(ctx context.Context, channelID i
 		WHERE pc.enabled = true AND pg.enabled = true
 		AND NOT EXISTS (
 			SELECT 1 FROM templatechannelitem attached
-			JOIN playlistchannel attached_pc ON attached_pc.id = attached.playlist_channel_id
-			JOIN playlistgroup attached_pg ON attached_pg.id = attached_pc.group_id
-			WHERE attached.channel_id = ? AND attached_pg.playlist_id = p.id
+			WHERE attached.channel_id = ? AND attached.playlist_channel_id = pc.id
 		)
 		ORDER BY pc.id`, channelID); err != nil {
 		return nil, err
@@ -441,6 +446,9 @@ func (q *ExperienceQueries) GetMatchSuggestions(ctx context.Context, channelID i
 			suggestion.Score = nameResult.Score
 			suggestion.Method = nameResult.Method
 		}
+		if suggestion.Score < minimumSuggestedMatchScore {
+			continue
+		}
 		results = append(results, suggestion)
 	}
 
@@ -460,6 +468,127 @@ func (q *ExperienceQueries) GetMatchSuggestions(ctx context.Context, channelID i
 		results = results[:limit]
 	}
 	return results, nil
+}
+
+func (q *ExperienceQueries) AttachManualMatch(ctx context.Context, channelID, sourceChannelID int64) error {
+	return q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		var channelExists, sourceExists bool
+		if err := tx.GetContext(ctx, &channelExists, `SELECT EXISTS(SELECT 1 FROM templatechannel WHERE id = ?)`, channelID); err != nil {
+			return err
+		}
+		if err := tx.GetContext(ctx, &sourceExists, `SELECT EXISTS(SELECT 1 FROM playlistchannel WHERE id = ?)`, sourceChannelID); err != nil {
+			return err
+		}
+		if !channelExists || !sourceExists {
+			return sql.ErrNoRows
+		}
+
+		var existing bool
+		if err := tx.GetContext(ctx, &existing, `SELECT EXISTS(SELECT 1 FROM templatechannelitem WHERE channel_id = ? AND playlist_channel_id = ?)`, channelID, sourceChannelID); err != nil {
+			return err
+		}
+		if existing {
+			if _, err := tx.ExecContext(ctx, `UPDATE templatechannelitem
+				SET match_method = ?, match_score = 1, runner_up_score = NULL,
+					matcher_version = ?, manual_locked = true
+				WHERE channel_id = ? AND playlist_channel_id = ?`,
+				channelmatch.MethodManual, channelmatch.CurrentVersion, channelID, sourceChannelID); err != nil {
+				return err
+			}
+		} else {
+			var order int64
+			if err := tx.GetContext(ctx, &order, `SELECT COALESCE(MAX(orderr), 0) + 1 FROM templatechannelitem WHERE channel_id = ?`, channelID); err != nil {
+				return err
+			}
+			result, err := tx.ExecContext(ctx, `INSERT INTO templatechannelitem (
+				channel_id, playlist_channel_id, orderr, match_method, match_score,
+				runner_up_score, matcher_version, manual_locked
+			) VALUES (?, ?, ?, ?, 1, NULL, ?, true)`,
+				channelID, sourceChannelID, order, channelmatch.MethodManual, channelmatch.CurrentVersion)
+			if err != nil {
+				return err
+			}
+			if affected, err := result.RowsAffected(); err != nil || affected == 0 {
+				if err != nil {
+					return err
+				}
+				return fmt.Errorf("source variant was not attached")
+			}
+		}
+
+		identity := struct {
+			TVGID      *string `db:"tvg_id"`
+			Name       string  `db:"title"`
+			PlaylistID int64   `db:"playlist_id"`
+		}{}
+		if err := tx.GetContext(ctx, &identity, `SELECT pc.tvg_id, pc.title, pg.playlist_id
+			FROM playlistchannel pc JOIN playlistgroup pg ON pg.id = pc.group_id
+			WHERE pc.id = ?`, sourceChannelID); err != nil {
+			return err
+		}
+		tvgID := ""
+		if identity.TVGID != nil {
+			tvgID = channelmatch.NormalizeTvgID(*identity.TVGID)
+		}
+		_, err := tx.ExecContext(ctx, `DELETE FROM channelmatchrejection
+			WHERE channel_id = ? AND playlist_id = ?
+			AND ((tvg_id_norm <> '' AND tvg_id_norm = ?) OR name_norm = ?)`,
+			channelID, identity.PlaylistID, tvgID, channelmatch.ParseName(identity.Name).Canonical)
+		return err
+	})
+}
+
+func (q *ExperienceQueries) MoveMatchVariant(ctx context.Context, channelID, sourceChannelID int64, beforeID, afterID *int64) error {
+	if (beforeID == nil) == (afterID == nil) {
+		return fmt.Errorf("exactly one of before_id or after_id is required")
+	}
+	return q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		ids := []int64{}
+		if err := tx.SelectContext(ctx, &ids, `SELECT playlist_channel_id FROM templatechannelitem WHERE channel_id = ? ORDER BY orderr, id`, channelID); err != nil {
+			return err
+		}
+		targetID := beforeID
+		if targetID == nil {
+			targetID = afterID
+		}
+		if sourceChannelID == *targetID {
+			return fmt.Errorf("a source variant cannot be moved relative to itself")
+		}
+		ordered := make([]int64, 0, len(ids))
+		sourceFound, targetFound := false, false
+		for _, id := range ids {
+			if id == sourceChannelID {
+				sourceFound = true
+				continue
+			}
+			if id == *targetID {
+				targetFound = true
+			}
+			ordered = append(ordered, id)
+		}
+		if !sourceFound || !targetFound {
+			return sql.ErrNoRows
+		}
+		insertAt := 0
+		for index, id := range ordered {
+			if id == *targetID {
+				insertAt = index
+				if afterID != nil {
+					insertAt++
+				}
+				break
+			}
+		}
+		ordered = append(ordered, 0)
+		copy(ordered[insertAt+1:], ordered[insertAt:])
+		ordered[insertAt] = sourceChannelID
+		for index, id := range ordered {
+			if _, err := tx.ExecContext(ctx, `UPDATE templatechannelitem SET orderr = ? WHERE channel_id = ? AND playlist_channel_id = ?`, index+1, channelID, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (q *ExperienceQueries) GetMatchRejections(ctx context.Context, channelID int64) ([]models.MatchRejection, error) {
@@ -493,9 +622,7 @@ func (q *ExperienceQueries) GetMatchRejections(ctx context.Context, channelID in
 		)
 		AND NOT EXISTS (
 			SELECT 1 FROM templatechannelitem attached
-			JOIN playlistchannel attached_pc ON attached_pc.id = attached.playlist_channel_id
-			JOIN playlistgroup attached_pg ON attached_pg.id = attached_pc.group_id
-			WHERE attached.channel_id = ? AND attached_pg.playlist_id = pg.playlist_id
+			WHERE attached.channel_id = ? AND attached.playlist_channel_id = pc.id
 		)
 		ORDER BY pc.id`, channelID, channelID); err != nil {
 		return nil, err

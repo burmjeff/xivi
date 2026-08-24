@@ -701,6 +701,15 @@ func (q *TemplateQueries) DeleteTmplChannelItem(templateItem *models.TemplateCha
 		if rowsAffected == 0 {
 			return sql.ErrNoRows
 		}
+		ids := []int64{}
+		if err := tx.Select(&ids, `SELECT id FROM templatechannelitem WHERE channel_id = ? ORDER BY orderr, id`, templateItem.ChannelId); err != nil {
+			return err
+		}
+		for index, id := range ids {
+			if _, err := tx.Exec(`UPDATE templatechannelitem SET orderr = ? WHERE id = ?`, index+1, id); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 }

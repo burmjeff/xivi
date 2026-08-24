@@ -349,8 +349,9 @@
 									>
 									{#if selectedChannelId}<button
 											onclick={() => onAttachSource(row.channel)}
-											aria-label={`Use ${row.channel.name} as a source variant`}
-											title="Attach to selected lineup channel"><Link2 size={14} /></button
+											aria-label={`Add ${row.channel.name} to the selected channel's failover stack`}
+											title="Add to the selected channel’s failover stack"
+											><Link2 size={14} /></button
 										>{/if}
 								</div>
 							</div>

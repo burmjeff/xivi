@@ -365,10 +365,15 @@
 		}
 		.studio-main,
 		.studio-main.studio-nav-collapsed {
+			min-height: calc(100dvh - 4.25rem);
 			margin-left: 0;
 		}
 	}
 	@media (max-width: 650px) {
+		.studio-rail .rail-brand :global(.brand > span),
+		.studio-rail.collapsed .rail-brand :global(.brand > span) {
+			display: none;
+		}
 		.watch-header {
 			height: 4.15rem;
 			padding: 0 0.9rem;

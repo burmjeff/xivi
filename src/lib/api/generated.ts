@@ -484,6 +484,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/studio/channels/{channel_id}/matches/{source_channel_id}/position': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['moveChannelSourceVariant'];
+		trace?: never;
+	};
 	'/studio/channels/{channel_id}/matches/{source_channel_id}/reject': {
 		parameters: {
 			query?: never;
@@ -796,7 +812,15 @@ export interface components {
 			/** Format: int64 */
 			source_channel_id: number;
 			source_name: string;
+			source_logo_url?: string;
+			/** Format: int64 */
+			group_id: number;
+			group_name: string;
+			/** Format: int64 */
+			playlist_id: number;
 			playlist_name: string;
+			/** Format: int64 */
+			order: number;
 			method: string;
 			/** Format: double */
 			score?: number;
@@ -1774,7 +1798,33 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Match accepted and manually locked. */
+			/** @description Match accepted */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	moveChannelSourceVariant: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				channel_id: components['parameters']['ChannelId'];
+				source_channel_id: components['parameters']['SourceChannelId'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PositionRequest'];
+			};
+		};
+		responses: {
+			/** @description Source failover position saved. */
 			204: {
 				headers: {
 					[name: string]: unknown;

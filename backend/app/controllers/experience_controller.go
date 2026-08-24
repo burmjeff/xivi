@@ -533,17 +533,31 @@ func V2AcceptStudioMatch(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_source_channel", "The source channel id is invalid.", false)
 	}
-	if _, err := database.Db.GetPlChannel(sourceChannelID); err != nil {
-		return v2Error(c, fiber.StatusNotFound, "source_channel_not_found", "That source channel was not found.", false)
+	if err := database.Db.AttachManualMatch(c.UserContext(), channelID, sourceChannelID); errors.Is(err, sql.ErrNoRows) {
+		return v2Error(c, fiber.StatusNotFound, "match_target_not_found", "That lineup channel or source channel was not found.", false)
+	} else if err != nil {
+		return v2Error(c, fiber.StatusUnprocessableEntity, "match_conflict", "That source could not be attached as a backup.", false)
 	}
-	item := &models.TemplateChannelItem{ChannelId: channelID, PlaylistChannelId: sourceChannelID, MatchMethod: "manual", MatcherVersion: 2, ManualLocked: true}
-	if existing, _ := database.Db.GetTmplChannelItem(item); existing == nil {
-		if _, err := database.Db.CreateTmplChannelItem(item); err != nil {
-			return v2Error(c, fiber.StatusUnprocessableEntity, "match_conflict", "That source could not be attached. A source from the same playlist may already be locked.", false)
-		}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func V2MoveStudioMatch(c *fiber.Ctx) error {
+	channelID, err := parseID(c, "channel_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_channel", "The channel id is invalid.", false)
 	}
-	if err := database.Db.ClearChannelMatchRejection(channelID, sourceChannelID); err != nil {
-		return v2Error(c, fiber.StatusInternalServerError, "match_accept_failed", "The match was attached but its rejection history could not be cleared.", true)
+	sourceChannelID, err := parseID(c, "source_channel_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_source_channel", "The source channel id is invalid.", false)
+	}
+	body := positionRequest{}
+	if err := c.BodyParser(&body); err != nil || (body.BeforeID == nil) == (body.AfterID == nil) {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_move", "Choose exactly one source to move before or after.", false)
+	}
+	if err := database.Db.MoveMatchVariant(c.UserContext(), channelID, sourceChannelID, body.BeforeID, body.AfterID); errors.Is(err, sql.ErrNoRows) {
+		return v2Error(c, fiber.StatusNotFound, "match_not_found", "That source variant or its destination was not found.", false)
+	} else if err != nil {
+		return v2Error(c, fiber.StatusUnprocessableEntity, "move_failed", err.Error(), false)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }

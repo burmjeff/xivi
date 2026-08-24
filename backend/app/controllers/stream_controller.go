@@ -30,6 +30,33 @@ type AppSettings struct {
 	BufferTime int  `json:"buffertime,omitempty"`
 }
 
+// startOrderedStream tries source variants in their saved failover order when
+// a proxy pipeline cannot start. Long-running pipeline failures are still
+// handled by the streaming lifecycle, but an unavailable primary no longer
+// prevents an immediately usable backup from starting.
+func startOrderedStream(c *fiber.Ctx, streamID string, channels []models.ChannelUrl, hls bool) error {
+	var lastErr error
+	for index, candidate := range channels {
+		stream := streaming.NewStream(streamID, candidate.Url)
+		stream.HlsExists = hls
+		streaming.AddStream(stream)
+		if err := stream.StartStream(c); err == nil {
+			if index > 0 {
+				log.Warn().Int("source_position", index+1).Str("uuid", streamID).Msg("Started fallback source")
+			}
+			return nil
+		} else {
+			lastErr = err
+			log.Warn().Err(err).Int("variant_position", index+1).Str("uuid", streamID).Msg("Source variant failed during startup")
+			streaming.RemoveStream(stream)
+		}
+	}
+	if lastErr == nil {
+		return fmt.Errorf("no source variants are available")
+	}
+	return fmt.Errorf("all ordered source variants failed: %w", lastErr)
+}
+
 // GetStream func gets stream.
 // @Description Get stream by given UUID.
 // @Summary get stream by given UUID
@@ -111,10 +138,7 @@ func GetStream(c *fiber.Ctx) error {
 				}
 			}
 			if !found {
-				s := streaming.NewStream(stream_id, (*channels)[0].Url)
-				streaming.AddStream(s)
-
-				if err := s.StartStream(c); err != nil {
+				if err := startOrderedStream(c, stream_id, *channels, settings.APP_SETTINGS.Streaming.Type == "hls"); err != nil {
 					log.Error().Msgf("Failed to start stream: %v", err)
 					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 						"error": true,
@@ -223,11 +247,7 @@ func GetHlsStream(c *fiber.Ctx) error {
 				}
 			}
 			if !found {
-				s := streaming.NewStream(stream_id, (*channels)[0].Url)
-				streaming.AddStream(s)
-				s.HlsExists = true
-
-				if err := s.StartStream(c); err != nil {
+				if err := startOrderedStream(c, stream_id, *channels, true); err != nil {
 					log.Error().Msgf("Failed to start stream: %v", err)
 					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 						"error": true,

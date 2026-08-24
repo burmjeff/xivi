@@ -43,6 +43,7 @@ func V2Routes(a *fiber.App) {
 	v2.Get("/studio/channels/:channel_id/rejections", controllers.V2StudioMatchRejections)
 	v2.Delete("/studio/channels/:channel_id/rejections/:rejection_id", controllers.V2DeleteStudioMatchRejection)
 	v2.Post("/studio/channels/:channel_id/matches/:source_channel_id/accept", controllers.V2AcceptStudioMatch)
+	v2.Patch("/studio/channels/:channel_id/matches/:source_channel_id/position", controllers.V2MoveStudioMatch)
 	v2.Post("/studio/channels/:channel_id/matches/:source_channel_id/reject", controllers.V2RejectStudioMatch)
 	v2.Post("/studio/sources/:source_id/refresh", controllers.V2RefreshSource)
 	v2.Post("/studio/guide-data/sources/:source_id/refresh", controllers.V2RefreshGuideSource)

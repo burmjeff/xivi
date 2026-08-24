@@ -418,7 +418,21 @@ paths:
         - $ref: '#/components/parameters/ChannelId'
         - $ref: '#/components/parameters/SourceChannelId'
       responses:
-        '204': { description: Match accepted and manually locked. }
+        '204': { description: Match accepted, manually locked, and appended to the failover order. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/channels/{channel_id}/matches/{source_channel_id}/position:
+    patch:
+      operationId: moveChannelSourceVariant
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+        - $ref: '#/components/parameters/SourceChannelId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PositionRequest' }
+      responses:
+        '204': { description: Source failover position saved. }
         default: { $ref: '#/components/responses/Error' }
   /studio/channels/{channel_id}/matches/{source_channel_id}/reject:
     post:
@@ -742,7 +756,11 @@ components:
           channel_name,
           source_channel_id,
           source_name,
+          group_id,
+          group_name,
+          playlist_id,
           playlist_name,
+          order,
           method,
           manual_locked
         ]
@@ -751,7 +769,12 @@ components:
         channel_name: { type: string }
         source_channel_id: { type: integer, format: int64 }
         source_name: { type: string }
+        source_logo_url: { type: string }
+        group_id: { type: integer, format: int64 }
+        group_name: { type: string }
+        playlist_id: { type: integer, format: int64 }
         playlist_name: { type: string }
+        order: { type: integer, format: int64, minimum: 1 }
         method: { type: string }
         score: { type: number, format: double }
         runner_up_score: { type: number, format: double }

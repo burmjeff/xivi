@@ -12,11 +12,12 @@ import (
 // SQL query constants
 const (
 	selectChannelsByUuidQuery = `
-		SELECT channelurl.* FROM channelurl
-		JOIN templatechannelitem ON channelurl.channel_id = templatechannelitem.playlist_channel_id
+		SELECT channelurl.* FROM templatechannelitem
 		JOIN templatechannel ON templatechannel.id = templatechannelitem.channel_id
-		WHERE templatechannel.uuid = ? 
-		ORDER BY channelurl.orderr ASC
+		JOIN channelurl ON channelurl.channel_id = templatechannelitem.playlist_channel_id
+		WHERE templatechannel.uuid = ?
+		ORDER BY templatechannelitem.orderr ASC, templatechannelitem.id ASC,
+			channelurl.orderr ASC, channelurl.id ASC
 		-- FORCE INDEX (idx_templatechannel_uuid) -- Hint to use index on uuid
 		LIMIT 1000 -- Safety limit
 	`

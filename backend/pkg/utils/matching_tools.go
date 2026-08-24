@@ -114,9 +114,10 @@ type sqlExecutor interface {
 }
 
 const insertAutomaticMatchQuery = `INSERT INTO templatechannelitem (
-	channel_id, playlist_channel_id, match_method, match_score,
+	channel_id, playlist_channel_id, orderr, match_method, match_score,
 	runner_up_score, matcher_version, manual_locked
-) VALUES (?, ?, ?, ?, ?, ?, false)
+) SELECT ?, ?, COALESCE(MAX(orderr), 0) + 1, ?, ?, ?, ?, false
+	FROM templatechannelitem WHERE channel_id = ?
 ON CONFLICT(channel_id, playlist_channel_id) DO NOTHING`
 
 // Search if tvgid matches for playlist channel and add to template if match.
@@ -511,6 +512,7 @@ func insertAutomaticMatch(
 		score,
 		runnerUpScore,
 		channelmatch.CurrentVersion,
+		templateChannelID,
 	)
 	if err != nil {
 		return false, err
