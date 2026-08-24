@@ -42,10 +42,18 @@
 	const guideQuery = createQuery(() => ({
 		queryKey: ['watch', 'guide', lineupId, day, groupId, search],
 		enabled: !!lineupId,
-		queryFn: () =>
-			api<Paginated<GuideChannel>>(
+		queryFn: async () => {
+			const result = await api<Paginated<GuideChannel>>(
 				`/api/v2/watch/lineups/${lineupId}/guide${params({ from: from.toISOString(), to: to.toISOString(), group_id: groupId, q: search, limit: 500 })}`
-			)
+			);
+			return {
+				...result,
+				items: result.items.map((channel) => ({
+					...channel,
+					programmes: channel.programmes ?? []
+				}))
+			};
+		}
 	}));
 	let groups = $derived.by(() => [
 		...new Map(

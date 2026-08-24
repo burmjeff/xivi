@@ -5,6 +5,7 @@ package queries
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -81,6 +82,36 @@ func TestGetGuideChannelsUsesWindowBoundariesAndSavedOrder(t *testing.T) {
 	}
 	if channels[0].Logo != "" {
 		t.Fatalf("default logo should map to the Signal Tile placeholder, got %q", channels[0].Logo)
+	}
+}
+
+func TestGetGuideChannelsReturnsAnEmptyProgrammeArray(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO template VALUES (1, 'Main')`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'News', 0, NULL)`)
+	db.MustExec(`INSERT INTO template_group_item VALUES (1, 10, 1)`)
+	db.MustExec(`INSERT INTO logo VALUES (0, 'xivi_channel')`)
+	db.MustExec(`INSERT INTO templatechannel VALUES (100, 'No Schedule', 'missing.tv', 0, 'missing-uuid')`)
+	db.MustExec(`INSERT INTO template_group_channel VALUES (10, 100, 1)`)
+	db.MustExec(`INSERT INTO templatechannelitem VALUES (1, 100, 1000, 0, 'manual', 1, NULL, 2, 1)`)
+
+	from := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
+	channels, total, err := NewExperienceQueries(db).GetGuideChannels(context.Background(), 1, nil, "", from, from.Add(24*time.Hour), 100, 0)
+	if err != nil {
+		t.Fatalf("GetGuideChannels returned an error: %v", err)
+	}
+	if total != 1 || len(channels) != 1 {
+		t.Fatalf("expected one channel, total=%d len=%d", total, len(channels))
+	}
+	if channels[0].Programmes == nil || len(channels[0].Programmes) != 0 {
+		t.Fatalf("expected a non-nil empty programme array, got %#v", channels[0].Programmes)
+	}
+	payload, err := json.Marshal(channels[0])
+	if err != nil {
+		t.Fatalf("marshal guide channel: %v", err)
+	}
+	if strings.Contains(string(payload), `"programmes":null`) {
+		t.Fatalf("guide contract emitted a null programme array: %s", payload)
 	}
 }
 

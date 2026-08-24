@@ -161,7 +161,9 @@ func (q *ExperienceQueries) GetGuideChannels(ctx context.Context, lineupID int64
 		if channels[i].TVGID == nil {
 			continue
 		}
-		channels[i].Programmes = byTVG[*channels[i].TVGID]
+		if scheduled, ok := byTVG[*channels[i].TVGID]; ok {
+			channels[i].Programmes = scheduled
+		}
 		for p := range channels[i].Programmes {
 			programme := &channels[i].Programmes[p]
 			if !programme.Start.After(now) && programme.End.After(now) {
