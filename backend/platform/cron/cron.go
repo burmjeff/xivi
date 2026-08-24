@@ -187,10 +187,22 @@ func CleanPlaylist(playlist models.Playlist, startTime time.Time) {
 		log.Info().Int64("playlist_id", playlist.ID).Msg("No channels found for cleanup")
 		return
 	}
+	groups, err := database.Db.GetPlGroups(playlist.ID)
+	if err != nil {
+		log.Error().Err(err).Int64("playlist_id", playlist.ID).Msg("Failed to get playlist groups for cleanup")
+		return
+	}
+	disabledGroups := map[int64]bool{}
+	for _, group := range *groups {
+		disabledGroups[group.ID] = !group.Enabled
+	}
 
 	// Count channels that need to be removed
 	removedCount := 0
 	for _, channel := range *channels {
+		if disabledGroups[channel.GroupId] {
+			continue
+		}
 		// A channel is considered stale if UpdatedAt is before the start time
 		if channel.UpdatedAt.Before(startTime) {
 			if err := database.Db.DeletePlChannel(channel.ID); err != nil {

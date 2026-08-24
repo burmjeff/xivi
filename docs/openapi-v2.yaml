@@ -131,6 +131,10 @@ paths:
           in: query
           description: Hide groups with no unused channels and count only channels unused by the active lineup. Requires lineup_id.
           schema: { type: boolean, default: false }
+        - name: enabled_only
+          in: query
+          description: Return only enabled groups that contain enabled channels, and count only those channels.
+          schema: { type: boolean, default: false }
         - $ref: '#/components/parameters/Search'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
@@ -140,6 +144,24 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SourceGroupPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/source-groups/{source_group_id}/enabled:
+    patch:
+      operationId: setSourceGroupEnabled
+      description: Changes group-wide source availability without overwriting channel-level enablement choices or removing lineup membership.
+      parameters:
+        - { $ref: '#/components/parameters/SourceGroupIdPath' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '204': { description: Group availability saved. }
         default: { $ref: '#/components/responses/Error' }
   /studio/lineups/{lineup_id}/source-groups/{source_group_id}/copy:
     post:
@@ -336,6 +358,10 @@ paths:
         - name: unused_only
           in: query
           description: Hide sources already attached as any channel variant in the active lineup. Requires lineup_id.
+          schema: { type: boolean, default: false }
+        - name: enabled_only
+          in: query
+          description: Return only channels whose channel and parent group are enabled.
           schema: { type: boolean, default: false }
         - $ref: '#/components/parameters/Search'
         - $ref: '#/components/parameters/Cursor'
@@ -672,7 +698,7 @@ components:
         source_group_name: { type: string }
         follow_group_name: { type: boolean }
         follow_channel_names: { type: boolean }
-        status: { type: string, enum: [pending, active, disconnected, error] }
+        status: { type: string, enum: [pending, active, paused, disconnected, error] }
         last_synced_at: { type: string, format: date-time }
         last_error: { type: string }
         added_count: { type: integer, format: int64 }

@@ -267,7 +267,7 @@ func (q *ExperienceQueries) SetSourceChannelsEnabled(ctx context.Context, ids []
 	return err
 }
 
-func (q *ExperienceQueries) GetSourceChannels(ctx context.Context, playlistID, groupID, lineupID *int64, unusedOnly bool, search string, limit, offset int) ([]models.SourceChannel, int64, error) {
+func (q *ExperienceQueries) GetSourceChannels(ctx context.Context, playlistID, groupID, lineupID *int64, unusedOnly, enabledOnly bool, search string, limit, offset int) ([]models.SourceChannel, int64, error) {
 	where, args := []string{"1 = 1"}, []any{}
 	if playlistID != nil {
 		where = append(where, "p.id = ?")
@@ -276,6 +276,9 @@ func (q *ExperienceQueries) GetSourceChannels(ctx context.Context, playlistID, g
 	if groupID != nil {
 		where = append(where, "pg.id = ?")
 		args = append(args, *groupID)
+	}
+	if enabledOnly {
+		where = append(where, "pc.enabled = true", "pg.enabled = true")
 	}
 	if search != "" {
 		where = append(where, "(LOWER(COALESCE(pc.tvg_name, pc.title)) LIKE ? OR LOWER(COALESCE(pc.tvg_id, '')) LIKE ?)")

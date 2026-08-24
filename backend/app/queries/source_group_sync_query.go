@@ -54,7 +54,7 @@ type existingWorkspaceChannel struct {
 	TVGID *string `db:"tvgid"`
 }
 
-func (q *ExperienceQueries) GetSourceGroups(ctx context.Context, playlistID, lineupID *int64, unusedOnly bool, search string, limit, offset int) ([]models.SourceGroup, int64, error) {
+func (q *ExperienceQueries) GetSourceGroups(ctx context.Context, playlistID, lineupID *int64, unusedOnly, enabledOnly bool, search string, limit, offset int) ([]models.SourceGroup, int64, error) {
 	where := []string{"1 = 1"}
 	args := []any{}
 	if playlistID != nil {
@@ -65,6 +65,11 @@ func (q *ExperienceQueries) GetSourceGroups(ctx context.Context, playlistID, lin
 		where = append(where, "(LOWER(pg.name) LIKE ? OR LOWER(p.name) LIKE ?)")
 		term := "%" + strings.ToLower(search) + "%"
 		args = append(args, term, term)
+	}
+	availableEnabledSQL := ""
+	if enabledOnly {
+		where = append(where, "pg.enabled = true")
+		availableEnabledSQL = " AND available.enabled = true"
 	}
 	usedSourcesCTE := ""
 	if unusedOnly && lineupID != nil {
@@ -78,11 +83,11 @@ func (q *ExperienceQueries) GetSourceGroups(ctx context.Context, playlistID, lin
 		where = append(where, `EXISTS (
 			SELECT 1 FROM playlistchannel available
 			LEFT JOIN used_sources used ON used.playlist_channel_id = available.id
-			WHERE available.group_id = pg.id AND used.playlist_channel_id IS NULL
+			WHERE available.group_id = pg.id AND used.playlist_channel_id IS NULL`+availableEnabledSQL+`
 		)`)
 		args = append([]any{*lineupID}, args...)
 	} else {
-		where = append(where, "EXISTS (SELECT 1 FROM playlistchannel available WHERE available.group_id = pg.id)")
+		where = append(where, "EXISTS (SELECT 1 FROM playlistchannel available WHERE available.group_id = pg.id"+availableEnabledSQL+")")
 	}
 	whereSQL := strings.Join(where, " AND ")
 	var total int64
@@ -91,6 +96,9 @@ func (q *ExperienceQueries) GetSourceGroups(ctx context.Context, playlistID, lin
 	}
 	items := []models.SourceGroup{}
 	channelJoin := "LEFT JOIN playlistchannel pc ON pc.group_id = pg.id"
+	if enabledOnly {
+		channelJoin += " AND pc.enabled = true"
+	}
 	if unusedOnly && lineupID != nil {
 		channelJoin += " LEFT JOIN used_sources used ON used.playlist_channel_id = pc.id"
 		whereSQL += " AND used.playlist_channel_id IS NULL"
@@ -109,6 +117,35 @@ func (q *ExperienceQueries) GetSourceGroups(ctx context.Context, playlistID, lin
 		return nil, 0, err
 	}
 	return items, total, nil
+}
+
+// SetSourceGroupEnabled changes the group-wide availability without rewriting
+// its channel-level choices. Linked lineup groups keep their last good snapshot
+// and expose a paused state until the source group is available again.
+func (q *ExperienceQueries) SetSourceGroupEnabled(ctx context.Context, sourceGroupID int64, enabled bool) error {
+	return q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		result, err := tx.ExecContext(ctx, `UPDATE playlistgroup SET enabled = ? WHERE id = ?`, enabled, sourceGroupID)
+		if err != nil {
+			return err
+		}
+		updated, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if updated == 0 {
+			return ErrSourceGroupNotFound
+		}
+		if enabled {
+			_, err = tx.ExecContext(ctx, `UPDATE lineup_group_source_link
+				SET status = 'pending', last_error = ''
+				WHERE source_group_id = ? AND status = 'paused'`, sourceGroupID)
+		} else {
+			_, err = tx.ExecContext(ctx, `UPDATE lineup_group_source_link
+				SET status = 'paused', last_error = 'Source group is disabled. The previous lineup snapshot was retained.'
+				WHERE source_group_id = ?`, sourceGroupID)
+		}
+		return err
+	})
 }
 
 func (q *ExperienceQueries) GetSourceGroupLink(ctx context.Context, groupID int64) (*models.SourceGroupLink, error) {
@@ -403,11 +440,14 @@ func (q *ExperienceQueries) SetSourceGroupLink(ctx context.Context, groupID int6
 
 func setSourceGroupLinkTx(ctx context.Context, tx *sqlx.Tx, groupID int64, request models.SourceGroupLinkRequest) error {
 	source := sourceGroupRecord{}
-	if err := tx.GetContext(ctx, &source, `SELECT id, name, playlist_id FROM playlistgroup WHERE id = ?`, request.SourceGroupID); err != nil {
+	if err := tx.GetContext(ctx, &source, `SELECT id, name, playlist_id, enabled FROM playlistgroup WHERE id = ?`, request.SourceGroupID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrSourceGroupNotFound
 		}
 		return err
+	}
+	if !source.Enabled {
+		return ErrSourceGroupDisabled
 	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO lineup_group_source_link (
 			group_id, playlist_id, source_group_id, source_group_name,
@@ -464,7 +504,11 @@ func (q *ExperienceQueries) SyncSourceGroup(ctx context.Context, groupID int64) 
 	}
 	sourceGroup, err := q.resolveLinkedSourceGroup(ctx, link)
 	if err != nil {
-		_ = q.markSourceGroupLinkFailure(ctx, groupID, "disconnected", err)
+		status := "disconnected"
+		if errors.Is(err, ErrSourceGroupDisabled) {
+			status = "paused"
+		}
+		_ = q.markSourceGroupLinkFailure(ctx, groupID, status, err)
 		return nil, err
 	}
 	result, err := q.syncResolvedSourceGroup(ctx, link, sourceGroup)
@@ -578,7 +622,12 @@ func (q *ExperienceQueries) applyDefaultSourceLogos(ctx context.Context, groupID
 
 func (q *ExperienceQueries) SyncSourceGroupsForPlaylist(ctx context.Context, playlistID int64) ([]models.SourceGroupSyncResult, error) {
 	groupIDs := []int64{}
-	if err := q.SelectContext(ctx, &groupIDs, `SELECT group_id FROM lineup_group_source_link WHERE playlist_id = ? ORDER BY group_id`, playlistID); err != nil {
+	if err := q.SelectContext(ctx, &groupIDs, `SELECT link.group_id
+		FROM lineup_group_source_link link
+		LEFT JOIN playlistgroup source ON source.id = link.source_group_id
+		WHERE link.playlist_id = ?
+			AND (link.source_group_id IS NULL OR source.id IS NULL OR source.enabled = true)
+		ORDER BY link.group_id`, playlistID); err != nil {
 		return nil, err
 	}
 	results := make([]models.SourceGroupSyncResult, 0, len(groupIDs))
@@ -597,13 +646,27 @@ func (q *ExperienceQueries) SyncSourceGroupsForPlaylist(ctx context.Context, pla
 func (q *ExperienceQueries) resolveLinkedSourceGroup(ctx context.Context, link *models.SourceGroupLink) (*sourceGroupRecord, error) {
 	if link.SourceGroupID != nil {
 		group := &sourceGroupRecord{}
-		if err := q.GetContext(ctx, group, `SELECT id, name, playlist_id FROM playlistgroup WHERE id = ? AND playlist_id = ?`, *link.SourceGroupID, link.PlaylistID); err == nil {
+		err := q.GetContext(ctx, group, `SELECT id, name, playlist_id, enabled FROM playlistgroup WHERE id = ? AND playlist_id = ?`, *link.SourceGroupID, link.PlaylistID)
+		if err == nil {
+			if !group.Enabled {
+				return nil, ErrSourceGroupDisabled
+			}
 			return group, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, err
 		}
 	}
 	exact := &sourceGroupRecord{}
-	if err := q.GetContext(ctx, exact, `SELECT id, name, playlist_id FROM playlistgroup WHERE playlist_id = ? AND LOWER(name) = LOWER(?) ORDER BY id LIMIT 1`, link.PlaylistID, link.SourceGroupName); err == nil {
+	err := q.GetContext(ctx, exact, `SELECT id, name, playlist_id, enabled FROM playlistgroup WHERE playlist_id = ? AND LOWER(name) = LOWER(?) ORDER BY id LIMIT 1`, link.PlaylistID, link.SourceGroupName)
+	if err == nil {
+		if !exact.Enabled {
+			return nil, ErrSourceGroupDisabled
+		}
 		return exact, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
 	}
 	memberIdentities := []string{}
 	if err := q.SelectContext(ctx, &memberIdentities, `SELECT source_identity FROM lineup_group_source_member WHERE group_id = ?`, link.GroupID); err != nil {
@@ -617,7 +680,7 @@ func (q *ExperienceQueries) resolveLinkedSourceGroup(ctx context.Context, link *
 		wanted[identity] = true
 	}
 	candidates := []sourceGroupRecord{}
-	if err := q.SelectContext(ctx, &candidates, `SELECT id, name, playlist_id FROM playlistgroup WHERE playlist_id = ? ORDER BY id`, link.PlaylistID); err != nil {
+	if err := q.SelectContext(ctx, &candidates, `SELECT id, name, playlist_id, enabled FROM playlistgroup WHERE playlist_id = ? AND enabled = true ORDER BY id`, link.PlaylistID); err != nil {
 		return nil, err
 	}
 	var best *sourceGroupRecord

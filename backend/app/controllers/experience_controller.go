@@ -372,12 +372,34 @@ func V2StudioSourceGroups(c *fiber.Ctx) error {
 	if unusedOnly && lineupID == nil {
 		return v2Error(c, fiber.StatusBadRequest, "lineup_required", "Choose a lineup before filtering used sources.", false)
 	}
+	enabledOnly, err := optionalBoolQuery(c, "enabled_only")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_filter", "The source availability filter is invalid.", false)
+	}
 	limit, offset := pageParams(c)
-	items, total, err := database.Db.GetSourceGroups(c.UserContext(), playlistID, lineupID, unusedOnly, strings.TrimSpace(c.Query("q")), limit, offset)
+	items, total, err := database.Db.GetSourceGroups(c.UserContext(), playlistID, lineupID, unusedOnly, enabledOnly, strings.TrimSpace(c.Query("q")), limit, offset)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "source_groups_unavailable", "Source groups could not be loaded.", true)
 	}
 	return c.JSON(models.Paginated[models.SourceGroup]{Items: items, NextCursor: nextCursor(offset, len(items), total), Total: total})
+}
+
+func V2SetStudioSourceGroupEnabled(c *fiber.Ctx) error {
+	sourceGroupID, err := parseID(c, "source_group_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_source_group", "The source group id is invalid.", false)
+	}
+	request := models.SourceGroupEnableRequest{}
+	if err := c.BodyParser(&request); err != nil || request.Enabled == nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_enablement", "The source group enablement request is invalid.", false)
+	}
+	if err := database.Db.SetSourceGroupEnabled(c.UserContext(), sourceGroupID, *request.Enabled); err != nil {
+		if errors.Is(err, queries.ErrSourceGroupNotFound) {
+			return studioGroupError(c, err)
+		}
+		return v2Error(c, fiber.StatusUnprocessableEntity, "enablement_failed", "Source group enablement could not be updated.", false)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 func V2SetStudioGroupSourceLink(c *fiber.Ctx) error {
@@ -461,8 +483,12 @@ func V2StudioSourceChannels(c *fiber.Ctx) error {
 	if unusedOnly && lineupID == nil {
 		return v2Error(c, fiber.StatusBadRequest, "lineup_required", "Choose a lineup before filtering used sources.", false)
 	}
+	enabledOnly, err := optionalBoolQuery(c, "enabled_only")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_filter", "The source availability filter is invalid.", false)
+	}
 	limit, offset := pageParams(c)
-	items, total, err := database.Db.GetSourceChannels(c.UserContext(), playlistID, groupID, lineupID, unusedOnly, strings.TrimSpace(c.Query("q")), limit, offset)
+	items, total, err := database.Db.GetSourceChannels(c.UserContext(), playlistID, groupID, lineupID, unusedOnly, enabledOnly, strings.TrimSpace(c.Query("q")), limit, offset)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "sources_unavailable", "Source channels could not be loaded.", true)
 	}

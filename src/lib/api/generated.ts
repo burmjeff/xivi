@@ -164,6 +164,23 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/studio/source-groups/{source_group_id}/enabled': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		/** @description Changes group-wide source availability without overwriting channel-level enablement choices or removing lineup membership. */
+		patch: operations['setSourceGroupEnabled'];
+		trace?: never;
+	};
 	'/studio/lineups/{lineup_id}/source-groups/{source_group_id}/copy': {
 		parameters: {
 			query?: never;
@@ -721,7 +738,7 @@ export interface components {
 			follow_group_name: boolean;
 			follow_channel_names: boolean;
 			/** @enum {string} */
-			status: 'pending' | 'active' | 'disconnected' | 'error';
+			status: 'pending' | 'active' | 'paused' | 'disconnected' | 'error';
 			/** Format: date-time */
 			last_synced_at?: string;
 			last_error?: string;
@@ -1242,6 +1259,8 @@ export interface operations {
 				lineup_id?: number;
 				/** @description Hide groups with no unused channels and count only channels unused by the active lineup. Requires lineup_id. */
 				unused_only?: boolean;
+				/** @description Return only enabled groups that contain enabled channels, and count only those channels. */
+				enabled_only?: boolean;
 				q?: components['parameters']['Search'];
 				cursor?: components['parameters']['Cursor'];
 				limit?: components['parameters']['Limit'];
@@ -1260,6 +1279,33 @@ export interface operations {
 				content: {
 					'application/json': components['schemas']['SourceGroupPage'];
 				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	setSourceGroupEnabled: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				source_group_id: components['parameters']['SourceGroupIdPath'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': {
+					enabled: boolean;
+				};
+			};
+		};
+		responses: {
+			/** @description Group availability saved. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
 			};
 			default: components['responses']['Error'];
 		};
@@ -1626,6 +1672,8 @@ export interface operations {
 				lineup_id?: number;
 				/** @description Hide sources already attached as any channel variant in the active lineup. Requires lineup_id. */
 				unused_only?: boolean;
+				/** @description Return only channels whose channel and parent group are enabled. */
+				enabled_only?: boolean;
 				q?: components['parameters']['Search'];
 				cursor?: components['parameters']['Cursor'];
 				limit?: components['parameters']['Limit'];

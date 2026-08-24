@@ -11,10 +11,12 @@
 		CheckCircle2,
 		XCircle,
 		Power,
-		PowerOff
+		PowerOff,
+		Layers3,
+		ChevronDown
 	} from '@lucide/svelte';
 	import { api, params } from '$lib/api/client';
-	import type { LegacyPlaylist, Paginated, SourceChannel } from '$lib/api/types';
+	import type { LegacyPlaylist, Paginated, SourceChannel, SourceGroup } from '$lib/api/types';
 	import StudioHeader from '$lib/components/studio/StudioHeader.svelte';
 
 	type PlaylistResponse = { playlists: LegacyPlaylist[]; count: number };
@@ -30,7 +32,8 @@
 		name = $state(''),
 		url = $state(''),
 		editing = $state<LegacyPlaylist | null>(null),
-		busy = $state<number | 'form' | null>(null),
+		busy = $state<number | 'form' | `group:${number}` | null>(null),
+		groupsOpen = $state(true),
 		message = $state('');
 	$effect(() => {
 		if (!selectedPlaylistId && playlistsQuery.data?.playlists[0])
@@ -42,6 +45,14 @@
 		queryFn: () =>
 			api<Paginated<SourceChannel>>(
 				`/api/v2/studio/source-channels${params({ playlist_id: selectedPlaylistId, q: channelSearch, limit: 500 })}`
+			)
+	}));
+	const groupsQuery = createQuery(() => ({
+		queryKey: ['studio', 'source-groups', 'catalog', selectedPlaylistId],
+		enabled: !!selectedPlaylistId,
+		queryFn: () =>
+			api<Paginated<SourceGroup>>(
+				`/api/v2/studio/source-groups${params({ playlist_id: selectedPlaylistId, limit: 500 })}`
 			)
 	}));
 	const table = createTable({
@@ -142,6 +153,43 @@
 		} catch {
 			message = 'Enablement could not be updated.';
 		}
+	}
+	async function setGroupEnabled(group: SourceGroup, enabled: boolean) {
+		busy = `group:${group.id}`;
+		message = '';
+		try {
+			await api(`/api/v2/studio/source-groups/${group.id}/enabled`, {
+				method: 'PATCH',
+				body: JSON.stringify({ enabled })
+			});
+			if (!enabled) {
+				const groupChannelIDs = new Set(
+					(channelsQuery.data?.items ?? [])
+						.filter((channel) => channel.group_id === group.id)
+						.map((channel) => channel.id)
+				);
+				selectedChannels = new Set(
+					[...selectedChannels].filter((channelID) => !groupChannelIDs.has(channelID))
+				);
+			}
+			await Promise.all([
+				client.invalidateQueries({ queryKey: ['studio', 'source-groups'] }),
+				client.invalidateQueries({ queryKey: ['studio', 'source-browser'] }),
+				client.invalidateQueries({ queryKey: ['studio', 'lineup-groups'] })
+			]);
+			message = enabled
+				? `${group.name} is enabled. Its saved channel choices are unchanged.`
+				: `${group.name} is paused. Existing lineup channels were retained.`;
+		} catch {
+			message = `${group.name} availability could not be updated.`;
+		} finally {
+			busy = null;
+		}
+	}
+	function channelAvailability(channel: SourceChannel) {
+		const group = groupsQuery.data?.items.find((item) => item.id === channel.group_id);
+		if (group && !group.enabled) return 'Group paused';
+		return channel.enabled ? 'Enabled' : 'Disabled';
 	}
 	function format(value: string) {
 		return value
@@ -275,14 +323,79 @@
 				bind:value={channelSearch}
 				placeholder="Server-side channel search"
 			/></label
-		>{#if channelsQuery.isPending}<div class="catalog-loading">
+		>
+		<section class="catalog-groups" aria-label="Source group availability">
+			<button
+				class="groups-summary"
+				type="button"
+				aria-expanded={groupsOpen}
+				onclick={() => (groupsOpen = !groupsOpen)}
+			>
+				<Layers3 size={18} />
+				<span
+					><strong>Group availability</strong><small
+						>Pause matching, sync, and playback without changing channel choices</small
+					></span
+				>
+				{#if groupsQuery.data}<em
+						>{groupsQuery.data.items.filter((group) => group.enabled).length}/{groupsQuery.data
+							.total}
+						on</em
+					>{/if}
+				<ChevronDown class={!groupsOpen ? 'collapsed' : undefined} size={17} />
+			</button>
+			{#if groupsOpen}
+				{#if groupsQuery.isPending}
+					<div class="group-grid group-grid--loading">
+						{#each Array(4) as _}<div class="skeleton"></div>{/each}
+					</div>
+				{:else if groupsQuery.isError}
+					<p class="groups-error">Source groups could not be loaded.</p>
+				{:else if !groupsQuery.data?.total}
+					<p class="groups-empty">This playlist does not contain any source groups yet.</p>
+				{:else}
+					<div class="group-grid">
+						{#each groupsQuery.data.items as group}
+							<div class:off={!group.enabled} class="catalog-group-row">
+								<span
+									><strong>{group.name}</strong><small
+										>{group.channel_count} channel{group.channel_count === 1
+											? ''
+											: 's'}{group.linked_group_count
+											? ` · ${group.linked_group_count} synced lineup group${group.linked_group_count === 1 ? '' : 's'}`
+											: ''}</small
+									></span
+								>
+								<button
+									type="button"
+									class:enabled={group.enabled}
+									class="group-availability"
+									role="switch"
+									aria-checked={group.enabled}
+									aria-label={`${group.enabled ? 'Disable' : 'Enable'} ${group.name}`}
+									disabled={busy === `group:${group.id}`}
+									onclick={() => setGroupEnabled(group, !group.enabled)}
+								>
+									{#if group.enabled}<Power size={14} />Enabled{:else}<PowerOff
+											size={14}
+										/>Paused{/if}
+								</button>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			{/if}
+		</section>
+		{#if channelsQuery.isPending}<div class="catalog-loading">
 				{#each Array(8) as _}<div class="skeleton"></div>{/each}
 			</div>{:else if !channelsQuery.data?.total}<div class="table-empty">
 				<XCircle size={24} />
 				<h3>No imported channels</h3>
 				<p>Refresh this source, then check its last error if the catalog stays empty.</p>
 			</div>{:else}<div class="catalog-list">
-				{#each channelsQuery.data?.items ?? [] as channel}<label
+				{#each channelsQuery.data?.items ?? [] as channel}
+					{@const availability = channelAvailability(channel)}
+					<label
 						><input
 							type="checkbox"
 							checked={selectedChannels.has(channel.id)}
@@ -291,7 +404,7 @@
 							><strong>{channel.name}</strong><small
 								>{channel.group_name} · {channel.tvg_id || 'No TVG ID'}</small
 							></span
-						><em class:off={!channel.enabled}>{channel.enabled ? 'Enabled' : 'Disabled'}</em></label
+						><em class:off={availability !== 'Enabled'}>{availability}</em></label
 					>{/each}
 			</div>{/if}
 	</section>
@@ -475,6 +588,129 @@
 		outline: 0;
 		background: transparent;
 		color: var(--text);
+	}
+	.catalog-groups {
+		border-bottom: 1px solid var(--line);
+		background: color-mix(in oklch, var(--surface-raised) 45%, var(--surface));
+	}
+	.groups-summary {
+		display: grid;
+		width: 100%;
+		min-height: 3.8rem;
+		grid-template-columns: auto minmax(0, 1fr) auto auto;
+		align-items: center;
+		gap: 0.65rem;
+		border: 0;
+		background: transparent;
+		padding: 0.65rem 1rem;
+		color: var(--muted);
+		text-align: left;
+		cursor: pointer;
+	}
+	.groups-summary:hover {
+		background: color-mix(in oklch, var(--periwinkle) 7%, transparent);
+	}
+	.groups-summary span,
+	.catalog-group-row > span {
+		display: grid;
+		min-width: 0;
+	}
+	.groups-summary strong,
+	.catalog-group-row strong {
+		color: var(--text);
+		font-size: 0.72rem;
+	}
+	.groups-summary small,
+	.catalog-group-row small {
+		overflow: hidden;
+		color: var(--muted);
+		font-size: 0.59rem;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.groups-summary em {
+		border-radius: 99px;
+		background: color-mix(in oklch, var(--aqua) 12%, transparent);
+		padding: 0.2rem 0.45rem;
+		color: var(--aqua);
+		font-size: 0.58rem;
+		font-style: normal;
+		font-weight: 800;
+	}
+	.groups-summary :global(svg:last-child) {
+		transition: transform var(--layout);
+	}
+	.groups-summary :global(svg.collapsed) {
+		transform: rotate(-90deg);
+	}
+	.group-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+		max-height: 18rem;
+		overflow-y: auto;
+		border-top: 1px solid var(--line);
+	}
+	.catalog-group-row {
+		display: grid;
+		min-width: 0;
+		min-height: 3.7rem;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 0.75rem;
+		border-right: 1px solid var(--line);
+		border-bottom: 1px solid var(--line);
+		padding: 0.55rem 0.8rem 0.55rem 1rem;
+	}
+	.catalog-group-row.off {
+		background: color-mix(in oklch, var(--surface-raised) 70%, var(--surface));
+	}
+	.catalog-group-row.off > span {
+		opacity: 0.68;
+	}
+	.group-availability {
+		display: flex;
+		min-width: 5.6rem;
+		min-height: 2.2rem;
+		align-items: center;
+		justify-content: center;
+		gap: 0.3rem;
+		border: 1px solid var(--line);
+		border-radius: 99px;
+		background: var(--surface);
+		padding: 0.3rem 0.55rem;
+		color: var(--muted);
+		font-size: 0.59rem;
+		font-weight: 800;
+		cursor: pointer;
+	}
+	.group-availability.enabled {
+		border-color: color-mix(in oklch, var(--success) 35%, var(--line));
+		background: color-mix(in oklch, var(--success) 10%, var(--surface));
+		color: var(--success);
+	}
+	.group-availability:hover:not(:disabled) {
+		border-color: var(--periwinkle);
+		color: var(--text);
+	}
+	.group-availability:disabled {
+		opacity: 0.55;
+		cursor: wait;
+	}
+	.group-grid--loading div {
+		height: 3.7rem;
+		border-right: 1px solid var(--line);
+		border-bottom: 1px solid var(--line);
+	}
+	.groups-error,
+	.groups-empty {
+		margin: 0;
+		border-top: 1px solid var(--line);
+		padding: 0.9rem 1rem;
+		color: var(--muted);
+		font-size: 0.68rem;
+	}
+	.groups-error {
+		color: var(--error);
 	}
 	.catalog-list {
 		display: grid;

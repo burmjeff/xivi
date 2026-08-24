@@ -66,6 +66,7 @@
 				`/api/v2/studio/source-groups${params({
 					lineup_id: hideUsed ? lineupId : undefined,
 					unused_only: hideUsed || undefined,
+					enabled_only: true,
 					limit: 500
 				})}`
 			)
@@ -88,6 +89,7 @@
 					group_id: searchQuery ? undefined : expandedGroupId,
 					lineup_id: hideUsed ? lineupId : undefined,
 					unused_only: hideUsed || undefined,
+					enabled_only: true,
 					cursor: typeof pageParam === 'string' && pageParam ? pageParam : undefined,
 					limit: 50
 				})}`

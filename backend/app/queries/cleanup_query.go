@@ -12,12 +12,10 @@ const (
 	vacuumDBQuery = `PRAGMA incremental_vacuum;`
 	// Groups will only be cleaned up manually or through explicit user actions
 	cleanPlaylistGroupsQuery = `SELECT 1 WHERE 0` // No-op query that does nothing
-	// Clean playlist channels that belong to disabled groups in the specified playlist
-	cleanPlaylistChannelsQuery = `DELETE FROM playlistchannel
-		WHERE group_id IN (
-			SELECT id FROM playlistgroup
-			WHERE playlist_id = ? AND enabled = false
-		)`
+	// Disabling a source group is reversible availability state. Its last good
+	// channel snapshot is retained and stale enabled-group channels are handled
+	// by CleanPlaylist after a successful refresh.
+	cleanPlaylistChannelsQuery = `SELECT 1 WHERE ? >= 0`
 	cleanOldEpgProgrammesQuery = `DELETE FROM epgprogramme
 		WHERE stop < datetime('now', 'localtime', '-1 day')`
 )

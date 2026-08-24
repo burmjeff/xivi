@@ -20,6 +20,7 @@
 		RadioTower,
 		X,
 		CircleAlert,
+		PauseCircle,
 		ArrowUp,
 		ArrowDown
 	} from '@lucide/svelte';
@@ -807,8 +808,11 @@
 					class="sync-banner"
 					class:issue={selectedGroup.source_link.status === 'error' ||
 						selectedGroup.source_link.status === 'disconnected'}
+					class:paused={selectedGroup.source_link.status === 'paused'}
 				>
-					<RadioTower size={18} />
+					{#if selectedGroup.source_link.status === 'paused'}<PauseCircle
+							size={18}
+						/>{:else}<RadioTower size={18} />{/if}
 					<span
 						><strong>{selectedGroup.source_link.source_group_name}</strong><small
 							>{selectedGroup.source_link.playlist_name} · {selectedGroup.source_link.status ===
@@ -817,7 +821,13 @@
 								: selectedGroup.source_link.last_error || 'Waiting for its first sync'}</small
 						></span
 					>
-					<button onclick={() => syncNow(selectedGroup)}><RefreshCw size={15} />Sync now</button>
+					<button
+						disabled={selectedGroup.source_link.status === 'paused'}
+						title={selectedGroup.source_link.status === 'paused'
+							? 'Enable the source group in Sources before syncing'
+							: 'Sync this group now'}
+						onclick={() => syncNow(selectedGroup)}><RefreshCw size={15} />Sync now</button
+					>
 					<button onclick={() => openSyncSettings(selectedGroup)}>Settings</button>
 				</div>
 			{/if}
@@ -1236,8 +1246,11 @@
 					class="sync-current"
 					class:issue={syncGroup.source_link.status === 'error' ||
 						syncGroup.source_link.status === 'disconnected'}
+					class:paused={syncGroup.source_link.status === 'paused'}
 				>
-					{#if syncGroup.source_link.status === 'error' || syncGroup.source_link.status === 'disconnected'}
+					{#if syncGroup.source_link.status === 'paused'}
+						<PauseCircle size={18} />
+					{:else if syncGroup.source_link.status === 'error' || syncGroup.source_link.status === 'disconnected'}
 						<CircleAlert size={18} />
 					{:else}
 						<RadioTower size={18} />
@@ -1518,6 +1531,11 @@
 		background: color-mix(in oklch, var(--error) 9%, var(--surface));
 		color: var(--error);
 	}
+	.sync-banner.paused {
+		border-color: color-mix(in oklch, var(--sun) 45%, var(--line));
+		background: color-mix(in oklch, var(--sun) 9%, var(--surface));
+		color: var(--sun);
+	}
 	.sync-banner > span {
 		display: grid;
 		min-width: 0;
@@ -1549,6 +1567,10 @@
 		font-size: 0.62rem;
 		font-weight: 750;
 		cursor: pointer;
+	}
+	.sync-banner button:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 	.canvas-tools {
 		display: flex;
@@ -2261,6 +2283,10 @@
 	.sync-current.issue {
 		background: color-mix(in oklch, var(--error) 10%, var(--surface));
 		color: var(--error);
+	}
+	.sync-current.paused {
+		background: color-mix(in oklch, var(--sun) 10%, var(--surface));
+		color: var(--sun);
 	}
 	.sync-current span {
 		display: grid;

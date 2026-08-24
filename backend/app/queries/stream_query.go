@@ -14,8 +14,12 @@ const (
 	selectChannelsByUuidQuery = `
 		SELECT channelurl.* FROM templatechannelitem
 		JOIN templatechannel ON templatechannel.id = templatechannelitem.channel_id
+		JOIN playlistchannel ON playlistchannel.id = templatechannelitem.playlist_channel_id
+		JOIN playlistgroup ON playlistgroup.id = playlistchannel.group_id
 		JOIN channelurl ON channelurl.channel_id = templatechannelitem.playlist_channel_id
 		WHERE templatechannel.uuid = ?
+			AND playlistchannel.enabled = true
+			AND playlistgroup.enabled = true
 		ORDER BY templatechannelitem.orderr ASC, templatechannelitem.id ASC,
 			channelurl.orderr ASC, channelurl.id ASC
 		-- FORCE INDEX (idx_templatechannel_uuid) -- Hint to use index on uuid

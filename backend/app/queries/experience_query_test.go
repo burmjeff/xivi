@@ -197,7 +197,7 @@ func TestGetSourceChannelsCanHideSourcesUsedByTheActiveLineup(t *testing.T) {
 		(3, 3, 103, 1, 'manual', 1, NULL, 2, 1)`)
 
 	lineupID := int64(1)
-	items, total, err := NewExperienceQueries(db).GetSourceChannels(context.Background(), nil, nil, &lineupID, true, "", 50, 0)
+	items, total, err := NewExperienceQueries(db).GetSourceChannels(context.Background(), nil, nil, &lineupID, true, false, "", 50, 0)
 	if err != nil {
 		t.Fatalf("GetSourceChannels failed: %v", err)
 	}
@@ -208,12 +208,12 @@ func TestGetSourceChannelsCanHideSourcesUsedByTheActiveLineup(t *testing.T) {
 		t.Fatalf("filter hid a source used only by another lineup or retained one used here: %#v", items)
 	}
 
-	all, allTotal, err := NewExperienceQueries(db).GetSourceChannels(context.Background(), nil, nil, &lineupID, false, "", 50, 0)
+	all, allTotal, err := NewExperienceQueries(db).GetSourceChannels(context.Background(), nil, nil, &lineupID, false, false, "", 50, 0)
 	if err != nil || allTotal != 4 || len(all) != 4 {
 		t.Fatalf("unfiltered source catalog changed: total=%d items=%#v err=%v", allTotal, all, err)
 	}
 
-	groups, groupTotal, err := NewExperienceQueries(db).GetSourceGroups(context.Background(), nil, &lineupID, true, "", 50, 0)
+	groups, groupTotal, err := NewExperienceQueries(db).GetSourceGroups(context.Background(), nil, &lineupID, true, false, "", 50, 0)
 	if err != nil {
 		t.Fatalf("GetSourceGroups failed: %v", err)
 	}
@@ -221,12 +221,52 @@ func TestGetSourceChannelsCanHideSourcesUsedByTheActiveLineup(t *testing.T) {
 		t.Fatalf("expected only the partly available group with two unused sources, total=%d groups=%#v", groupTotal, groups)
 	}
 
-	allGroups, allGroupTotal, err := NewExperienceQueries(db).GetSourceGroups(context.Background(), nil, &lineupID, false, "", 50, 0)
+	allGroups, allGroupTotal, err := NewExperienceQueries(db).GetSourceGroups(context.Background(), nil, &lineupID, false, false, "", 50, 0)
 	if err != nil || allGroupTotal != 2 || len(allGroups) != 2 {
 		t.Fatalf("expected non-empty groups when the usage filter is off, total=%d groups=%#v err=%v", allGroupTotal, allGroups, err)
 	}
 	if allGroups[0].ChannelCount != 1 || allGroups[1].ChannelCount != 3 {
 		t.Fatalf("unfiltered group counts changed: %#v", allGroups)
+	}
+}
+
+func TestSourceBrowserExcludesDisabledGroupsAndChannels(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES
+		(10, 'Mixed', 1, 1),
+		(20, 'Disabled group', 1, 0),
+		(30, 'Only disabled channels', 1, 1)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES
+		(100, NULL, 'Visible', NULL, 'Visible', 10, 1),
+		(101, NULL, 'Disabled channel', NULL, 'Disabled channel', 10, 0),
+		(200, NULL, 'Hidden with group', NULL, 'Hidden with group', 20, 1),
+		(300, NULL, 'Only disabled', NULL, 'Only disabled', 30, 0)`)
+
+	query := NewExperienceQueries(db)
+	channels, channelTotal, err := query.GetSourceChannels(context.Background(), nil, nil, nil, false, true, "", 50, 0)
+	if err != nil {
+		t.Fatalf("GetSourceChannels failed: %v", err)
+	}
+	if channelTotal != 1 || len(channels) != 1 || channels[0].ID != 100 {
+		t.Fatalf("expected only the enabled channel in an enabled group, total=%d channels=%#v", channelTotal, channels)
+	}
+
+	groups, groupTotal, err := query.GetSourceGroups(context.Background(), nil, nil, false, true, "", 50, 0)
+	if err != nil {
+		t.Fatalf("GetSourceGroups failed: %v", err)
+	}
+	if groupTotal != 1 || len(groups) != 1 || groups[0].ID != 10 || groups[0].ChannelCount != 1 {
+		t.Fatalf("expected only the enabled non-empty group with its visible count, total=%d groups=%#v", groupTotal, groups)
+	}
+
+	allChannels, allChannelTotal, err := query.GetSourceChannels(context.Background(), nil, nil, nil, false, false, "", 50, 0)
+	if err != nil || allChannelTotal != 4 || len(allChannels) != 4 {
+		t.Fatalf("management catalog must retain disabled channels, total=%d channels=%#v err=%v", allChannelTotal, allChannels, err)
+	}
+	allGroups, allGroupTotal, err := query.GetSourceGroups(context.Background(), nil, nil, false, false, "", 50, 0)
+	if err != nil || allGroupTotal != 3 || len(allGroups) != 3 {
+		t.Fatalf("management catalog must retain disabled groups, total=%d groups=%#v err=%v", allGroupTotal, allGroups, err)
 	}
 }
 
@@ -348,9 +388,81 @@ func TestManualMatchStackAllowsSamePlaylistAndCanBeReordered(t *testing.T) {
 	}
 }
 
+func TestSourceGroupEnablementPreservesChannelsAndPausesLinkedSnapshots(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'News', 1, 1)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES
+		(100, 'alpha.tv', 'Alpha', NULL, 'Alpha', 20, 1),
+		(101, 'beta.tv', 'Beta', NULL, 'Beta', 20, 0)`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'News', 0, NULL)`)
+	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'Alpha', 'alpha.tv', 0, 'alpha')`)
+	db.MustExec(`INSERT INTO template_group_channel VALUES (10, 1, 1)`)
+	db.MustExec(`INSERT INTO lineup_group_source_link
+		(group_id, playlist_id, source_group_id, source_group_name, status)
+		VALUES (10, 1, 20, 'News', 'active')`)
+	db.MustExec(`INSERT INTO lineup_group_source_member
+		(group_id, template_channel_id, source_channel_id, source_identity, last_source_name)
+		VALUES (10, 1, 100, 'tvg:alpha.tv', 'Alpha')`)
+
+	query := NewExperienceQueries(db)
+	if err := query.SetSourceGroupEnabled(context.Background(), 20, false); err != nil {
+		t.Fatalf("disabling source group failed: %v", err)
+	}
+	var groupEnabled bool
+	db.Get(&groupEnabled, `SELECT enabled FROM playlistgroup WHERE id = 20`)
+	if groupEnabled {
+		t.Fatal("source group remained enabled")
+	}
+	channelStates := []bool{}
+	db.Select(&channelStates, `SELECT enabled FROM playlistchannel WHERE group_id = 20 ORDER BY id`)
+	if len(channelStates) != 2 || !channelStates[0] || channelStates[1] {
+		t.Fatalf("channel-level choices were overwritten: %#v", channelStates)
+	}
+	if err := NewCleanupQueries(db).CleanPlaylistChannels(context.Background(), 1); err != nil {
+		t.Fatalf("disabled-group cleanup failed: %v", err)
+	}
+	var retainedSourceChannels int
+	db.Get(&retainedSourceChannels, `SELECT COUNT(*) FROM playlistchannel WHERE group_id = 20`)
+	if retainedSourceChannels != 2 {
+		t.Fatalf("disabled source group lost its retained snapshot: %d channels", retainedSourceChannels)
+	}
+	link, err := query.GetSourceGroupLink(context.Background(), 10)
+	if err != nil || link.Status != "paused" || !strings.Contains(link.LastError, "previous lineup snapshot") {
+		t.Fatalf("linked snapshot was not paused clearly: link=%#v err=%v", link, err)
+	}
+	results, err := query.SyncSourceGroupsForPlaylist(context.Background(), 1)
+	if err != nil || len(results) != 0 {
+		t.Fatalf("playlist refresh did not skip its paused source group: results=%#v err=%v", results, err)
+	}
+	if _, err := query.SyncSourceGroup(context.Background(), 10); !errors.Is(err, ErrSourceGroupDisabled) {
+		t.Fatalf("disabled source group was allowed to sync: %v", err)
+	}
+	var memberCount int
+	db.Get(&memberCount, `SELECT COUNT(*) FROM lineup_group_source_member WHERE group_id = 10`)
+	if memberCount != 1 {
+		t.Fatalf("paused sync changed the retained lineup snapshot: %d members", memberCount)
+	}
+
+	if err := query.SetSourceGroupEnabled(context.Background(), 20, true); err != nil {
+		t.Fatalf("re-enabling source group failed: %v", err)
+	}
+	link, err = query.GetSourceGroupLink(context.Background(), 10)
+	if err != nil || link.Status != "pending" || link.LastError != "" {
+		t.Fatalf("re-enabled source group was not ready to resume: link=%#v err=%v", link, err)
+	}
+	if err := query.SetSourceGroupEnabled(context.Background(), 999, false); !errors.Is(err, ErrSourceGroupNotFound) {
+		t.Fatalf("missing source group returned the wrong error: %v", err)
+	}
+}
+
 func TestStreamSourcesFollowVariantThenURLOrder(t *testing.T) {
 	db := newExperienceTestDB(t)
 	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'News', NULL, 0, 'news-uuid')`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES (10, 'News', 1, 1)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES
+		(100, NULL, 'Backup', NULL, 'Backup', 10, 1),
+		(101, NULL, 'Primary', NULL, 'Primary', 10, 1)`)
 	db.MustExec(`INSERT INTO templatechannelitem VALUES
 		(1, 1, 100, 2, 'manual', 1, NULL, 2, 1),
 		(2, 1, 101, 1, 'manual', 1, NULL, 2, 1)`)
@@ -365,6 +477,34 @@ func TestStreamSourcesFollowVariantThenURLOrder(t *testing.T) {
 	}
 	if len(*channels) != 3 || (*channels)[0].Url != "primary-first" || (*channels)[1].Url != "primary-second" || (*channels)[2].Url != "backup-first" {
 		t.Fatalf("unexpected source order: %#v", *channels)
+	}
+}
+
+func TestStreamSourcesSkipDisabledChannelsAndGroups(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'News', NULL, 0, 'news-uuid')`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES
+		(10, 'Available', 1, 1),
+		(20, 'Paused', 1, 0)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES
+		(100, NULL, 'Available', NULL, 'Available', 10, 1),
+		(101, NULL, 'Channel disabled', NULL, 'Channel disabled', 10, 0),
+		(102, NULL, 'Group disabled', NULL, 'Group disabled', 20, 1)`)
+	db.MustExec(`INSERT INTO templatechannelitem VALUES
+		(1, 1, 100, 1, 'manual', 1, NULL, 2, 1),
+		(2, 1, 101, 2, 'manual', 1, NULL, 2, 1),
+		(3, 1, 102, 3, 'manual', 1, NULL, 2, 1)`)
+	db.MustExec(`INSERT INTO channelurl VALUES
+		(1, 'available', 100, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+		(2, 'channel-disabled', 101, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+		(3, 'group-disabled', 102, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+
+	channels, err := NewStreamQueries(db).GetChannelsbyUuid(context.Background(), "news-uuid")
+	if err != nil {
+		t.Fatalf("GetChannelsbyUuid failed: %v", err)
+	}
+	if len(*channels) != 1 || (*channels)[0].Url != "available" {
+		t.Fatalf("disabled source variants reached playback: %#v", *channels)
 	}
 }
 

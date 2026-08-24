@@ -241,6 +241,10 @@ type SourceChannelEnableRequest struct {
 	Enabled    bool    `json:"enabled"`
 }
 
+type SourceGroupEnableRequest struct {
+	Enabled *bool `json:"enabled"`
+}
+
 type WorkspaceBatchAddRequest struct {
 	SourceChannelIDs []int64 `json:"source_channel_ids"`
 }

@@ -107,6 +107,7 @@
 		<span>{group.name}</span><strong>{group.channel_count}</strong>{#if group.source_link}<em
 				class:issue={group.source_link.status === 'error' ||
 					group.source_link.status === 'disconnected'}
+				class:paused={group.source_link.status === 'paused'}
 				>{group.source_link.status === 'active' ? 'Synced' : group.source_link.status}</em
 			>{/if}
 	</button>
@@ -256,6 +257,9 @@
 	}
 	.group-main em.issue {
 		color: var(--error);
+	}
+	.group-main em.paused {
+		color: var(--sun);
 	}
 	:global(.group-action-menu) {
 		z-index: 100;
