@@ -109,12 +109,20 @@ func TestGSTProducerSharesMPEGTSAndCreatesHLS(t *testing.T) {
 	case <-context.Done():
 		t.Fatal("producer did not create a playable HLS playlist and segment")
 	}
-	playlist, err := os.ReadFile(filepath.Join(config.StreamRoot, "integration-channel", "playlist.m3u8"))
+	playlistPath := filepath.Join(config.StreamRoot, "integration-channel", "playlist.m3u8")
+	playlist, err := os.ReadFile(playlistPath)
 	if err != nil {
 		t.Fatalf("read generated HLS playlist: %v", err)
 	}
 	if !bytes.Contains(playlist, []byte("/stream/hls/integration-channel/segment.")) {
 		t.Fatalf("playlist did not contain route-safe segment URLs:\n%s", playlist)
+	}
+	snapshot, err := ReadHLSPlaylist(playlistPath)
+	if err != nil {
+		t.Fatalf("read stable HLS playlist: %v", err)
+	}
+	if len(snapshot.Segments) < 3 || snapshot.Duration < 3*time.Second {
+		t.Fatalf("HLS became ready without a startup buffer: %#v", snapshot)
 	}
 	if _, err := os.Stat(staleSegment); !os.IsNotExist(err) {
 		t.Fatalf("stale HLS generation was not cleaned after the replacement became ready: %v", err)

@@ -298,13 +298,17 @@
 							min="1"
 							max="10"
 							bind:value={settings.streaming.hls_segment_seconds}
-						/>{#if errors.hls_segment_seconds}<em>{errors.hls_segment_seconds}</em>{/if}</label
+						/>{#if errors.hls_segment_seconds}<em>{errors.hls_segment_seconds}</em>{/if}<small
+							>Two seconds balances startup speed, resilience, and disk activity.</small
+						></label
 					><label
 						>HLS playlist segments<input
 							type="number"
 							min="3"
 							bind:value={settings.streaming.hls_playlist_length}
-						/>{#if errors.hls_playlist_length}<em>{errors.hls_playlist_length}</em>{/if}</label
+						/>{#if errors.hls_playlist_length}<em>{errors.hls_playlist_length}</em>{/if}<small
+							>Ten segments is recommended for jittery IPTV sources.</small
+						></label
 					><label
 						>Per-viewer buffer (MB)<input
 							type="number"

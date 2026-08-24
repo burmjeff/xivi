@@ -83,7 +83,7 @@ func (c Config) normalized() Config {
 		c.HLSSegmentSeconds = 2
 	}
 	if c.HLSPlaylistLength < 3 {
-		c.HLSPlaylistLength = 6
+		c.HLSPlaylistLength = 10
 	}
 	if c.ClientBufferBytes < 1024*1024 {
 		c.ClientBufferBytes = 2 * 1024 * 1024

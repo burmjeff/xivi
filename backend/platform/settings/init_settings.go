@@ -114,7 +114,7 @@ func SetDefaults() (*AppSettings, error) {
 			RetryLimit:            6,
 			RetryBackoffMS:        500,
 			HLSSegmentSeconds:     2,
-			HLSPlaylistLength:     6,
+			HLSPlaylistLength:     10,
 			ClientBufferMB:        2,
 			TLSVerify:             true,
 			UserAgent:             "Xivi 1.0",

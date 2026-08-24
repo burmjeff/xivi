@@ -305,6 +305,7 @@ func (p *gstProducer) routePadToMux(pad *gst.Pad, parserName string, mux *gst.El
 	if err != nil {
 		return fmt.Errorf("create %s: %w", parserName, err)
 	}
+	configureStreamParser(parser, parserName)
 	queue, err := gst.NewElement("queue")
 	if err != nil {
 		return fmt.Errorf("create adaptive track queue: %w", err)
@@ -397,7 +398,7 @@ func (p *gstProducer) addHLSOutput(tee *gst.Element) error {
 	if err != nil {
 		return fmt.Errorf("create HLS transport queue: %w", err)
 	}
-	_ = queue.Set("max-size-time", uint64(5*time.Second))
+	_ = queue.Set("max-size-time", uint64(10*time.Second))
 	_ = queue.Set("max-size-bytes", uint(0))
 	_ = queue.Set("max-size-buffers", uint(0))
 	demux, err := gst.NewElement("tsdemux")
@@ -425,7 +426,7 @@ func (p *gstProducer) addHLSOutput(tee *gst.Element) error {
 	if err := setRequired(sink, "playlist-length", uint(p.config.HLSPlaylistLength)); err != nil {
 		return err
 	}
-	if err := setRequired(sink, "max-files", uint(p.config.HLSPlaylistLength+3)); err != nil {
+	if err := setRequired(sink, "max-files", uint(p.config.HLSPlaylistLength+6)); err != nil {
 		return err
 	}
 	setOptional(sink, "send-keyframe-requests", true)
@@ -479,11 +480,12 @@ func (p *gstProducer) routePadToHLSSink(pad *gst.Pad, parserName, media string, 
 	if err != nil {
 		return fmt.Errorf("create HLS %s: %w", parserName, err)
 	}
+	configureStreamParser(parser, parserName)
 	queue, err := gst.NewElement("queue")
 	if err != nil {
 		return fmt.Errorf("create HLS %s queue: %w", media, err)
 	}
-	_ = queue.Set("max-size-time", uint64(3*time.Second))
+	_ = queue.Set("max-size-time", uint64(5*time.Second))
 	_ = queue.Set("max-size-bytes", uint(0))
 	_ = queue.Set("max-size-buffers", uint(0))
 	p.pipeline.Add(parser)
@@ -504,6 +506,17 @@ func (p *gstProducer) routePadToHLSSink(pad *gst.Pad, parserName, media string, 
 	parser.SyncStateWithParent()
 	queue.SyncStateWithParent()
 	return nil
+}
+
+// Repeating video parameter sets at each keyframe makes every HLS fragment
+// independently decodable, including when a viewer joins after the producer
+// has been running for a while.
+func configureStreamParser(parser *gst.Element, parserName string) {
+	if parserName != "h264parse" && parserName != "h265parse" {
+		return
+	}
+	setOptional(parser, "config-interval", -1)
+	setOptional(parser, "disable-passthrough", true)
 }
 
 func parserForCaps(caps string) (parser, media string, ok bool) {
@@ -580,30 +593,22 @@ func (p *gstProducer) stallLoop() {
 func (p *gstProducer) playlistLoop() {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+	startupSegments := min(3, p.config.HLSPlaylistLength)
+	startupDuration := time.Duration(max(p.config.HLSSegmentSeconds*2, 3)) * time.Second
 	for !p.stopping.Load() {
 		<-ticker.C
-		content, err := os.ReadFile(p.playlist)
-		if err != nil {
+		snapshot, err := ReadHLSPlaylist(p.playlist)
+		if err != nil || len(snapshot.Segments) < startupSegments || snapshot.Duration < startupDuration {
 			continue
 		}
-		text := string(content)
-		if !strings.Contains(text, "#EXTM3U") || !strings.Contains(text, "#EXTINF") {
+		if err := snapshot.ValidateSegments(filepath.Dir(p.playlist)); err != nil {
 			continue
 		}
-		for _, line := range strings.Split(text, "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			segment := filepath.Join(filepath.Dir(p.playlist), filepath.Base(line))
-			if info, err := os.Stat(segment); err == nil && info.Size() > 0 {
-				p.hlsOnce.Do(func() {
-					p.removeOldSegments()
-					close(p.hlsReady)
-				})
-				return
-			}
-		}
+		p.hlsOnce.Do(func() {
+			p.removeOldSegments()
+			close(p.hlsReady)
+		})
+		return
 	}
 }
 

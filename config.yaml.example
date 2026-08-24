@@ -24,7 +24,7 @@ streaming:
   retry_limit: 6
   retry_backoff_ms: 500
   hls_segment_seconds: 2
-  hls_playlist_length: 6
+  hls_playlist_length: 10
   client_buffer_mb: 2
   tls_verify: true
   useragent: Xivi 1.0

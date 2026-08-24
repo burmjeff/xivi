@@ -147,17 +147,30 @@ func GetHlsAsset(c *fiber.Ctx) error {
 
 func sendHLSFile(c *fiber.Ctx, streamID, asset string) error {
 	path := filepath.Join(settings.STREAM_FILEPATH, streamID, asset)
+	if asset == "playlist.m3u8" {
+		var snapshot *streaming.HLSPlaylistSnapshot
+		var err error
+		for attempt := 0; attempt < 4; attempt++ {
+			snapshot, err = streaming.ReadHLSPlaylist(path)
+			if err == nil {
+				c.Set(fiber.HeaderContentType, "application/vnd.apple.mpegurl")
+				c.Set(fiber.HeaderCacheControl, "no-cache, no-store, must-revalidate")
+				c.Set("Pragma", "no-cache")
+				c.Set("Expires", "0")
+				return c.Send(snapshot.Content)
+			}
+			time.Sleep(15 * time.Millisecond)
+		}
+		log.Debug().Err(err).Str("stream_id", streamID).Msg("HLS playlist rewrite was not ready to serve")
+		c.Set("Retry-After", "1")
+		return c.SendStatus(fiber.StatusServiceUnavailable)
+	}
 	info, err := os.Stat(path)
 	if err != nil || info.IsDir() || info.Size() == 0 {
 		return c.SendStatus(fiber.StatusNotFound)
 	}
-	if asset == "playlist.m3u8" {
-		c.Set(fiber.HeaderContentType, "application/vnd.apple.mpegurl")
-		c.Set(fiber.HeaderCacheControl, "no-cache, no-store, must-revalidate")
-	} else {
-		c.Set(fiber.HeaderContentType, "video/MP2T")
-		c.Set(fiber.HeaderCacheControl, "public, max-age=30, immutable")
-	}
+	c.Set(fiber.HeaderContentType, "video/MP2T")
+	c.Set(fiber.HeaderCacheControl, "public, max-age=60, immutable")
 	return c.SendFile(path)
 }
 

@@ -78,12 +78,12 @@
 		if (stallTimer) clearTimeout(stallTimer);
 		stallTimer = setTimeout(() => {
 			if (!video || video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return;
-			if (hls) hls.startLoad(-1);
-			if (video.seekable.length) {
-				const liveEdge = video.seekable.end(video.seekable.length - 1);
-				if (liveEdge - video.currentTime > 10) video.currentTime = Math.max(0, liveEdge - 3);
+			if (hls && !hls.loadingEnabled) hls.startLoad(-1);
+			const liveSyncPosition = hls?.liveSyncPosition;
+			if (liveSyncPosition != null && liveSyncPosition - video.currentTime > 12) {
+				video.currentTime = liveSyncPosition;
 			}
-		}, 2_000);
+		}, 4_000);
 	}
 	async function startPlayback() {
 		if (!video) return;
@@ -129,14 +129,73 @@
 			hls = new Hls({
 				enableWorker: true,
 				lowLatencyMode: false,
-				backBufferLength: 15,
-				maxBufferLength: 30,
+				initialLiveManifestSize: 3,
+				startFragPrefetch: true,
+				backBufferLength: 30,
+				maxBufferLength: 40,
 				maxMaxBufferLength: 60,
+				maxBufferHole: 0.5,
+				highBufferWatchdogPeriod: 4,
+				nudgeOffset: 0.15,
+				nudgeMaxRetry: 5,
 				liveSyncDurationCount: 3,
+				liveSyncOnStallIncrease: 1,
 				liveMaxLatencyDurationCount: 8,
-				manifestLoadingTimeOut: 10_000,
-				levelLoadingTimeOut: 10_000,
-				fragLoadingTimeOut: 15_000
+				maxLiveSyncPlaybackRate: 1.05,
+				manifestLoadPolicy: {
+					default: {
+						maxTimeToFirstByteMs: 8_000,
+						maxLoadTimeMs: 15_000,
+						timeoutRetry: {
+							maxNumRetry: 2,
+							retryDelayMs: 250,
+							maxRetryDelayMs: 2_000,
+							backoff: 'exponential'
+						},
+						errorRetry: {
+							maxNumRetry: 3,
+							retryDelayMs: 500,
+							maxRetryDelayMs: 4_000,
+							backoff: 'exponential'
+						}
+					}
+				},
+				playlistLoadPolicy: {
+					default: {
+						maxTimeToFirstByteMs: 8_000,
+						maxLoadTimeMs: 15_000,
+						timeoutRetry: {
+							maxNumRetry: 3,
+							retryDelayMs: 250,
+							maxRetryDelayMs: 2_000,
+							backoff: 'exponential'
+						},
+						errorRetry: {
+							maxNumRetry: 5,
+							retryDelayMs: 500,
+							maxRetryDelayMs: 4_000,
+							backoff: 'exponential'
+						}
+					}
+				},
+				fragLoadPolicy: {
+					default: {
+						maxTimeToFirstByteMs: 8_000,
+						maxLoadTimeMs: 30_000,
+						timeoutRetry: {
+							maxNumRetry: 4,
+							retryDelayMs: 250,
+							maxRetryDelayMs: 2_000,
+							backoff: 'exponential'
+						},
+						errorRetry: {
+							maxNumRetry: 6,
+							retryDelayMs: 500,
+							maxRetryDelayMs: 4_000,
+							backoff: 'exponential'
+						}
+					}
+				}
 			});
 			hls.on(Hls.Events.MANIFEST_PARSED, () => {
 				void startPlayback();
