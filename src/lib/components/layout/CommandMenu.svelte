@@ -22,7 +22,15 @@
 	import { api, params } from '$lib/api/client';
 	import type { GuideChannel, Paginated } from '$lib/api/types';
 
-	let { compact = false, iconOnly = false } = $props<{ compact?: boolean; iconOnly?: boolean }>();
+	let {
+		compact = false,
+		iconOnly = false,
+		triggerLabel = 'Open command menu'
+	} = $props<{
+		compact?: boolean;
+		iconOnly?: boolean;
+		triggerLabel?: string;
+	}>();
 	let open = $state(false);
 	let query = $state('');
 	let status = $state('');
@@ -114,7 +122,8 @@
 	class:icon-only={iconOnly}
 	class="command-trigger"
 	onclick={() => (open = true)}
-	aria-label="Open command menu"
+	aria-label={triggerLabel}
+	title={iconOnly ? triggerLabel : undefined}
 >
 	<Search size={18} />
 	<span>Find anything</span>

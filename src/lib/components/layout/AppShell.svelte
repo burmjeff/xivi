@@ -88,7 +88,9 @@
 					>{/each}
 			</nav>
 			<div class="header-actions">
-				<CommandMenu /><a class="studio-link" href="/studio">Studio</a><ThemeSwitcher />
+				<CommandMenu compact iconOnly triggerLabel="Search Xivi" />
+				<a class="studio-link" href="/studio">Studio</a>
+				<ThemeSwitcher />
 			</div>
 		</header>
 	{/if}
