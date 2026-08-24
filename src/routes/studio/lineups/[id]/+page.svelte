@@ -1011,11 +1011,17 @@
 								<h3>{selectedChannel.source_count ? 'Suggested backups' : 'Suggested sources'}</h3>
 								<p>
 									{selectedChannel.source_count
-										? 'Additional matches that can join the failover stack.'
-										: 'Best eligible matches from the current source catalog.'}
+										? 'Closest eligible sources, including weak matches, for the failover stack.'
+										: 'Closest eligible sources, including weak matches, from the current catalog.'}
 								</p>
 							</div>
-							<span>Top 5</span>
+							<span>
+								{#if suggestionsQuery.data}
+									Top {suggestionsQuery.data.items.length} of {suggestionsQuery.data.total} eligible
+								{:else}
+									Top 5
+								{/if}
+							</span>
 						</div>
 						{#if suggestionsQuery.isPending}<div
 								class="suggestion-loading"
@@ -1039,9 +1045,13 @@
 												<strong>{suggestion.source_name}</strong>
 											</span>
 											<small>{suggestion.playlist_name} · {suggestion.group_name}</small>
-											<span class="suggestion-score">
+											<span class="suggestion-score" class:weak={suggestion.score < 0.55}>
 												<strong>{Math.round(suggestion.score * 100)}%</strong>
-												<small>{suggestion.method.replaceAll('_', ' ')}</small>
+												<small>
+													{suggestion.score < 0.55
+														? 'Weak match · '
+														: ''}{suggestion.method.replaceAll('_', ' ')}
+												</small>
 											</span>
 										</span>
 										<button
@@ -1057,12 +1067,9 @@
 											<span>Add</span>
 										</button>
 									</li>{/each}
-							</ol>{:else if selectedChannel.source_count}<p class="muted small">
-								No additional matching sources were found. Already attached, disabled, and rejected
-								source channels are excluded.
-							</p>{:else}<p class="muted small">
-								No current source resembles this channel or shares its TVG ID. The provider may have
-								renamed or removed it; use the Source Browser to search manually.
+							</ol>{:else}<p class="muted small">
+								No eligible source channels remain. Already attached, disabled, and rejected source
+								channels are excluded.
 							</p>{/if}
 					</section>
 					<section>
@@ -1929,6 +1936,10 @@
 		color: var(--muted);
 		font-size: 0.52rem;
 		text-transform: capitalize;
+	}
+	.suggestion-score.weak strong,
+	.suggestion-score.weak small {
+		color: var(--sun);
 	}
 	.suggestions li > button,
 	.suggestion-state button {

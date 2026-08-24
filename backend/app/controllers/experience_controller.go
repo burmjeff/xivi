@@ -514,14 +514,14 @@ func V2StudioMatchSuggestions(c *fiber.Ctx) error {
 	if limit > 5 {
 		limit = 5
 	}
-	items, err := database.Db.GetMatchSuggestions(c.UserContext(), channelID, limit)
+	items, total, err := database.Db.GetMatchSuggestions(c.UserContext(), channelID, limit)
 	if errors.Is(err, sql.ErrNoRows) {
 		return v2Error(c, fiber.StatusNotFound, "channel_not_found", "That lineup channel was not found.", false)
 	}
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "suggestions_unavailable", "Source suggestions could not be loaded.", true)
 	}
-	return c.JSON(models.Paginated[models.MatchSuggestion]{Items: items, Total: int64(len(items))})
+	return c.JSON(models.Paginated[models.MatchSuggestion]{Items: items, Total: total})
 }
 
 func V2AcceptStudioMatch(c *fiber.Ctx) error {

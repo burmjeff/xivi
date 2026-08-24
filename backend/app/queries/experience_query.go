@@ -345,14 +345,12 @@ type sourceMatchCandidate struct {
 	Title string `db:"title"`
 }
 
-const minimumSuggestedMatchScore = 0.55
-
 // GetMatchSuggestions ranks eligible sources for a lineup channel. Only the
 // exact sources already in the failover stack are omitted; a person may attach
 // another source from the same playlist as an explicit backup.
-func (q *ExperienceQueries) GetMatchSuggestions(ctx context.Context, channelID int64, limit int) ([]models.MatchSuggestion, error) {
+func (q *ExperienceQueries) GetMatchSuggestions(ctx context.Context, channelID int64, limit int) ([]models.MatchSuggestion, int64, error) {
 	if limit < 1 {
-		return []models.MatchSuggestion{}, nil
+		return []models.MatchSuggestion{}, 0, nil
 	}
 	if limit > 5 {
 		limit = 5
@@ -363,7 +361,7 @@ func (q *ExperienceQueries) GetMatchSuggestions(ctx context.Context, channelID i
 		TVGID *string `db:"tvgid"`
 	}{}
 	if err := q.GetContext(ctx, &target, `SELECT name, tvgid FROM templatechannel WHERE id = ?`, channelID); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	candidates := []sourceMatchCandidate{}
@@ -380,7 +378,7 @@ func (q *ExperienceQueries) GetMatchSuggestions(ctx context.Context, channelID i
 			WHERE attached.channel_id = ? AND attached.playlist_channel_id = pc.id
 		)
 		ORDER BY pc.id`, channelID); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	rejections := []struct {
@@ -390,7 +388,7 @@ func (q *ExperienceQueries) GetMatchSuggestions(ctx context.Context, channelID i
 	}{}
 	if err := q.SelectContext(ctx, &rejections, `SELECT playlist_id, tvg_id_norm, name_norm
 		FROM channelmatchrejection WHERE channel_id = ?`, channelID); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	rejected := func(candidate sourceMatchCandidate) bool {
 		tvgID := ""
@@ -418,7 +416,7 @@ func (q *ExperienceQueries) GetMatchSuggestions(ctx context.Context, channelID i
 	}
 
 	rankedByID := make(map[int64]channelmatch.Result, len(eligible))
-	for _, result := range channelmatch.Rank(target.Name, rankCandidates, len(rankCandidates)) {
+	for _, result := range channelmatch.RankSuggestions(target.Name, rankCandidates, len(rankCandidates)) {
 		rankedByID[result.Candidate.ID] = result
 	}
 	targetTVGID := ""
@@ -431,10 +429,6 @@ func (q *ExperienceQueries) GetMatchSuggestions(ctx context.Context, channelID i
 		nameResult, nameMatched := rankedByID[candidate.SourceChannelID]
 		exactTVGID := targetTVGID != "" && candidate.TVGID != nil &&
 			channelmatch.NormalizeTvgID(*candidate.TVGID) == targetTVGID
-		if !nameMatched && !exactTVGID {
-			continue
-		}
-
 		suggestion := candidate.MatchSuggestion
 		if exactTVGID {
 			suggestion.Score = 1
@@ -445,9 +439,6 @@ func (q *ExperienceQueries) GetMatchSuggestions(ctx context.Context, channelID i
 		} else {
 			suggestion.Score = nameResult.Score
 			suggestion.Method = nameResult.Method
-		}
-		if suggestion.Score < minimumSuggestedMatchScore {
-			continue
 		}
 		results = append(results, suggestion)
 	}
@@ -467,7 +458,7 @@ func (q *ExperienceQueries) GetMatchSuggestions(ctx context.Context, channelID i
 	if len(results) > limit {
 		results = results[:limit]
 	}
-	return results, nil
+	return results, int64(len(eligible)), nil
 }
 
 func (q *ExperienceQueries) AttachManualMatch(ctx context.Context, channelID, sourceChannelID int64) error {

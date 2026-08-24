@@ -147,12 +147,12 @@ func TestGetMatchSuggestionsRanksEligibleUnattachedSources(t *testing.T) {
 	db.MustExec(`INSERT INTO templatechannelitem VALUES (1, 1, 100, 1, 'manual', 1, NULL, 2, 1)`)
 	db.MustExec(`INSERT INTO channelmatchrejection (id, channel_id, playlist_id, name_norm) VALUES (1, 1, 5, 'bbc world news')`)
 
-	suggestions, err := NewExperienceQueries(db).GetMatchSuggestions(context.Background(), 1, 5)
+	suggestions, total, err := NewExperienceQueries(db).GetMatchSuggestions(context.Background(), 1, 5)
 	if err != nil {
 		t.Fatalf("GetMatchSuggestions failed: %v", err)
 	}
-	if len(suggestions) != 3 {
-		t.Fatalf("expected three eligible suggestions, got %#v", suggestions)
+	if total != 3 || len(suggestions) != 3 {
+		t.Fatalf("expected three eligible suggestions, total=%d suggestions=%#v", total, suggestions)
 	}
 	if suggestions[0].SourceChannelID != 200 || suggestions[0].Score != 1 || suggestions[0].Method != "exact_tvg_id" {
 		t.Fatalf("exact TVG-ID suggestion did not rank first: %#v", suggestions[0])
@@ -172,7 +172,7 @@ func TestGetMatchSuggestionsRanksEligibleUnattachedSources(t *testing.T) {
 }
 
 func TestGetMatchSuggestionsRequiresExistingChannel(t *testing.T) {
-	_, err := NewExperienceQueries(newExperienceTestDB(t)).GetMatchSuggestions(context.Background(), 999, 5)
+	_, _, err := NewExperienceQueries(newExperienceTestDB(t)).GetMatchSuggestions(context.Background(), 999, 5)
 	if !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("expected sql.ErrNoRows for a missing channel, got %v", err)
 	}
@@ -189,15 +189,43 @@ func TestGetMatchSuggestionsIncludesBackupFromRepresentedPlaylist(t *testing.T) 
 		(102, 'tcm.us', 'TCM', NULL, 'TCM Cinema', 10, 1)`)
 	db.MustExec(`INSERT INTO templatechannelitem VALUES (1, 1, 100, 1, 'manual', 1, NULL, 2, 1)`)
 
-	suggestions, err := NewExperienceQueries(db).GetMatchSuggestions(context.Background(), 1, 5)
+	suggestions, total, err := NewExperienceQueries(db).GetMatchSuggestions(context.Background(), 1, 5)
 	if err != nil {
 		t.Fatalf("GetMatchSuggestions failed: %v", err)
 	}
-	if len(suggestions) != 1 || suggestions[0].SourceChannelID != 101 {
-		t.Fatalf("expected the unattached source from the represented playlist, got %#v", suggestions)
+	if total != 2 || len(suggestions) != 2 || suggestions[0].SourceChannelID != 101 {
+		t.Fatalf("expected both eligible sources with the closest first, total=%d suggestions=%#v", total, suggestions)
 	}
 	if suggestions[0].Method != "exact_tvg_id_name" || suggestions[0].Score != 1 {
 		t.Fatalf("expected TVG-ID backup confidence, got %#v", suggestions[0])
+	}
+	if suggestions[1].SourceChannelID != 102 || suggestions[1].Score >= suggestions[0].Score {
+		t.Fatalf("expected the weak source to remain ranked after the backup, got %#v", suggestions)
+	}
+}
+
+func TestGetMatchSuggestionsReturnsFiveOfAllEligibleSources(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'US TYT NETWORK', NULL, 0, 'tyt')`)
+	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES (10, 'Mixed', 1, 1)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES
+		(100, NULL, 'TYT Network', NULL, 'TYT Network', 10, 1),
+		(101, NULL, 'TCM', NULL, 'TCM', 10, 1),
+		(102, NULL, 'BBC News', NULL, 'BBC News', 10, 1),
+		(103, NULL, 'ESPN 2', NULL, 'ESPN 2', 10, 1),
+		(104, NULL, 'Cartoon Network', NULL, 'Cartoon Network', 10, 1),
+		(105, NULL, 'Discovery', NULL, 'Discovery', 10, 1)`)
+
+	suggestions, total, err := NewExperienceQueries(db).GetMatchSuggestions(context.Background(), 1, 5)
+	if err != nil {
+		t.Fatalf("GetMatchSuggestions failed: %v", err)
+	}
+	if total != 6 || len(suggestions) != 5 {
+		t.Fatalf("expected top five of six eligible sources, total=%d suggestions=%#v", total, suggestions)
+	}
+	if suggestions[0].SourceChannelID != 100 {
+		t.Fatalf("closest suggestion did not rank first: %#v", suggestions)
 	}
 }
 

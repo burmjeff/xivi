@@ -1718,7 +1718,7 @@ export interface operations {
 	listChannelMatchSuggestions: {
 		parameters: {
 			query?: {
-				/** @description Number of ranked suggestions to return, capped at five. */
+				/** @description Number of closest eligible suggestions to return, capped at five. Weak matches are included for manual review. */
 				limit?: number;
 			};
 			header?: never;

@@ -381,7 +381,7 @@ paths:
         - $ref: '#/components/parameters/ChannelId'
         - name: limit
           in: query
-          description: Number of ranked suggestions to return, capped at five.
+          description: Number of closest eligible suggestions to return, capped at five. Weak matches are included for manual review.
           schema: { type: integer, minimum: 1, maximum: 5, default: 5 }
       responses:
         '200':

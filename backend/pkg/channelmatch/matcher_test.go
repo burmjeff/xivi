@@ -113,6 +113,50 @@ func TestRankReportsRunnerUpScore(t *testing.T) {
 	}
 }
 
+func TestRankSuggestionsReturnsRequestedCountIncludingWeakMatches(t *testing.T) {
+	results := RankSuggestions("TYT Network", []Candidate{
+		{ID: 1, Name: "TYT Network Backup"},
+		{ID: 2, Name: "TCM Cinema"},
+		{ID: 3, Name: "BBC News"},
+		{ID: 4, Name: "ESPN 2"},
+		{ID: 5, Name: "Cartoon Network"},
+		{ID: 6, Name: "Completely Unrelated"},
+	}, 5)
+
+	if len(results) != 5 {
+		t.Fatalf("RankSuggestions() returned %d results, want five: %+v", len(results), results)
+	}
+	if results[0].Candidate.ID != 1 {
+		t.Fatalf("closest candidate did not rank first: %+v", results)
+	}
+	for index, result := range results {
+		if result.Method == "" {
+			t.Fatalf("result %d is missing a method: %+v", index, result)
+		}
+		if index > 0 && result.Score > results[index-1].Score {
+			t.Fatalf("results are not sorted by score: %+v", results)
+		}
+	}
+}
+
+func TestRankSuggestionsPenalizesButKeepsConflictingAndZeroSimilarityCandidates(t *testing.T) {
+	results := RankSuggestions("ESPN 2", []Candidate{
+		{ID: 1, Name: "ESPN 2 HD"},
+		{ID: 2, Name: "ESPN 1 HD"},
+		{ID: 3, Name: "XYZ"},
+	}, 5)
+
+	if len(results) != 3 {
+		t.Fatalf("RankSuggestions() excluded eligible candidates: %+v", results)
+	}
+	if results[0].Candidate.ID != 1 || results[1].Candidate.ID != 2 || results[0].Score <= results[1].Score {
+		t.Fatalf("number conflict was not retained with a penalty: %+v", results)
+	}
+	if results[2].Candidate.ID != 3 || results[2].Score != 0 {
+		t.Fatalf("zero-similarity candidate was not retained: %+v", results)
+	}
+}
+
 func TestAutomaticRejectsAmbiguousCanonicalDuplicates(t *testing.T) {
 	results := Rank("CNN HD", []Candidate{
 		{ID: 1, Name: "CNN FHD"},

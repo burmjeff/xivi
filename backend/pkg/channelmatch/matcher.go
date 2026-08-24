@@ -265,6 +265,63 @@ func Rank(query string, candidates []Candidate, limit int) []Result {
 	return results
 }
 
+// RankSuggestions returns a total ordering for manual review. Unlike Rank,
+// every candidate receives a score: attribute conflicts reduce confidence but
+// never remove a source from the result set. Automatic matching must continue
+// to use Rank and Automatic so weak or conflicting candidates are not attached.
+func RankSuggestions(query string, candidates []Candidate, limit int) []Result {
+	if limit <= 0 || len(candidates) == 0 {
+		return nil
+	}
+
+	parsedQuery := ParseName(query)
+	results := make([]Result, 0, len(candidates))
+	for _, candidate := range candidates {
+		score, method := suggestionScore(parsedQuery, ParseName(candidate.Name))
+		results = append(results, Result{
+			Candidate: candidate,
+			Score:     score,
+			Method:    method,
+		})
+	}
+
+	sort.SliceStable(results, func(i, j int) bool {
+		if results[i].Score == results[j].Score {
+			return results[i].Candidate.ID < results[j].Candidate.ID
+		}
+		return results[i].Score > results[j].Score
+	})
+	for index := range results {
+		if index+1 < len(results) {
+			results[index].RunnerUpScore = results[index+1].Score
+		}
+	}
+	if len(results) > limit {
+		results = results[:limit]
+	}
+	return results
+}
+
+func suggestionScore(query, candidate ParsedName) (float64, string) {
+	if query.Canonical != "" && query.Canonical == candidate.Canonical {
+		return 1, MethodExactName
+	}
+	if query.Base == "" || candidate.Base == "" {
+		return 0, MethodFuzzyName
+	}
+
+	penalty := missingAttributePenalty(query, candidate) * attributeConflictPenalty(query, candidate)
+	if query.Base == candidate.Base {
+		return baseNameExactScore * penalty, MethodFuzzyName
+	}
+
+	left, right := compact(query.Base), compact(candidate.Base)
+	editScore := editSimilarity(left, right)
+	characterScore := ngramDice(left, right, 3)
+	tokenScore := tokenJaccard(strings.Fields(query.Base), strings.Fields(candidate.Base))
+	return (0.55*editScore + 0.30*characterScore + 0.15*tokenScore) * penalty, MethodFuzzyName
+}
+
 func score(query, candidate ParsedName) (float64, string, bool) {
 	if query.Canonical == candidate.Canonical {
 		return 1, MethodExactName, true
@@ -315,6 +372,23 @@ func missingAttributePenalty(left, right ParsedName) float64 {
 	}
 	if oneMissing(left.Feeds, right.Feeds) {
 		penalty *= 0.85
+	}
+	return penalty
+}
+
+func attributeConflictPenalty(left, right ParsedName) float64 {
+	penalty := 1.0
+	if conflicts(left.Numbers, right.Numbers) {
+		penalty *= 0.25
+	}
+	if conflicts(left.Locales, right.Locales) {
+		penalty *= 0.80
+	}
+	if conflicts(left.Regions, right.Regions) {
+		penalty *= 0.65
+	}
+	if conflicts(left.Feeds, right.Feeds) {
+		penalty *= 0.65
 	}
 	return penalty
 }
@@ -381,6 +455,40 @@ func uniqueSorted(values []string) []string {
 
 func compact(value string) string {
 	return strings.ReplaceAll(value, " ", "")
+}
+
+func editSimilarity(left, right string) float64 {
+	leftRunes, rightRunes := []rune(left), []rune(right)
+	if len(leftRunes) == 0 && len(rightRunes) == 0 {
+		return 1
+	}
+	if len(leftRunes) == 0 || len(rightRunes) == 0 {
+		return 0
+	}
+
+	previous := make([]int, len(rightRunes)+1)
+	current := make([]int, len(rightRunes)+1)
+	for index := range previous {
+		previous[index] = index
+	}
+	for leftIndex, leftRune := range leftRunes {
+		current[0] = leftIndex + 1
+		for rightIndex, rightRune := range rightRunes {
+			cost := 0
+			if leftRune != rightRune {
+				cost = 1
+			}
+			current[rightIndex+1] = min(
+				current[rightIndex]+1,
+				previous[rightIndex+1]+1,
+				previous[rightIndex]+cost,
+			)
+		}
+		previous, current = current, previous
+	}
+
+	longest := max(len(leftRunes), len(rightRunes))
+	return 1 - float64(previous[len(rightRunes)])/float64(longest)
 }
 
 func ngramDice(left, right string, size int) float64 {
