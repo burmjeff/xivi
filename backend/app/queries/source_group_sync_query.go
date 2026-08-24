@@ -8,10 +8,14 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 	"xivi/backend/app/models"
+	"xivi/backend/pkg/logoassets"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/rs/zerolog/log"
 )
 
 var (
@@ -445,7 +449,108 @@ func (q *ExperienceQueries) SyncSourceGroup(ctx context.Context, groupID int64) 
 		_ = q.markSourceGroupLinkFailure(ctx, groupID, "error", err)
 		return nil, err
 	}
+	logoContext, cancelLogoImport := context.WithTimeout(ctx, 45*time.Second)
+	defer cancelLogoImport()
+	if err := q.applyDefaultSourceLogos(logoContext, groupID); err != nil {
+		// Membership is already safely reconciled at this point. Keep the valid
+		// lineup snapshot and retry missing logo enrichment on the next sync.
+		log.Error().Err(err).Int64("group_id", groupID).Msg("Synced group logos could not be applied")
+	}
 	return result, nil
+}
+
+type sourceLogoCandidate struct {
+	ChannelID int64  `db:"channel_id"`
+	LogoURL   string `db:"logo_url"`
+}
+
+// applyDefaultSourceLogos adopts the connected source's logo only while a
+// channel still uses Xivi's default. A user-selected logo is never overwritten.
+func (q *ExperienceQueries) applyDefaultSourceLogos(ctx context.Context, groupID int64) error {
+	candidates := []sourceLogoCandidate{}
+	if err := q.SelectContext(ctx, &candidates, `SELECT tc.id AS channel_id, TRIM(pc.tvg_logo) AS logo_url
+		FROM lineup_group_source_member member
+		JOIN templatechannel tc ON tc.id = member.template_channel_id
+		JOIN playlistchannel pc ON pc.id = member.source_channel_id
+		WHERE member.group_id = ? AND COALESCE(tc.logoid, 0) = 0
+			AND NULLIF(TRIM(pc.tvg_logo), '') IS NOT NULL
+		ORDER BY tc.id`, groupID); err != nil {
+		return err
+	}
+	logoIDs := map[string]int64{}
+	type sourceLogoAsset struct {
+		Name      string
+		URL       string
+		ChannelID int64
+	}
+	missing := []sourceLogoAsset{}
+	for _, candidate := range candidates {
+		name := logoassets.SourceLogoName(candidate.LogoURL)
+		if _, known := logoIDs[name]; known {
+			continue
+		}
+		var logoID int64
+		err := q.GetContext(ctx, &logoID, `SELECT id FROM logo WHERE name = ?`, name)
+		if err == nil {
+			logoIDs[name] = logoID
+			continue
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		logoIDs[name] = 0 // Dedupe repeated URLs before downloading them.
+		missing = append(missing, sourceLogoAsset{Name: name, URL: candidate.LogoURL, ChannelID: candidate.ChannelID})
+	}
+
+	type sourceLogoImport struct {
+		Asset sourceLogoAsset
+		Err   error
+	}
+	jobs := make(chan sourceLogoAsset)
+	imports := make(chan sourceLogoImport, len(missing))
+	workerCount := min(4, len(missing))
+	var workers sync.WaitGroup
+	for range workerCount {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for asset := range jobs {
+				imports <- sourceLogoImport{Asset: asset, Err: q.storeSourceLogo(ctx, asset.URL, asset.Name)}
+			}
+		}()
+	}
+	go func() {
+		for _, asset := range missing {
+			jobs <- asset
+		}
+		close(jobs)
+		workers.Wait()
+		close(imports)
+	}()
+	for imported := range imports {
+		if imported.Err != nil {
+			log.Warn().Err(imported.Err).Int64("channel_id", imported.Asset.ChannelID).Str("logo_url", imported.Asset.URL).Msg("Source logo could not be imported")
+			continue
+		}
+		if _, err := q.ExecContext(ctx, `INSERT OR IGNORE INTO logo (name) VALUES (?)`, imported.Asset.Name); err != nil {
+			return err
+		}
+		var logoID int64
+		if err := q.GetContext(ctx, &logoID, `SELECT id FROM logo WHERE name = ?`, imported.Asset.Name); err != nil {
+			return err
+		}
+		logoIDs[imported.Asset.Name] = logoID
+	}
+	for _, candidate := range candidates {
+		logoID := logoIDs[logoassets.SourceLogoName(candidate.LogoURL)]
+		if logoID == 0 {
+			continue
+		}
+		if _, err := q.ExecContext(ctx, `UPDATE templatechannel SET logoid = ? WHERE id = ? AND COALESCE(logoid, 0) = 0`, logoID, candidate.ChannelID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (q *ExperienceQueries) SyncSourceGroupsForPlaylist(ctx context.Context, playlistID int64) ([]models.SourceGroupSyncResult, error) {

@@ -7,15 +7,22 @@ import (
 	"strings"
 	"time"
 	"xivi/backend/app/models"
+	"xivi/backend/pkg/logoassets"
 
 	"github.com/jmoiron/sqlx"
 )
 
 // ExperienceQueries powers the additive API used by the new interface.
-type ExperienceQueries struct{ BaseQueries }
+type ExperienceQueries struct {
+	BaseQueries
+	storeSourceLogo func(context.Context, string, string) error
+}
 
 func NewExperienceQueries(db *sqlx.DB) *ExperienceQueries {
-	return &ExperienceQueries{BaseQueries: NewBaseQueries(db)}
+	return &ExperienceQueries{
+		BaseQueries:     NewBaseQueries(db),
+		storeSourceLogo: logoassets.StoreSourceLogo,
+	}
 }
 
 func (q *ExperienceQueries) GetLineupSummaries(ctx context.Context) ([]models.LineupSummary, error) {

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 	"xivi/backend/app/models"
+	"xivi/backend/pkg/logoassets"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
@@ -397,6 +398,75 @@ func TestSourceGroupSyncReconcilesOwnedMembershipAndPreservesEnrichment(t *testi
 	link, err := query.GetSourceGroupLink(context.Background(), 10)
 	if err != nil || link.Status != "active" || link.RemovedCount != 1 || link.LastSyncedAt == nil {
 		t.Fatalf("unexpected link status: %#v err=%v", link, err)
+	}
+}
+
+func TestSourceGroupSyncImportsSourceLogoWithoutOverwritingManualChoice(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'Provider News', 1, 1)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES (100, 'alpha.tv', 'Provider Alpha', 'https://cdn.example.test/Alpha Logo.svg?size=512', 'Alpha', 20, 1)`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'News', 0, NULL)`)
+	db.MustExec(`INSERT INTO logo VALUES (0, 'xivi_channel'), (42, 'manual-alpha')`)
+
+	query := NewExperienceQueries(db)
+	var importedURL, importedName string
+	query.storeSourceLogo = func(_ context.Context, rawURL, name string) error {
+		importedURL, importedName = rawURL, name
+		return nil
+	}
+	if err := query.SetSourceGroupLink(context.Background(), 10, models.SourceGroupLinkRequest{SourceGroupID: 20, FollowGroupName: true, FollowChannelNames: true}); err != nil {
+		t.Fatalf("SetSourceGroupLink failed: %v", err)
+	}
+	if _, err := query.SyncSourceGroup(context.Background(), 10); err != nil {
+		t.Fatalf("initial sync failed: %v", err)
+	}
+	var channel struct {
+		ID       int64  `db:"id"`
+		LogoID   int64  `db:"logoid"`
+		LogoName string `db:"logo_name"`
+	}
+	if err := db.Get(&channel, `SELECT tc.id, tc.logoid, l.name AS logo_name FROM templatechannel tc JOIN logo l ON l.id = tc.logoid`); err != nil {
+		t.Fatalf("imported channel logo was unavailable: %v", err)
+	}
+	wantName := logoassets.SourceLogoName(importedURL)
+	if importedURL != "https://cdn.example.test/Alpha Logo.svg?size=512" || importedName != wantName || channel.LogoID == 0 || channel.LogoName != wantName {
+		t.Fatalf("source logo was not adopted: channel=%#v url=%q name=%q want=%q", channel, importedURL, importedName, wantName)
+	}
+
+	db.MustExec(`UPDATE templatechannel SET logoid = 42 WHERE id = ?`, channel.ID)
+	db.MustExec(`UPDATE playlistchannel SET tvg_logo = 'https://cdn.example.test/replacement.png' WHERE id = 100`)
+	if _, err := query.SyncSourceGroup(context.Background(), 10); err != nil {
+		t.Fatalf("second sync failed: %v", err)
+	}
+	var logoID int64
+	db.Get(&logoID, `SELECT logoid FROM templatechannel WHERE id = ?`, channel.ID)
+	if logoID != 42 {
+		t.Fatalf("source sync replaced the manually selected logo with %d", logoID)
+	}
+}
+
+func TestSourceGroupSyncKeepsDefaultWhenSourceLogoDownloadFails(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'Provider News', 1, 1)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES (100, 'alpha.tv', 'Provider Alpha', 'https://cdn.example.test/missing.png', 'Alpha', 20, 1)`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'News', 0, NULL)`)
+	db.MustExec(`INSERT INTO logo VALUES (0, 'xivi_channel')`)
+
+	query := NewExperienceQueries(db)
+	query.storeSourceLogo = func(context.Context, string, string) error { return errors.New("download failed") }
+	if err := query.SetSourceGroupLink(context.Background(), 10, models.SourceGroupLinkRequest{SourceGroupID: 20, FollowGroupName: true, FollowChannelNames: true}); err != nil {
+		t.Fatalf("SetSourceGroupLink failed: %v", err)
+	}
+	if _, err := query.SyncSourceGroup(context.Background(), 10); err != nil {
+		t.Fatalf("a broken source logo should not fail membership sync: %v", err)
+	}
+	var logoID, imported int64
+	db.Get(&logoID, `SELECT logoid FROM templatechannel`)
+	db.Get(&imported, `SELECT COUNT(*) FROM logo WHERE id != 0`)
+	if logoID != 0 || imported != 0 {
+		t.Fatalf("failed logo import left partial state: logo_id=%d imported=%d", logoID, imported)
 	}
 }
 
