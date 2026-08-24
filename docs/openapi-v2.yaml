@@ -123,6 +123,14 @@ paths:
       operationId: listSourceGroups
       parameters:
         - { name: playlist_id, in: query, schema: { type: integer, format: int64 } }
+        - name: lineup_id
+          in: query
+          description: Active lineup used to calculate available source-channel counts.
+          schema: { type: integer, format: int64 }
+        - name: unused_only
+          in: query
+          description: Hide groups with no unused channels and count only channels unused by the active lineup. Requires lineup_id.
+          schema: { type: boolean, default: false }
         - $ref: '#/components/parameters/Search'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
@@ -637,7 +645,10 @@ components:
         name: { type: string }
         playlist_id: { type: integer, format: int64 }
         playlist_name: { type: string }
-        channel_count: { type: integer, format: int64 }
+        channel_count:
+          type: integer
+          format: int64
+          description: Channels matching the active source-usage filter.
         enabled: { type: boolean }
         linked_group_count: { type: integer, format: int64 }
     SourceGroupLink:

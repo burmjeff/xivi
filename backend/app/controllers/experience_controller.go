@@ -361,8 +361,19 @@ func V2StudioSourceGroups(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_source", "The source id is invalid.", false)
 	}
+	lineupID, err := optionalIntQuery(c, "lineup_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
+	}
+	unusedOnly, err := optionalBoolQuery(c, "unused_only")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_filter", "The source usage filter is invalid.", false)
+	}
+	if unusedOnly && lineupID == nil {
+		return v2Error(c, fiber.StatusBadRequest, "lineup_required", "Choose a lineup before filtering used sources.", false)
+	}
 	limit, offset := pageParams(c)
-	items, total, err := database.Db.GetSourceGroups(c.UserContext(), playlistID, strings.TrimSpace(c.Query("q")), limit, offset)
+	items, total, err := database.Db.GetSourceGroups(c.UserContext(), playlistID, lineupID, unusedOnly, strings.TrimSpace(c.Query("q")), limit, offset)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "source_groups_unavailable", "Source groups could not be loaded.", true)
 	}

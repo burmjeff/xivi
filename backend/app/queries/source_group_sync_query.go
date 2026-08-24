@@ -54,7 +54,7 @@ type existingWorkspaceChannel struct {
 	TVGID *string `db:"tvgid"`
 }
 
-func (q *ExperienceQueries) GetSourceGroups(ctx context.Context, playlistID *int64, search string, limit, offset int) ([]models.SourceGroup, int64, error) {
+func (q *ExperienceQueries) GetSourceGroups(ctx context.Context, playlistID, lineupID *int64, unusedOnly bool, search string, limit, offset int) ([]models.SourceGroup, int64, error) {
 	where := []string{"1 = 1"}
 	args := []any{}
 	if playlistID != nil {
@@ -66,18 +66,41 @@ func (q *ExperienceQueries) GetSourceGroups(ctx context.Context, playlistID *int
 		term := "%" + strings.ToLower(search) + "%"
 		args = append(args, term, term)
 	}
+	usedSourcesCTE := ""
+	if unusedOnly && lineupID != nil {
+		usedSourcesCTE = `WITH used_sources AS (
+			SELECT DISTINCT tci.playlist_channel_id
+			FROM template_group_item tgi
+			JOIN template_group_channel tgc ON tgc.group_id = tgi.group_id
+			JOIN templatechannelitem tci ON tci.channel_id = tgc.channel_id
+			WHERE tgi.template_id = ?
+		) `
+		where = append(where, `EXISTS (
+			SELECT 1 FROM playlistchannel available
+			LEFT JOIN used_sources used ON used.playlist_channel_id = available.id
+			WHERE available.group_id = pg.id AND used.playlist_channel_id IS NULL
+		)`)
+		args = append([]any{*lineupID}, args...)
+	} else {
+		where = append(where, "EXISTS (SELECT 1 FROM playlistchannel available WHERE available.group_id = pg.id)")
+	}
 	whereSQL := strings.Join(where, " AND ")
 	var total int64
-	if err := q.GetContext(ctx, &total, `SELECT COUNT(*) FROM playlistgroup pg JOIN playlist p ON p.id = pg.playlist_id WHERE `+whereSQL, args...); err != nil {
+	if err := q.GetContext(ctx, &total, usedSourcesCTE+`SELECT COUNT(*) FROM playlistgroup pg JOIN playlist p ON p.id = pg.playlist_id WHERE `+whereSQL, args...); err != nil {
 		return nil, 0, err
 	}
 	items := []models.SourceGroup{}
-	query := `SELECT pg.id, pg.name, p.id AS playlist_id, p.name AS playlist_name, pg.enabled,
+	channelJoin := "LEFT JOIN playlistchannel pc ON pc.group_id = pg.id"
+	if unusedOnly && lineupID != nil {
+		channelJoin += " LEFT JOIN used_sources used ON used.playlist_channel_id = pc.id"
+		whereSQL += " AND used.playlist_channel_id IS NULL"
+	}
+	query := usedSourcesCTE + `SELECT pg.id, pg.name, p.id AS playlist_id, p.name AS playlist_name, pg.enabled,
 		COUNT(DISTINCT pc.id) AS channel_count,
 		COUNT(DISTINCT l.group_id) AS linked_group_count
 		FROM playlistgroup pg
 		JOIN playlist p ON p.id = pg.playlist_id
-		LEFT JOIN playlistchannel pc ON pc.group_id = pg.id
+		` + channelJoin + `
 		LEFT JOIN lineup_group_source_link l ON l.source_group_id = pg.id
 		WHERE ` + whereSQL + `
 		GROUP BY pg.id, pg.name, p.id, p.name, pg.enabled

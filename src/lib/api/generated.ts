@@ -700,7 +700,10 @@ export interface components {
 			/** Format: int64 */
 			playlist_id: number;
 			playlist_name: string;
-			/** Format: int64 */
+			/**
+			 * Format: int64
+			 * @description Channels matching the active source-usage filter.
+			 */
 			channel_count: number;
 			enabled: boolean;
 			/** Format: int64 */
@@ -1235,6 +1238,10 @@ export interface operations {
 		parameters: {
 			query?: {
 				playlist_id?: number;
+				/** @description Active lineup used to calculate available source-channel counts. */
+				lineup_id?: number;
+				/** @description Hide groups with no unused channels and count only channels unused by the active lineup. Requires lineup_id. */
+				unused_only?: boolean;
 				q?: components['parameters']['Search'];
 				cursor?: components['parameters']['Cursor'];
 				limit?: components['parameters']['Limit'];

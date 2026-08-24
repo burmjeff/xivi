@@ -178,17 +178,23 @@ func TestGetSourceChannelsCanHideSourcesUsedByTheActiveLineup(t *testing.T) {
 	db.MustExec(`INSERT INTO template_group_item VALUES (1, 10, 1), (2, 20, 1)`)
 	db.MustExec(`INSERT INTO templatechannel VALUES
 		(1, 'Used here', NULL, 0, 'used-here'),
-		(2, 'Used elsewhere', NULL, 0, 'used-elsewhere')`)
-	db.MustExec(`INSERT INTO template_group_channel VALUES (10, 1, 1), (20, 2, 1)`)
+		(2, 'Used elsewhere', NULL, 0, 'used-elsewhere'),
+		(3, 'Also used here', NULL, 0, 'also-used-here')`)
+	db.MustExec(`INSERT INTO template_group_channel VALUES (10, 1, 1), (10, 3, 2), (20, 2, 1)`)
 	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
-	db.MustExec(`INSERT INTO playlistgroup VALUES (30, 'Channels', 1, 1)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES
+		(30, 'Partly available', 1, 1),
+		(31, 'Fully used', 1, 1),
+		(32, 'Empty', 1, 1)`)
 	db.MustExec(`INSERT INTO playlistchannel VALUES
 		(100, NULL, 'Used here', NULL, 'Used here', 30, 1),
 		(101, NULL, 'Used elsewhere', NULL, 'Used elsewhere', 30, 1),
-		(102, NULL, 'Unused', NULL, 'Unused', 30, 1)`)
+		(102, NULL, 'Unused', NULL, 'Unused', 30, 1),
+		(103, NULL, 'Also used here', NULL, 'Also used here', 31, 1)`)
 	db.MustExec(`INSERT INTO templatechannelitem VALUES
 		(1, 1, 100, 1, 'manual', 1, NULL, 2, 1),
-		(2, 2, 101, 1, 'manual', 1, NULL, 2, 1)`)
+		(2, 2, 101, 1, 'manual', 1, NULL, 2, 1),
+		(3, 3, 103, 1, 'manual', 1, NULL, 2, 1)`)
 
 	lineupID := int64(1)
 	items, total, err := NewExperienceQueries(db).GetSourceChannels(context.Background(), nil, nil, &lineupID, true, "", 50, 0)
@@ -203,8 +209,24 @@ func TestGetSourceChannelsCanHideSourcesUsedByTheActiveLineup(t *testing.T) {
 	}
 
 	all, allTotal, err := NewExperienceQueries(db).GetSourceChannels(context.Background(), nil, nil, &lineupID, false, "", 50, 0)
-	if err != nil || allTotal != 3 || len(all) != 3 {
+	if err != nil || allTotal != 4 || len(all) != 4 {
 		t.Fatalf("unfiltered source catalog changed: total=%d items=%#v err=%v", allTotal, all, err)
+	}
+
+	groups, groupTotal, err := NewExperienceQueries(db).GetSourceGroups(context.Background(), nil, &lineupID, true, "", 50, 0)
+	if err != nil {
+		t.Fatalf("GetSourceGroups failed: %v", err)
+	}
+	if groupTotal != 1 || len(groups) != 1 || groups[0].ID != 30 || groups[0].ChannelCount != 2 {
+		t.Fatalf("expected only the partly available group with two unused sources, total=%d groups=%#v", groupTotal, groups)
+	}
+
+	allGroups, allGroupTotal, err := NewExperienceQueries(db).GetSourceGroups(context.Background(), nil, &lineupID, false, "", 50, 0)
+	if err != nil || allGroupTotal != 2 || len(allGroups) != 2 {
+		t.Fatalf("expected non-empty groups when the usage filter is off, total=%d groups=%#v err=%v", allGroupTotal, allGroups, err)
+	}
+	if allGroups[0].ChannelCount != 1 || allGroups[1].ChannelCount != 3 {
+		t.Fatalf("unfiltered group counts changed: %#v", allGroups)
 	}
 }
 

@@ -60,8 +60,15 @@
 	});
 
 	const groupsQuery = createQuery(() => ({
-		queryKey: ['studio', 'source-groups'],
-		queryFn: () => api<Paginated<SourceGroup>>('/api/v2/studio/source-groups?limit=500')
+		queryKey: ['studio', 'source-groups', lineupId, hideUsed],
+		queryFn: () =>
+			api<Paginated<SourceGroup>>(
+				`/api/v2/studio/source-groups${params({
+					lineup_id: hideUsed ? lineupId : undefined,
+					unused_only: hideUsed || undefined,
+					limit: 500
+				})}`
+			)
 	}));
 	const channelsQuery = createInfiniteQuery(() => ({
 		queryKey: [
