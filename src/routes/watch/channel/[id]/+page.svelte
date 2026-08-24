@@ -5,7 +5,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onDestroy } from 'svelte';
-	import { ChevronDown, ChevronLeft, ChevronRight, RotateCcw, Radio } from '@lucide/svelte';
+	import { ChevronDown, ChevronLeft, ChevronRight, RotateCcw, Radio, Play } from '@lucide/svelte';
 	import { api } from '$lib/api/client';
 	import type { GuideChannel, Paginated } from '$lib/api/types';
 	import { preferences } from '$lib/state/preferences.svelte';
@@ -29,6 +29,7 @@
 		hls: Hls | null = null,
 		loading = $state(true),
 		error = $state(''),
+		playbackPaused = $state(true),
 		attachedUrl = '',
 		networkRetries = 0,
 		mediaRecoveries = 0,
@@ -63,8 +64,13 @@
 	function onPlaying() {
 		loading = false;
 		error = '';
+		playbackPaused = false;
 		networkRetries = 0;
 		mediaRecoveries = 0;
+		if (stallTimer) clearTimeout(stallTimer);
+	}
+	function onCanPlay() {
+		loading = false;
 		if (stallTimer) clearTimeout(stallTimer);
 	}
 	function onWaiting() {
@@ -78,6 +84,22 @@
 				if (liveEdge - video.currentTime > 10) video.currentTime = Math.max(0, liveEdge - 3);
 			}
 		}, 2_000);
+	}
+	async function startPlayback() {
+		if (!video) return;
+		try {
+			await video.play();
+			playbackPaused = video.paused;
+		} catch (playError) {
+			if (playError instanceof DOMException && playError.name === 'NotAllowedError') {
+				loading = false;
+				playbackPaused = true;
+				return;
+			}
+			if (playError instanceof DOMException && playError.name === 'AbortError') return;
+			loading = false;
+			error = 'The browser could not start this live stream. Retry to reconnect.';
+		}
 	}
 	function scheduleNetworkRecovery(url: string) {
 		if (!hls || attachedUrl !== url) return;
@@ -102,10 +124,8 @@
 		attachedUrl = url;
 		loading = true;
 		error = '';
-		if (video.canPlayType('application/vnd.apple.mpegurl')) {
-			video.src = url;
-			video.load();
-		} else if (Hls.isSupported()) {
+		playbackPaused = true;
+		if (Hls.isSupported()) {
 			hls = new Hls({
 				enableWorker: true,
 				lowLatencyMode: false,
@@ -118,10 +138,8 @@
 				levelLoadingTimeOut: 10_000,
 				fragLoadingTimeOut: 15_000
 			});
-			hls.loadSource(url);
-			hls.attachMedia(video);
 			hls.on(Hls.Events.MANIFEST_PARSED, () => {
-				void video?.play().catch(() => undefined);
+				void startPlayback();
 			});
 			hls.on(Hls.Events.ERROR, (_event, data) => {
 				if (!data.fatal) {
@@ -143,6 +161,12 @@
 				loading = false;
 				error = 'This stream could not be decoded by the browser.';
 			});
+			hls.attachMedia(video);
+			hls.loadSource(url);
+		} else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+			video.src = url;
+			video.load();
+			void startPlayback();
 		} else {
 			loading = false;
 			error = 'HLS playback is not supported in this browser.';
@@ -185,8 +209,10 @@
 						bind:this={video}
 						autoplay
 						playsinline
-						oncanplay={onPlaying}
+						oncanplay={onCanPlay}
+						onplay={() => (playbackPaused = false)}
 						onplaying={onPlaying}
+						onpause={() => (playbackPaused = true)}
 						onwaiting={onWaiting}
 						onstalled={onWaiting}
 						onerror={() => {
@@ -207,6 +233,12 @@
 				{#if loading && !error}<div class="stream-overlay">
 						<span></span>
 						<p>Tuning {channelQuery.data.name}…</p>
+					</div>{/if}
+				{#if playbackPaused && !loading && !error}<div class="stream-overlay play-prompt">
+						<p>The live signal is ready when you are.</p>
+						<button class="app-button app-button--primary" onclick={() => void startPlayback()}
+							><Play size={18} fill="currentColor" />Start watching</button
+						>
 					</div>{/if}
 				{#if error}<div class="stream-overlay error">
 						<h2>Signal interrupted</h2>
@@ -346,6 +378,10 @@
 		animation: spin 0.9s linear infinite;
 	}
 	.stream-overlay.error {
+		pointer-events: auto;
+	}
+	.stream-overlay.play-prompt {
+		background: rgb(5 6 9/0.82);
 		pointer-events: auto;
 	}
 	.stream-overlay.error h2 {

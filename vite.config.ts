@@ -14,6 +14,13 @@ export default defineConfig({
 			overlay: true
 		},
 		proxy: {
+			'/stream': {
+				target: `http://127.0.0.1:${port}`,
+				changeOrigin: true,
+				secure: false,
+				timeout: 0,
+				proxyTimeout: 0
+			},
 			'/api': {
 				target: `http://127.0.0.1:${port}`,
 				changeOrigin: true,
