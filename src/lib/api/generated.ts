@@ -164,6 +164,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/studio/lineups/{lineup_id}/source-groups/{source_group_id}/copy': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['copySourceGroupToLineup'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/studio/groups/{group_id}': {
 		parameters: {
 			query?: never;
@@ -238,6 +254,22 @@ export interface paths {
 		get?: never;
 		put?: never;
 		post: operations['batchAddWorkspaceChannels'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/groups/{group_id}/source-groups/{source_group_id}/add': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['addSourceGroupToStudioGroup'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -639,6 +671,15 @@ export interface components {
 			follow_group_name: boolean;
 			follow_channel_names: boolean;
 		};
+		SourceGroupImportResult: {
+			/** Format: int64 */
+			group_id: number;
+			group_name: string;
+			/** Format: int64 */
+			added_count: number;
+			/** Format: int64 */
+			skipped_count: number;
+		};
 		WorkspaceChannel: {
 			/** Format: int64 */
 			id: number;
@@ -855,6 +896,7 @@ export interface components {
 		ChannelId: number;
 		SourceId: number;
 		SourceChannelId: number;
+		SourceGroupIdPath: number;
 		GroupId: number;
 		Search: string;
 		Cursor: string;
@@ -1103,6 +1145,30 @@ export interface operations {
 			default: components['responses']['Error'];
 		};
 	};
+	copySourceGroupToLineup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				lineup_id: components['parameters']['LineupId'];
+				source_group_id: components['parameters']['SourceGroupIdPath'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description A manual lineup group was created from the source group's current snapshot. */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['SourceGroupImportResult'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
 	deleteStudioGroup: {
 		parameters: {
 			query?: never;
@@ -1274,6 +1340,30 @@ export interface operations {
 						channel_ids: number[];
 						total: number;
 					};
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	addSourceGroupToStudioGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				group_id: components['parameters']['GroupIdPath'];
+				source_group_id: components['parameters']['SourceGroupIdPath'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Missing channels from the source group were appended as manual channels. */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['SourceGroupImportResult'];
 				};
 			};
 			default: components['responses']['Error'];

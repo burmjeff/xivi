@@ -133,6 +133,19 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SourceGroupPage' }
         default: { $ref: '#/components/responses/Error' }
+  /studio/lineups/{lineup_id}/source-groups/{source_group_id}/copy:
+    post:
+      operationId: copySourceGroupToLineup
+      parameters:
+        - { $ref: '#/components/parameters/LineupId' }
+        - { $ref: '#/components/parameters/SourceGroupIdPath' }
+      responses:
+        '201':
+          description: A manual lineup group was created from the source group's current snapshot.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceGroupImportResult' }
+        default: { $ref: '#/components/responses/Error' }
   /studio/groups/{group_id}:
     patch:
       operationId: updateStudioGroup
@@ -223,6 +236,19 @@ paths:
                 properties:
                   channel_ids: { type: array, items: { type: integer, format: int64 } }
                   total: { type: integer }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/groups/{group_id}/source-groups/{source_group_id}/add:
+    post:
+      operationId: addSourceGroupToStudioGroup
+      parameters:
+        - { $ref: '#/components/parameters/GroupIdPath' }
+        - { $ref: '#/components/parameters/SourceGroupIdPath' }
+      responses:
+        '201':
+          description: Missing channels from the source group were appended as manual channels.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceGroupImportResult' }
         default: { $ref: '#/components/responses/Error' }
   /studio/groups/{group_id}/channels/batch-remove:
     post:
@@ -433,6 +459,11 @@ components:
         required: true,
         schema: { type: integer, format: int64 }
       }
+    SourceGroupIdPath:
+      name: source_group_id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
     GroupId: { name: group_id, in: query, schema: { type: integer, format: int64 } }
     Search: { name: q, in: query, schema: { type: string, maxLength: 255 } }
     Cursor: { name: cursor, in: query, schema: { type: string } }
@@ -581,6 +612,14 @@ components:
         source_group_id: { type: integer, format: int64 }
         follow_group_name: { type: boolean }
         follow_channel_names: { type: boolean }
+    SourceGroupImportResult:
+      type: object
+      required: [group_id, group_name, added_count, skipped_count]
+      properties:
+        group_id: { type: integer, format: int64 }
+        group_name: { type: string }
+        added_count: { type: integer, format: int64 }
+        skipped_count: { type: integer, format: int64 }
     WorkspaceChannel:
       type: object
       required: [id, name, uuid, logo_id, order, source_count, match_method, manual_locked]

@@ -18,6 +18,9 @@ var (
 	ErrLineupNotFound      = errors.New("lineup not found")
 	ErrStudioGroupNotFound = errors.New("studio group not found")
 	ErrSourceGroupNotFound = errors.New("source group not found")
+	ErrSourceGroupDisabled = errors.New("source group is disabled")
+	ErrSourceGroupEmpty    = errors.New("source group is empty")
+	ErrStudioGroupManaged  = errors.New("studio group is source managed")
 	ErrStudioGroupName     = errors.New("studio group name is required")
 )
 
@@ -25,6 +28,7 @@ type sourceGroupRecord struct {
 	ID         int64  `db:"id"`
 	Name       string `db:"name"`
 	PlaylistID int64  `db:"playlist_id"`
+	Enabled    bool   `db:"enabled"`
 }
 
 type syncSourceChannel struct {
@@ -189,6 +193,169 @@ func (q *ExperienceQueries) DeleteStudioGroup(ctx context.Context, groupID int64
 		}
 		return nil
 	})
+}
+
+// CopySourceGroupToLineup creates a regular, manually managed lineup group
+// from the source group's current snapshot. It intentionally creates no
+// durable source link.
+func (q *ExperienceQueries) CopySourceGroupToLineup(ctx context.Context, lineupID, sourceGroupID int64) (*models.SourceGroupImportResult, error) {
+	result := &models.SourceGroupImportResult{ChannelIDs: []int64{}}
+	err := q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		var lineupExists bool
+		if err := tx.GetContext(ctx, &lineupExists, `SELECT EXISTS(SELECT 1 FROM template WHERE id = ?)`, lineupID); err != nil {
+			return err
+		}
+		if !lineupExists {
+			return ErrLineupNotFound
+		}
+		source, channels, err := sourceGroupImportSnapshot(ctx, tx, sourceGroupID)
+		if err != nil {
+			return err
+		}
+		result.GroupName, err = availableStudioGroupName(ctx, tx, source.Name)
+		if err != nil {
+			return err
+		}
+		insert, err := tx.ExecContext(ctx, `INSERT INTO templategroup (name, dynamic, dynamicgroup) VALUES (?, false, NULL)`, result.GroupName)
+		if err != nil {
+			return err
+		}
+		result.GroupID, err = insert.LastInsertId()
+		if err != nil {
+			return err
+		}
+		var groupPosition int64
+		if err := tx.GetContext(ctx, &groupPosition, `SELECT COALESCE(MAX(orderr), 0) + 1 FROM template_group_item WHERE template_id = ?`, lineupID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO template_group_item (template_id, group_id, orderr) VALUES (?, ?, ?)`, lineupID, result.GroupID, groupPosition); err != nil {
+			return err
+		}
+		return importSourceGroupChannels(ctx, tx, result, channels, nil)
+	})
+	return result, err
+}
+
+// AddSourceGroupToStudioGroup appends the source group's current snapshot to
+// an existing manual group. Variants already represented in that group are
+// skipped so repeating the action is idempotent.
+func (q *ExperienceQueries) AddSourceGroupToStudioGroup(ctx context.Context, groupID, sourceGroupID int64) (*models.SourceGroupImportResult, error) {
+	result := &models.SourceGroupImportResult{GroupID: groupID, ChannelIDs: []int64{}}
+	err := q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		if err := tx.GetContext(ctx, &result.GroupName, `SELECT name FROM templategroup WHERE id = ?`, groupID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrStudioGroupNotFound
+			}
+			return err
+		}
+		var linked bool
+		if err := tx.GetContext(ctx, &linked, `SELECT EXISTS(SELECT 1 FROM lineup_group_source_link WHERE group_id = ?)`, groupID); err != nil {
+			return err
+		}
+		if linked {
+			return ErrStudioGroupManaged
+		}
+		_, channels, err := sourceGroupImportSnapshot(ctx, tx, sourceGroupID)
+		if err != nil {
+			return err
+		}
+		existing := []int64{}
+		if err := tx.SelectContext(ctx, &existing, `SELECT DISTINCT tci.playlist_channel_id
+			FROM templatechannelitem tci
+			JOIN template_group_channel tgc ON tgc.channel_id = tci.channel_id
+			JOIN playlistchannel pc ON pc.id = tci.playlist_channel_id
+			WHERE tgc.group_id = ? AND pc.group_id = ?`, groupID, sourceGroupID); err != nil {
+			return err
+		}
+		skip := make(map[int64]bool, len(existing))
+		for _, sourceChannelID := range existing {
+			skip[sourceChannelID] = true
+		}
+		return importSourceGroupChannels(ctx, tx, result, channels, skip)
+	})
+	return result, err
+}
+
+func sourceGroupImportSnapshot(ctx context.Context, tx *sqlx.Tx, sourceGroupID int64) (*sourceGroupRecord, []syncSourceChannel, error) {
+	source := &sourceGroupRecord{}
+	if err := tx.GetContext(ctx, source, `SELECT id, name, playlist_id, enabled FROM playlistgroup WHERE id = ?`, sourceGroupID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil, ErrSourceGroupNotFound
+		}
+		return nil, nil, err
+	}
+	if !source.Enabled {
+		return nil, nil, ErrSourceGroupDisabled
+	}
+	channels := []syncSourceChannel{}
+	if err := tx.SelectContext(ctx, &channels, `SELECT id, COALESCE(NULLIF(title, ''), NULLIF(tvg_name, ''), 'Untitled channel') AS name, tvg_id
+		FROM playlistchannel WHERE group_id = ? ORDER BY LOWER(name), id`, sourceGroupID); err != nil {
+		return nil, nil, err
+	}
+	if len(channels) == 0 {
+		return nil, nil, ErrSourceGroupEmpty
+	}
+	return source, channels, nil
+}
+
+func importSourceGroupChannels(ctx context.Context, tx *sqlx.Tx, result *models.SourceGroupImportResult, channels []syncSourceChannel, skip map[int64]bool) error {
+	var position int64
+	if err := tx.GetContext(ctx, &position, `SELECT COALESCE(MAX(orderr), 0) FROM template_group_channel WHERE group_id = ?`, result.GroupID); err != nil {
+		return err
+	}
+	for _, source := range channels {
+		if skip[source.ID] {
+			result.SkippedCount++
+			continue
+		}
+		insert, err := tx.ExecContext(ctx, `INSERT INTO templatechannel (name, tvgid, logoid, uuid) VALUES (?, ?, 0, ?)`, source.Name, source.TVGID, uuid.NewString())
+		if err != nil {
+			return err
+		}
+		channelID, err := insert.LastInsertId()
+		if err != nil {
+			return err
+		}
+		position++
+		if _, err := tx.ExecContext(ctx, `INSERT INTO template_group_channel (group_id, channel_id, orderr) VALUES (?, ?, ?)`, result.GroupID, channelID, position); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO templatechannelitem (channel_id, playlist_channel_id, orderr, match_method, match_score, runner_up_score, matcher_version, manual_locked)
+			VALUES (?, ?, 1, 'manual', 1, NULL, 2, true)`, channelID, source.ID); err != nil {
+			return err
+		}
+		result.ChannelIDs = append(result.ChannelIDs, channelID)
+		result.AddedCount++
+	}
+	return nil
+}
+
+func availableStudioGroupName(ctx context.Context, tx *sqlx.Tx, sourceName string) (string, error) {
+	base := strings.TrimSpace(sourceName)
+	if base == "" {
+		base = "Imported group"
+	}
+	for attempt := 0; ; attempt++ {
+		suffix := ""
+		if attempt == 1 {
+			suffix = " copy"
+		} else if attempt > 1 {
+			suffix = fmt.Sprintf(" copy %d", attempt)
+		}
+		baseRunes := []rune(base)
+		maxBase := 255 - len([]rune(suffix))
+		if len(baseRunes) > maxBase {
+			baseRunes = baseRunes[:maxBase]
+		}
+		candidate := string(baseRunes) + suffix
+		var exists bool
+		if err := tx.GetContext(ctx, &exists, `SELECT EXISTS(SELECT 1 FROM templategroup WHERE LOWER(name) = LOWER(?))`, candidate); err != nil {
+			return "", err
+		}
+		if !exists {
+			return candidate, nil
+		}
+	}
 }
 
 func (q *ExperienceQueries) SetSourceGroupLink(ctx context.Context, groupID int64, request models.SourceGroupLinkRequest) error {

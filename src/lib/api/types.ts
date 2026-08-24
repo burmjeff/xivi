@@ -8,6 +8,7 @@ export type GuideChannel = components['schemas']['GuideChannel'];
 export type StudioGroup = components['schemas']['StudioGroup'];
 export type SourceGroup = components['schemas']['SourceGroup'];
 export type SourceGroupLink = components['schemas']['SourceGroupLink'];
+export type SourceGroupImportResult = components['schemas']['SourceGroupImportResult'];
 export type WorkspaceChannel = components['schemas']['WorkspaceChannel'];
 export type SourceChannel = components['schemas']['SourceChannel'];
 export type MatchReview = components['schemas']['MatchReview'];

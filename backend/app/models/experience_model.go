@@ -69,6 +69,17 @@ type SourceGroupSyncResult struct {
 	RemovedCount int64 `json:"removed_count"`
 }
 
+// SourceGroupImportResult describes a one-time source-group copy. ChannelIDs
+// stay internal so controllers can launch enrichment without returning a
+// potentially large identifier array to the browser.
+type SourceGroupImportResult struct {
+	GroupID      int64   `json:"group_id"`
+	GroupName    string  `json:"group_name"`
+	AddedCount   int64   `json:"added_count"`
+	SkippedCount int64   `json:"skipped_count"`
+	ChannelIDs   []int64 `json:"-"`
+}
+
 // Programme uses correctly named start/end fields. The legacy EPG model has
 // intentionally been left unchanged to keep old JSON output byte-compatible.
 type Programme struct {

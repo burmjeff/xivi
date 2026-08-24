@@ -192,6 +192,102 @@ func TestDeleteStudioGroupRemovesOnlyOrphanedCanonicalChannels(t *testing.T) {
 	}
 }
 
+func TestCopySourceGroupToLineupCreatesManualSnapshotWithUniqueName(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO template VALUES (1, 'Main')`)
+	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'News', 1, 1)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES
+		(100, 'alpha.tv', 'Alpha Guide', NULL, 'Alpha', 20, 1),
+		(101, 'beta.tv', 'Beta Guide', NULL, 'Beta', 20, 1)`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'News', 0, NULL)`)
+	db.MustExec(`INSERT INTO template_group_item VALUES (1, 10, 4)`)
+
+	result, err := NewExperienceQueries(db).CopySourceGroupToLineup(context.Background(), 1, 20)
+	if err != nil {
+		t.Fatalf("CopySourceGroupToLineup failed: %v", err)
+	}
+	if result.GroupName != "News copy" || result.AddedCount != 2 || result.SkippedCount != 0 || len(result.ChannelIDs) != 2 {
+		t.Fatalf("unexpected copy result: %#v", result)
+	}
+	var groupState struct {
+		Order  int64 `db:"orderr"`
+		Linked bool  `db:"linked"`
+		Count  int64 `db:"channel_count"`
+	}
+	if err := db.Get(&groupState, `SELECT tgi.orderr,
+		EXISTS(SELECT 1 FROM lineup_group_source_link WHERE group_id = tg.id) AS linked,
+		COUNT(tgc.channel_id) AS channel_count
+		FROM templategroup tg
+		JOIN template_group_item tgi ON tgi.group_id = tg.id
+		LEFT JOIN template_group_channel tgc ON tgc.group_id = tg.id
+		WHERE tg.id = ? GROUP BY tg.id, tgi.orderr`, result.GroupID); err != nil {
+		t.Fatalf("copied group state was incomplete: %v", err)
+	}
+	if groupState.Order != 5 || groupState.Linked || groupState.Count != 2 {
+		t.Fatalf("unexpected copied group state: %#v", groupState)
+	}
+	var lockedCount int64
+	db.Get(&lockedCount, `SELECT COUNT(*) FROM templatechannelitem tci
+		JOIN template_group_channel tgc ON tgc.channel_id = tci.channel_id
+		WHERE tgc.group_id = ? AND tci.match_method = 'manual' AND tci.manual_locked = 1`, result.GroupID)
+	if lockedCount != 2 {
+		t.Fatalf("expected two manually locked source variants, got %d", lockedCount)
+	}
+}
+
+func TestAddSourceGroupToStudioGroupSkipsExistingVariants(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'News', 1, 1)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES
+		(100, 'alpha.tv', 'Alpha Guide', NULL, 'Alpha', 20, 1),
+		(101, 'beta.tv', 'Beta Guide', NULL, 'Beta', 20, 1)`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'Destination', 0, NULL)`)
+	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'Alpha', 'alpha.tv', 0, 'existing')`)
+	db.MustExec(`INSERT INTO template_group_channel VALUES (10, 1, 1)`)
+	db.MustExec(`INSERT INTO templatechannelitem VALUES (1, 1, 100, 1, 'manual', 1, NULL, 2, 1)`)
+
+	query := NewExperienceQueries(db)
+	first, err := query.AddSourceGroupToStudioGroup(context.Background(), 10, 20)
+	if err != nil {
+		t.Fatalf("AddSourceGroupToStudioGroup failed: %v", err)
+	}
+	if first.AddedCount != 1 || first.SkippedCount != 1 || len(first.ChannelIDs) != 1 {
+		t.Fatalf("unexpected first import: %#v", first)
+	}
+	second, err := query.AddSourceGroupToStudioGroup(context.Background(), 10, 20)
+	if err != nil {
+		t.Fatalf("repeated AddSourceGroupToStudioGroup failed: %v", err)
+	}
+	if second.AddedCount != 0 || second.SkippedCount != 2 || len(second.ChannelIDs) != 0 {
+		t.Fatalf("repeated import was not idempotent: %#v", second)
+	}
+	var channelCount int64
+	db.Get(&channelCount, `SELECT COUNT(*) FROM template_group_channel WHERE group_id = 10`)
+	if channelCount != 2 {
+		t.Fatalf("expected two destination channels, got %d", channelCount)
+	}
+}
+
+func TestCopySourceGroupToLineupRollsBackEmptySource(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO template VALUES (1, 'Main')`)
+	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'Empty', 1, 1)`)
+	query := NewExperienceQueries(db)
+	if _, err := query.CopySourceGroupToLineup(context.Background(), 1, 20); !errors.Is(err, ErrSourceGroupEmpty) {
+		t.Fatalf("expected an empty source error, got %v", err)
+	}
+	for _, table := range []string{"templategroup", "template_group_item", "templatechannel"} {
+		var count int64
+		db.Get(&count, `SELECT COUNT(*) FROM `+table)
+		if count != 0 {
+			t.Fatalf("%s retained %d rows after empty-source rollback", table, count)
+		}
+	}
+}
+
 func TestSourceGroupSyncReconcilesOwnedMembershipAndPreservesEnrichment(t *testing.T) {
 	db := newExperienceTestDB(t)
 	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)

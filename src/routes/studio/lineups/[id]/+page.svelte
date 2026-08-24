@@ -11,7 +11,6 @@
 		Undo2,
 		ChevronRight,
 		PanelRightClose,
-		Link2,
 		LockKeyhole,
 		CircleGauge,
 		History,
@@ -32,10 +31,12 @@
 		Paginated,
 		SourceChannel,
 		SourceGroup,
+		SourceGroupImportResult,
 		StudioGroup,
 		WorkspaceChannel
 	} from '$lib/api/types';
 	import LogoTile from '$lib/components/brand/LogoTile.svelte';
+	import SourceBrowser from '$lib/components/studio/SourceBrowser.svelte';
 	import WorkspaceRow from '$lib/components/studio/WorkspaceRow.svelte';
 
 	const lineupId = Number(page.params.id),
@@ -54,7 +55,6 @@
 		selectedChannelId = $state<number | null>(null),
 		selectedSourceId = $state<number | null>(null),
 		channelSearch = $state(''),
-		sourceSearch = $state(''),
 		inspectorOpen = $state(true),
 		selectedIds = $state(new Set<number>()),
 		batchTargetGroupId = $state(0),
@@ -68,6 +68,7 @@
 		followGroupName = $state(true),
 		followChannelNames = $state(true),
 		syncSaving = $state(false),
+		sourceGroupAction = $state<string | null>(null),
 		undo = $state<{
 			source: number;
 			target: number;
@@ -94,13 +95,6 @@
 		queryFn: () =>
 			api<Paginated<WorkspaceChannel>>(
 				`/api/v2/studio/groups/${selectedGroupId}/channels${params({ q: channelSearch, limit: 500 })}`
-			)
-	}));
-	const sourcesQuery = createQuery(() => ({
-		queryKey: ['studio', 'source-browser', sourceSearch],
-		queryFn: () =>
-			api<Paginated<SourceChannel>>(
-				`/api/v2/studio/source-channels${params({ q: sourceSearch, limit: 150 })}`
 			)
 	}));
 	const sourceGroupsQuery = createQuery(() => ({
@@ -393,6 +387,54 @@
 			message = 'That source channel could not be added.';
 		}
 	}
+	function beginSourceGroupSync(group: SourceGroup) {
+		openSyncSettings(null);
+		chooseSourceGroup(group);
+	}
+	async function copySourceGroup(group: SourceGroup) {
+		if (sourceGroupAction) return;
+		sourceGroupAction = `copy:${group.id}`;
+		try {
+			const result = await api<SourceGroupImportResult>(
+				`/api/v2/studio/lineups/${lineupId}/source-groups/${group.id}/copy`,
+				{ method: 'POST' }
+			);
+			selectedGroupId = result.group_id;
+			selectedChannelId = null;
+			selectedIds = new Set();
+			message = `${result.group_name} created with ${result.added_count} channel${result.added_count === 1 ? '' : 's'}. It is a manual snapshot and will not follow source updates.`;
+			await refreshWorkspace();
+		} catch (error) {
+			message = requestError(error, 'The source group could not be copied.');
+		} finally {
+			sourceGroupAction = null;
+		}
+	}
+	async function addSourceGroup(group: SourceGroup) {
+		const destination = selectedGroup;
+		if (!destination || destination.source_link || sourceGroupAction) return;
+		if (
+			!confirm(
+				`Add every missing channel from “${group.name}” to “${destination.name}”? Channels already represented there will be skipped.`
+			)
+		)
+			return;
+		sourceGroupAction = `add:${group.id}`;
+		try {
+			const result = await api<SourceGroupImportResult>(
+				`/api/v2/studio/groups/${destination.id}/source-groups/${group.id}/add`,
+				{ method: 'POST' }
+			);
+			message = result.added_count
+				? `${result.added_count} channel${result.added_count === 1 ? '' : 's'} added to ${destination.name}${result.skipped_count ? `; ${result.skipped_count} already present.` : '.'}`
+				: `Every channel from ${group.name} is already present in ${destination.name}.`;
+			await refreshWorkspace();
+		} catch (error) {
+			message = requestError(error, 'The source group could not be added.');
+		} finally {
+			sourceGroupAction = null;
+		}
+	}
 	async function attachSource(source: SourceChannel) {
 		if (!selectedChannelId) return;
 		try {
@@ -532,53 +574,18 @@
 		</div>{/if}
 	<div class:inspector-closed={!inspectorOpen} class="workbench-panes">
 		<aside class="source-pane">
-			<header>
-				<div>
-					<p class="eyebrow">Source browser</p>
-					<h2>Available channels</h2>
-				</div>
-				<button onclick={() => refreshWorkspace()} aria-label="Refresh browser"
-					><RefreshCw size={17} /></button
-				>
-			</header>
-			<label class="pane-search"
-				><Search size={17} /><input bind:value={sourceSearch} placeholder="Search sources" /></label
-			>
-			<div class="source-list">
-				{#if sourcesQuery.isPending}{#each Array(8) as _}<div
-							class="source-skeleton skeleton"
-						></div>{/each}{:else}{#each sourcesQuery.data?.items ?? [] as source}<article
-							class:selected={source.id === selectedSourceId}
-						>
-							<button class="source-select" onclick={() => (selectedSourceId = source.id)}>
-								<LogoTile src={source.logo_url} name={source.name} size="sm" contrast />
-								<span class="source-copy">
-									<strong>{source.name}</strong><small
-										>{source.playlist_name} · {source.group_name}</small
-									>
-								</span>
-								<span class:off={!source.enabled}>{source.enabled ? 'On' : 'Off'}</span>
-							</button>
-							<div class="source-actions">
-								<button
-									disabled={selectedGroupManaged}
-									onclick={(event) => {
-										event.stopPropagation();
-										addSource(source);
-									}}
-									title={selectedGroupManaged
-										? 'Membership follows the connected source group'
-										: 'Add as a new lineup channel'}><Plus size={15} />Add</button
-								>{#if selectedChannelId}<button
-										onclick={(event) => {
-											event.stopPropagation();
-											attachSource(source);
-										}}
-										title="Attach to selected lineup channel"><Link2 size={15} />Variant</button
-									>{/if}
-							</div>
-						</article>{/each}{/if}
-			</div>
+			<SourceBrowser
+				{selectedGroup}
+				{selectedChannelId}
+				{selectedSourceId}
+				actionKey={sourceGroupAction}
+				onSelectSource={(source) => (selectedSourceId = source.id)}
+				onAddSource={addSource}
+				onAttachSource={attachSource}
+				onSyncGroup={beginSourceGroupSync}
+				onCopyGroup={copySourceGroup}
+				onAddGroup={addSourceGroup}
+			/>
 		</aside>
 
 		<section class="canvas-pane">
@@ -1065,7 +1072,6 @@
 		border-inline: 1px solid var(--line);
 		background: var(--deep);
 	}
-	.source-pane > header,
 	.canvas-pane > header,
 	.inspector-pane > header {
 		display: flex;
@@ -1075,7 +1081,6 @@
 		border-bottom: 1px solid var(--line);
 		padding: 0.7rem 1rem;
 	}
-	.source-pane h2,
 	.canvas-pane h2,
 	.inspector-pane h2 {
 		overflow: hidden;
@@ -1084,17 +1089,6 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.source-pane > header button {
-		display: grid;
-		width: 2.4rem;
-		height: 2.4rem;
-		place-items: center;
-		border: 0;
-		border-radius: 0.7rem;
-		background: var(--surface-raised);
-		cursor: pointer;
-	}
-	.pane-search,
 	.canvas-tools > label {
 		display: flex;
 		min-height: 2.7rem;
@@ -1106,10 +1100,6 @@
 		padding: 0 0.65rem;
 		color: var(--muted);
 	}
-	.pane-search {
-		margin: 0.65rem;
-	}
-	.pane-search input,
 	.canvas-tools input {
 		min-width: 0;
 		width: 100%;
@@ -1119,86 +1109,9 @@
 		color: var(--text);
 		font-size: 0.75rem;
 	}
-	.source-list,
 	.channel-list,
 	.inspector-pane {
 		overflow-y: auto;
-	}
-	.source-list article {
-		border-bottom: 1px solid var(--line);
-		padding: 0.55rem;
-	}
-	.source-list article:hover,
-	.source-list article.selected {
-		background: color-mix(in oklch, var(--aqua) 9%, var(--surface));
-	}
-	.source-select {
-		display: grid;
-		width: 100%;
-		grid-template-columns: auto minmax(0, 1fr) auto;
-		align-items: center;
-		gap: 0.55rem;
-		border: 0;
-		background: transparent;
-		padding: 0;
-		color: inherit;
-		text-align: left;
-		cursor: pointer;
-	}
-	.source-copy {
-		display: grid;
-		min-width: 0;
-	}
-	.source-list strong,
-	.source-list small {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.source-list strong {
-		font-size: 0.73rem;
-	}
-	.source-list small {
-		color: var(--muted);
-		font-size: 0.6rem;
-	}
-	.source-select > span:last-child {
-		border-radius: 999px;
-		background: color-mix(in oklch, var(--success) 18%, transparent);
-		padding: 0.2rem 0.4rem;
-		color: var(--success);
-		font-size: 0.58rem;
-		font-weight: 800;
-	}
-	.source-select > span.off {
-		background: var(--surface-raised);
-		color: var(--muted);
-	}
-	.source-actions {
-		display: none;
-		grid-template-columns: 1fr 1fr;
-		gap: 0.35rem;
-	}
-	.source-list article:hover .source-actions,
-	.source-list article.selected .source-actions {
-		display: grid;
-	}
-	.source-actions button {
-		display: flex;
-		min-height: 2.3rem;
-		align-items: center;
-		justify-content: center;
-		gap: 0.3rem;
-		border: 1px solid var(--line);
-		border-radius: 0.6rem;
-		background: var(--surface-raised);
-		font-size: 0.65rem;
-		font-weight: 750;
-		cursor: pointer;
-	}
-	.source-actions button:disabled {
-		opacity: 0.42;
-		cursor: not-allowed;
 	}
 	.group-create-actions {
 		display: flex;

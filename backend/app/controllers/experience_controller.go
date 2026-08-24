@@ -203,6 +203,12 @@ func studioGroupError(c *fiber.Ctx, err error) error {
 		return v2Error(c, fiber.StatusNotFound, "group_not_found", "That lineup group no longer exists.", false)
 	case errors.Is(err, queries.ErrSourceGroupNotFound):
 		return v2Error(c, fiber.StatusNotFound, "source_group_not_found", "That source group is no longer available. Refresh the source list and choose another group.", false)
+	case errors.Is(err, queries.ErrSourceGroupDisabled):
+		return v2Error(c, fiber.StatusConflict, "source_group_disabled", "That source group is disabled. Enable it before importing channels.", false)
+	case errors.Is(err, queries.ErrSourceGroupEmpty):
+		return v2Error(c, fiber.StatusConflict, "source_group_empty", "That source group does not contain any channels.", false)
+	case errors.Is(err, queries.ErrStudioGroupManaged):
+		return v2Error(c, fiber.StatusConflict, "synced_group_managed", "Channels are controlled by this group's source connection.", false)
 	case errors.Is(err, queries.ErrStudioGroupName):
 		return v2Error(c, fiber.StatusBadRequest, "group_name_required", "Enter a name for the lineup group.", false)
 	case strings.Contains(strings.ToLower(err.Error()), "unique constraint failed: templategroup.name"):
@@ -270,6 +276,48 @@ func V2DeleteStudioGroup(c *fiber.Ctx) error {
 		return studioGroupError(c, err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func V2CopySourceGroupToLineup(c *fiber.Ctx) error {
+	lineupID, err := parseID(c, "lineup_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
+	}
+	sourceGroupID, err := parseID(c, "source_group_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_source_group", "The source group id is invalid.", false)
+	}
+	result, err := database.Db.CopySourceGroupToLineup(c.UserContext(), lineupID, sourceGroupID)
+	if err != nil {
+		return studioGroupError(c, err)
+	}
+	matchImportedChannels(result.ChannelIDs)
+	return c.Status(fiber.StatusCreated).JSON(result)
+}
+
+func V2AddSourceGroupToStudioGroup(c *fiber.Ctx) error {
+	groupID, err := parseID(c, "group_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The group id is invalid.", false)
+	}
+	sourceGroupID, err := parseID(c, "source_group_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_source_group", "The source group id is invalid.", false)
+	}
+	result, err := database.Db.AddSourceGroupToStudioGroup(c.UserContext(), groupID, sourceGroupID)
+	if err != nil {
+		return studioGroupError(c, err)
+	}
+	matchImportedChannels(result.ChannelIDs)
+	return c.Status(fiber.StatusCreated).JSON(result)
+}
+
+func matchImportedChannels(channelIDs []int64) {
+	for _, channelID := range channelIDs {
+		if channel, err := database.Db.GetTmplChannel(channelID); err == nil {
+			go utils.MatchTemplateChannel(channel)
+		}
+	}
 }
 
 func V2StudioSourceGroups(c *fiber.Ctx) error {
@@ -494,11 +542,7 @@ func V2BatchAddStudioChannels(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusUnprocessableEntity, "batch_add_failed", "The selected source channels could not be added.", false)
 	}
-	for _, channelID := range channelIDs {
-		if channel, loadErr := database.Db.GetTmplChannel(channelID); loadErr == nil {
-			go utils.MatchTemplateChannel(channel)
-		}
-	}
+	matchImportedChannels(channelIDs)
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"channel_ids": channelIDs, "total": len(channelIDs)})
 }
 
