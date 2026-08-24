@@ -194,9 +194,16 @@ func InitPaths() error {
 }
 
 func CopyDefaultLogo() {
-	source, err := os.Open("/xivi/xivi_channel.png") //open the source file
-	if err != nil {
-		log.Err(err)
+	var source *os.File
+	var err error
+	for _, candidate := range []string{"/xivi/xivi_channel.png", "xivi_channel.png"} {
+		source, err = os.Open(candidate)
+		if err == nil {
+			break
+		}
+	}
+	if source == nil {
+		log.Error().Err(err).Msg("default Signal Tile asset could not be opened")
 		return
 	}
 	defer source.Close()

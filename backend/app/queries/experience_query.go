@@ -1,0 +1,670 @@
+package queries
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strings"
+	"time"
+	"xivi/backend/app/models"
+
+	"github.com/jmoiron/sqlx"
+)
+
+// ExperienceQueries powers the additive API used by the new interface.
+type ExperienceQueries struct{ BaseQueries }
+
+func NewExperienceQueries(db *sqlx.DB) *ExperienceQueries {
+	return &ExperienceQueries{BaseQueries: NewBaseQueries(db)}
+}
+
+func (q *ExperienceQueries) GetLineupSummaries(ctx context.Context) ([]models.LineupSummary, error) {
+	rows := []models.LineupSummary{}
+	query := `
+		SELECT t.id, t.name,
+		       COUNT(DISTINCT tgi.group_id) AS group_count,
+		       COUNT(DISTINCT tgc.channel_id) AS channel_count,
+		       CASE WHEN COUNT(DISTINCT tgc.channel_id) = 0 THEN 0
+		            ELSE ROUND(100.0 * COUNT(DISTINCT CASE WHEN tc.tvgid IS NOT NULL AND tc.tvgid != '' THEN tc.id END)
+		                 / COUNT(DISTINCT tgc.channel_id), 1) END AS epg_coverage
+		FROM template t
+		LEFT JOIN template_group_item tgi ON tgi.template_id = t.id
+		LEFT JOIN template_group_channel tgc ON tgc.group_id = tgi.group_id
+		LEFT JOIN templatechannel tc ON tc.id = tgc.channel_id
+		GROUP BY t.id, t.name
+		ORDER BY LOWER(t.name), t.id`
+	return rows, q.SelectContext(ctx, &rows, query)
+}
+
+func (q *ExperienceQueries) GetLineupGroups(ctx context.Context, lineupID int64) ([]models.StudioGroupSummary, error) {
+	rows := []models.StudioGroupSummary{}
+	query := `
+		SELECT tg.id, tg.name, tgi.orderr, COALESCE(tg.dynamic, 0) AS dynamic,
+		       tg.dynamicgroup, COUNT(tgc.channel_id) AS channel_count
+		FROM template_group_item tgi
+		JOIN templategroup tg ON tg.id = tgi.group_id
+		LEFT JOIN template_group_channel tgc ON tgc.group_id = tg.id
+		WHERE tgi.template_id = ?
+		GROUP BY tg.id, tg.name, tgi.orderr, tg.dynamic, tg.dynamicgroup
+		ORDER BY tgi.orderr, tg.id`
+	return rows, q.SelectContext(ctx, &rows, query, lineupID)
+}
+
+func (q *ExperienceQueries) GetGuideChannels(ctx context.Context, lineupID int64, groupID *int64, search string, from, to time.Time, limit, offset int) ([]models.GuideChannel, int64, error) {
+	where := []string{"tgi.template_id = ?", "EXISTS (SELECT 1 FROM templatechannelitem ti WHERE ti.channel_id = tc.id)"}
+	args := []any{lineupID}
+	if groupID != nil {
+		where = append(where, "tg.id = ?")
+		args = append(args, *groupID)
+	}
+	if search != "" {
+		where = append(where, "(LOWER(tc.name) LIKE ? OR LOWER(COALESCE(tc.tvgid, '')) LIKE ?)")
+		term := "%" + strings.ToLower(search) + "%"
+		args = append(args, term, term)
+	}
+	whereSQL := strings.Join(where, " AND ")
+
+	var total int64
+	countQuery := `SELECT COUNT(*) FROM templatechannel tc
+		JOIN template_group_channel tgc ON tgc.channel_id = tc.id
+		JOIN templategroup tg ON tg.id = tgc.group_id
+		JOIN template_group_item tgi ON tgi.group_id = tg.id
+		WHERE ` + whereSQL
+	if err := q.GetContext(ctx, &total, countQuery, args...); err != nil {
+		return nil, 0, err
+	}
+
+	pageArgs := append(append([]any{}, args...), limit, offset)
+	query := `
+		WITH ordered AS (
+			SELECT tc.id, tc.name, tc.tvgid, tc.uuid, COALESCE(l.name, '') AS logo,
+			       tg.id AS group_id, tg.name AS group_name,
+			       ROW_NUMBER() OVER (ORDER BY tgi.orderr, tgc.orderr, tc.id) AS number
+			FROM templatechannel tc
+			JOIN template_group_channel tgc ON tgc.channel_id = tc.id
+			JOIN templategroup tg ON tg.id = tgc.group_id
+			JOIN template_group_item tgi ON tgi.group_id = tg.id
+			LEFT JOIN logo l ON l.id = tc.logoid
+			WHERE ` + whereSQL + `
+		)
+		SELECT * FROM ordered ORDER BY number LIMIT ? OFFSET ?`
+	channels := []models.GuideChannel{}
+	if err := q.SelectContext(ctx, &channels, query, pageArgs...); err != nil {
+		return nil, 0, err
+	}
+
+	tvgIDs := make([]string, 0, len(channels))
+	for i := range channels {
+		channels[i].StreamURL = "/stream/hls/" + channels[i].UUID
+		channels[i].Programmes = []models.Programme{}
+		if channels[i].Logo == "xivi_channel" {
+			channels[i].Logo = ""
+		} else if channels[i].Logo != "" {
+			channels[i].Logo = "/images/" + channels[i].Logo + ".png"
+		}
+		if channels[i].TVGID != nil && *channels[i].TVGID != "" {
+			tvgIDs = append(tvgIDs, *channels[i].TVGID)
+		}
+	}
+	if len(tvgIDs) == 0 {
+		return channels, total, nil
+	}
+
+	programmeQuery, programmeArgs, err := sqlx.In(`
+		SELECT id, channel, COALESCE("title.value", '') AS title,
+		       COALESCE(subtitle, '') AS subtitle, COALESCE(desc, '') AS description,
+		       COALESCE(categories, '') AS categories, start, stop AS end
+		FROM epgprogramme
+		WHERE channel IN (?) AND start < ? AND stop > ?
+		ORDER BY channel, start`, tvgIDs, to, from)
+	if err != nil {
+		return nil, 0, err
+	}
+	programmes := []models.Programme{}
+	if err := q.SelectContext(ctx, &programmes, q.Rebind(programmeQuery), programmeArgs...); err != nil {
+		return nil, 0, err
+	}
+	byTVG := make(map[string][]models.Programme, len(tvgIDs))
+	now := time.Now()
+	for i := range programmes {
+		programmes[i].Start = programmes[i].Start.UTC()
+		programmes[i].End = programmes[i].End.UTC()
+		if programmes[i].Categories != "" {
+			programmes[i].Category = strings.Split(programmes[i].Categories, ",")
+		} else {
+			programmes[i].Category = []string{}
+		}
+		byTVG[programmes[i].ChannelID] = append(byTVG[programmes[i].ChannelID], programmes[i])
+	}
+	for i := range channels {
+		if channels[i].TVGID == nil {
+			continue
+		}
+		channels[i].Programmes = byTVG[*channels[i].TVGID]
+		for p := range channels[i].Programmes {
+			programme := &channels[i].Programmes[p]
+			if !programme.Start.After(now) && programme.End.After(now) {
+				channels[i].Current = programme
+			} else if programme.Start.After(now) && channels[i].Next == nil {
+				channels[i].Next = programme
+			}
+		}
+	}
+	return channels, total, nil
+}
+
+func (q *ExperienceQueries) GetGuideChannel(ctx context.Context, channelID int64, from, to time.Time) (*models.GuideChannel, error) {
+	var lineupID int64
+	err := q.GetContext(ctx, &lineupID, `SELECT tgi.template_id FROM template_group_channel tgc JOIN template_group_item tgi ON tgi.group_id = tgc.group_id WHERE tgc.channel_id = ? ORDER BY tgi.template_id LIMIT 1`, channelID)
+	if err != nil {
+		return nil, err
+	}
+	channels, _, err := q.GetGuideChannels(ctx, lineupID, nil, "", from, to, 100000, 0)
+	if err != nil {
+		return nil, err
+	}
+	for i := range channels {
+		if channels[i].ID == channelID {
+			return &channels[i], nil
+		}
+	}
+	return nil, sql.ErrNoRows
+}
+
+func (q *ExperienceQueries) GetWorkspaceChannels(ctx context.Context, groupID int64, search string, limit, offset int) ([]models.WorkspaceChannel, int64, error) {
+	where, args := "tgc.group_id = ?", []any{groupID}
+	if search != "" {
+		where += " AND (LOWER(tc.name) LIKE ? OR LOWER(COALESCE(tc.tvgid, '')) LIKE ?)"
+		term := "%" + strings.ToLower(search) + "%"
+		args = append(args, term, term)
+	}
+	var total int64
+	if err := q.GetContext(ctx, &total, `SELECT COUNT(*) FROM template_group_channel tgc JOIN templatechannel tc ON tc.id = tgc.channel_id WHERE `+where, args...); err != nil {
+		return nil, 0, err
+	}
+	query := `SELECT tc.id, tc.name, tc.tvgid, tc.uuid, tc.logoid AS logo_id, COALESCE(l.name, '') AS logo, tgc.orderr,
+		COUNT(tci.id) AS source_count, COALESCE(MAX(tci.match_method), '') AS match_method,
+		MAX(tci.match_score) AS match_score, MAX(tci.runner_up_score) AS runner_up_score,
+		COALESCE(MAX(tci.manual_locked), 0) AS manual_locked
+		FROM template_group_channel tgc
+		JOIN templatechannel tc ON tc.id = tgc.channel_id
+		LEFT JOIN templatechannelitem tci ON tci.channel_id = tc.id
+		LEFT JOIN logo l ON l.id = tc.logoid
+		WHERE ` + where + ` GROUP BY tc.id, tc.name, tc.tvgid, tc.uuid, tc.logoid, l.name, tgc.orderr
+		ORDER BY tgc.orderr, tc.id LIMIT ? OFFSET ?`
+	rows := []models.WorkspaceChannel{}
+	if err := q.SelectContext(ctx, &rows, query, append(args, limit, offset)...); err != nil {
+		return nil, 0, err
+	}
+	for i := range rows {
+		if rows[i].Logo == "xivi_channel" {
+			rows[i].Logo = ""
+		} else if rows[i].Logo != "" {
+			rows[i].Logo = "/images/" + rows[i].Logo + ".png"
+		}
+	}
+	return rows, total, nil
+}
+
+func (q *ExperienceQueries) UpdateWorkspaceChannel(ctx context.Context, id int64, update models.WorkspaceChannelUpdate) error {
+	logoID := int64(0)
+	if update.LogoID != nil {
+		logoID = *update.LogoID
+	} else if err := q.GetContext(ctx, &logoID, `SELECT logoid FROM templatechannel WHERE id = ?`, id); err != nil {
+		return err
+	}
+	result, err := q.ExecContext(ctx, `UPDATE templatechannel SET name = ?, tvgid = ?, logoid = ? WHERE id = ?`, strings.TrimSpace(update.Name), update.TVGID, logoID, id)
+	if err != nil {
+		return err
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (q *ExperienceQueries) SetSourceChannelsEnabled(ctx context.Context, ids []int64, enabled bool) error {
+	if len(ids) == 0 {
+		return fmt.Errorf("at least one channel_id is required")
+	}
+	query, args, err := sqlx.In(`UPDATE playlistchannel SET enabled = ?, updated_at = datetime('now','localtime') WHERE id IN (?)`, enabled, ids)
+	if err != nil {
+		return err
+	}
+	_, err = q.ExecContext(ctx, q.Rebind(query), args...)
+	return err
+}
+
+func (q *ExperienceQueries) GetSourceChannels(ctx context.Context, playlistID, groupID *int64, search string, limit, offset int) ([]models.SourceChannel, int64, error) {
+	where, args := []string{"1 = 1"}, []any{}
+	if playlistID != nil {
+		where = append(where, "p.id = ?")
+		args = append(args, *playlistID)
+	}
+	if groupID != nil {
+		where = append(where, "pg.id = ?")
+		args = append(args, *groupID)
+	}
+	if search != "" {
+		where = append(where, "(LOWER(COALESCE(pc.tvg_name, pc.title)) LIKE ? OR LOWER(COALESCE(pc.tvg_id, '')) LIKE ?)")
+		term := "%" + strings.ToLower(search) + "%"
+		args = append(args, term, term)
+	}
+	whereSQL := strings.Join(where, " AND ")
+	var total int64
+	if err := q.GetContext(ctx, &total, `SELECT COUNT(*) FROM playlistchannel pc JOIN playlistgroup pg ON pg.id = pc.group_id JOIN playlist p ON p.id = pg.playlist_id WHERE `+whereSQL, args...); err != nil {
+		return nil, 0, err
+	}
+	query := `SELECT pc.id, COALESCE(NULLIF(pc.tvg_name, ''), pc.title) AS name, pc.tvg_id,
+		pc.tvg_logo AS logo_url, pc.enabled, pg.id AS group_id, pg.name AS group_name,
+		p.id AS playlist_id, p.name AS playlist_name
+		FROM playlistchannel pc JOIN playlistgroup pg ON pg.id = pc.group_id JOIN playlist p ON p.id = pg.playlist_id
+		WHERE ` + whereSQL + ` ORDER BY LOWER(p.name), LOWER(pg.name), LOWER(name), pc.id LIMIT ? OFFSET ?`
+	rows := []models.SourceChannel{}
+	if err := q.SelectContext(ctx, &rows, query, append(args, limit, offset)...); err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+func (q *ExperienceQueries) GetMatchReview(ctx context.Context, channelID *int64, search string, limit, offset int) ([]models.MatchReview, int64, error) {
+	where := []string{"1 = 1"}
+	args := []any{}
+	if channelID != nil {
+		where = append(where, "tc.id = ?")
+		args = append(args, *channelID)
+	} else {
+		where = append(where, "tci.manual_locked = 0 AND (tci.match_score IS NULL OR tci.match_score < 0.82)")
+	}
+	if search != "" {
+		where = append(where, "(LOWER(tc.name) LIKE ? OR LOWER(COALESCE(pc.tvg_name, pc.title)) LIKE ? OR LOWER(p.name) LIKE ?)")
+		term := "%" + strings.ToLower(search) + "%"
+		args = append(args, term, term, term)
+	}
+	whereSQL := strings.Join(where, " AND ")
+	joinSQL := ` FROM templatechannelitem tci
+		JOIN templatechannel tc ON tc.id = tci.channel_id
+		JOIN playlistchannel pc ON pc.id = tci.playlist_channel_id
+		JOIN playlistgroup pg ON pg.id = pc.group_id
+		JOIN playlist p ON p.id = pg.playlist_id `
+	var total int64
+	if err := q.GetContext(ctx, &total, `SELECT COUNT(*)`+joinSQL+`WHERE `+whereSQL, args...); err != nil {
+		return nil, 0, err
+	}
+	rows := []models.MatchReview{}
+	query := `SELECT tc.id AS channel_id, tc.name AS channel_name, pc.id AS source_channel_id,
+		COALESCE(NULLIF(pc.tvg_name, ''), pc.title) AS source_name, p.name AS playlist_name,
+		tci.match_method AS method, tci.match_score AS score, tci.runner_up_score,
+		tci.manual_locked ` + joinSQL + ` WHERE ` + whereSQL + `
+		ORDER BY tci.manual_locked DESC, COALESCE(tci.match_score, -1) DESC, LOWER(source_name), pc.id LIMIT ? OFFSET ?`
+	if err := q.SelectContext(ctx, &rows, query, append(args, limit, offset)...); err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+func (q *ExperienceQueries) GetMatchRejections(ctx context.Context, channelID int64) ([]models.MatchRejection, error) {
+	rows := []models.MatchRejection{}
+	err := q.SelectContext(ctx, &rows, `SELECT r.id, r.channel_id, r.playlist_id, p.name AS playlist_name,
+		r.tvg_id_norm, r.name_norm, r.created_at
+		FROM channelmatchrejection r JOIN playlist p ON p.id = r.playlist_id
+		WHERE r.channel_id = ? ORDER BY r.created_at DESC, r.id DESC LIMIT 100`, channelID)
+	return rows, err
+}
+
+func (q *ExperienceQueries) GetStudioOverview(ctx context.Context) (*models.StudioOverview, error) {
+	row := &models.StudioOverview{}
+	query := `SELECT
+		(SELECT COUNT(*) FROM template) AS lineup_count,
+		(SELECT COUNT(*) FROM playlist) AS source_count,
+		(SELECT COUNT(*) FROM playlistchannel) AS source_channel_count,
+		(SELECT COUNT(*) FROM templatechannel) AS lineup_channel_count,
+		(SELECT COUNT(*) FROM templatechannel WHERE tvgid IS NOT NULL AND tvgid != '') AS mapped_channel_count,
+		(SELECT COUNT(DISTINCT channel_id) FROM templatechannelitem WHERE manual_locked = 0 AND match_score IS NOT NULL AND match_score < 0.82) AS review_count,
+		CASE WHEN (SELECT COUNT(*) FROM templatechannel) = 0 THEN 0 ELSE ROUND(100.0 * (SELECT COUNT(*) FROM templatechannel WHERE tvgid IS NOT NULL AND tvgid != '') / (SELECT COUNT(*) FROM templatechannel), 1) END AS epg_coverage,
+		MAX((SELECT COUNT(*) FROM logo) - 1, 0) AS logo_count`
+	if err := q.GetContext(ctx, row, query); err != nil {
+		return nil, err
+	}
+	return row, nil
+}
+
+func (q *ExperienceQueries) GetCoverageSummary(ctx context.Context) (*models.CoverageSummary, error) {
+	row := &models.CoverageSummary{}
+	query := `SELECT
+		(SELECT COUNT(*) FROM epgchannel) AS epg_channel_count,
+		(SELECT COUNT(*) FROM epgprogramme) AS programme_count,
+		(SELECT COUNT(*) FROM templatechannel WHERE tvgid IS NOT NULL AND tvgid != '') AS mapped_channel_count,
+		(SELECT COUNT(*) FROM templatechannel) AS lineup_channel_count,
+		CASE WHEN (SELECT COUNT(*) FROM templatechannel) = 0 THEN 0 ELSE ROUND(100.0 * (SELECT COUNT(*) FROM templatechannel WHERE tvgid IS NOT NULL AND tvgid != '') / (SELECT COUNT(*) FROM templatechannel), 1) END AS coverage`
+	if err := q.GetContext(ctx, row, query); err != nil {
+		return nil, err
+	}
+	row.UnmappedEPGIDs = []string{}
+	if err := q.SelectContext(ctx, &row.UnmappedEPGIDs, `SELECT ec.channelid FROM epgchannel ec WHERE NOT EXISTS (SELECT 1 FROM templatechannel tc WHERE tc.tvgid = ec.channelid) ORDER BY LOWER(ec.channelid) LIMIT 250`); err != nil {
+		return nil, err
+	}
+	row.ChannelsWithoutTVGID = []string{}
+	if err := q.SelectContext(ctx, &row.ChannelsWithoutTVGID, `SELECT name FROM templatechannel WHERE tvgid IS NULL OR tvgid = '' ORDER BY LOWER(name) LIMIT 250`); err != nil {
+		return nil, err
+	}
+	return row, nil
+}
+
+func (q *ExperienceQueries) GetJobs(ctx context.Context, limit int) ([]models.OperationJob, error) {
+	rows := []models.OperationJob{}
+	err := q.SelectContext(ctx, &rows, `SELECT id, kind, resource, resource_id, status, progress, message, error_code, created_at, updated_at, finished_at FROM operation_job ORDER BY created_at DESC, id DESC LIMIT ?`, limit)
+	return rows, err
+}
+
+func (q *ExperienceQueries) GetJob(ctx context.Context, id int64) (*models.OperationJob, error) {
+	row := &models.OperationJob{}
+	err := q.GetContext(ctx, row, `SELECT id, kind, resource, resource_id, status, progress, message, error_code, created_at, updated_at, finished_at FROM operation_job WHERE id = ?`, id)
+	return row, err
+}
+
+func (q *ExperienceQueries) CreateJob(ctx context.Context, kind, resource string, resourceID *int64, message string) (*models.OperationJob, error) {
+	result, err := q.ExecContext(ctx, `INSERT INTO operation_job (kind, resource, resource_id, status, progress, message) VALUES (?, ?, ?, 'queued', 0, ?)`, kind, resource, resourceID, message)
+	if err != nil {
+		return nil, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+	return q.GetJob(ctx, id)
+}
+
+func (q *ExperienceQueries) UpdateJob(ctx context.Context, id int64, status string, progress int, message, errorCode string) error {
+	finished := any(nil)
+	if status == "succeeded" || status == "failed" || status == "cancelled" {
+		finished = time.Now().UTC()
+	}
+	_, err := q.ExecContext(ctx, `UPDATE operation_job
+		SET status = ?, progress = ?, message = ?, error_code = ?, updated_at = datetime('now'), finished_at = ?
+		WHERE id = ?`, status, progress, message, errorCode, finished, id)
+	return err
+}
+
+func (q *ExperienceQueries) MoveWorkspaceChannel(ctx context.Context, groupID, channelID int64, beforeID, afterID *int64) error {
+	if (beforeID == nil) == (afterID == nil) {
+		return fmt.Errorf("exactly one of before_id or after_id is required")
+	}
+	return q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		ids := []int64{}
+		if err := tx.SelectContext(ctx, &ids, `SELECT channel_id FROM template_group_channel WHERE group_id = ? ORDER BY orderr, channel_id`, groupID); err != nil {
+			return err
+		}
+		targetID := beforeID
+		if targetID == nil {
+			targetID = afterID
+		}
+		if channelID == *targetID {
+			return fmt.Errorf("a channel cannot be moved relative to itself")
+		}
+		ordered := make([]int64, 0, len(ids))
+		sourceFound, targetFound := false, false
+		for _, id := range ids {
+			if id == channelID {
+				sourceFound = true
+				continue
+			}
+			if id == *targetID {
+				targetFound = true
+			}
+			ordered = append(ordered, id)
+		}
+		if !sourceFound || !targetFound {
+			return sql.ErrNoRows
+		}
+		insertAt := 0
+		for index, id := range ordered {
+			if id == *targetID {
+				insertAt = index
+				if afterID != nil {
+					insertAt++
+				}
+				break
+			}
+		}
+		ordered = append(ordered, 0)
+		copy(ordered[insertAt+1:], ordered[insertAt:])
+		ordered[insertAt] = channelID
+		for index, id := range ordered {
+			if _, err := tx.ExecContext(ctx, `UPDATE template_group_channel SET orderr = ? WHERE group_id = ? AND channel_id = ?`, index+1, groupID, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// BatchAddWorkspaceChannels creates canonical lineup channels from source
+// channels and attaches the source as a manually locked variant in one
+// transaction. The caller supplies UUIDs so UUID generation stays outside the
+// query layer and the operation remains deterministic in tests.
+func (q *ExperienceQueries) BatchAddWorkspaceChannels(ctx context.Context, groupID int64, sourceChannelIDs []int64, uuids []string) ([]int64, error) {
+	if len(sourceChannelIDs) == 0 || len(sourceChannelIDs) != len(uuids) {
+		return nil, fmt.Errorf("source channel ids and uuids are required")
+	}
+	created := make([]int64, 0, len(sourceChannelIDs))
+	err := q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		var groupExists bool
+		if err := tx.GetContext(ctx, &groupExists, `SELECT EXISTS(SELECT 1 FROM templategroup WHERE id = ?)`, groupID); err != nil {
+			return err
+		}
+		if !groupExists {
+			return sql.ErrNoRows
+		}
+		var position int64
+		if err := tx.GetContext(ctx, &position, `SELECT COALESCE(MAX(orderr), 0) FROM template_group_channel WHERE group_id = ?`, groupID); err != nil {
+			return err
+		}
+		type sourceIdentity struct {
+			Name  string  `db:"name"`
+			TVGID *string `db:"tvg_id"`
+		}
+		seen := map[int64]bool{}
+		for index, sourceID := range sourceChannelIDs {
+			if sourceID < 1 || seen[sourceID] || strings.TrimSpace(uuids[index]) == "" {
+				return fmt.Errorf("source channel selection contains an invalid or duplicate id")
+			}
+			seen[sourceID] = true
+			source := sourceIdentity{}
+			if err := tx.GetContext(ctx, &source, `SELECT COALESCE(NULLIF(title, ''), NULLIF(tvg_name, ''), 'Untitled channel') AS name, tvg_id FROM playlistchannel WHERE id = ?`, sourceID); err != nil {
+				return err
+			}
+			result, err := tx.ExecContext(ctx, `INSERT INTO templatechannel (name, tvgid, logoid, uuid) VALUES (?, ?, 0, ?)`, source.Name, source.TVGID, uuids[index])
+			if err != nil {
+				return err
+			}
+			channelID, err := result.LastInsertId()
+			if err != nil {
+				return err
+			}
+			position++
+			if _, err := tx.ExecContext(ctx, `INSERT INTO template_group_channel (group_id, channel_id, orderr) VALUES (?, ?, ?)`, groupID, channelID, position); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO templatechannelitem (channel_id, playlist_channel_id, orderr, match_method, match_score, matcher_version, manual_locked) VALUES (?, ?, 1, 'manual', 1, 2, true)`, channelID, sourceID); err != nil {
+				return err
+			}
+			created = append(created, channelID)
+		}
+		return nil
+	})
+	return created, err
+}
+
+// BatchRemoveWorkspaceChannels removes canonical channels only after proving
+// every requested channel belongs to the addressed group. Foreign-key cascades
+// remove their memberships, variants, vectors, and rejection history.
+func (q *ExperienceQueries) BatchRemoveWorkspaceChannels(ctx context.Context, groupID int64, channelIDs []int64) error {
+	if len(channelIDs) == 0 {
+		return fmt.Errorf("select at least one channel")
+	}
+	return q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		seen := map[int64]bool{}
+		affectedGroups := map[int64]bool{groupID: true}
+		for _, channelID := range channelIDs {
+			if channelID < 1 || seen[channelID] {
+				return fmt.Errorf("channel selection contains an invalid or duplicate id")
+			}
+			seen[channelID] = true
+			var exists bool
+			if err := tx.GetContext(ctx, &exists, `SELECT EXISTS(SELECT 1 FROM template_group_channel WHERE group_id = ? AND channel_id = ?)`, groupID, channelID); err != nil {
+				return err
+			}
+			if !exists {
+				return sql.ErrNoRows
+			}
+			groupIDs := []int64{}
+			if err := tx.SelectContext(ctx, &groupIDs, `SELECT group_id FROM template_group_channel WHERE channel_id = ?`, channelID); err != nil {
+				return err
+			}
+			for _, affectedGroupID := range groupIDs {
+				affectedGroups[affectedGroupID] = true
+			}
+		}
+		for _, channelID := range channelIDs {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM templatechannel WHERE id = ?`, channelID); err != nil {
+				return err
+			}
+		}
+		for affectedGroupID := range affectedGroups {
+			if err := reindexWorkspaceGroup(ctx, tx, affectedGroupID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// BatchMoveWorkspaceChannels moves a selected block using a stable before/after
+// anchor. Omitting both anchors appends the block to the destination group.
+func (q *ExperienceQueries) BatchMoveWorkspaceChannels(ctx context.Context, sourceGroupID, targetGroupID int64, channelIDs []int64, beforeID, afterID *int64) error {
+	if len(channelIDs) == 0 || targetGroupID < 1 {
+		return fmt.Errorf("channels and target_group_id are required")
+	}
+	if beforeID != nil && afterID != nil {
+		return fmt.Errorf("only one of before_id or after_id may be supplied")
+	}
+	return q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		var targetExists bool
+		if err := tx.GetContext(ctx, &targetExists, `SELECT EXISTS(SELECT 1 FROM templategroup WHERE id = ?)`, targetGroupID); err != nil {
+			return err
+		}
+		if !targetExists {
+			return sql.ErrNoRows
+		}
+		sourceOrder, err := workspaceGroupOrder(ctx, tx, sourceGroupID)
+		if err != nil {
+			return err
+		}
+		selected := make(map[int64]bool, len(channelIDs))
+		for _, channelID := range channelIDs {
+			if channelID < 1 || selected[channelID] {
+				return fmt.Errorf("channel selection contains an invalid or duplicate id")
+			}
+			selected[channelID] = true
+		}
+		for channelID := range selected {
+			if !containsInt64(sourceOrder, channelID) {
+				return sql.ErrNoRows
+			}
+		}
+		destinationOrder := sourceOrder
+		if sourceGroupID != targetGroupID {
+			destinationOrder, err = workspaceGroupOrder(ctx, tx, targetGroupID)
+			if err != nil {
+				return err
+			}
+		}
+		destinationOrder = withoutWorkspaceChannels(destinationOrder, selected)
+		anchor := beforeID
+		if anchor == nil {
+			anchor = afterID
+		}
+		insertAt := len(destinationOrder)
+		if anchor != nil {
+			if selected[*anchor] {
+				return fmt.Errorf("a moved channel cannot be its own anchor")
+			}
+			insertAt = -1
+			for index, channelID := range destinationOrder {
+				if channelID == *anchor {
+					insertAt = index
+					if afterID != nil {
+						insertAt++
+					}
+					break
+				}
+			}
+			if insertAt < 0 {
+				return sql.ErrNoRows
+			}
+		}
+		finalOrder := make([]int64, 0, len(destinationOrder)+len(channelIDs))
+		finalOrder = append(finalOrder, destinationOrder[:insertAt]...)
+		finalOrder = append(finalOrder, channelIDs...)
+		finalOrder = append(finalOrder, destinationOrder[insertAt:]...)
+		if sourceGroupID != targetGroupID {
+			for _, channelID := range channelIDs {
+				if _, err := tx.ExecContext(ctx, `DELETE FROM template_group_channel WHERE group_id = ? AND channel_id = ?`, sourceGroupID, channelID); err != nil {
+					return err
+				}
+				if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO template_group_channel (group_id, channel_id, orderr) VALUES (?, ?, 0)`, targetGroupID, channelID); err != nil {
+					return err
+				}
+			}
+			if err := reindexWorkspaceGroup(ctx, tx, sourceGroupID); err != nil {
+				return err
+			}
+		}
+		for index, channelID := range finalOrder {
+			if _, err := tx.ExecContext(ctx, `UPDATE template_group_channel SET orderr = ? WHERE group_id = ? AND channel_id = ?`, index+1, targetGroupID, channelID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func workspaceGroupOrder(ctx context.Context, tx *sqlx.Tx, groupID int64) ([]int64, error) {
+	ids := []int64{}
+	err := tx.SelectContext(ctx, &ids, `SELECT channel_id FROM template_group_channel WHERE group_id = ? ORDER BY orderr, channel_id`, groupID)
+	return ids, err
+}
+
+func reindexWorkspaceGroup(ctx context.Context, tx *sqlx.Tx, groupID int64) error {
+	ids, err := workspaceGroupOrder(ctx, tx, groupID)
+	if err != nil {
+		return err
+	}
+	for index, channelID := range ids {
+		if _, err := tx.ExecContext(ctx, `UPDATE template_group_channel SET orderr = ? WHERE group_id = ? AND channel_id = ?`, index+1, groupID, channelID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func withoutWorkspaceChannels(ids []int64, selected map[int64]bool) []int64 {
+	result := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if !selected[id] {
+			result = append(result, id)
+		}
+	}
+	return result
+}
+
+func containsInt64(ids []int64, target int64) bool {
+	for _, id := range ids {
+		if id == target {
+			return true
+		}
+	}
+	return false
+}

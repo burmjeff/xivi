@@ -1,46 +1,18 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
-import Icons from 'unplugin-icons/vite';
 import tailwindcss from '@tailwindcss/vite';
 
 const port = process.env.SERVER_PORT || 3000;
 
 export default defineConfig({
-	optimizeDeps: {
-		// Pre-bundle these dependencies for faster startup
-		include: [
-			'svelte',
-			'@sveltejs/kit',
-			'svelte-dnd-action',
-			'@skeletonlabs/skeleton-svelte',
-			'@floating-ui/dom'
-		],
-		// Disable force bundling to use cache when possible
-		force: false
-	},
-	plugins: [tailwindcss(), sveltekit(), Icons({ compiler: 'svelte' })],
-	resolve: {
-		alias: {
-			'@xivi': './src'
-		},
-		// Deduplicate packages that might be causing issues
-		dedupe: ['svelte', '@sveltejs/kit']
-	},
+	plugins: [tailwindcss(), sveltekit()],
 	server: {
-		// Use IPv4 explicitly to avoid IPv6 issues
 		host: '0.0.0.0',
 		port: 5173,
 		strictPort: true,
 		hmr: {
-			// Enable HMR with default settings
 			overlay: true
 		},
-		// Enable file system watching
-		watch: {
-			usePolling: true,
-			interval: 1000
-		},
-		// Optimize proxy settings
 		proxy: {
 			'/api': {
 				target: `http://127.0.0.1:${port}`,
@@ -66,27 +38,15 @@ export default defineConfig({
 			}
 		}
 	},
-	css: {
-		// Force consistent CSS ordering in development
-		devSourcemap: true
-	},
-	// Optimize build settings
 	build: {
-		// Target modern browsers for better performance
 		target: 'esnext',
-		// Disable compressed size reporting to speed up build
 		reportCompressedSize: false,
-		// Increase chunk size warning limit
 		chunkSizeWarningLimit: 1000,
-		// Optimize CSS handling
 		cssCodeSplit: true,
-		// Improve minification
 		minify: 'esbuild'
 	},
-	// Improve dependency optimization
 	esbuild: {
 		logOverride: { 'this-is-undefined-in-esm': 'silent' }
 	},
-	// Improve caching
 	cacheDir: '.vite'
 });

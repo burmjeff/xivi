@@ -25,13 +25,14 @@ var (
 
 // Queries struct for collect all app queries.
 type Queries struct {
-	*queries.PlaylistQueries // load queries from Playlist model
-	*queries.TemplateQueries // load queries from Template model
-	*queries.EpgQueries      // load queries from Epg model
-	*queries.VectorQueries   // load queries from Vector model
-	*queries.LogoQueries     // load queries from Logo model
-	*queries.StreamQueries   // load queries from Stream model
-	*queries.CleanupQueries  // load Cleanup queries
+	*queries.PlaylistQueries   // load queries from Playlist model
+	*queries.TemplateQueries   // load queries from Template model
+	*queries.EpgQueries        // load queries from Epg model
+	*queries.VectorQueries     // load queries from Vector model
+	*queries.LogoQueries       // load queries from Logo model
+	*queries.StreamQueries     // load queries from Stream model
+	*queries.CleanupQueries    // load Cleanup queries
+	*queries.ExperienceQueries // load queries for the v2 product interface
 }
 
 // OpenDBConnection func for opening database connection.
@@ -58,13 +59,14 @@ func OpenDBConnection() (*Queries, error) {
 
 	return &Queries{
 		// Set queries from models using the new constructors:
-		PlaylistQueries: queries.NewPlaylistQueries(db), // from Playlist model
-		TemplateQueries: queries.NewTemplateQueries(db), // from Template model
-		EpgQueries:      queries.NewEpgQueries(db),      // from Epg model
-		VectorQueries:   queries.NewVectorQueries(db),   // from Vector model
-		LogoQueries:     queries.NewLogoQueries(db),     // from Logo model
-		StreamQueries:   queries.NewStreamQueries(db),   // from Stream model
-		CleanupQueries:  queries.NewCleanupQueries(db),  // from Cleanup model
+		PlaylistQueries:   queries.NewPlaylistQueries(db), // from Playlist model
+		TemplateQueries:   queries.NewTemplateQueries(db), // from Template model
+		EpgQueries:        queries.NewEpgQueries(db),      // from Epg model
+		VectorQueries:     queries.NewVectorQueries(db),   // from Vector model
+		LogoQueries:       queries.NewLogoQueries(db),     // from Logo model
+		StreamQueries:     queries.NewStreamQueries(db),   // from Stream model
+		CleanupQueries:    queries.NewCleanupQueries(db),  // from Cleanup model
+		ExperienceQueries: queries.NewExperienceQueries(db),
 	}, nil
 }
 
@@ -258,13 +260,14 @@ func ReinitializePreparedStatements() {
 
 	// Recreate all query instances
 	Db = &Queries{
-		PlaylistQueries: queries.NewPlaylistQueries(newDb),
-		TemplateQueries: queries.NewTemplateQueries(newDb),
-		EpgQueries:      queries.NewEpgQueries(newDb),
-		VectorQueries:   queries.NewVectorQueries(newDb),
-		LogoQueries:     queries.NewLogoQueries(newDb),
-		StreamQueries:   queries.NewStreamQueries(newDb),
-		CleanupQueries:  queries.NewCleanupQueries(newDb),
+		PlaylistQueries:   queries.NewPlaylistQueries(newDb),
+		TemplateQueries:   queries.NewTemplateQueries(newDb),
+		EpgQueries:        queries.NewEpgQueries(newDb),
+		VectorQueries:     queries.NewVectorQueries(newDb),
+		LogoQueries:       queries.NewLogoQueries(newDb),
+		StreamQueries:     queries.NewStreamQueries(newDb),
+		CleanupQueries:    queries.NewCleanupQueries(newDb),
+		ExperienceQueries: queries.NewExperienceQueries(newDb),
 	}
 
 	log.Info().Msg("All database prepared statements successfully reinitialized")

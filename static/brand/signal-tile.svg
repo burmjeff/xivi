@@ -1,0 +1,3 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">Xivi Signal Tile</title><rect width="128" height="128" rx="32" fill="#FF6B5E"/><path d="M30 35 57 64 30 93h22l26-29-26-29H30Z" fill="#10131A"/><path d="m65 35 28 29-28 29h22l27-29-27-29H65Z" fill="#10131A" opacity=".72"/><circle cx="101" cy="27" r="9" fill="#2BD9C0" stroke="#10131A" stroke-width="6"/>
+</svg>

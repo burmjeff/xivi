@@ -53,6 +53,7 @@ func main() {
 	routes.SvelteRoutes(a)
 	routes.SwaggerRoutes(a) // Register a route for API Docs (Swagger).
 	routes.PublicRoutes(a)  // Register a public routes for app.
+	routes.V2Routes(a)      // Register the additive product-interface API.
 	routes.PrivateRoutes(a) // Register a private routes for app.
 	routes.NotFoundRoute(a) // Register route for 404 Error.
 

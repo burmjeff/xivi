@@ -1,211 +1,210 @@
 <script lang="ts">
-	import TemplateStatus from '@xivi/components/TemplateStatus.svelte';
-	import Icon from '@iconify/svelte';
-	import { onMount, onDestroy } from 'svelte';
-	import type { SystemStatusState, SystemStatusResponse } from '@xivi/data/system_entities';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { page } from '$app/state';
+	import { Search, ArrowRight, Sparkles } from '@lucide/svelte';
+	import { api, params } from '$lib/api/client';
+	import type { GuideChannel, LineupSummary, Paginated } from '$lib/api/types';
+	import { preferences, selectLineup } from '$lib/state/preferences.svelte';
+	import LineupPicker from '$lib/components/watch/LineupPicker.svelte';
+	import ChannelCard from '$lib/components/watch/ChannelCard.svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 
-	// System status data
-	let systemStatus: SystemStatusState = $state({
-		uptime: '0 days, 0 hours, 0 minutes',
-		cpu: '0%',
-		memory: '0 MB / 0 MB (0%)',
-		connections: 0,
-		isLoading: true,
-		error: null,
-		lastUpdated: null
+	const lineupsQuery = createQuery(() => ({
+		queryKey: ['watch', 'lineups'],
+		queryFn: () => api<Paginated<LineupSummary>>('/api/v2/watch/lineups')
+	}));
+	let requestedLineupId = $derived(Number(page.url.searchParams.get('lineup')) || null);
+	let lineupId = $derived(
+		requestedLineupId ?? preferences.lineupId ?? lineupsQuery.data?.items[0]?.id ?? null
+	);
+	$effect(() => {
+		if (lineupId && preferences.lineupId !== lineupId) selectLineup(lineupId);
 	});
-
-	// Auto-refresh interval
-	let refreshInterval: ReturnType<typeof setInterval> | null = null;
-	const REFRESH_INTERVAL_MS = 30000; // 30 seconds
-
-	// Fetch system status data from API
-	async function fetchSystemStatus() {
-		try {
-			systemStatus.isLoading = true;
-			systemStatus.error = null;
-
-			const response = await fetch('/api/system/status');
-
-			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
-			}
-
-			const data: SystemStatusResponse = await response.json();
-
-			if (data.error) {
-				throw new Error(data.msg || 'Unknown API error');
-			}
-
-			// Update system status with API data
-			systemStatus = {
-				uptime: data.status.uptime,
-				cpu: data.status.cpu,
-				memory: data.status.memory,
-				connections: data.status.connections,
-				isLoading: false,
-				error: null,
-				lastUpdated: Date.now()
-			};
-		} catch (error) {
-			console.error('Error fetching system status:', error);
-			systemStatus = {
-				...systemStatus,
-				isLoading: false,
-				error: error instanceof Error ? error.message : 'Failed to fetch system status',
-				lastUpdated: Date.now()
-			};
-		}
-	}
-
-	// Start auto-refresh
-	function startAutoRefresh() {
-		if (refreshInterval) {
-			clearInterval(refreshInterval);
-		}
-		refreshInterval = setInterval(fetchSystemStatus, REFRESH_INTERVAL_MS);
-	}
-
-	// Stop auto-refresh
-	function stopAutoRefresh() {
-		if (refreshInterval) {
-			clearInterval(refreshInterval);
-			refreshInterval = null;
-		}
-	}
-
-	// Manual refresh handler
-	async function handleRefresh() {
-		await fetchSystemStatus();
-		// Restart auto-refresh timer
-		startAutoRefresh();
-	}
-
-	onMount(() => {
-		fetchSystemStatus();
-		startAutoRefresh();
-	});
-
-	onDestroy(() => {
-		stopAutoRefresh();
+	const channelsQuery = createQuery(() => ({
+		queryKey: ['watch', 'home', lineupId],
+		enabled: !!lineupId,
+		queryFn: () =>
+			api<Paginated<GuideChannel>>(
+				`/api/v2/watch/lineups/${lineupId}/channels${params({ limit: 240 })}`
+			)
+	}));
+	let groups = $derived.by(() => {
+		const result = new Map<string, GuideChannel[]>();
+		for (const channel of channelsQuery.data?.items ?? [])
+			result.set(channel.group_name, [...(result.get(channel.group_name) ?? []), channel]);
+		return [...result.entries()];
 	});
 </script>
 
-<div class="animate-fade-in">
-	<!-- Page Header -->
-	<header class="mb-6">
-		<h1 class="text-gradient mb-1 font-bold text-4xl">System Dashboard</h1>
-		<div class="flex items-end justify-between">
-			<div>
-				<p class="text-surface-300">Monitor your Xivi server status and templates</p>
-				{#if systemStatus.lastUpdated && !systemStatus.error}
-					<p class="text-surface-400 mt-1 text-sm">
-						Last updated: {new Date(systemStatus.lastUpdated).toLocaleTimeString()}
-						• Auto-refresh every {REFRESH_INTERVAL_MS / 1000}s
-					</p>
-				{/if}
-			</div>
-			<!-- Refresh Button -->
-			<div class="flex justify-end">
-				<button
-					class="btn bg-primary-700 hover:bg-primary-600 flex items-center gap-2 rounded-lg px-4 py-2 text-white transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50"
-					onclick={handleRefresh}
-					disabled={systemStatus.isLoading}
-				>
-					<Icon
-						icon="mdi:refresh"
-						width="18"
-						height="18"
-						class={systemStatus.isLoading ? 'animate-spin' : ''}
-					/>
-					<span>{systemStatus.isLoading ? 'Refreshing...' : 'Refresh Status'}</span>
-				</button>
-			</div>
+<svelte:head
+	><title>Watch · Xivi</title><meta
+		name="description"
+		content="Browse and watch your live Xivi lineup."
+	/></svelte:head
+>
+<div class="home-page">
+	<section class="hero">
+		<div>
+			<p class="eyebrow"><Sparkles size={13} /> Your television, organized</p>
+			<h1 class="page-title">What’s good<br />right now?</h1>
+			<p class="hero-copy">
+				Jump into something live, or open the guide when you want the full picture.
+			</p>
 		</div>
-	</header>
-
-	<!-- Error Banner -->
-	{#if systemStatus.error}
-		<div class="alert variant-filled-error mb-6">
-			<Icon icon="mdi:alert-circle" width="20" height="20" />
-			<div class="alert-message">
-				<h3 class="h4">System Status Error</h3>
-				<p>{systemStatus.error}</p>
-			</div>
-			<div class="alert-actions">
-				<button class="btn variant-filled" onclick={handleRefresh}>
-					<Icon icon="mdi:refresh" width="16" height="16" />
-					<span>Retry</span>
-				</button>
-			</div>
+		<div class="hero-tools">
+			{#if lineupsQuery.data}<LineupPicker
+					items={lineupsQuery.data.items}
+					value={lineupId}
+				/>{/if}<a class="search-cta" href="/channels"
+				><Search size={19} /><span>Search channels and shows</span><ArrowRight size={18} /></a
+			>
 		</div>
-	{/if}
-
-	<!-- Status Cards Grid -->
-	<div class="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-		<!-- Uptime Card -->
-		<div class="card bg-primary-900/10 border-primary-500/30 flex flex-col border p-4">
-			<div class="mb-2 flex items-center gap-3">
-				<Icon icon="mdi:clock-outline" class="text-primary-400" width="24" height="24" />
-				<h3 class="text-lg font-medium">Uptime</h3>
-			</div>
-			{#if systemStatus.isLoading}
-				<div class="bg-surface-700/50 my-2 h-6 w-3/4 animate-pulse rounded"></div>
-			{:else if systemStatus.error}
-				<p class="text-error-400 text-xl font-semibold">--</p>
-			{:else}
-				<p class="text-primary-300 text-xl font-semibold">{systemStatus.uptime}</p>
-			{/if}
+	</section>
+	{#if lineupsQuery.isPending}<div class="loading-rail">
+			{#each Array(4) as _}<div class="skeleton"></div>{/each}
 		</div>
-
-		<!-- CPU Usage Card -->
-		<div class="card bg-secondary-900/10 border-secondary-500/30 flex flex-col border p-4">
-			<div class="mb-2 flex items-center gap-3">
-				<Icon icon="mdi:cpu-64-bit" class="text-secondary-400" width="24" height="24" />
-				<h3 class="text-lg font-medium">CPU Usage</h3>
-			</div>
-			{#if systemStatus.isLoading}
-				<div class="bg-surface-700/50 my-2 h-6 w-1/4 animate-pulse rounded"></div>
-			{:else if systemStatus.error}
-				<p class="text-error-400 text-xl font-semibold">--</p>
-			{:else}
-				<p class="text-secondary-300 text-xl font-semibold">{systemStatus.cpu}</p>
-			{/if}
+	{:else if !lineupsQuery.data?.total}<EmptyState
+			title="Let’s get you on the air"
+			message="Add a playlist, create a lineup, and Xivi will turn it into a friendly live TV experience."
+		/>
+	{:else if channelsQuery.isError}<EmptyState
+			title="We lost the signal"
+			message="The lineup could not be loaded. Your streams and published outputs are unaffected."
+			action="Try again"
+			href="/"
+		/>
+	{:else if channelsQuery.isPending}<div class="loading-rail">
+			{#each Array(4) as _}<div class="skeleton"></div>{/each}
 		</div>
-
-		<!-- Memory Usage Card -->
-		<div class="card bg-tertiary-900/10 border-tertiary-500/30 flex flex-col border p-4">
-			<div class="mb-2 flex items-center gap-3">
-				<Icon icon="mdi:memory" class="text-tertiary-400" width="24" height="24" />
-				<h3 class="text-lg font-medium">Memory Usage</h3>
-			</div>
-			{#if systemStatus.isLoading}
-				<div class="bg-surface-700/50 my-2 h-6 w-2/5 animate-pulse rounded"></div>
-			{:else if systemStatus.error}
-				<p class="text-error-400 text-xl font-semibold">--</p>
-			{:else}
-				<p class="text-tertiary-300 text-xl font-semibold">{systemStatus.memory}</p>
-			{/if}
-		</div>
-
-		<!-- Active Connections Card -->
-		<div class="card bg-success-900/10 border-success-500/30 flex flex-col border p-4">
-			<div class="mb-2 flex items-center gap-3">
-				<Icon icon="mdi:connection" class="text-success-400" width="24" height="24" />
-				<h3 class="text-lg font-medium">Connections</h3>
-			</div>
-			{#if systemStatus.isLoading}
-				<div class="bg-surface-700/50 my-2 h-6 w-1/3 animate-pulse rounded"></div>
-			{:else if systemStatus.error}
-				<p class="text-error-400 text-xl font-semibold">--</p>
-			{:else}
-				<p class="text-success-300 text-xl font-semibold">{systemStatus.connections}</p>
-			{/if}
-		</div>
-	</div>
-
-	<!-- Template Status Section -->
-	<div class="animate-slide-in">
-		<TemplateStatus />
-	</div>
+	{:else if !channelsQuery.data?.total}<EmptyState
+			title="This lineup is quiet"
+			message="Add playable channels in Studio, then come back here to watch."
+			action="Edit lineup"
+			href="/studio/lineups"
+		/>
+	{:else}<div class="rails">
+			{#each groups as [name, channels]}<section class="rail">
+					<header>
+						<div>
+							<p class="eyebrow">On now</p>
+							<h2>{name}</h2>
+						</div>
+						<a href={`/channels?group=${encodeURIComponent(name)}`}
+							>See all <ArrowRight size={16} /></a
+						>
+					</header>
+					<div class="rail-scroll">
+						{#each channels as channel}<ChannelCard {channel} />{/each}
+					</div>
+				</section>{/each}
+		</div>{/if}
 </div>
+
+<style>
+	.home-page {
+		padding-bottom: 4rem;
+	}
+	.hero {
+		display: grid;
+		min-height: 29rem;
+		grid-template-columns: 1.25fr 0.75fr;
+		align-items: end;
+		gap: 3rem;
+		padding: clamp(3rem, 8vw, 7rem) clamp(1rem, 5vw, 5rem) 3rem;
+		background: linear-gradient(
+			135deg,
+			color-mix(in oklch, var(--periwinkle) 34%, var(--deep)) 0 46%,
+			var(--deep) 46%
+		);
+	}
+	.hero .eyebrow {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		color: var(--sun);
+	}
+	.hero-copy {
+		max-width: 37rem;
+		margin: 1.4rem 0 0;
+		color: var(--muted);
+		font-size: 1.05rem;
+	}
+	.hero-tools {
+		display: grid;
+		gap: 0.7rem;
+		align-content: end;
+	}
+	.search-cta {
+		display: flex;
+		min-height: 4.25rem;
+		align-items: center;
+		gap: 0.75rem;
+		border-radius: 1rem;
+		background: var(--aqua);
+		padding: 1rem 1.1rem;
+		color: var(--ink);
+		font-weight: 800;
+	}
+	.search-cta span {
+		flex: 1;
+	}
+	.rails {
+		display: grid;
+		gap: 3rem;
+		padding: 3rem 0;
+	}
+	.rail header {
+		display: flex;
+		align-items: end;
+		justify-content: space-between;
+		padding: 0 clamp(1rem, 5vw, 5rem) 1rem;
+	}
+	.rail h2 {
+		margin: 0;
+		font-size: clamp(1.6rem, 3vw, 2.45rem);
+	}
+	.rail header a {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		color: var(--aqua);
+		font-size: 0.84rem;
+		font-weight: 800;
+	}
+	.rail-scroll {
+		display: flex;
+		gap: 1rem;
+		overflow-x: auto;
+		padding: 0.35rem clamp(1rem, 5vw, 5rem) 1.5rem;
+		scroll-padding-inline: clamp(1rem, 5vw, 5rem);
+		scroll-snap-type: x proximity;
+		scrollbar-width: thin;
+	}
+	.loading-rail {
+		display: flex;
+		gap: 1rem;
+		overflow: hidden;
+		padding: 3rem 5vw;
+	}
+	.loading-rail > div {
+		min-width: 20rem;
+		height: 16rem;
+		border-radius: 1.2rem;
+	}
+	@media (max-width: 760px) {
+		.hero {
+			min-height: 32rem;
+			grid-template-columns: 1fr;
+			align-content: end;
+			gap: 2rem;
+			background: linear-gradient(
+				155deg,
+				color-mix(in oklch, var(--periwinkle) 38%, var(--deep)) 0 57%,
+				var(--deep) 57%
+			);
+		}
+		.hero-tools {
+			align-content: initial;
+		}
+	}
+</style>
