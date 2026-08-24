@@ -146,6 +146,20 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SourceGroupImportResult' }
         default: { $ref: '#/components/responses/Error' }
+  /studio/lineups/{lineup_id}/groups/{group_id}/position:
+    patch:
+      operationId: moveWorkspaceGroup
+      parameters:
+        - { $ref: '#/components/parameters/LineupId' }
+        - { $ref: '#/components/parameters/GroupIdPath' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PositionRequest' }
+      responses:
+        '204': { description: Group position saved for this lineup. }
+        default: { $ref: '#/components/responses/Error' }
   /studio/groups/{group_id}:
     patch:
       operationId: updateStudioGroup
@@ -284,14 +298,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              properties:
-                before_id: { type: integer, format: int64 }
-                after_id: { type: integer, format: int64 }
-              oneOf:
-                - required: [before_id]
-                - required: [after_id]
+            schema: { $ref: '#/components/schemas/PositionRequest' }
       responses:
         '204': { description: Position saved. }
         default: { $ref: '#/components/responses/Error' }
@@ -620,6 +627,14 @@ components:
         group_name: { type: string }
         added_count: { type: integer, format: int64 }
         skipped_count: { type: integer, format: int64 }
+    PositionRequest:
+      type: object
+      properties:
+        before_id: { type: integer, format: int64 }
+        after_id: { type: integer, format: int64 }
+      oneOf:
+        - required: [before_id]
+        - required: [after_id]
     WorkspaceChannel:
       type: object
       required: [id, name, uuid, logo_id, order, source_count, match_method, manual_locked]

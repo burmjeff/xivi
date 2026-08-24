@@ -16,7 +16,6 @@
 		History,
 		Unlink,
 		MoreHorizontal,
-		Pencil,
 		ChevronDown,
 		Check,
 		RadioTower,
@@ -36,17 +35,19 @@
 		WorkspaceChannel
 	} from '$lib/api/types';
 	import LogoTile from '$lib/components/brand/LogoTile.svelte';
+	import GroupTab from '$lib/components/studio/GroupTab.svelte';
 	import SourceBrowser from '$lib/components/studio/SourceBrowser.svelte';
 	import WorkspaceRow from '$lib/components/studio/WorkspaceRow.svelte';
 
 	const lineupId = Number(page.params.id),
 		client = useQueryClient();
+	const groupsKey = ['studio', 'lineup-groups', lineupId] as const;
 	const lineupsQuery = createQuery(() => ({
 		queryKey: ['studio', 'lineups'],
 		queryFn: () => api<Paginated<LineupSummary>>('/api/v2/studio/lineups')
 	}));
 	const groupsQuery = createQuery(() => ({
-		queryKey: ['studio', 'lineup-groups', lineupId],
+		queryKey: groupsKey,
 		queryFn: () => api<Paginated<StudioGroup>>(`/api/v2/studio/lineups/${lineupId}/groups`),
 		refetchInterval: 5000
 	}));
@@ -69,11 +70,14 @@
 		followChannelNames = $state(true),
 		syncSaving = $state(false),
 		sourceGroupAction = $state<string | null>(null),
+		publishDirty = $state(false),
 		undo = $state<{
+			kind: 'channel' | 'group';
 			source: number;
 			target: number;
 			placement: 'before' | 'after';
 			label: string;
+			dirtyBefore: boolean;
 		} | null>(null);
 	$effect(() => {
 		if (!selectedGroupId && groupsQuery.data?.items[0])
@@ -271,17 +275,19 @@
 		placement: 'before' | 'after',
 		recordUndo = true
 	) {
-		if (!selectedGroupId || selectedGroupManaged || sourceId === targetId) return;
+		if (!selectedGroupId || selectedGroupManaged || sourceId === targetId) return false;
 		const key = channelKey,
 			previous = client.getQueryData<Paginated<WorkspaceChannel>>(key);
-		if (!previous) return;
+		if (!previous) return false;
 		const source = previous.items.find((item) => item.id === sourceId),
 			oldIndex = previous.items.findIndex((item) => item.id === sourceId),
 			oldTarget = oldIndex === 0 ? previous.items[1] : previous.items[oldIndex - 1],
 			oldPlacement: 'before' | 'after' = oldIndex === 0 ? 'before' : 'after';
+		if (!source || oldIndex < 0) return false;
 		const items = previous.items.filter((item) => item.id !== sourceId),
 			targetIndex = items.findIndex((item) => item.id === targetId);
-		items.splice(Math.max(0, targetIndex + (placement === 'after' ? 1 : 0)), 0, source!);
+		if (targetIndex < 0) return false;
+		items.splice(Math.max(0, targetIndex + (placement === 'after' ? 1 : 0)), 0, source);
 		client.setQueryData(key, { ...previous, items });
 		try {
 			await api(`/api/v2/studio/groups/${selectedGroupId}/channels/${sourceId}/position`, {
@@ -292,21 +298,77 @@
 			});
 			if (recordUndo && oldTarget)
 				undo = {
+					kind: 'channel',
 					source: sourceId,
 					target: oldTarget.id,
 					placement: oldPlacement,
-					label: source?.name ?? 'channel'
+					label: source?.name ?? 'channel',
+					dirtyBefore: publishDirty
 				};
+			publishDirty = true;
+			return true;
 		} catch {
 			client.setQueryData(key, previous);
 			message = 'The new order could not be saved.';
+			return false;
+		}
+	}
+	async function moveGroup(
+		sourceId: number,
+		targetId: number,
+		placement: 'before' | 'after',
+		recordUndo = true
+	) {
+		if (sourceId === targetId) return false;
+		const previous = client.getQueryData<Paginated<StudioGroup>>(groupsKey);
+		if (!previous) return false;
+		const source = previous.items.find((item) => item.id === sourceId),
+			oldIndex = previous.items.findIndex((item) => item.id === sourceId),
+			oldTarget = oldIndex === 0 ? previous.items[1] : previous.items[oldIndex - 1],
+			oldPlacement: 'before' | 'after' = oldIndex === 0 ? 'before' : 'after';
+		if (!source || oldIndex < 0) return false;
+		const items = previous.items.filter((item) => item.id !== sourceId),
+			targetIndex = items.findIndex((item) => item.id === targetId);
+		if (targetIndex < 0) return false;
+		items.splice(Math.max(0, targetIndex + (placement === 'after' ? 1 : 0)), 0, source);
+		const orderedItems = items.map((item, index) => ({ ...item, order: index + 1 }));
+		client.setQueryData(groupsKey, { ...previous, items: orderedItems });
+		try {
+			await api(`/api/v2/studio/lineups/${lineupId}/groups/${sourceId}/position`, {
+				method: 'PATCH',
+				body: JSON.stringify(
+					placement === 'before' ? { before_id: targetId } : { after_id: targetId }
+				)
+			});
+			if (recordUndo && oldTarget)
+				undo = {
+					kind: 'group',
+					source: sourceId,
+					target: oldTarget.id,
+					placement: oldPlacement,
+					label: source.name,
+					dirtyBefore: publishDirty
+				};
+			publishDirty = true;
+			message = `${source.name} moved. Publish to update M3U and XMLTV outputs.`;
+			return true;
+		} catch (error) {
+			client.setQueryData(groupsKey, previous);
+			message = requestError(error, 'The group order could not be saved.');
+			return false;
 		}
 	}
 	async function undoMove() {
 		if (!undo) return;
 		const action = undo;
 		undo = null;
-		await move(action.source, action.target, action.placement, false);
+		const restored =
+			action.kind === 'group'
+				? await moveGroup(action.source, action.target, action.placement, false)
+				: await move(action.source, action.target, action.placement, false);
+		if (!restored) return;
+		publishDirty = action.dirtyBefore;
+		message = `${action.label} order restored${action.dirtyBefore ? '; publication is still required.' : '.'}`;
 	}
 	function toggle(id: number) {
 		if (selectedGroupManaged) return;
@@ -542,6 +604,7 @@
 		message = 'Starting publication…';
 		try {
 			await api(`/api/v2/studio/lineups/${lineupId}/publish`, { method: 'POST' });
+			publishDirty = false;
 			message = 'M3U and XMLTV publication is queued.';
 		} catch {
 			message = 'Publishing could not be started.';
@@ -555,7 +618,9 @@
 		<div>
 			<a href="/studio/lineups">Lineups</a><ChevronRight size={14} /><strong
 				>{lineup?.name ?? 'Loading…'}</strong
-			>
+			>{#if publishDirty}<span class="unpublished-order"
+					><CircleAlert size={13} />Unpublished order</span
+				>{/if}
 		</div>
 		<div class="workbench-actions">
 			{#if undo}<button class="app-button app-button--secondary" onclick={undoMove}
@@ -602,32 +667,26 @@
 					>
 				</div>
 			</header>
-			<div class="group-tabs">
-				{#each groupsQuery.data?.items ?? [] as group}<div
-						class:active={selectedGroupId === group.id}
-					>
-						<button
-							onclick={() => {
-								selectedGroupId = group.id;
-								selectedChannelId = null;
-								selectedIds = new Set();
-							}}
-							>{group.name}<span>{group.channel_count}</span>{#if group.source_link}<em
-									class:issue={group.source_link.status === 'error' ||
-										group.source_link.status === 'disconnected'}
-									>{group.source_link.status === 'active' ? 'Synced' : group.source_link.status}</em
-								>{/if}</button
-						><button
-							class="group-menu"
-							onclick={() => (group.source_link ? openSyncSettings(group) : renameGroup(group))}
-							title={group.source_link ? 'Sync settings' : 'Rename group'}
-							>{#if group.source_link}<RadioTower size={14} />{:else}<Pencil
-									size={14}
-								/>{/if}</button
-						><button class="group-menu" onclick={() => removeGroup(group)} title="Delete group"
-							><Trash2 size={14} /></button
-						>
-					</div>{/each}
+			<div class="group-tabs" role="toolbar" aria-label="Ordered lineup groups">
+				{#each groupsQuery.data?.items ?? [] as group, index (group.id)}
+					<GroupTab
+						{group}
+						{index}
+						selected={selectedGroupId === group.id}
+						previousId={groupsQuery.data?.items[index - 1]?.id}
+						nextId={groupsQuery.data?.items[index + 1]?.id}
+						firstId={groupsQuery.data?.items[0]?.id}
+						lastId={groupsQuery.data?.items.at(-1)?.id}
+						onselect={() => {
+							selectedGroupId = group.id;
+							selectedChannelId = null;
+							selectedIds = new Set();
+						}}
+						onmove={moveGroup}
+						onedit={() => (group.source_link ? openSyncSettings(group) : renameGroup(group))}
+						onremove={() => removeGroup(group)}
+					/>
+				{/each}
 			</div>
 			{#if selectedGroup?.source_link}
 				<div
@@ -1027,6 +1086,18 @@
 		color: var(--muted);
 		font-size: 0.75rem;
 	}
+	.unpublished-order {
+		display: inline-flex;
+		min-height: 1.6rem;
+		align-items: center;
+		gap: 0.3rem;
+		border-radius: 99px;
+		background: color-mix(in oklch, var(--sun) 18%, transparent);
+		padding: 0.2rem 0.5rem;
+		color: var(--sun);
+		font-size: 0.62rem;
+		font-weight: 800;
+	}
 	.workbench-actions {
 		gap: 0.4rem !important;
 	}
@@ -1125,53 +1196,6 @@
 		border-bottom: 1px solid var(--line);
 		background: var(--surface);
 		padding: 0.45rem;
-	}
-	.group-tabs > div {
-		display: flex;
-		border: 1px solid transparent;
-		border-radius: 0.65rem;
-	}
-	.group-tabs > div.active {
-		border-color: color-mix(in oklch, var(--periwinkle) 65%, transparent);
-		background: color-mix(in oklch, var(--periwinkle) 13%, transparent);
-	}
-	.group-tabs button {
-		display: flex;
-		min-height: 2.3rem;
-		align-items: center;
-		gap: 0.35rem;
-		white-space: nowrap;
-		border: 0;
-		background: transparent;
-		padding: 0.35rem 0.5rem;
-		color: var(--muted);
-		font-size: 0.68rem;
-		font-weight: 750;
-		cursor: pointer;
-	}
-	.group-tabs span {
-		border-radius: 99px;
-		background: var(--surface-raised);
-		padding: 0.1rem 0.35rem;
-	}
-	.group-tabs em {
-		color: var(--aqua);
-		font-size: 0.55rem;
-		font-style: normal;
-		text-transform: uppercase;
-	}
-	.group-tabs em.issue {
-		color: var(--error);
-	}
-	.group-tabs .group-menu {
-		display: none;
-		width: 1.8rem;
-		padding: 0;
-	}
-	.group-tabs > div:hover .group-menu,
-	.group-tabs > div.active .group-menu {
-		display: grid;
-		place-items: center;
 	}
 	.sync-banner {
 		display: grid;

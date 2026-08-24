@@ -195,6 +195,33 @@ func V2StudioLineupGroups(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"items": items, "next_cursor": nil, "total": len(items)})
 }
 
+type positionRequest struct {
+	BeforeID *int64 `json:"before_id"`
+	AfterID  *int64 `json:"after_id"`
+}
+
+func V2MoveStudioGroup(c *fiber.Ctx) error {
+	lineupID, err := parseID(c, "lineup_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
+	}
+	groupID, err := parseID(c, "group_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The group id is invalid.", false)
+	}
+	body := positionRequest{}
+	if err := c.BodyParser(&body); err != nil || (body.BeforeID == nil) == (body.AfterID == nil) {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_move", "Choose exactly one group to move before or after.", false)
+	}
+	if err := database.Db.MoveWorkspaceGroup(c.UserContext(), lineupID, groupID, body.BeforeID, body.AfterID); err != nil {
+		if errors.Is(err, queries.ErrLineupNotFound) || errors.Is(err, queries.ErrStudioGroupNotFound) {
+			return studioGroupError(c, err)
+		}
+		return v2Error(c, fiber.StatusUnprocessableEntity, "group_move_failed", err.Error(), false)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
 func studioGroupError(c *fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, queries.ErrLineupNotFound):
@@ -491,11 +518,6 @@ func V2RejectStudioMatch(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-type moveChannelRequest struct {
-	BeforeID *int64 `json:"before_id"`
-	AfterID  *int64 `json:"after_id"`
-}
-
 func V2MoveStudioChannel(c *fiber.Ctx) error {
 	groupID, err := parseID(c, "group_id")
 	if err != nil {
@@ -510,7 +532,7 @@ func V2MoveStudioChannel(c *fiber.Ctx) error {
 	} else if linked {
 		return v2Error(c, fiber.StatusConflict, "synced_group_managed", "Channel order is controlled by the connected source group.", false)
 	}
-	body := moveChannelRequest{}
+	body := positionRequest{}
 	if err := c.BodyParser(&body); err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_request", "The move request is invalid.", false)
 	}

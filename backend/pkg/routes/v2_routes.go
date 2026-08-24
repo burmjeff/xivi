@@ -20,6 +20,7 @@ func V2Routes(a *fiber.App) {
 	v2.Get("/studio/lineups", controllers.V2StudioLineups)
 	v2.Get("/studio/lineups/:lineup_id/groups", controllers.V2StudioLineupGroups)
 	v2.Post("/studio/lineups/:lineup_id/groups", controllers.V2CreateStudioGroup)
+	v2.Patch("/studio/lineups/:lineup_id/groups/:group_id/position", controllers.V2MoveStudioGroup)
 	v2.Post("/studio/lineups/:lineup_id/source-groups/:source_group_id/copy", controllers.V2CopySourceGroupToLineup)
 	v2.Get("/studio/source-groups", controllers.V2StudioSourceGroups)
 	v2.Patch("/studio/groups/:group_id", controllers.V2UpdateStudioGroup)

@@ -92,6 +92,66 @@ func TestMoveWorkspaceChannelRequiresOneAnchor(t *testing.T) {
 	}
 }
 
+func TestMoveWorkspaceGroupRequiresOneAnchor(t *testing.T) {
+	db := newExperienceTestDB(t)
+	query := NewExperienceQueries(db)
+	if err := query.MoveWorkspaceGroup(context.Background(), 1, 1, nil, nil); err == nil {
+		t.Fatal("expected a validation error without before_id or after_id")
+	}
+	anchor := int64(2)
+	if err := query.MoveWorkspaceGroup(context.Background(), 1, 1, &anchor, &anchor); err == nil {
+		t.Fatal("expected a validation error with both anchors")
+	}
+}
+
+func TestMoveWorkspaceGroupReindexesOnlyItsLineup(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO template VALUES (1, 'Main'), (2, 'Other')`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'One', 0, NULL), (20, 'Two', 0, NULL), (30, 'Three', 0, NULL)`)
+	db.MustExec(`INSERT INTO template_group_item VALUES (1, 10, 10), (1, 20, 20), (1, 30, 30), (2, 10, 99)`)
+	query := NewExperienceQueries(db)
+	third := int64(30)
+	if err := query.MoveWorkspaceGroup(context.Background(), 1, 10, nil, &third); err != nil {
+		t.Fatalf("moving after a later group failed: %v", err)
+	}
+	var ids []int64
+	db.Select(&ids, `SELECT group_id FROM template_group_item WHERE template_id = 1 ORDER BY orderr`)
+	if got, want := ids, []int64{20, 30, 10}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("unexpected order after rightward move: %v", got)
+	}
+	var otherOrder int64
+	db.Get(&otherOrder, `SELECT orderr FROM template_group_item WHERE template_id = 2 AND group_id = 10`)
+	if otherOrder != 99 {
+		t.Fatalf("another lineup's position changed to %d", otherOrder)
+	}
+	second := int64(20)
+	if err := query.MoveWorkspaceGroup(context.Background(), 1, 10, &second, nil); err != nil {
+		t.Fatalf("moving before an earlier group failed: %v", err)
+	}
+	ids = nil
+	db.Select(&ids, `SELECT group_id FROM template_group_item WHERE template_id = 1 ORDER BY orderr`)
+	if got, want := ids, []int64{10, 20, 30}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("unexpected order after leftward move: %v", got)
+	}
+}
+
+func TestMoveWorkspaceGroupRejectsAnchorOutsideLineup(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO template VALUES (1, 'Main'), (2, 'Other')`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'Main group', 0, NULL), (20, 'Other group', 0, NULL)`)
+	db.MustExec(`INSERT INTO template_group_item VALUES (1, 10, 1), (2, 20, 1)`)
+	anchor := int64(20)
+	err := NewExperienceQueries(db).MoveWorkspaceGroup(context.Background(), 1, 10, &anchor, nil)
+	if !errors.Is(err, ErrStudioGroupNotFound) {
+		t.Fatalf("expected a lineup-scoped group error, got %v", err)
+	}
+	var order int64
+	db.Get(&order, `SELECT orderr FROM template_group_item WHERE template_id = 1 AND group_id = 10`)
+	if order != 1 {
+		t.Fatalf("failed move changed the saved order to %d", order)
+	}
+}
+
 func TestMoveWorkspaceChannelReindexesBothDirections(t *testing.T) {
 	db := newExperienceTestDB(t)
 	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'One', NULL, 0, 'one'), (2, 'Two', NULL, 0, 'two'), (3, 'Three', NULL, 0, 'three')`)

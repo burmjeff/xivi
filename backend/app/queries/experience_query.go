@@ -399,6 +399,66 @@ func (q *ExperienceQueries) UpdateJob(ctx context.Context, id int64, status stri
 	return err
 }
 
+func (q *ExperienceQueries) MoveWorkspaceGroup(ctx context.Context, lineupID, groupID int64, beforeID, afterID *int64) error {
+	if (beforeID == nil) == (afterID == nil) {
+		return fmt.Errorf("exactly one of before_id or after_id is required")
+	}
+	return q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		var lineupExists bool
+		if err := tx.GetContext(ctx, &lineupExists, `SELECT EXISTS(SELECT 1 FROM template WHERE id = ?)`, lineupID); err != nil {
+			return err
+		}
+		if !lineupExists {
+			return ErrLineupNotFound
+		}
+		ids := []int64{}
+		if err := tx.SelectContext(ctx, &ids, `SELECT group_id FROM template_group_item WHERE template_id = ? ORDER BY orderr, group_id`, lineupID); err != nil {
+			return err
+		}
+		targetID := beforeID
+		if targetID == nil {
+			targetID = afterID
+		}
+		if groupID == *targetID {
+			return fmt.Errorf("a group cannot be moved relative to itself")
+		}
+		ordered := make([]int64, 0, len(ids))
+		sourceFound, targetFound := false, false
+		for _, id := range ids {
+			if id == groupID {
+				sourceFound = true
+				continue
+			}
+			if id == *targetID {
+				targetFound = true
+			}
+			ordered = append(ordered, id)
+		}
+		if !sourceFound || !targetFound {
+			return ErrStudioGroupNotFound
+		}
+		insertAt := 0
+		for index, id := range ordered {
+			if id == *targetID {
+				insertAt = index
+				if afterID != nil {
+					insertAt++
+				}
+				break
+			}
+		}
+		ordered = append(ordered, 0)
+		copy(ordered[insertAt+1:], ordered[insertAt:])
+		ordered[insertAt] = groupID
+		for index, id := range ordered {
+			if _, err := tx.ExecContext(ctx, `UPDATE template_group_item SET orderr = ? WHERE template_id = ? AND group_id = ?`, index+1, lineupID, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (q *ExperienceQueries) MoveWorkspaceChannel(ctx context.Context, groupID, channelID int64, beforeID, afterID *int64) error {
 	if (beforeID == nil) == (afterID == nil) {
 		return fmt.Errorf("exactly one of before_id or after_id is required")

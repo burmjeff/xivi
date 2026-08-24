@@ -180,6 +180,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/studio/lineups/{lineup_id}/groups/{group_id}/position': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['moveWorkspaceGroup'];
+		trace?: never;
+	};
 	'/studio/groups/{group_id}': {
 		parameters: {
 			query?: never;
@@ -680,6 +696,12 @@ export interface components {
 			/** Format: int64 */
 			skipped_count: number;
 		};
+		PositionRequest: {
+			/** Format: int64 */
+			before_id?: number;
+			/** Format: int64 */
+			after_id?: number;
+		} & (unknown | unknown);
 		WorkspaceChannel: {
 			/** Format: int64 */
 			id: number;
@@ -1169,6 +1191,32 @@ export interface operations {
 			default: components['responses']['Error'];
 		};
 	};
+	moveWorkspaceGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				lineup_id: components['parameters']['LineupId'];
+				group_id: components['parameters']['GroupIdPath'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PositionRequest'];
+			};
+		};
+		responses: {
+			/** @description Group position saved for this lineup. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
 	deleteStudioGroup: {
 		parameters: {
 			query?: never;
@@ -1431,12 +1479,7 @@ export interface operations {
 		};
 		requestBody: {
 			content: {
-				'application/json': {
-					/** Format: int64 */
-					before_id?: number;
-					/** Format: int64 */
-					after_id?: number;
-				} & (unknown | unknown);
+				'application/json': components['schemas']['PositionRequest'];
 			};
 		};
 		responses: {

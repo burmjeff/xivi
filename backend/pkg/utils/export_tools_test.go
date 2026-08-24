@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"bufio"
+	"bytes"
 	"strings"
 	"testing"
 
@@ -63,5 +65,53 @@ func TestCreateM3uRejectsLineupWithoutPlayableChannels(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no playable channels with source variants") {
 		t.Fatalf("expected the missing-source reason, got %q", err)
+	}
+}
+
+func TestM3uUsesSavedGroupAndChannelOrder(t *testing.T) {
+	db := useExportTestDB(t)
+	db.MustExec(`CREATE TABLE templategroup (id INTEGER PRIMARY KEY, name TEXT, dynamic BOOLEAN, dynamicgroup INTEGER)`)
+	db.MustExec(`CREATE TABLE template_group_item (template_id INTEGER, group_id INTEGER, orderr INTEGER)`)
+	db.MustExec(`CREATE TABLE templatechannel (id INTEGER PRIMARY KEY, name TEXT, tvgid TEXT, logoid INTEGER, uuid TEXT)`)
+	db.MustExec(`CREATE TABLE template_group_channel (group_id INTEGER, channel_id INTEGER, orderr INTEGER)`)
+	db.MustExec(`CREATE TABLE templatechannelitem (id INTEGER PRIMARY KEY, channel_id INTEGER, playlist_channel_id INTEGER, orderr INTEGER, match_method TEXT, match_score REAL, runner_up_score REAL, matcher_version INTEGER, manual_locked BOOLEAN)`)
+	db.MustExec(`CREATE TABLE logo (id INTEGER PRIMARY KEY, name TEXT)`)
+	db.MustExec(`INSERT INTO logo VALUES (1, 'xivi_channel')`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'News', 0, NULL), (20, 'Sports', 0, NULL)`)
+	db.MustExec(`INSERT INTO template_group_item VALUES (1, 10, 20), (1, 20, 10)`)
+	db.MustExec(`INSERT INTO templatechannel VALUES
+		(101, 'News first', 'news.first', 1, 'news-first'),
+		(102, 'News second', 'news.second', 1, 'news-second'),
+		(201, 'Sports first', 'sports.first', 1, 'sports-first'),
+		(202, 'Sports second', 'sports.second', 1, 'sports-second')`)
+	db.MustExec(`INSERT INTO template_group_channel VALUES
+		(10, 101, 1), (10, 102, 2),
+		(20, 201, 1), (20, 202, 2)`)
+	db.MustExec(`INSERT INTO templatechannelitem VALUES
+		(1, 101, 1001, 1, 'manual', 1, NULL, 2, 1),
+		(2, 102, 1002, 1, 'manual', 1, NULL, 2, 1),
+		(3, 201, 1003, 1, 'manual', 1, NULL, 2, 1),
+		(4, 202, 1004, 1, 'manual', 1, NULL, 2, 1)`)
+
+	tool := NewM3uTools()
+	tool.template = models.Template{ID: 1, Name: "ordered"}
+	tool.host = "xivi.test"
+	tool.port = 3000
+	buffer := &bytes.Buffer{}
+	if err := tool.marshallInto(bufio.NewWriter(buffer)); err != nil {
+		t.Fatalf("building ordered M3U failed: %v", err)
+	}
+	content := buffer.String()
+	want := []string{"Sports first", "Sports second", "News first", "News second"}
+	previous := -1
+	for _, name := range want {
+		index := strings.Index(content, ","+name+"\n")
+		if index < 0 {
+			t.Fatalf("M3U omitted %q:\n%s", name, content)
+		}
+		if index <= previous {
+			t.Fatalf("M3U did not preserve group/channel order %v:\n%s", want, content)
+		}
+		previous = index
 	}
 }
