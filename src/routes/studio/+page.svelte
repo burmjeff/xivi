@@ -13,12 +13,27 @@
 		Server
 	} from '@lucide/svelte';
 	import { api } from '$lib/api/client';
-	import type { LineupSummary, OperationJob, Paginated, StudioOverview } from '$lib/api/types';
+	import type {
+		LineupSummary,
+		OperationJob,
+		Paginated,
+		StreamingStatus,
+		StudioOverview
+	} from '$lib/api/types';
 	import StudioHeader from '$lib/components/studio/StudioHeader.svelte';
 	const client = useQueryClient();
 	type OverviewResponse = { summary: StudioOverview; jobs: OperationJob[] };
 	type SystemResponse = {
-		status: { uptime: string; cpu: string; memory: string; connections: number };
+		status: {
+			uptime: string;
+			cpu: string;
+			memory: string;
+			connections: number;
+			stream_sessions: number;
+			stream_reconnects: number;
+			slow_client_drops: number;
+			stream_bytes_proxied: number;
+		};
 	};
 	const overviewQuery = createQuery(() => ({
 		queryKey: ['studio', 'overview'],
@@ -32,7 +47,12 @@
 	const systemQuery = createQuery(() => ({
 		queryKey: ['system', 'status'],
 		queryFn: () => api<SystemResponse>('/api/system/status'),
-		staleTime: 30_000
+		refetchInterval: 10_000
+	}));
+	const streamingQuery = createQuery(() => ({
+		queryKey: ['studio', 'streaming', 'status'],
+		queryFn: () => api<StreamingStatus>('/api/v2/studio/streaming/status'),
+		refetchInterval: 5_000
 	}));
 	let copied = $state(''),
 		publishing = $state<number | null>(null),
@@ -195,10 +215,38 @@
 							<dd>{systemQuery.data.status.memory}</dd>
 						</div>
 						<div>
-							<dt>Streams</dt>
+							<dt>Stream viewers</dt>
 							<dd>{systemQuery.data.status.connections}</dd>
 						</div>
+						<div>
+							<dt>Shared producers</dt>
+							<dd>{systemQuery.data.status.stream_sessions}</dd>
+						</div>
+						<div>
+							<dt>Source failovers</dt>
+							<dd>{systemQuery.data.status.stream_reconnects}</dd>
+						</div>
+						<div>
+							<dt>Slow viewers dropped</dt>
+							<dd>{systemQuery.data.status.slow_client_drops}</dd>
+						</div>
 					</dl>{:else}<p class="muted"><Cpu size={15} /> Loading host metrics…</p>{/if}
+				{#if streamingQuery.data?.sessions.length}<div class="stream-sessions">
+						{#each streamingQuery.data.sessions as session}<article>
+								<div>
+									<strong>{session.id}</strong><small
+										>Source {session.source_position}/{session.source_count} · {session.clients} viewer{session.clients ===
+										1
+											? ''
+											: 's'}</small
+									>
+								</div>
+								<b class:failed={session.state === 'failed'}>{session.state}</b>
+								{#if session.last_error}<p>{session.last_error}</p>{/if}
+							</article>{/each}
+					</div>{:else if streamingQuery.data}<p class="muted">
+						No stream producers are active.
+					</p>{/if}
 			</details>
 		</section>
 	</div>
@@ -428,6 +476,46 @@
 	dd {
 		margin: 0;
 		text-align: right;
+	}
+	.stream-sessions {
+		display: grid;
+		gap: 0.4rem;
+		margin-top: 0.8rem;
+	}
+	.stream-sessions article {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		gap: 0.2rem 0.6rem;
+		border: 1px solid var(--line);
+		border-radius: 0.65rem;
+		background: var(--surface-raised);
+		padding: 0.55rem 0.65rem;
+	}
+	.stream-sessions article > div {
+		display: grid;
+		min-width: 0;
+	}
+	.stream-sessions strong,
+	.stream-sessions small,
+	.stream-sessions b,
+	.stream-sessions p {
+		font-size: 0.62rem;
+	}
+	.stream-sessions small {
+		color: var(--muted);
+	}
+	.stream-sessions b {
+		color: var(--aqua);
+		text-transform: capitalize;
+	}
+	.stream-sessions b.failed,
+	.stream-sessions p {
+		color: var(--error);
+	}
+	.stream-sessions p {
+		grid-column: 1/3;
+		margin: 0;
+		overflow-wrap: anywhere;
 	}
 	.empty-inline {
 		display: flex;

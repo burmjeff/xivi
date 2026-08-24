@@ -17,6 +17,9 @@ export type MatchRejection = components['schemas']['MatchRejection'];
 export type OperationJob = components['schemas']['OperationJob'];
 export type StudioOverview = components['schemas']['StudioOverview'];
 export type CoverageSummary = components['schemas']['CoverageSummary'];
+export type StreamingStatus = components['schemas']['StreamingStatus'];
+export type StreamingSummary = components['schemas']['StreamingSummary'];
+export type StreamingSession = components['schemas']['StreamingSession'];
 export type APIError = components['schemas']['APIError'];
 
 // Shared page view model, also used for legacy adapters outside API v2.

@@ -27,10 +27,17 @@
 		server: { host: string; port: number; readtimeout: number };
 		playlist: { tvgid_match: boolean; name_match: boolean; name_score: number };
 		streaming: {
-			type: string;
 			proxy: boolean;
-			buffer: number;
-			retryeos: number;
+			ingest_buffer_ms: number;
+			startup_timeout_seconds: number;
+			stall_timeout_seconds: number;
+			idle_timeout_seconds: number;
+			retry_limit: number;
+			retry_backoff_ms: number;
+			hls_segment_seconds: number;
+			hls_playlist_length: number;
+			client_buffer_mb: number;
+			tls_verify: boolean;
 			useragent: string;
 		};
 		// Preserve legacy vector values while the settings endpoint still replaces the full document.
@@ -76,8 +83,26 @@
 			if (!Number.isFinite(score) || score < 0.01 || score > 1)
 				next.name_score = 'Use a score from 0.01 to 1.';
 		}
-		if (section === 'streaming' && settings.streaming.buffer < 0)
-			next.buffer = 'Buffer cannot be negative.';
+		if (section === 'streaming') {
+			if (settings.streaming.ingest_buffer_ms < 0 || settings.streaming.ingest_buffer_ms > 30000)
+				next.ingest_buffer_ms = 'Use a jitter buffer from 0 to 30,000 ms.';
+			if (settings.streaming.startup_timeout_seconds < 3)
+				next.startup_timeout_seconds = 'Allow at least 3 seconds for startup.';
+			if (settings.streaming.stall_timeout_seconds < 3)
+				next.stall_timeout_seconds = 'Allow at least 3 seconds before failover.';
+			if (settings.streaming.idle_timeout_seconds < 10)
+				next.idle_timeout_seconds = 'Allow at least 10 seconds before cleanup.';
+			if (settings.streaming.retry_limit < 1)
+				next.retry_limit = 'At least one source attempt is required.';
+			if (settings.streaming.retry_backoff_ms < 100)
+				next.retry_backoff_ms = 'Use a retry delay of at least 100 ms.';
+			if (settings.streaming.hls_segment_seconds < 1 || settings.streaming.hls_segment_seconds > 10)
+				next.hls_segment_seconds = 'Use HLS segments from 1 to 10 seconds.';
+			if (settings.streaming.hls_playlist_length < 3)
+				next.hls_playlist_length = 'Keep at least 3 segments in the live playlist.';
+			if (settings.streaming.client_buffer_mb < 1)
+				next.client_buffer_mb = 'Reserve at least 1 MB per MPEG-TS viewer.';
+		}
 		if (section === 'devices' && settings.upnp.tuner_count < 1)
 			next.tuner_count = 'At least one tuner is required.';
 		if (section === 'scheduling' && settings.application.updatecron.trim().split(/\s+/).length < 5)
@@ -91,7 +116,7 @@
 		message = '';
 		try {
 			await api('/api/settings', { method: 'PUT', body: JSON.stringify(settings) });
-			message = `${section[0].toUpperCase()}${section.slice(1)} settings saved.${['server', 'streaming', 'devices'].includes(section) ? ' Restart Xivi to apply every change.' : ''}`;
+			message = `${section[0].toUpperCase()}${section.slice(1)} settings saved.${['server', 'devices'].includes(section) ? ' Restart Xivi to apply every change.' : ''}`;
 		} catch {
 			message = 'Settings could not be saved.';
 		} finally {
@@ -207,32 +232,88 @@
 				<RadioTower />
 				<div>
 					<p class="eyebrow">Streaming</p>
-					<h2>Playback pipeline <span class="restart">Restart</span></h2>
+					<h2>Playback pipeline</h2>
 				</div>
 			</header>
 			<div class="fields">
-				<label
-					>Pipeline type<select bind:value={settings.streaming.type}
-						><option value="ffmpeg">FFmpeg</option><option value="gstreamer">GStreamer</option
-						></select
-					></label
+				<label class="switch-row"
+					><span
+						><strong>Share proxied streams</strong><small
+							>Use one resilient source connection for HLS and every MPEG-TS viewer.</small
+						></span
+					><input type="checkbox" bind:checked={settings.streaming.proxy} /></label
 				><label class="switch-row"
 					><span
-						><strong>Proxy streams</strong><small>Relay provider traffic through Xivi.</small></span
-					><input type="checkbox" bind:checked={settings.streaming.proxy} /></label
-				><label
-					>Buffer size<input
-						type="number"
-						min="0"
-						bind:value={settings.streaming.buffer}
-					/>{#if errors.buffer}<em>{errors.buffer}</em>{/if}</label
-				><label
-					>End-of-stream retries<input
-						type="number"
-						min="0"
-						bind:value={settings.streaming.retryeos}
-					/></label
-				><label>User agent<input bind:value={settings.streaming.useragent} /></label>
+						><strong>Verify source TLS</strong><small
+							>Reject invalid HTTPS certificates instead of silently trusting them.</small
+						></span
+					><input type="checkbox" bind:checked={settings.streaming.tls_verify} /></label
+				>
+				<div class="field-pair">
+					<label
+						>Ingest jitter buffer (ms)<input
+							type="number"
+							min="0"
+							max="30000"
+							step="100"
+							bind:value={settings.streaming.ingest_buffer_ms}
+						/>{#if errors.ingest_buffer_ms}<em>{errors.ingest_buffer_ms}</em>{/if}<small
+							>Absorbs provider jitter without delaying startup more than necessary.</small
+						></label
+					><label
+						>Startup timeout (seconds)<input
+							type="number"
+							min="3"
+							bind:value={settings.streaming.startup_timeout_seconds}
+						/>{#if errors.startup_timeout_seconds}<em>{errors.startup_timeout_seconds}</em
+							>{/if}</label
+					><label
+						>Stall failover (seconds)<input
+							type="number"
+							min="3"
+							bind:value={settings.streaming.stall_timeout_seconds}
+						/>{#if errors.stall_timeout_seconds}<em>{errors.stall_timeout_seconds}</em>{/if}</label
+					><label
+						>Idle cleanup (seconds)<input
+							type="number"
+							min="10"
+							bind:value={settings.streaming.idle_timeout_seconds}
+						/>{#if errors.idle_timeout_seconds}<em>{errors.idle_timeout_seconds}</em>{/if}</label
+					><label
+						>Source attempts<input
+							type="number"
+							min="1"
+							bind:value={settings.streaming.retry_limit}
+						/>{#if errors.retry_limit}<em>{errors.retry_limit}</em>{/if}</label
+					><label
+						>Base retry delay (ms)<input
+							type="number"
+							min="100"
+							step="100"
+							bind:value={settings.streaming.retry_backoff_ms}
+						/>{#if errors.retry_backoff_ms}<em>{errors.retry_backoff_ms}</em>{/if}</label
+					><label
+						>HLS segment (seconds)<input
+							type="number"
+							min="1"
+							max="10"
+							bind:value={settings.streaming.hls_segment_seconds}
+						/>{#if errors.hls_segment_seconds}<em>{errors.hls_segment_seconds}</em>{/if}</label
+					><label
+						>HLS playlist segments<input
+							type="number"
+							min="3"
+							bind:value={settings.streaming.hls_playlist_length}
+						/>{#if errors.hls_playlist_length}<em>{errors.hls_playlist_length}</em>{/if}</label
+					><label
+						>Per-viewer buffer (MB)<input
+							type="number"
+							min="1"
+							bind:value={settings.streaming.client_buffer_mb}
+						/>{#if errors.client_buffer_mb}<em>{errors.client_buffer_mb}</em>{/if}</label
+					>
+				</div>
+				<label>User agent<input bind:value={settings.streaming.useragent} /></label>
 			</div>
 			<footer>
 				<button
@@ -439,6 +520,11 @@
 	.fields.two {
 		grid-template-columns: 1fr 1fr;
 	}
+	.field-pair {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.8rem;
+	}
 	.fields label {
 		display: grid;
 		gap: 0.3rem;
@@ -446,8 +532,7 @@
 		font-size: 0.67rem;
 		font-weight: 700;
 	}
-	.fields input,
-	.fields select {
+	.fields input {
 		min-height: 2.7rem;
 		border: 1px solid var(--line);
 		border-radius: 0.7rem;
@@ -566,6 +651,7 @@
 			margin-inline: 1rem;
 		}
 		.fields.two,
+		.field-pair,
 		.theme-options {
 			grid-template-columns: 1fr;
 		}

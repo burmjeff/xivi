@@ -5,28 +5,33 @@
 FROM node:lts-bookworm-slim AS app-builder
 
 WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY . /app
-
-RUN npm install --package-lock-only
-RUN npm prune
-RUN npx vite build
+RUN npm run build
 
 #
 # server-builder
 #
 
-FROM golang:1.24.1-bookworm AS server-builder
+FROM ubuntu:resolute AS server-builder
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
 build-essential \
+ca-certificates \
+git \
+golang-go \
 libvips-dev \
 libglib2.0-dev \
 libgstreamer1.0-dev \
 libgstreamer-plugins-base1.0-dev \
+gstreamer1.0-tools \
 gstreamer1.0-plugins-good \
+gstreamer1.0-plugins-bad \
 libgstreamer-plugins-bad1.0-dev \
 gstreamer1.0-plugins-ugly \
-libssl-dev
+libssl-dev \
+&& rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
@@ -37,7 +42,7 @@ RUN go mod download
 
 ENV CGO_ENABLED=1 GOOS=linux GOARCH=amd64
 RUN go install github.com/swaggo/swag/cmd/swag@latest \
-    && swag init
+    && /root/go/bin/swag init
 RUN go mod tidy
 RUN go build -ldflags "-linkmode 'external' -extldflags '-lstdc++ -lssl -lcrypto' -s -w" -buildvcs=false -mod=readonly -v -o xivi .
 
@@ -45,20 +50,22 @@ RUN go build -ldflags "-linkmode 'external' -extldflags '-lstdc++ -lssl -lcrypto
 # deploy
 #
 
-FROM ubuntu:noble AS deployment
+FROM ubuntu:resolute AS deployment
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
 openssl \
 ca-certificates \
 tzdata \
-libvips42 \
+libvips42t64 \
 libglib2.0-0 \
 libgstreamer1.0-0 \
+gstreamer1.0-tools \
 gstreamer1.0-plugins-base \
 gstreamer1.0-plugins-good \
 gstreamer1.0-plugins-bad \
 gstreamer1.0-plugins-ugly \
-curl
+curl \
+&& rm -rf /var/lib/apt/lists/*
 
 # Install ONNX Runtime
 RUN curl -L https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz -o /tmp/onnxruntime.tgz && \
@@ -67,7 +74,7 @@ RUN curl -L https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/o
     rm /tmp/onnxruntime.tgz
 
 # Set up ONNX Runtime environment variables
-ENV LD_LIBRARY_PATH="/usr/local/onnxruntime/lib:${LD_LIBRARY_PATH}" \
+ENV LD_LIBRARY_PATH="/usr/local/onnxruntime/lib" \
     ONNX_PATH="/usr/local/onnxruntime/lib/libonnxruntime.so"
 
 # environment variables

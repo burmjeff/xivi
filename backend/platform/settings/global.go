@@ -51,11 +51,18 @@ type Playlist struct {
 }
 
 type Streaming struct {
-	Type      string `yaml:"type" json:"type"`
-	Proxy     bool   `yaml:"proxy" json:"proxy"`
-	Buffer    int    `yaml:"buffer" json:"buffer"`
-	RetryEOS  int    `yaml:"retryeos" json:"retryeos"`
-	UserAgent string `yaml:"useragent" json:"useragent"`
+	Proxy                 bool   `yaml:"proxy" json:"proxy"`
+	IngestBufferMS        int    `yaml:"ingest_buffer_ms" json:"ingest_buffer_ms"`
+	StartupTimeoutSeconds int    `yaml:"startup_timeout_seconds" json:"startup_timeout_seconds"`
+	StallTimeoutSeconds   int    `yaml:"stall_timeout_seconds" json:"stall_timeout_seconds"`
+	IdleTimeoutSeconds    int    `yaml:"idle_timeout_seconds" json:"idle_timeout_seconds"`
+	RetryLimit            int    `yaml:"retry_limit" json:"retry_limit"`
+	RetryBackoffMS        int    `yaml:"retry_backoff_ms" json:"retry_backoff_ms"`
+	HLSSegmentSeconds     int    `yaml:"hls_segment_seconds" json:"hls_segment_seconds"`
+	HLSPlaylistLength     int    `yaml:"hls_playlist_length" json:"hls_playlist_length"`
+	ClientBufferMB        int    `yaml:"client_buffer_mb" json:"client_buffer_mb"`
+	TLSVerify             bool   `yaml:"tls_verify" json:"tls_verify"`
+	UserAgent             string `yaml:"useragent" json:"useragent"`
 }
 
 type Vector struct {

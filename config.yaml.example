@@ -16,10 +16,17 @@ playlist:
   name_score: 0.96
 
 streaming:
-  type: mp2t
   proxy: true
-  buffer: 1
-  retryEOS: 10
+  ingest_buffer_ms: 1500
+  startup_timeout_seconds: 12
+  stall_timeout_seconds: 10
+  idle_timeout_seconds: 45
+  retry_limit: 6
+  retry_backoff_ms: 500
+  hls_segment_seconds: 2
+  hls_playlist_length: 6
+  client_buffer_mb: 2
+  tls_verify: true
   useragent: Xivi 1.0
 
 vector:

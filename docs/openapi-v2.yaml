@@ -73,6 +73,15 @@ paths:
                   summary: { $ref: '#/components/schemas/StudioOverview' }
                   jobs: { type: array, items: { $ref: '#/components/schemas/OperationJob' } }
         default: { $ref: '#/components/responses/Error' }
+  /studio/streaming/status:
+    get:
+      operationId: getStreamingStatus
+      responses:
+        '200':
+          description: Active shared producers, viewers, failovers and backpressure metrics.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StreamingStatus' }
   /studio/guide-data/coverage:
     get:
       operationId: getGuideCoverage
@@ -892,6 +901,49 @@ components:
         unmatched_count: { type: integer, format: int64 }
         epg_coverage: { type: number, format: double }
         logo_count: { type: integer, format: int64 }
+    StreamingStatus:
+      type: object
+      required: [summary, sessions]
+      properties:
+        summary: { $ref: '#/components/schemas/StreamingSummary' }
+        sessions: { type: array, items: { $ref: '#/components/schemas/StreamingSession' } }
+    StreamingSummary:
+      type: object
+      required: [sessions, clients, reconnects, bytes_published, slow_client_drops]
+      properties:
+        sessions: { type: integer }
+        clients: { type: integer }
+        reconnects: { type: integer, format: int64 }
+        bytes_published: { type: integer, format: int64 }
+        slow_client_drops: { type: integer, format: int64 }
+    StreamingSession:
+      type: object
+      required:
+        [
+          id,
+          state,
+          source_position,
+          source_count,
+          clients,
+          reconnects,
+          bytes_published,
+          slow_client_drops,
+          started_at,
+          last_access
+        ]
+      properties:
+        id: { type: string }
+        state: { type: string, enum: [starting, running, reconnecting, failed, stopping, stopped] }
+        source_position: { type: integer }
+        source_count: { type: integer }
+        clients: { type: integer }
+        reconnects: { type: integer, format: int64 }
+        bytes_published: { type: integer, format: int64 }
+        slow_client_drops: { type: integer, format: int64 }
+        last_error: { type: string }
+        started_at: { type: string, format: date-time }
+        last_access: { type: string, format: date-time }
+        last_media_at: { type: string, format: date-time }
     CoverageSummary:
       type: object
       required:

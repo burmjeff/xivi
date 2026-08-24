@@ -100,6 +100,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/studio/streaming/status': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getStreamingStatus'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/studio/guide-data/coverage': {
 		parameters: {
 			query?: never;
@@ -908,6 +924,41 @@ export interface components {
 			/** Format: int64 */
 			logo_count: number;
 		};
+		StreamingStatus: {
+			summary: components['schemas']['StreamingSummary'];
+			sessions: components['schemas']['StreamingSession'][];
+		};
+		StreamingSummary: {
+			sessions: number;
+			clients: number;
+			/** Format: int64 */
+			reconnects: number;
+			/** Format: int64 */
+			bytes_published: number;
+			/** Format: int64 */
+			slow_client_drops: number;
+		};
+		StreamingSession: {
+			id: string;
+			/** @enum {string} */
+			state: 'starting' | 'running' | 'reconnecting' | 'failed' | 'stopping' | 'stopped';
+			source_position: number;
+			source_count: number;
+			clients: number;
+			/** Format: int64 */
+			reconnects: number;
+			/** Format: int64 */
+			bytes_published: number;
+			/** Format: int64 */
+			slow_client_drops: number;
+			last_error?: string;
+			/** Format: date-time */
+			started_at: string;
+			/** Format: date-time */
+			last_access: string;
+			/** Format: date-time */
+			last_media_at?: string;
+		};
 		CoverageSummary: {
 			/** Format: int64 */
 			epg_channel_count: number;
@@ -1157,6 +1208,26 @@ export interface operations {
 				};
 			};
 			default: components['responses']['Error'];
+		};
+	};
+	getStreamingStatus: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Active shared producers, viewers, failovers and backpressure metrics. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['StreamingStatus'];
+				};
+			};
 		};
 	};
 	getGuideCoverage: {

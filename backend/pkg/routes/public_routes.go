@@ -85,6 +85,7 @@ func PublicRoutes(a *fiber.App) {
 	// Stream Routes
 	router.Get("/stream/:stream_id", controllers.GetStream)
 	router.Get("/stream/hls/:stream_id", controllers.GetHlsStream)
+	router.Get("/stream/hls/:stream_id/:asset", controllers.GetHlsAsset)
 	api.Get("/channels/hls/:group_id", controllers.GetHlsChannels)
 
 	// Template-specific SSDP endpoints
@@ -107,10 +108,6 @@ func PublicRoutes(a *fiber.App) {
 	}))
 	router.Use("/xmltv", filesystem.New(filesystem.Config{
 		Root:   http.Dir(settings.EPG_FILEPATH),
-		Browse: false,
-	}))
-	router.Use("/stream/hls", filesystem.New(filesystem.Config{
-		Root:   http.Dir(settings.STREAM_FILEPATH),
 		Browse: false,
 	}))
 }

@@ -16,6 +16,7 @@ func V2Routes(a *fiber.App) {
 	v2.Get("/search", controllers.V2Search)
 
 	v2.Get("/studio/overview", controllers.V2StudioOverview)
+	v2.Get("/studio/streaming/status", controllers.V2StreamingStatus)
 	v2.Get("/studio/guide-data/coverage", controllers.V2StudioCoverage)
 	v2.Get("/studio/lineups", controllers.V2StudioLineups)
 	v2.Get("/studio/lineups/:lineup_id/groups", controllers.V2StudioLineupGroups)

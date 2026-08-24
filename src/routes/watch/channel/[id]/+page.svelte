@@ -29,7 +29,11 @@
 		hls: Hls | null = null,
 		loading = $state(true),
 		error = $state(''),
-		attachedUrl = '';
+		attachedUrl = '',
+		networkRetries = 0,
+		mediaRecoveries = 0,
+		retryTimer: ReturnType<typeof setTimeout> | undefined,
+		stallTimer: ReturnType<typeof setTimeout> | undefined;
 	let channelIndex = $derived(
 		(lineupQuery.data?.items ?? []).findIndex((item) => item.id === channelId)
 	);
@@ -41,6 +45,10 @@
 	);
 
 	function cleanup() {
+		if (retryTimer) clearTimeout(retryTimer);
+		if (stallTimer) clearTimeout(stallTimer);
+		retryTimer = undefined;
+		stallTimer = undefined;
 		if (hls) {
 			hls.destroy();
 			hls = null;
@@ -52,6 +60,42 @@
 		}
 		attachedUrl = '';
 	}
+	function onPlaying() {
+		loading = false;
+		error = '';
+		networkRetries = 0;
+		mediaRecoveries = 0;
+		if (stallTimer) clearTimeout(stallTimer);
+	}
+	function onWaiting() {
+		loading = true;
+		if (stallTimer) clearTimeout(stallTimer);
+		stallTimer = setTimeout(() => {
+			if (!video || video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return;
+			if (hls) hls.startLoad(-1);
+			if (video.seekable.length) {
+				const liveEdge = video.seekable.end(video.seekable.length - 1);
+				if (liveEdge - video.currentTime > 10) video.currentTime = Math.max(0, liveEdge - 3);
+			}
+		}, 2_000);
+	}
+	function scheduleNetworkRecovery(url: string) {
+		if (!hls || attachedUrl !== url) return;
+		if (networkRetries >= 5) {
+			loading = false;
+			error = 'The source stayed unavailable after several reconnect attempts.';
+			return;
+		}
+		networkRetries += 1;
+		const delay = Math.min(8_000, 500 * 2 ** (networkRetries - 1));
+		loading = true;
+		error = `Signal interrupted. Reconnecting (${networkRetries}/5)…`;
+		hls.stopLoad();
+		if (retryTimer) clearTimeout(retryTimer);
+		retryTimer = setTimeout(() => {
+			if (hls && attachedUrl === url) hls.startLoad(-1);
+		}, delay);
+	}
 	async function attach(url: string) {
 		if (!video || !url || attachedUrl === url) return;
 		cleanup();
@@ -62,16 +106,42 @@
 			video.src = url;
 			video.load();
 		} else if (Hls.isSupported()) {
-			hls = new Hls({ enableWorker: true, lowLatencyMode: true, backBufferLength: 30 });
+			hls = new Hls({
+				enableWorker: true,
+				lowLatencyMode: false,
+				backBufferLength: 15,
+				maxBufferLength: 30,
+				maxMaxBufferLength: 60,
+				liveSyncDurationCount: 3,
+				liveMaxLatencyDurationCount: 8,
+				manifestLoadingTimeOut: 10_000,
+				levelLoadingTimeOut: 10_000,
+				fragLoadingTimeOut: 15_000
+			});
 			hls.loadSource(url);
 			hls.attachMedia(video);
+			hls.on(Hls.Events.MANIFEST_PARSED, () => {
+				void video?.play().catch(() => undefined);
+			});
 			hls.on(Hls.Events.ERROR, (_event, data) => {
-				if (!data.fatal) return;
+				if (!data.fatal) {
+					if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) onWaiting();
+					return;
+				}
+				if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+					scheduleNetworkRecovery(url);
+					return;
+				}
+				if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 2) {
+					mediaRecoveries += 1;
+					loading = true;
+					error = 'The player is repairing the live signal…';
+					if (mediaRecoveries === 2) hls?.swapAudioCodec();
+					hls?.recoverMediaError();
+					return;
+				}
 				loading = false;
-				error =
-					data.type === Hls.ErrorTypes.NETWORK_ERROR
-						? 'The stream is taking too long to respond.'
-						: 'This stream could not be played.';
+				error = 'This stream could not be decoded by the browser.';
 			});
 		} else {
 			loading = false;
@@ -115,8 +185,16 @@
 						bind:this={video}
 						autoplay
 						playsinline
-						oncanplay={() => (loading = false)}
-						onwaiting={() => (loading = true)}
+						oncanplay={onPlaying}
+						onplaying={onPlaying}
+						onwaiting={onWaiting}
+						onstalled={onWaiting}
+						onerror={() => {
+							if (!hls) {
+								loading = false;
+								error = 'The native player lost the live signal. Retry to reconnect.';
+							}
+						}}
 						aria-label={`${channelQuery.data.name} live stream`}
 					></video>
 					<media-control-bar

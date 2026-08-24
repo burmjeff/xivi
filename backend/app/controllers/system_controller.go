@@ -13,11 +13,15 @@ import (
 
 // SystemStatus represents the system status response
 type SystemStatus struct {
-	Uptime      string `json:"uptime"`
-	CPU         string `json:"cpu"`
-	Memory      string `json:"memory"`
-	Connections int    `json:"connections"`
-	Timestamp   int64  `json:"timestamp"`
+	Uptime             string `json:"uptime"`
+	CPU                string `json:"cpu"`
+	Memory             string `json:"memory"`
+	Connections        int    `json:"connections"`
+	StreamSessions     int    `json:"stream_sessions"`
+	StreamReconnects   uint64 `json:"stream_reconnects"`
+	SlowClientDrops    uint64 `json:"slow_client_drops"`
+	StreamBytesProxied uint64 `json:"stream_bytes_proxied"`
+	Timestamp          int64  `json:"timestamp"`
 }
 
 // GetSystemStatus
@@ -48,15 +52,19 @@ func GetSystemStatus(c *fiber.Ctx) error {
 	}
 
 	// Get active stream connections
-	connections := getActiveConnections()
+	streamSummary := streaming.DefaultManager.Summary()
 
 	// Create system status response
 	status := SystemStatus{
-		Uptime:      uptime,
-		CPU:         cpuUsage,
-		Memory:      memoryUsage,
-		Connections: connections,
-		Timestamp:   time.Now().Unix(),
+		Uptime:             uptime,
+		CPU:                cpuUsage,
+		Memory:             memoryUsage,
+		Connections:        streamSummary.Clients,
+		StreamSessions:     streamSummary.Sessions,
+		StreamReconnects:   streamSummary.Reconnects,
+		SlowClientDrops:    streamSummary.SlowClientDrops,
+		StreamBytesProxied: streamSummary.BytesPublished,
+		Timestamp:          time.Now().Unix(),
 	}
 
 	// Return status 200 OK.
@@ -108,11 +116,4 @@ func getMemoryUsage() (string, error) {
 	usedPercent := memInfo.UsedPercent
 
 	return fmt.Sprintf("%d MB / %d MB (%.1f%%)", usedMB, totalMB, usedPercent), nil
-}
-
-// getActiveConnections returns the total number of active stream connections
-func getActiveConnections() int {
-	// For now, return the number of active streams as a proxy for connections
-	// This is a simplified approach since we can't access the private activeClients field
-	return len(streaming.Streams)
 }

@@ -1,12 +1,14 @@
 package controllers
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
-	"sync"
+	"strings"
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/pkg/streaming"
@@ -18,379 +20,197 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// streamLock provides thread-safe access to stream operations
-var streamLock sync.Mutex
-
-// streamOperationTimeout is the maximum time to wait for a stream operation to complete
 const streamOperationTimeout = 30 * time.Second
 
-type AppSettings struct {
-	Proxy      bool `json:"proxy,omitempty"`
-	Buffer     bool `json:"buffer,omitempty"`
-	BufferTime int  `json:"buffertime,omitempty"`
+func streamSources(channels []models.ChannelUrl) []string {
+	sources := make([]string, 0, len(channels))
+	for _, channel := range channels {
+		sources = append(sources, channel.Url)
+	}
+	return sources
 }
 
-// startOrderedStream tries source variants in their saved failover order when
-// a proxy pipeline cannot start. Long-running pipeline failures are still
-// handled by the streaming lifecycle, but an unavailable primary no longer
-// prevents an immediately usable backup from starting.
-func startOrderedStream(c *fiber.Ctx, streamID string, channels []models.ChannelUrl, hls bool) error {
-	var lastErr error
-	for index, candidate := range channels {
-		stream := streaming.NewStream(streamID, candidate.Url)
-		stream.HlsExists = hls
-		streaming.AddStream(stream)
-		if err := stream.StartStream(c); err == nil {
-			if index > 0 {
-				log.Warn().Int("source_position", index+1).Str("uuid", streamID).Msg("Started fallback source")
-			}
-			return nil
-		} else {
-			lastErr = err
-			log.Warn().Err(err).Int("variant_position", index+1).Str("uuid", streamID).Msg("Source variant failed during startup")
-			streaming.RemoveStream(stream)
-		}
+func acquireStreamSession(ctx context.Context, streamID string) (*streaming.Session, []models.ChannelUrl, error) {
+	channels, err := database.Db.GetChannelsbyUuid(ctx, streamID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load ordered source variants: %w", err)
 	}
-	if lastErr == nil {
-		return fmt.Errorf("no source variants are available")
+	if channels == nil || len(*channels) == 0 {
+		return nil, nil, fmt.Errorf("no streamable source variants are available")
 	}
-	return fmt.Errorf("all ordered source variants failed: %w", lastErr)
+	if !settings.APP_SETTINGS.Streaming.Proxy {
+		return nil, *channels, nil
+	}
+	session, err := streaming.DefaultManager.Acquire(ctx, streamID, streamSources(*channels))
+	if err != nil {
+		return nil, *channels, err
+	}
+	return session, *channels, nil
 }
 
-// GetStream func gets stream.
-// @Description Get stream by given UUID.
-// @Summary get stream by given UUID
-// @Tags Stream
-// @Accept json
-// @Produce octet-stream
-// @Param stream_id path string true "Stream ID"
+func streamError(c *fiber.Ctx, status int, message string, err error) error {
+	log.Error().Err(err).Str("stream_id", c.Params("stream_id")).Msg(message)
+	detail := ""
+	if err != nil {
+		detail = err.Error()
+	}
+	return c.Status(status).JSON(fiber.Map{"error": true, "msg": message, "detail": detail})
+}
+
+// GetStream returns the shared MPEG-TS transport stream for a channel UUID.
+// Every viewer receives data from a bounded Go fan-out queue, so a slow or
+// disconnected client cannot stall the one upstream GStreamer producer.
 // @Router /stream/{stream_id} [get]
 func GetStream(c *fiber.Ctx) error {
-	// Create a context with timeout for the entire operation
-	ctx, cancel := context.WithTimeout(context.Background(), streamOperationTimeout)
+	streamID := c.Params("stream_id")
+	if streamID == "" {
+		return streamError(c, fiber.StatusBadRequest, "A stream id is required.", nil)
+	}
+	ctx, cancel := context.WithTimeout(c.UserContext(), streamOperationTimeout)
 	defer cancel()
-
-	// Acquire lock to prevent concurrent stream operations
-	streamLock.Lock()
-	defer streamLock.Unlock()
-
-	// Catch stream ID from URL
-	stream_id := c.Params("stream_id")
-	if stream_id == "" {
-		log.Error().Msg("No stream ID found")
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Empty Stream UUID",
-		})
-	}
-
-	// Get channels by UUID.
-	channels, err := database.Db.GetChannelsbyUuid(ctx, stream_id)
+	session, channels, err := acquireStreamSession(ctx, streamID)
 	if err != nil {
-		log.Error().Msgf("No stream channels found: %v", err)
-		// Return, if no channels found.
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error":    true,
-			"msg":      "Stream Error",
-			"channels": nil,
-		})
+		return streamError(c, fiber.StatusBadGateway, "The stream could not start.", err)
+	}
+	if !settings.APP_SETTINGS.Streaming.Proxy {
+		return c.Redirect(channels[0].Url, http.StatusTemporaryRedirect)
 	}
 
-	if len(*channels) > 0 {
-		switch settings.APP_SETTINGS.Streaming.Proxy {
-
-		case false:
-			//TODO LOOP CHECK STREAM STATUS UNTIL 302
-			return c.Redirect((*channels)[0].Url, http.StatusTemporaryRedirect)
-
-		case true:
-			found := false
-			for _, stream := range streaming.Streams {
-				if stream.Settings.Uuid == stream_id {
-					found = true
-					stream.Mu.Lock()
-					stream.LastAccess = time.Now()
-					stream.Mu.Unlock()
-					if settings.APP_SETTINGS.Streaming.Type != "hls" {
-						if err := stream.NewMP2TSink(c); err != nil {
-							log.Error().Msgf("Failed to create MP2T sink: %v", err)
-							return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-								"error": true,
-								"msg":   fmt.Sprintf("Failed to create MP2T sink: %v", err),
-							})
-						}
-					} else if !stream.HlsExists {
-						if err := stream.CreateHlsDir(); err != nil {
-							log.Error().Msgf("Failed to create HLS directory: %v", err)
-							return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-								"error": true,
-								"msg":   err,
-							})
-						}
-						if err := stream.NewHLSSink(c); err != nil {
-							log.Error().Msgf("Failed to create HLS sink: %v", err)
-							return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-								"error": true,
-								"msg":   fmt.Sprintf("Failed to create HLS sink: %v", err),
-							})
-						}
-					}
-				}
+	subscription := session.Subscribe()
+	c.Set(fiber.HeaderContentType, "video/MP2T")
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	c.Set(fiber.HeaderConnection, "keep-alive")
+	c.Context().Response.SetBodyStreamWriter(func(writer *bufio.Writer) {
+		defer subscription.Close()
+		buffered := 0
+		lastFlush := time.Now()
+		for {
+			chunk, ok := subscription.Next()
+			if !ok {
+				_ = writer.Flush()
+				return
 			}
-			if !found {
-				if err := startOrderedStream(c, stream_id, *channels, settings.APP_SETTINGS.Streaming.Type == "hls"); err != nil {
-					log.Error().Msgf("Failed to start stream: %v", err)
-					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-						"error": true,
-						"msg":   err,
-					})
+			if _, err := writer.Write(chunk); err != nil {
+				return
+			}
+			buffered += len(chunk)
+			if buffered >= 256*1024 || time.Since(lastFlush) >= 200*time.Millisecond {
+				if err := writer.Flush(); err != nil {
+					return
 				}
+				buffered = 0
+				lastFlush = time.Now()
 			}
 		}
-	} else {
-		// Return, if no channels found.
-		log.Error().Msgf("No streams found for channel: %v", stream_id)
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Stream Error: No streamable channels found",
-		})
-	}
-
-	if settings.APP_SETTINGS.Streaming.Type == "hls" {
-		// Use the optimized waitForPlaylist function instead of manual polling
-		playlistPath := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, stream_id, "playlist.m3u8")
-		playlistTimeout := 10 * time.Second // Reduced timeout for faster response
-
-		if !waitForPlaylist(playlistPath, playlistTimeout) {
-			log.Error().Msgf("HLS playlist not found after waiting: %s", playlistPath)
-			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-				"error": true,
-				"msg":   "Stream Error: HLS playlist not found after timeout",
-			})
-		}
-		return c.SendFile(fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, stream_id, "playlist.m3u8"))
-	} else {
-		return nil
-	}
+	})
+	return nil
 }
 
-// GetHlsStream func gets an HLS stream.
-// @Description Get Hls stream by given UUID.
-// @Summary get Hls stream by given UUID
-// @Tags Stream
-// @Accept json
-// @Produce octet-stream
-// @Param stream_id path string true "Stream ID"
+// GetHlsStream starts or reuses the same producer as GetStream and returns its
+// validated live playlist. Readiness requires a non-empty segment, not merely
+// the existence of a playlist file.
 // @Router /stream/hls/{stream_id} [get]
 func GetHlsStream(c *fiber.Ctx) error {
-	// Create a context with timeout for the entire operation
-	ctx, cancel := context.WithTimeout(context.Background(), streamOperationTimeout)
+	streamID := c.Params("stream_id")
+	if streamID == "" {
+		return streamError(c, fiber.StatusBadRequest, "A stream id is required.", nil)
+	}
+	ctx, cancel := context.WithTimeout(c.UserContext(), streamOperationTimeout)
 	defer cancel()
-
-	// Acquire lock to prevent concurrent stream operations
-	streamLock.Lock()
-	defer streamLock.Unlock()
-
-	// Catch stream ID from URL
-	stream_id := c.Params("stream_id")
-	if stream_id == "" {
-		log.Error().Msg("No stream ID found")
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Empty Stream UUID",
-		})
-	}
-
-	// Get channels by UUID.
-	channels, err := database.Db.GetChannelsbyUuid(ctx, stream_id)
+	session, channels, err := acquireStreamSession(ctx, streamID)
 	if err != nil {
-		log.Error().Msgf("No stream channels found: %v", err)
-		// Return, if no channels found.
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error":    true,
-			"msg":      "Stream Error",
-			"channels": nil,
-		})
+		return streamError(c, fiber.StatusBadGateway, "The stream could not start.", err)
 	}
-
-	if len(*channels) > 0 {
-		switch settings.APP_SETTINGS.Streaming.Proxy {
-
-		case false:
-			//TODO LOOP CHECK STREAM STATUS UNTIL 302
-			return c.Redirect((*channels)[0].Url, http.StatusTemporaryRedirect)
-
-		case true:
-			found := false
-			for _, stream := range streaming.Streams {
-				if stream.Settings.Uuid == stream_id {
-					found = true
-					stream.Mu.Lock()
-					stream.LastAccess = time.Now()
-					stream.Mu.Unlock()
-					if !stream.HlsExists {
-						if err := stream.CreateHlsDir(); err != nil {
-							log.Error().Msgf("Failed to create HLS directory: %v", err)
-							return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-								"error": true,
-								"msg":   err,
-							})
-						}
-						if err := stream.NewHLSSink(c); err != nil {
-							log.Error().Msgf("Failed to create HLS sink: %v", err)
-							return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-								"error": true,
-								"msg":   fmt.Sprintf("Failed to create HLS sink: %v", err),
-							})
-						}
-					}
-				}
-			}
-			if !found {
-				if err := startOrderedStream(c, stream_id, *channels, true); err != nil {
-					log.Error().Msgf("Failed to start stream: %v", err)
-					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-						"error": true,
-						"msg":   err,
-					})
-				}
-			}
-		}
-	} else {
-		// Return, if no channels found.
-		log.Error().Msgf("No streams found for channel: %v", stream_id)
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Stream Error: No streamable channels found",
-		})
+	if !settings.APP_SETTINGS.Streaming.Proxy {
+		return c.Redirect(channels[0].Url, http.StatusTemporaryRedirect)
 	}
-
-	// Wait for the HLS playlist file to be created with a timeout
-	playlistPath := fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, stream_id, "playlist.m3u8")
-	playlistTimeout := 10 * time.Second // Reduced timeout for faster response
-
-	if !waitForPlaylist(playlistPath, playlistTimeout) {
-		log.Error().Msgf("HLS playlist not found after waiting: %s", playlistPath)
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Stream Error: HLS playlist not found after timeout",
-		})
+	if err := session.WaitHLS(ctx); err != nil {
+		return streamError(c, fiber.StatusGatewayTimeout, "The HLS playlist did not become ready.", err)
 	}
-	return c.SendFile(fmt.Sprintf("%s/%s/%s", settings.STREAM_FILEPATH, stream_id, "playlist.m3u8"))
+	return sendHLSFile(c, streamID, "playlist.m3u8")
 }
 
-// GetChannels func gets Hls channels by group.
-// @Description Get Hls channels by group.
-// @Summary get Hls channels by group.
-// @Tags Stream
-// @Accept json
-// @Produce json
-// @Param group_id path string true "Group ID"
-// @Router /channels/hls/{group_id} [get]
-func GetHlsChannels(c *fiber.Ctx) error {
-	ctx := context.Background()
-	group_id, err := strconv.ParseInt(c.Params("group_id"), 10, 64)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
+// GetHlsAsset serves only files belonging to a live managed session. This both
+// blocks path traversal/stale-file access and lets playlist/segment requests
+// keep HLS-only sessions alive until the viewer stops polling.
+func GetHlsAsset(c *fiber.Ctx) error {
+	streamID := c.Params("stream_id")
+	asset := c.Params("asset")
+	if filepath.Base(asset) != asset || (!strings.HasSuffix(asset, ".ts") && asset != "playlist.m3u8") {
+		return c.SendStatus(fiber.StatusNotFound)
 	}
-
-	// Get Template channels by group.
-	tmplChannels, err := database.Db.GetTmplChannelsByGroup(group_id)
-	if err != nil {
-		// Return, if tchannels not found.
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error":    true,
-			"msg":      "No channels found",
-			"channels": nil,
-		})
+	if !streaming.DefaultManager.Touch(streamID) {
+		return c.SendStatus(fiber.StatusNotFound)
 	}
+	return sendHLSFile(c, streamID, asset)
+}
 
-	channels := []models.LiveChannel{}
-	for _, tmplChannel := range tmplChannels {
-		if items, err := database.Db.GetTmplChannelItemsByCh(tmplChannel.ID); items != nil && len(*items) > 0 {
-			channel := models.LiveChannel{}
-			channel.ID = tmplChannel.ID
-			channel.Name = tmplChannel.Name
-
-			// Get logo.
-			logo, err := database.Db.GetLogo(ctx, tmplChannel.LogoId)
-			if err != nil {
-				log.Warn().Msgf("LiveChannel: No Logo found")
-			}
-			channel.Logo = utils.GetLogoUrl(logo.Name)
-
-			channel.Stream = fmt.Sprintf("http://%s:%d/stream/hls/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, tmplChannel.Uuid)
-
-			if tmplChannel.TvgID != nil {
-				// Get the current programme
-				if epgProgramme, err := database.Db.GetCurrentProgramme(ctx, *tmplChannel.TvgID, time.Now()); err != nil {
-					log.Warn().Msgf("LiveChannel: No EPG Programme found for tvgID: %s", *tmplChannel.TvgID)
-					channel.Programme = "No programme information"
-				} else {
-					// Use the found programme
-					channel.Programme = epgProgramme.Title.Value
-					channel.Start = epgProgramme.Start.String()
-					channel.End = epgProgramme.Stop.String()
-
-					// Get the next programme after the current one ends
-					if epgProgrammeNext, err := database.Db.GetCurrentProgramme(ctx, *tmplChannel.TvgID, epgProgramme.Stop.Time); err != nil {
-						log.Warn().Msgf("LiveChannel: No EPG Next Programme found for tvgID: %s", *tmplChannel.TvgID)
-						channel.Next = "No programme information"
-					} else {
-						channel.Next = epgProgrammeNext.Title.Value
-					}
-				}
-			}
-			channels = append(channels, channel)
-		} else {
-			log.Debug().Msgf("No Channel URL found... Not adding channel to channel list, %v", err)
-		}
+func sendHLSFile(c *fiber.Ctx, streamID, asset string) error {
+	path := filepath.Join(settings.STREAM_FILEPATH, streamID, asset)
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() || info.Size() == 0 {
+		return c.SendStatus(fiber.StatusNotFound)
 	}
+	if asset == "playlist.m3u8" {
+		c.Set(fiber.HeaderContentType, "application/vnd.apple.mpegurl")
+		c.Set(fiber.HeaderCacheControl, "no-cache, no-store, must-revalidate")
+	} else {
+		c.Set(fiber.HeaderContentType, "video/MP2T")
+		c.Set(fiber.HeaderCacheControl, "public, max-age=30, immutable")
+	}
+	return c.SendFile(path)
+}
 
-	// Return status 200 OK.
+// V2StreamingStatus exposes enough state to diagnose startup, failover, stalls
+// and slow-client eviction without relying on server logs.
+func V2StreamingStatus(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
-		"error":    false,
-		"msg":      nil,
-		"channels": channels,
+		"summary":  streaming.DefaultManager.Summary(),
+		"sessions": streaming.DefaultManager.Snapshots(),
 	})
 }
 
-// waitForPlaylist waits for the HLS playlist file to be created
-func waitForPlaylist(playlistPath string, maxWaitTime time.Duration) bool {
-	// Use a more aggressive polling interval for faster detection
-	checkInterval := 50 * time.Millisecond // Reduced from 50ms for faster detection
-	ticker := time.NewTicker(checkInterval)
-	defer ticker.Stop()
-	timeout := time.After(maxWaitTime)
-
-	// Also check immediately before entering the loop
-	if _, err := os.Stat(playlistPath); err == nil {
-		log.Debug().Msgf("HLS playlist found immediately: %s", playlistPath)
-		return true
+// GetHlsChannels gets HLS channels by legacy template group.
+// @Router /channels/hls/{group_id} [get]
+func GetHlsChannels(c *fiber.Ctx) error {
+	ctx := context.Background()
+	groupID, err := strconv.ParseInt(c.Params("group_id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": err.Error()})
 	}
 
-	for {
-		select {
-		case <-ticker.C:
-			// Reduce logging frequency to avoid log spam
-			if _, err := os.Stat(playlistPath); err == nil {
-				log.Debug().Msgf("HLS playlist found: %s", playlistPath)
+	templateChannels, err := database.Db.GetTmplChannelsByGroup(groupID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": true, "msg": "No channels found", "channels": nil})
+	}
 
-				// Verify the playlist is valid by checking its size
-				if fileInfo, err := os.Stat(playlistPath); err == nil && fileInfo.Size() > 0 {
-					return true
-				} else {
-					// File exists but is empty or can't be read, wait a bit longer
-					log.Debug().Msgf("HLS playlist found but may be incomplete, waiting a bit longer")
-					time.Sleep(50 * time.Millisecond)
-				}
-			}
-		case <-timeout:
-			log.Warn().Msgf("Timeout waiting for HLS playlist: %s", playlistPath)
-			return false
+	channels := []models.LiveChannel{}
+	for _, templateChannel := range templateChannels {
+		items, itemErr := database.Db.GetTmplChannelItemsByCh(templateChannel.ID)
+		if itemErr != nil || items == nil || len(*items) == 0 {
+			continue
 		}
+		channel := models.LiveChannel{ID: templateChannel.ID, Name: templateChannel.Name}
+		if logo, logoErr := database.Db.GetLogo(ctx, templateChannel.LogoId); logoErr == nil {
+			channel.Logo = utils.GetLogoUrl(logo.Name)
+		}
+		channel.Stream = fmt.Sprintf("http://%s:%d/stream/hls/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, templateChannel.Uuid)
+		if templateChannel.TvgID != nil {
+			if programme, programmeErr := database.Db.GetCurrentProgramme(ctx, *templateChannel.TvgID, time.Now()); programmeErr == nil {
+				channel.Programme = programme.Title.Value
+				channel.Start = programme.Start.String()
+				channel.End = programme.Stop.String()
+				if next, nextErr := database.Db.GetCurrentProgramme(ctx, *templateChannel.TvgID, programme.Stop.Time); nextErr == nil {
+					channel.Next = next.Title.Value
+				} else {
+					channel.Next = "No programme information"
+				}
+			} else {
+				channel.Programme = "No programme information"
+			}
+		}
+		channels = append(channels, channel)
 	}
+
+	return c.JSON(fiber.Map{"error": false, "msg": nil, "channels": channels})
 }

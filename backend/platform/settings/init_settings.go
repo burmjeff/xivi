@@ -13,13 +13,14 @@ import (
 )
 
 func InitSettings() error {
-	appSettings := &AppSettings{}
+	appSettings, err := SetDefaults()
+	if err != nil {
+		return err
+	}
 	config := fmt.Sprintf("%s/config.yaml", CONFIG_PATH)
 
 	if err := ValidateConfigPath(config); err != nil {
-		if appSettings, err = SetDefaults(); err != nil {
-			return err
-		}
+		// Defaults are already populated. WriteSettings below creates the file.
 	} else {
 		file, err := os.Open(config)
 		if err != nil {
@@ -105,11 +106,18 @@ func SetDefaults() (*AppSettings, error) {
 			Name_score:  0.96,
 		},
 		Streaming: Streaming{
-			Type:      "mp2t",
-			Proxy:     true,
-			Buffer:    1,
-			RetryEOS:  10,
-			UserAgent: "Xivi 1.0",
+			Proxy:                 true,
+			IngestBufferMS:        1500,
+			StartupTimeoutSeconds: 12,
+			StallTimeoutSeconds:   10,
+			IdleTimeoutSeconds:    45,
+			RetryLimit:            6,
+			RetryBackoffMS:        500,
+			HLSSegmentSeconds:     2,
+			HLSPlaylistLength:     6,
+			ClientBufferMB:        2,
+			TLSVerify:             true,
+			UserAgent:             "Xivi 1.0",
 		},
 		Vector: Vector{
 			BatchSize:       100,
