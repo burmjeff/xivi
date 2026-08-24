@@ -468,7 +468,70 @@ func (q *ExperienceQueries) GetMatchRejections(ctx context.Context, channelID in
 		r.tvg_id_norm, r.name_norm, r.created_at
 		FROM channelmatchrejection r JOIN playlist p ON p.id = r.playlist_id
 		WHERE r.channel_id = ? ORDER BY r.created_at DESC, r.id DESC LIMIT 100`, channelID)
-	return rows, err
+	if err != nil || len(rows) == 0 {
+		return rows, err
+	}
+
+	type currentRejectedSource struct {
+		ID         int64   `db:"id"`
+		Name       string  `db:"name"`
+		Title      string  `db:"title"`
+		TVGID      *string `db:"tvg_id"`
+		LogoURL    *string `db:"logo_url"`
+		PlaylistID int64   `db:"playlist_id"`
+	}
+	candidates := []currentRejectedSource{}
+	if err := q.SelectContext(ctx, &candidates, `SELECT pc.id,
+		COALESCE(NULLIF(pc.tvg_name, ''), pc.title) AS name, pc.title, pc.tvg_id,
+		pc.tvg_logo AS logo_url, pg.playlist_id
+		FROM playlistchannel pc
+		JOIN playlistgroup pg ON pg.id = pc.group_id
+		WHERE pc.enabled = true AND pg.enabled = true
+		AND EXISTS (
+			SELECT 1 FROM channelmatchrejection r
+			WHERE r.channel_id = ? AND r.playlist_id = pg.playlist_id
+		)
+		AND NOT EXISTS (
+			SELECT 1 FROM templatechannelitem attached
+			JOIN playlistchannel attached_pc ON attached_pc.id = attached.playlist_channel_id
+			JOIN playlistgroup attached_pg ON attached_pg.id = attached_pc.group_id
+			WHERE attached.channel_id = ? AND attached_pg.playlist_id = pg.playlist_id
+		)
+		ORDER BY pc.id`, channelID, channelID); err != nil {
+		return nil, err
+	}
+
+	for index := range rows {
+		matches := make([]currentRejectedSource, 0, 1)
+		for _, candidate := range candidates {
+			if candidate.PlaylistID != rows[index].PlaylistID {
+				continue
+			}
+			tvgID := ""
+			if candidate.TVGID != nil {
+				tvgID = channelmatch.NormalizeTvgID(*candidate.TVGID)
+			}
+			if (rows[index].TVGID != "" && rows[index].TVGID == tvgID) ||
+				rows[index].Name == channelmatch.ParseName(candidate.Title).Canonical {
+				matches = append(matches, candidate)
+			}
+		}
+		if len(matches) == 1 {
+			rows[index].SourceChannelID = &matches[0].ID
+			rows[index].SourceName = &matches[0].Name
+			rows[index].LogoURL = matches[0].LogoURL
+		}
+	}
+	return rows, nil
+}
+
+func (q *ExperienceQueries) DeleteMatchRejection(ctx context.Context, channelID, rejectionID int64) (bool, error) {
+	result, err := q.ExecContext(ctx, `DELETE FROM channelmatchrejection WHERE id = ? AND channel_id = ?`, rejectionID, channelID)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected > 0, err
 }
 
 func (q *ExperienceQueries) GetStudioOverview(ctx context.Context) (*models.StudioOverview, error) {

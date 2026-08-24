@@ -163,13 +163,16 @@ type MatchSuggestion struct {
 }
 
 type MatchRejection struct {
-	ID           int64     `db:"id" json:"id"`
-	ChannelID    int64     `db:"channel_id" json:"channel_id"`
-	PlaylistID   int64     `db:"playlist_id" json:"playlist_id"`
-	PlaylistName string    `db:"playlist_name" json:"playlist_name"`
-	TVGID        string    `db:"tvg_id_norm" json:"tvg_id"`
-	Name         string    `db:"name_norm" json:"name"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
+	ID              int64     `db:"id" json:"id"`
+	ChannelID       int64     `db:"channel_id" json:"channel_id"`
+	PlaylistID      int64     `db:"playlist_id" json:"playlist_id"`
+	PlaylistName    string    `db:"playlist_name" json:"playlist_name"`
+	TVGID           string    `db:"tvg_id_norm" json:"tvg_id"`
+	Name            string    `db:"name_norm" json:"name"`
+	CreatedAt       time.Time `db:"created_at" json:"created_at"`
+	SourceChannelID *int64    `json:"source_channel_id,omitempty"`
+	SourceName      *string   `json:"source_name,omitempty"`
+	LogoURL         *string   `json:"logo_url,omitempty"`
 }
 
 type StudioOverview struct {

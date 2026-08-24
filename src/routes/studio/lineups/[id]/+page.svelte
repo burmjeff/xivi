@@ -162,6 +162,7 @@
 		logoPickerOpen = $state(false),
 		editorId = $state<number | null>(null),
 		suggestionAction = $state<number | null>(null),
+		rejectionAction = $state<string | null>(null),
 		saving = $state(false);
 	let selectedLogo = $derived((logosQuery.data?.logos ?? []).find((logo) => logo.id === editLogo));
 	let matchingLogos = $derived.by(() => {
@@ -575,6 +576,40 @@
 			]);
 		} catch {
 			message = 'The source match could not be rejected.';
+		}
+	}
+	function rejectionLabel(rejection: MatchRejection) {
+		return rejection.source_name || rejection.name || rejection.tvg_id || 'Rejected source';
+	}
+	async function restoreRejection(rejection: MatchRejection, attach = false) {
+		if (!selectedChannelId || rejectionAction !== null) return;
+		const action = attach ? 'attach' : 'restore';
+		rejectionAction = `${action}:${rejection.id}`;
+		try {
+			if (attach && rejection.source_channel_id !== undefined) {
+				await api(
+					`/api/v2/studio/channels/${selectedChannelId}/matches/${rejection.source_channel_id}/accept`,
+					{ method: 'POST' }
+				);
+				message = `${rejectionLabel(rejection)} was restored and added as a locked source variant.`;
+			} else {
+				await api(`/api/v2/studio/channels/${selectedChannelId}/rejections/${rejection.id}`, {
+					method: 'DELETE'
+				});
+				message = `${rejectionLabel(rejection)} can be matched again.`;
+			}
+			await Promise.all([
+				client.invalidateQueries({ queryKey: ['studio', 'channel-variants', selectedChannelId] }),
+				client.invalidateQueries({
+					queryKey: ['studio', 'channel-suggestions', selectedChannelId]
+				}),
+				client.invalidateQueries({ queryKey: ['studio', 'channel-rejections', selectedChannelId] }),
+				refreshWorkspace()
+			]);
+		} catch (error) {
+			message = requestError(error, 'The rejected source could not be restored.');
+		} finally {
+			rejectionAction = null;
 		}
 	}
 	async function saveChannel() {
@@ -1023,11 +1058,49 @@
 							<h3><History size={15} /> Rejection history</h3>
 							<ul class="rejections">
 								{#each rejectionsQuery.data.items as rejection}<li>
-										<strong>{rejection.name || rejection.tvg_id}</strong><small
-											>{rejection.playlist_name} · {new Date(
-												rejection.created_at
-											).toLocaleDateString()}</small
-										>
+										<div class="rejection-main">
+											{#if rejection.source_channel_id !== undefined}<LogoTile
+													src={rejection.logo_url}
+													name={rejectionLabel(rejection)}
+													size="sm"
+													contrast
+												/>{:else}<span class="rejection-icon"><History size={16} /></span>{/if}
+											<span>
+												<strong>{rejectionLabel(rejection)}</strong>
+												<small
+													>{rejection.playlist_name} · {new Date(
+														rejection.created_at
+													).toLocaleDateString()}</small
+												>
+											</span>
+										</div>
+										<div class="rejection-actions">
+											<button
+												type="button"
+												disabled={rejectionAction !== null}
+												onclick={() => restoreRejection(rejection)}
+												aria-label={`Restore ${rejectionLabel(rejection)}`}
+											>
+												{#if rejectionAction === `restore:${rejection.id}`}<RefreshCw
+														size={14}
+														class="spin"
+													/>{:else}<Undo2 size={14} />{/if}
+												Restore
+											</button>
+											{#if rejection.source_channel_id !== undefined}<button
+													class="restore-add"
+													type="button"
+													disabled={rejectionAction !== null}
+													onclick={() => restoreRejection(rejection, true)}
+													aria-label={`Restore and add ${rejectionLabel(rejection)}`}
+												>
+													{#if rejectionAction === `attach:${rejection.id}`}<RefreshCw
+															size={14}
+															class="spin"
+														/>{:else}<Plus size={14} />{/if}
+													Restore & add
+												</button>{/if}
+										</div>
 									</li>{/each}
 							</ul>
 						</section>{/if}
@@ -1869,8 +1942,38 @@
 	}
 	.rejections li {
 		display: grid;
+		gap: 0.55rem;
+		border: 1px solid color-mix(in oklch, var(--error) 24%, var(--line));
 		border-left: 2px solid var(--error);
-		padding-left: 0.55rem;
+		border-radius: 0.7rem;
+		background: color-mix(in oklch, var(--error) 5%, var(--surface-raised));
+		padding: 0.55rem;
+	}
+	.rejection-main {
+		display: flex;
+		min-width: 0;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.rejection-main > span:not(.rejection-icon) {
+		display: grid;
+		min-width: 0;
+	}
+	.rejection-main strong,
+	.rejection-main small {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.rejection-icon {
+		display: grid;
+		width: 2.3rem;
+		height: 2.3rem;
+		flex: none;
+		place-items: center;
+		border-radius: 0.65rem;
+		background: color-mix(in oklch, var(--error) 12%, var(--surface-raised));
+		color: var(--error);
 	}
 	.rejections strong {
 		font-size: 0.66rem;
@@ -1878,6 +1981,47 @@
 	.rejections small {
 		color: var(--muted);
 		font-size: 0.58rem;
+	}
+	.rejection-actions {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.4rem;
+	}
+	.rejection-actions > button {
+		display: flex;
+		min-width: 0;
+		min-height: 2.75rem;
+		align-items: center;
+		justify-content: center;
+		gap: 0.3rem;
+		border: 1px solid var(--line);
+		border-radius: 0.6rem;
+		background: var(--surface-raised);
+		padding: 0 0.45rem;
+		color: var(--text);
+		font-size: 0.58rem;
+		font-weight: 800;
+		cursor: pointer;
+	}
+	.rejection-actions > button:only-child {
+		grid-column: 1 / -1;
+	}
+	.rejection-actions > button:hover {
+		border-color: color-mix(in oklch, var(--aqua) 50%, var(--line));
+		color: var(--aqua);
+	}
+	.rejection-actions > button.restore-add {
+		border-color: color-mix(in oklch, var(--aqua) 42%, var(--line));
+		background: color-mix(in oklch, var(--aqua) 11%, var(--surface-raised));
+		color: var(--aqua);
+	}
+	.rejection-actions > button.restore-add:hover {
+		background: var(--aqua);
+		color: var(--ink);
+	}
+	.rejection-actions > button:disabled {
+		opacity: 0.5;
+		cursor: wait;
 	}
 	.danger-zone button {
 		display: flex;

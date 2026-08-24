@@ -483,6 +483,25 @@ func V2StudioMatchRejections(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"items": items, "next_cursor": nil, "total": len(items)})
 }
 
+func V2DeleteStudioMatchRejection(c *fiber.Ctx) error {
+	channelID, err := parseID(c, "channel_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_channel", "The channel id is invalid.", false)
+	}
+	rejectionID, err := parseID(c, "rejection_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_rejection", "The rejection id is invalid.", false)
+	}
+	deleted, err := database.Db.DeleteMatchRejection(c.UserContext(), channelID, rejectionID)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "restore_failed", "The rejected source could not be restored.", true)
+	}
+	if !deleted {
+		return v2Error(c, fiber.StatusNotFound, "rejection_not_found", "That rejected source was not found.", false)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
 func V2StudioMatchSuggestions(c *fiber.Ctx) error {
 	channelID, err := parseID(c, "channel_id")
 	if err != nil {

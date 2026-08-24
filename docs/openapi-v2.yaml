@@ -399,6 +399,18 @@ paths:
           content:
             { application/json: { schema: { $ref: '#/components/schemas/MatchRejectionPage' } } }
         default: { $ref: '#/components/responses/Error' }
+  /studio/channels/{channel_id}/rejections/{rejection_id}:
+    delete:
+      operationId: restoreChannelMatchRejection
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+        - name: rejection_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '204': { description: Rejection removed; the source is eligible for matching again. }
+        default: { $ref: '#/components/responses/Error' }
   /studio/channels/{channel_id}/matches/{source_channel_id}/accept:
     post:
       operationId: acceptChannelMatch
@@ -780,6 +792,12 @@ components:
         tvg_id: { type: string }
         name: { type: string }
         created_at: { type: string, format: date-time }
+        source_channel_id:
+          type: integer
+          format: int64
+          description: Current eligible source when the stable rejection identity resolves uniquely.
+        source_name: { type: string }
+        logo_url: { type: string }
     StudioOverview:
       type: object
       required:

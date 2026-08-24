@@ -452,6 +452,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/studio/channels/{channel_id}/rejections/{rejection_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['restoreChannelMatchRejection'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/studio/channels/{channel_id}/matches/{source_channel_id}/accept': {
 		parameters: {
 			query?: never;
@@ -818,6 +834,13 @@ export interface components {
 			name: string;
 			/** Format: date-time */
 			created_at: string;
+			/**
+			 * Format: int64
+			 * @description Current eligible source when the stable rejection identity resolves uniquely.
+			 */
+			source_channel_id?: number;
+			source_name?: string;
+			logo_url?: string;
 		};
 		StudioOverview: {
 			/** Format: int64 */
@@ -1713,6 +1736,28 @@ export interface operations {
 				content: {
 					'application/json': components['schemas']['MatchRejectionPage'];
 				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	restoreChannelMatchRejection: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				channel_id: components['parameters']['ChannelId'];
+				rejection_id: number;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Rejection removed; the source is eligible for matching again. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
 			};
 			default: components['responses']['Error'];
 		};

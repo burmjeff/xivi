@@ -177,6 +177,61 @@ func TestGetMatchSuggestionsRequiresExistingChannel(t *testing.T) {
 	}
 }
 
+func TestMatchRejectionRestoreResolvesOnlyUniqueEligibleSource(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO playlist VALUES
+		(1, 'Resolvable', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+		(2, 'Ambiguous', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+		(3, 'Already represented', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES
+		(10, 'News', 1, 1), (20, 'News', 2, 1), (30, 'News', 3, 1)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES
+		(100, 'alpha.tv', 'Alpha', 'https://logos.test/alpha.png', 'Alpha', 10, 1),
+		(200, 'beta.tv', 'Beta one', NULL, 'Beta', 20, 1),
+		(201, 'beta.tv', 'Beta two', NULL, 'Beta', 20, 1),
+		(300, 'gamma.tv', 'Gamma', NULL, 'Gamma', 30, 1)`)
+	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'Target', NULL, 0, 'target')`)
+	db.MustExec(`INSERT INTO templatechannelitem VALUES (1, 1, 300, 1, 'manual', 1, NULL, 2, 1)`)
+	db.MustExec(`INSERT INTO channelmatchrejection (id, channel_id, playlist_id, tvg_id_norm, name_norm) VALUES
+		(1, 1, 1, 'alpha.tv', 'alpha'),
+		(2, 1, 2, 'beta.tv', 'beta'),
+		(3, 1, 3, 'gamma.tv', 'gamma')`)
+
+	query := NewExperienceQueries(db)
+	rejections, err := query.GetMatchRejections(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("GetMatchRejections failed: %v", err)
+	}
+	if len(rejections) != 3 {
+		t.Fatalf("expected three rejections, got %#v", rejections)
+	}
+	byID := make(map[int64]models.MatchRejection, len(rejections))
+	for _, rejection := range rejections {
+		byID[rejection.ID] = rejection
+	}
+	if byID[1].SourceChannelID == nil || *byID[1].SourceChannelID != 100 || byID[1].SourceName == nil || *byID[1].SourceName != "Alpha" {
+		t.Fatalf("unique current source was not resolved: %#v", byID[1])
+	}
+	if byID[1].LogoURL == nil || *byID[1].LogoURL != "https://logos.test/alpha.png" {
+		t.Fatalf("resolved source logo was not preserved: %#v", byID[1])
+	}
+	if byID[2].SourceChannelID != nil {
+		t.Fatalf("ambiguous source should not be attachable: %#v", byID[2])
+	}
+	if byID[3].SourceChannelID != nil {
+		t.Fatalf("represented playlist should not be attachable: %#v", byID[3])
+	}
+
+	deleted, err := query.DeleteMatchRejection(context.Background(), 1, 1)
+	if err != nil || !deleted {
+		t.Fatalf("DeleteMatchRejection failed: deleted=%v err=%v", deleted, err)
+	}
+	deleted, err = query.DeleteMatchRejection(context.Background(), 1, 1)
+	if err != nil || deleted {
+		t.Fatalf("repeated restore should report not found: deleted=%v err=%v", deleted, err)
+	}
+}
+
 func TestMoveWorkspaceChannelRequiresOneAnchor(t *testing.T) {
 	db := newExperienceTestDB(t)
 	query := NewExperienceQueries(db)
