@@ -135,11 +135,11 @@
 	}
 	.hero {
 		display: grid;
-		min-height: 29rem;
+		min-height: 22rem;
 		grid-template-columns: 1.25fr 0.75fr;
-		align-items: end;
+		align-items: center;
 		gap: 3rem;
-		padding: clamp(3rem, 8vw, 7rem) clamp(1rem, 5vw, 5rem) 3rem;
+		padding: clamp(2rem, 4vw, 3.5rem) clamp(1rem, 5vw, 5rem);
 		background: linear-gradient(
 			135deg,
 			color-mix(in oklch, var(--periwinkle) 34%, var(--deep)) 0 46%,
@@ -285,10 +285,11 @@
 	}
 	@media (max-width: 760px) {
 		.hero {
-			min-height: 32rem;
+			min-height: 0;
 			grid-template-columns: 1fr;
-			align-content: end;
-			gap: 2rem;
+			align-content: initial;
+			gap: 1.5rem;
+			padding-block: clamp(2rem, 9vw, 3rem);
 			background: linear-gradient(
 				155deg,
 				color-mix(in oklch, var(--periwinkle) 38%, var(--deep)) 0 57%,
