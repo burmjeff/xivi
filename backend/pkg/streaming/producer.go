@@ -326,110 +326,121 @@ func (p *gstProducer) routeTransportPad(pad *gst.Pad, mux *gst.Element) error {
 func (p *gstProducer) routeElementaryPad(pad *gst.Pad, capsString string, mux *gst.Element) error {
 	p.rememberMediaTrack(capsString)
 	p.graphMu.Lock()
-	defer p.graphMu.Unlock()
 	if p.stopping.Load() {
+		p.graphMu.Unlock()
 		return nil
 	}
 	parserName, media, ok := parserForCaps(capsString)
 	if !ok {
+		p.graphMu.Unlock()
 		log.Warn().Str("stream_id", p.id).Str("caps", capsString).Msg("Ignoring unsupported source media track")
 		return nil
 	}
 	p.routeMu.Lock()
 	if p.routed[media] {
 		p.routeMu.Unlock()
+		p.graphMu.Unlock()
 		return nil
 	}
 	p.routed[media] = true
 	p.routeMu.Unlock()
-	if err := p.routePadToMux(pad, parserName, capsString, media, mux); err != nil {
+	elements, err := p.routePadToMux(pad, parserName, capsString, media, mux)
+	if err != nil {
 		p.routeMu.Lock()
 		delete(p.routed, media)
 		p.routeMu.Unlock()
+		p.graphMu.Unlock()
 		return err
+	}
+	// Syncing a dynamically-added element can execute streaming work. Do not
+	// hold graphMu across it: teardown also needs that lock before moving the
+	// pipeline to NULL, and waiting on each other leaves a session in stopping.
+	p.graphMu.Unlock()
+	for _, element := range elements {
+		if p.stopping.Load() {
+			return nil
+		}
+		element.SyncStateWithParent()
 	}
 	return nil
 }
 
-func (p *gstProducer) routePadToMux(pad *gst.Pad, parserName, capsString, media string, mux *gst.Element) error {
+func (p *gstProducer) routePadToMux(pad *gst.Pad, parserName, capsString, media string, mux *gst.Element) ([]*gst.Element, error) {
 	parser, err := gst.NewElement(parserName)
 	if err != nil {
-		return fmt.Errorf("create %s: %w", parserName, err)
+		return nil, fmt.Errorf("create %s: %w", parserName, err)
 	}
 	configureStreamParser(parser, parserName)
 	queue, err := gst.NewElement("queue")
 	if err != nil {
-		return fmt.Errorf("create adaptive track queue: %w", err)
+		return nil, fmt.Errorf("create adaptive track queue: %w", err)
 	}
 	_ = queue.Set("max-size-time", uint64(3*time.Second))
 	_ = queue.Set("max-size-bytes", uint(0))
 	_ = queue.Set("max-size-buffers", uint(0))
 	tee, err := gst.NewElement("tee")
 	if err != nil {
-		return fmt.Errorf("create %s output tee: %w", media, err)
+		return nil, fmt.Errorf("create %s output tee: %w", media, err)
 	}
+	elements := []*gst.Element{}
 	p.pipeline.Add(parser)
 	p.pipeline.Add(tee)
 	p.pipeline.Add(queue)
 	if result := pad.Link(parser.GetStaticPad("sink")); result != gst.PadLinkOK {
-		return fmt.Errorf("link adaptive track to %s: %s", parserName, result.String())
+		return nil, fmt.Errorf("link adaptive track to %s: %s", parserName, result.String())
 	}
 	if err := parser.Link(tee); err != nil {
-		return fmt.Errorf("link %s to shared track outputs: %w", parserName, err)
+		return nil, fmt.Errorf("link %s to shared track outputs: %w", parserName, err)
 	}
 	if err := tee.Link(queue); err != nil {
-		return fmt.Errorf("link %s to transport queue: %w", parserName, err)
+		return nil, fmt.Errorf("link %s to transport queue: %w", parserName, err)
 	}
 	muxPad := mux.GetRequestPad("sink_%d")
 	if muxPad == nil {
-		return errors.New("request adaptive muxer input pad")
+		return nil, errors.New("request adaptive muxer input pad")
 	}
 	if result := queue.GetStaticPad("src").Link(muxPad); result != gst.PadLinkOK {
-		return fmt.Errorf("link adaptive queue to MPEG-TS muxer: %s", result.String())
+		return nil, fmt.Errorf("link adaptive queue to MPEG-TS muxer: %s", result.String())
 	}
 	if p.hlsSink != nil {
 		hlsQueue, queueErr := gst.NewElement("queue")
 		if queueErr != nil {
-			return fmt.Errorf("create %s HLS queue: %w", media, queueErr)
+			return nil, fmt.Errorf("create %s HLS queue: %w", media, queueErr)
 		}
 		_ = hlsQueue.Set("max-size-time", uint64(10*time.Second))
 		_ = hlsQueue.Set("max-size-bytes", uint(0))
 		_ = hlsQueue.Set("max-size-buffers", uint(0))
 		p.pipeline.Add(hlsQueue)
 		if err := tee.Link(hlsQueue); err != nil {
-			return fmt.Errorf("link %s to HLS queue: %w", media, err)
+			return nil, fmt.Errorf("link %s to HLS queue: %w", media, err)
 		}
 		hlsTail := hlsQueue
 		compatibility, action, compatibilityErr := p.hlsCompatibilityChain(parserName, capsString)
 		if compatibilityErr != nil {
-			return compatibilityErr
+			return nil, compatibilityErr
 		}
 		for _, element := range compatibility {
 			p.pipeline.Add(element)
 			if err := hlsTail.Link(element); err != nil {
-				return fmt.Errorf("link %s HLS compatibility pipeline: %w", media, err)
+				return nil, fmt.Errorf("link %s HLS compatibility pipeline: %w", media, err)
 			}
 			hlsTail = element
 		}
 		hlsPad := p.hlsSink.GetRequestPad(media)
 		if hlsPad == nil {
-			return fmt.Errorf("request HLS %s input pad", media)
+			return nil, fmt.Errorf("request HLS %s input pad", media)
 		}
 		if result := hlsTail.GetStaticPad("src").Link(hlsPad); result != gst.PadLinkOK {
-			return fmt.Errorf("link %s to HLS segmenter: %s", media, result.String())
+			return nil, fmt.Errorf("link %s to HLS segmenter: %s", media, result.String())
 		}
-		hlsQueue.SyncStateWithParent()
-		for _, element := range compatibility {
-			element.SyncStateWithParent()
-		}
+		elements = append(elements, hlsQueue)
+		elements = append(elements, compatibility...)
 		if action != "" {
 			p.rememberCompatibilityAction(action)
 		}
 	}
-	parser.SyncStateWithParent()
-	tee.SyncStateWithParent()
-	queue.SyncStateWithParent()
-	return nil
+	elements = append(elements, parser, tee, queue)
+	return elements, nil
 }
 
 // hlsCompatibilityChain preserves the original elementary stream for the
@@ -753,8 +764,22 @@ func (p *gstProducer) Stop() {
 		p.stopping.Store(true)
 		p.lifecycle.Lock()
 		p.lifecycle.Unlock()
-		p.graphMu.Lock()
-		defer p.graphMu.Unlock()
+		graphLocked := false
+		deadline := time.Now().Add(500 * time.Millisecond)
+		for !graphLocked && time.Now().Before(deadline) {
+			graphLocked = p.graphMu.TryLock()
+			if !graphLocked {
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+		if graphLocked {
+			defer p.graphMu.Unlock()
+		} else {
+			// A dynamic-pad callback must never prevent shutdown indefinitely.
+			// The session-level cleanup watchdog keeps the source lease reserved
+			// until this producer actually returns.
+			log.Warn().Str("stream_id", p.id).Msg("Stopping pipeline without graph lock after cleanup deadline")
+		}
 		p.mu.Lock()
 		pipeline := p.pipeline
 		p.mu.Unlock()

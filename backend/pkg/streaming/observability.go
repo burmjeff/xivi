@@ -107,6 +107,8 @@ func ClassifyError(err error) (code string, retryable bool) {
 	}
 	message := strings.ToLower(err.Error())
 	switch {
+	case strings.Contains(message, "producer cleanup"):
+		return "producer_cleanup_timeout", false
 	case strings.Contains(message, "no such host"), strings.Contains(message, "server misbehaving"), strings.Contains(message, "lookup"):
 		return "dns_failure", true
 	case strings.Contains(message, "connection refused"):

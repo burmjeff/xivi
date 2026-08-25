@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -116,6 +117,11 @@ func GetStream(c *fiber.Ctx) error {
 		if session != nil {
 			incidentID = session.IncidentID()
 		}
+		if errors.Is(err, streaming.ErrSessionStopping) {
+			c.Set(fiber.HeaderRetryAfter, "1")
+			return streamErrorForSession(c, fiber.StatusServiceUnavailable,
+				"The previous stream is still stopping; retry shortly.", err, incidentID)
+		}
 		return streamErrorForSession(c, fiber.StatusBadGateway, "The stream could not start.", err, incidentID)
 	}
 	if !settings.APP_SETTINGS.Streaming.Proxy {
@@ -123,7 +129,11 @@ func GetStream(c *fiber.Ctx) error {
 	}
 
 	subscription := session.Subscribe()
-	clientID, _ := session.RegisterClient(streamClientMetadata(c, "mpegts", ""), subscription.Close)
+	clientID, allowed := session.RegisterClient(streamClientMetadata(c, "mpegts", ""), subscription.Close)
+	if !allowed {
+		subscription.Close()
+		return c.SendStatus(fiber.StatusGone)
+	}
 	c.Set("X-Xivi-Incident-ID", session.IncidentID())
 	c.Set("X-Xivi-Connection-ID", clientID)
 	c.Set(fiber.HeaderContentType, "video/MP2T")
@@ -178,6 +188,11 @@ func GetHlsStream(c *fiber.Ctx) error {
 		incidentID := ""
 		if session != nil {
 			incidentID = session.IncidentID()
+		}
+		if errors.Is(err, streaming.ErrSessionStopping) {
+			c.Set(fiber.HeaderRetryAfter, "1")
+			return streamErrorForSession(c, fiber.StatusServiceUnavailable,
+				"The previous stream is still stopping; retry shortly.", err, incidentID)
 		}
 		return streamErrorForSession(c, fiber.StatusBadGateway, "The stream could not start.", err, incidentID)
 	}
@@ -402,7 +417,7 @@ func V2StopStream(c *fiber.Ctx) error {
 	if !streaming.DefaultManager.StopManual(c.Params("stream_id")) {
 		return v2Error(c, fiber.StatusNotFound, "stream_not_found", "That stream is no longer active.", false)
 	}
-	return c.SendStatus(fiber.StatusNoContent)
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"status": "stop_requested"})
 }
 
 func V2FailoverStream(c *fiber.Ctx) error {

@@ -1,17 +1,87 @@
 package controllers
 
 import (
+	"context"
 	"io"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"xivi/backend/pkg/streaming"
 	"xivi/backend/platform/settings"
 
 	"github.com/gofiber/fiber/v2"
 )
+
+type blockingControllerProducer struct {
+	ready    chan struct{}
+	hlsReady chan struct{}
+	errors   chan error
+	release  chan struct{}
+	once     sync.Once
+}
+
+func newBlockingControllerProducer() *blockingControllerProducer {
+	ready := make(chan struct{})
+	close(ready)
+	hlsReady := make(chan struct{})
+	close(hlsReady)
+	return &blockingControllerProducer{ready: ready, hlsReady: hlsReady, errors: make(chan error, 1), release: make(chan struct{})}
+}
+
+func (p *blockingControllerProducer) Start() error              { return nil }
+func (p *blockingControllerProducer) Ready() <-chan struct{}    { return p.ready }
+func (p *blockingControllerProducer) HLSReady() <-chan struct{} { return p.hlsReady }
+func (p *blockingControllerProducer) Errors() <-chan error      { return p.errors }
+func (p *blockingControllerProducer) LastDataAt() time.Time     { return time.Now() }
+func (p *blockingControllerProducer) Stop()                     { <-p.release }
+
+func TestV2StopStreamAcknowledgesBeforeProducerCleanupCompletes(t *testing.T) {
+	producer := newBlockingControllerProducer()
+	streamRoot := t.TempDir()
+	manager := streaming.NewManager(func(id, source string, generation uint64, config streaming.Config, hub *streaming.Hub) streaming.Producer {
+		return producer
+	}, func() streaming.Config {
+		return streaming.Config{StreamRoot: streamRoot, StartupTimeout: 3 * time.Second, CleanupTimeout: time.Second}
+	})
+	previousManager := streaming.DefaultManager
+	streaming.DefaultManager = manager
+	t.Cleanup(func() {
+		producer.once.Do(func() { close(producer.release) })
+		manager.Close()
+		streaming.DefaultManager = previousManager
+	})
+	if _, err := manager.Acquire(context.Background(), "controller-stop", []string{"https://example.test/live.ts"}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := fiber.New()
+	app.Delete("/api/v2/studio/streams/:stream_id", V2StopStream)
+	started := time.Now()
+	response, err := app.Test(httptest.NewRequest("DELETE", "/api/v2/studio/streams/controller-stop", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
+		t.Fatalf("stop endpoint waited for producer cleanup for %s", elapsed)
+	}
+	if response.StatusCode != fiber.StatusAccepted {
+		t.Fatalf("stop endpoint status = %d, want %d", response.StatusCode, fiber.StatusAccepted)
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"status":"stop_requested"`) {
+		t.Fatalf("unexpected stop response: %s", body)
+	}
+	producer.once.Do(func() { close(producer.release) })
+}
 
 func TestSendHLSPlaylistUsesUncachedStableSnapshot(t *testing.T) {
 	root := t.TempDir()

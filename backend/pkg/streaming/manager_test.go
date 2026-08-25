@@ -36,6 +36,67 @@ func (p *fakeProducer) Errors() <-chan error      { return p.errors }
 func (p *fakeProducer) Stop()                     { p.stops.Add(1) }
 func (p *fakeProducer) LastDataAt() time.Time     { return time.Now() }
 
+type blockingStopProducer struct {
+	ready       chan struct{}
+	hlsReady    chan struct{}
+	errors      chan error
+	stopStarted chan struct{}
+	releaseStop chan struct{}
+	stopOnce    sync.Once
+}
+
+type blockingLifecycleProducer struct {
+	ready       chan struct{}
+	hlsReady    chan struct{}
+	errors      chan error
+	startCalled chan struct{}
+	stopCalled  chan struct{}
+	release     chan struct{}
+	startOnce   sync.Once
+	stopOnce    sync.Once
+}
+
+func newBlockingLifecycleProducer() *blockingLifecycleProducer {
+	return &blockingLifecycleProducer{ready: make(chan struct{}), hlsReady: make(chan struct{}),
+		errors: make(chan error, 1), startCalled: make(chan struct{}), stopCalled: make(chan struct{}),
+		release: make(chan struct{})}
+}
+
+func (p *blockingLifecycleProducer) Start() error {
+	p.startOnce.Do(func() { close(p.startCalled) })
+	<-p.release
+	return nil
+}
+func (p *blockingLifecycleProducer) Ready() <-chan struct{}    { return p.ready }
+func (p *blockingLifecycleProducer) HLSReady() <-chan struct{} { return p.hlsReady }
+func (p *blockingLifecycleProducer) Errors() <-chan error      { return p.errors }
+func (p *blockingLifecycleProducer) LastDataAt() time.Time     { return time.Time{} }
+func (p *blockingLifecycleProducer) Stop() {
+	p.stopOnce.Do(func() { close(p.stopCalled) })
+	<-p.release
+}
+
+func newBlockingStopProducer() *blockingStopProducer {
+	ready := make(chan struct{})
+	close(ready)
+	hlsReady := make(chan struct{})
+	close(hlsReady)
+	return &blockingStopProducer{ready: ready, hlsReady: hlsReady, errors: make(chan error, 1),
+		stopStarted: make(chan struct{}), releaseStop: make(chan struct{})}
+}
+
+func (p *blockingStopProducer) Start() error              { return nil }
+func (p *blockingStopProducer) Ready() <-chan struct{}    { return p.ready }
+func (p *blockingStopProducer) HLSReady() <-chan struct{} { return p.hlsReady }
+func (p *blockingStopProducer) Errors() <-chan error      { return p.errors }
+func (p *blockingStopProducer) LastDataAt() time.Time     { return time.Now() }
+func (p *blockingStopProducer) Stop() {
+	p.stopOnce.Do(func() {
+		close(p.stopStarted)
+		<-p.releaseStop
+	})
+}
+
 func testConfig(root string) Config {
 	return Config{
 		StartupTimeout:    3 * time.Second,
@@ -187,6 +248,191 @@ func TestManagerStopRemovesSessionFilesAndProducer(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "channel-cleanup")); !os.IsNotExist(err) {
 		t.Fatalf("session files remained after cleanup: %v", err)
+	}
+}
+
+func TestManualStopImmediatelyClosesViewersAndRejectsLateClients(t *testing.T) {
+	config := testConfig(t.TempDir())
+	config.CleanupTimeout = time.Second
+	producer := newBlockingStopProducer()
+	manager := NewManager(func(id, source string, generation uint64, config Config, hub *Hub) Producer {
+		return producer
+	}, func() Config { return config })
+	var releaseOnce sync.Once
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(producer.releaseStop) })
+		manager.Close()
+	})
+
+	session, err := manager.Acquire(context.Background(), "manual-stop", []string{"https://example.com/live.ts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	subscription := session.Subscribe()
+	if _, allowed := session.RegisterClient(ClientMetadata{ID: "viewer", Protocol: "mpegts"}, subscription.Close); !allowed {
+		t.Fatal("initial viewer was rejected")
+	}
+
+	started := time.Now()
+	if !manager.StopManual("manual-stop") {
+		t.Fatal("manual stop was not accepted")
+	}
+	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
+		t.Fatalf("manual stop blocked on producer cleanup for %s", elapsed)
+	}
+	if snapshot := session.Snapshot(); snapshot.State != StateStopping || snapshot.Clients != 0 {
+		t.Fatalf("manual stop did not immediately close viewers: %#v", snapshot)
+	}
+	if _, ok := subscription.Next(); ok {
+		t.Fatal("downstream subscription remained open during producer cleanup")
+	}
+	if _, allowed := session.RegisterClient(ClientMetadata{ID: "late-viewer", Protocol: "mpegts"}, nil); allowed {
+		t.Fatal("stopping session accepted a late viewer")
+	}
+	if _, err := manager.Acquire(context.Background(), "manual-stop", []string{"https://example.com/live.ts"}); !errors.Is(err, ErrSessionStopping) {
+		t.Fatalf("stopping session was reused: %v", err)
+	}
+
+	select {
+	case <-producer.stopStarted:
+	case <-time.After(time.Second):
+		t.Fatal("producer cleanup did not begin")
+	}
+	releaseOnce.Do(func() { close(producer.releaseStop) })
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && manager.Summary().Sessions != 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if manager.Summary().Sessions != 0 {
+		t.Fatal("stopped session remained registered after producer cleanup")
+	}
+}
+
+func TestProducerCleanupWatchdogRemovesSessionButReservesSourceCapacity(t *testing.T) {
+	config := testConfig(t.TempDir())
+	config.CleanupTimeout = 40 * time.Millisecond
+	producer := newBlockingStopProducer()
+	manager := NewManager(func(id, source string, generation uint64, config Config, hub *Hub) Producer {
+		return producer
+	}, func() Config { return config })
+	var releaseOnce sync.Once
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(producer.releaseStop) })
+		manager.Close()
+	})
+	source := Source{URL: "https://provider.example/live.ts", PoolID: 22, PoolName: "Provider", ConnectionLimit: 1}
+	if _, err := manager.AcquireSources(context.Background(), "cleanup-watchdog", []Source{source}); err != nil {
+		t.Fatal(err)
+	}
+	if !manager.StopManual("cleanup-watchdog") {
+		t.Fatal("manual stop was not accepted")
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && manager.Summary().Sessions != 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if manager.Summary().Sessions != 0 {
+		t.Fatal("cleanup watchdog left the session stuck in stopping")
+	}
+	usage := manager.ConnectionUsage()
+	if len(usage) != 1 || usage[0].Active != 1 {
+		t.Fatalf("blocked producer released source capacity prematurely: %#v", usage)
+	}
+
+	releaseOnce.Do(func() { close(producer.releaseStop) })
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && len(manager.ConnectionUsage()) != 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if usage := manager.ConnectionUsage(); len(usage) != 0 {
+		t.Fatalf("source capacity was not released after delayed cleanup: %#v", usage)
+	}
+}
+
+func TestManualStopCanCancelBlockedProducerStartup(t *testing.T) {
+	config := testConfig(t.TempDir())
+	config.CleanupTimeout = 40 * time.Millisecond
+	producer := newBlockingLifecycleProducer()
+	manager := NewManager(func(id, source string, generation uint64, config Config, hub *Hub) Producer {
+		return producer
+	}, func() Config { return config })
+	var releaseOnce sync.Once
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(producer.release) })
+		manager.Close()
+	})
+	source := Source{URL: "https://provider.example/start.ts", PoolID: 23, PoolName: "Provider", ConnectionLimit: 1}
+	acquireDone := make(chan error, 1)
+	go func() {
+		_, err := manager.AcquireSources(context.Background(), "blocked-startup", []Source{source})
+		acquireDone <- err
+	}()
+	select {
+	case <-producer.startCalled:
+	case <-time.After(time.Second):
+		t.Fatal("producer startup did not begin")
+	}
+	if !manager.StopManual("blocked-startup") {
+		t.Fatal("manual stop was not accepted during startup")
+	}
+	select {
+	case <-producer.stopCalled:
+	case <-time.After(time.Second):
+		t.Fatal("producer cleanup did not begin after startup cancellation")
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && manager.Summary().Sessions != 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if manager.Summary().Sessions != 0 {
+		t.Fatal("blocked startup left the session stuck in stopping")
+	}
+	if usage := manager.ConnectionUsage(); len(usage) != 1 || usage[0].Active != 1 {
+		t.Fatalf("blocked startup released source capacity prematurely: %#v", usage)
+	}
+	select {
+	case err := <-acquireDone:
+		if err == nil {
+			t.Fatal("cancelled startup unexpectedly succeeded")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("acquire request remained blocked after cleanup watchdog")
+	}
+
+	releaseOnce.Do(func() { close(producer.release) })
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && len(manager.ConnectionUsage()) != 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if usage := manager.ConnectionUsage(); len(usage) != 0 {
+		t.Fatalf("startup lease was not released after delayed cleanup: %#v", usage)
+	}
+}
+
+func TestMPEGTSViewerExpiresWhenNoMediaCanDetectDisconnect(t *testing.T) {
+	config := testConfig(t.TempDir())
+	manager := NewManager(func(id, source string, generation uint64, config Config, hub *Hub) Producer {
+		return newReadyFake()
+	}, func() Config { return config })
+	t.Cleanup(manager.Close)
+	session, err := manager.Acquire(context.Background(), "viewer-timeout", []string{"https://example.com/live.ts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	subscription := session.Subscribe()
+	if _, allowed := session.RegisterClient(ClientMetadata{ID: "stale-mpegts", Protocol: "mpegts"}, subscription.Close); !allowed {
+		t.Fatal("viewer registration failed")
+	}
+	now := time.Now()
+	session.mu.Lock()
+	session.clients["stale-mpegts"].lastSeenAt = now.Add(-minimumClientTimeout - time.Second)
+	session.mu.Unlock()
+	session.sample(now)
+	if snapshot := session.Snapshot(); snapshot.Clients != 0 {
+		t.Fatalf("stale MPEG-TS viewer remained active: %#v", snapshot.ClientDetails)
+	}
+	if _, ok := subscription.Next(); ok {
+		t.Fatal("stale MPEG-TS subscription was not cancelled")
 	}
 }
 

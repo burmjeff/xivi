@@ -18,6 +18,7 @@ func TestClassifyErrorProvidesActionableCodes(t *testing.T) {
 		"missing MPEG-TS PAT":                                "invalid_transport_stream",
 		"HLS playlist has no segment":                        "hls_not_ready",
 		"media stalled":                                      "media_stalled",
+		"stream producer cleanup timed out after 6s":         "producer_cleanup_timeout",
 	}
 	for message, expected := range cases {
 		code, _ := ClassifyError(errors.New(message))
@@ -61,6 +62,49 @@ func TestSessionTracksAndTerminatesLogicalClients(t *testing.T) {
 	}
 	if _, allowed := session.RegisterClient(ClientMetadata{ID: clientID, Protocol: "hls"}, nil); allowed {
 		t.Fatal("manually terminated HLS viewer was allowed to resume")
+	}
+}
+
+func TestStreamSnapshotsHaveStableOperationalOrdering(t *testing.T) {
+	config := testConfig(t.TempDir())
+	manager := NewManager(func(id, source string, generation uint64, config Config, hub *Hub) Producer {
+		return newReadyFake()
+	}, func() Config { return config })
+	t.Cleanup(manager.Close)
+	older, err := manager.Acquire(context.Background(), "older-channel", []string{"https://example.test/older"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newer, err := manager.Acquire(context.Background(), "newer-channel", []string{"https://example.test/newer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now().Add(-time.Minute)
+	older.mu.Lock()
+	older.startedAt = base
+	older.mu.Unlock()
+	newer.mu.Lock()
+	newer.startedAt = base.Add(time.Second)
+	newer.mu.Unlock()
+
+	if _, allowed := newer.RegisterClient(ClientMetadata{ID: "newer-viewer", Protocol: "hls"}, nil); !allowed {
+		t.Fatal("newer viewer registration failed")
+	}
+	if _, allowed := newer.RegisterClient(ClientMetadata{ID: "older-viewer", Protocol: "mpegts"}, nil); !allowed {
+		t.Fatal("older viewer registration failed")
+	}
+	newer.mu.Lock()
+	newer.clients["newer-viewer"].startedAt = base.Add(3 * time.Second)
+	newer.clients["older-viewer"].startedAt = base.Add(2 * time.Second)
+	newer.mu.Unlock()
+
+	snapshots := manager.Snapshots()
+	if len(snapshots) != 2 || snapshots[0].ID != "newer-channel" || snapshots[1].ID != "older-channel" {
+		t.Fatalf("active streams were not sorted newest first: %#v", snapshots)
+	}
+	clients := snapshots[0].ClientDetails
+	if len(clients) != 2 || clients[0].ID != "older-viewer" || clients[1].ID != "newer-viewer" {
+		t.Fatalf("viewer connections were not sorted oldest first: %#v", clients)
 	}
 }
 

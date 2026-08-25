@@ -28,6 +28,7 @@
 		StreamMetricSample
 	} from '$lib/api/types';
 	import { copyText } from '$lib/browser/clipboard';
+	import LogoTile from '$lib/components/brand/LogoTile.svelte';
 	import StudioHeader from '$lib/components/studio/StudioHeader.svelte';
 
 	type Connection = StreamConnection;
@@ -50,13 +51,27 @@
 		refetchInterval: 2_000
 	}));
 	let selectedIncident = $state('');
+	let selectedStreamID = $state(page.url.searchParams.get('stream_id') ?? '');
 	let busy = $state('');
 	let message = $state('');
 	let messageError = $state(false);
 	const requestedStream = $derived(page.url.searchParams.get('stream_id') ?? '');
-	const selected = $derived(
-		streamsQuery.data?.items.find((item) => item.id === requestedStream) ??
-			streamsQuery.data?.items[0]
+	$effect(() => {
+		const items = streamsQuery.data?.items ?? [];
+		if (!items.length) {
+			selectedStreamID = '';
+		} else if (requestedStream && items.some((item) => item.id === requestedStream)) {
+			selectedStreamID = requestedStream;
+		} else if (!items.some((item) => item.id === selectedStreamID)) {
+			selectedStreamID = items[0].id;
+		}
+	});
+	const selected = $derived(streamsQuery.data?.items.find((item) => item.id === selectedStreamID));
+	const selectedConnections = $derived.by(() =>
+		[...(selected?.connections ?? [])].sort((left, right) => {
+			const started = new Date(left.started_at).getTime() - new Date(right.started_at).getTime();
+			return started || left.id.localeCompare(right.id);
+		})
 	);
 	const historyDetail = createQuery(() => ({
 		queryKey: ['studio', 'streams', 'history', selectedIncident],
@@ -81,6 +96,10 @@
 		if (value < 1_000_000) return `${(value / 1_000).toFixed(0)} Kbps`;
 		return `${(value / 1_000_000).toFixed(2)} Mbps`;
 	}
+	function logoURL(value?: string) {
+		if (!value || /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(value)) return value;
+		return `/${value.replace(/^\/+/, '')}`;
+	}
 	function duration(from: string, to = Date.now()) {
 		const seconds = Math.max(0, Math.floor((to - new Date(from).getTime()) / 1000));
 		if (seconds < 60) return `${seconds}s`;
@@ -104,22 +123,37 @@
 			return value;
 		}
 	}
-	function points(samples: Sample[], field: 'ingress_bps' | 'egress_bps') {
+	function bitrateChart(samples: Sample[]) {
 		const recent = samples.slice(-120);
-		if (!recent.length) return '';
-		const peak = Math.max(
-			1,
+		const measuredPeak = Math.max(
+			0,
 			...recent.flatMap((sample) => [sample.ingress_bps, sample.egress_bps])
 		);
-		return recent
-			.map((sample, index) => {
-				const x = recent.length === 1 ? 100 : (index / (recent.length - 1)) * 100;
-				const y = 38 - (sample[field] / peak) * 36;
-				return `${x.toFixed(2)},${y.toFixed(2)}`;
-			})
-			.join(' ');
+		const magnitude = 10 ** Math.floor(Math.log10(Math.max(1_000, measuredPeak)));
+		const normalized = Math.max(1_000, measuredPeak) / magnitude;
+		const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+		const peak = factor * magnitude;
+		const points = (field: 'ingress_bps' | 'egress_bps') =>
+			recent
+				.map((sample, index) => {
+					const x = recent.length === 1 ? 100 : (index / (recent.length - 1)) * 100;
+					const y = 38 - (sample[field] / peak) * 36;
+					return `${x.toFixed(2)},${y.toFixed(2)}`;
+				})
+				.join(' ');
+		return {
+			sampleCount: recent.length,
+			ingress: points('ingress_bps'),
+			egress: points('egress_bps'),
+			ticks: Array.from({ length: 5 }, (_, index) => ({
+				y: 2 + index * 9,
+				value: peak * (1 - index / 4)
+			}))
+		};
 	}
+	const chart = $derived.by(() => bitrateChart(selected?.samples ?? []));
 	function selectStream(id: string) {
+		selectedStreamID = id;
 		const url = new URL(page.url);
 		url.searchParams.set('stream_id', id);
 		void goto(`${url.pathname}${url.search}`, {
@@ -141,7 +175,7 @@
 			);
 			message =
 				kind === 'stop'
-					? 'The shared stream and its viewers were stopped.'
+					? 'Stop requested. Viewers were disconnected while upstream cleanup finishes.'
 					: kind === 'restart'
 						? 'The active source is restarting.'
 						: 'Xivi is advancing to the next ordered source.';
@@ -302,15 +336,18 @@
 				</header>
 				{#if streamsQuery.data.items.length}
 					<div class="stream-rows">
-						{#each streamsQuery.data.items as stream}
+						{#each streamsQuery.data.items as stream (stream.id)}
 							<button
 								class:active={selected?.id === stream.id}
 								onclick={() => selectStream(stream.id)}
 							>
 								<div class="channel-logo">
-									{#if stream.logo_url}<img src={stream.logo_url} alt="" />{:else}<MonitorPlay
-											size={22}
-										/>{/if}
+									<LogoTile
+										src={logoURL(stream.logo_url)}
+										name={stream.channel_name}
+										size="sm"
+										contrast
+									/>
 								</div>
 								<div class="stream-copy">
 									<strong>{stream.channel_name}</strong><span
@@ -423,18 +460,24 @@
 								<span class="in">Ingress</span><span class="out">Egress</span>
 							</div>
 						</header>
-						{#if selected.samples.length > 1}
-							<svg
-								viewBox="0 0 100 40"
-								role="img"
-								aria-label="Ingress and egress bitrate over time"
-								preserveAspectRatio="none"
-							>
-								<line x1="0" y1="38" x2="100" y2="38" />
-								<line x1="0" y1="20" x2="100" y2="20" />
-								<polyline class="ingress" points={points(selected.samples, 'ingress_bps')} />
-								<polyline class="egress" points={points(selected.samples, 'egress_bps')} />
-							</svg>
+						{#if chart.sampleCount > 1}
+							<div class="chart-visual">
+								<div class="chart-axis" aria-hidden="true">
+									{#each chart.ticks as tick}<span>{formatBitrate(tick.value)}</span>{/each}
+								</div>
+								<svg
+									viewBox="0 0 100 40"
+									role="img"
+									aria-label="Ingress and egress bitrate over time"
+									preserveAspectRatio="none"
+								>
+									{#each chart.ticks as tick}
+										<line x1="0" y1={tick.y} x2="100" y2={tick.y} />
+									{/each}
+									<polyline class="ingress" points={chart.ingress} />
+									<polyline class="egress" points={chart.egress} />
+								</svg>
+							</div>
 						{:else}<div class="chart-empty">Collecting live samples…</div>{/if}
 					</section>
 
@@ -489,11 +532,11 @@
 								<h3>Viewer connections</h3>
 								<p>HLS viewers are grouped by their player ID and expire after inactivity.</p>
 							</div>
-							<span>{selected.connections.length}</span>
+							<span>{selectedConnections.length}</span>
 						</header>
-						{#if selected.connections.length}
+						{#if selectedConnections.length}
 							<div class="connection-table">
-								{#each selected.connections as connection}
+								{#each selectedConnections as connection (connection.id)}
 									<article>
 										<div class="connection-primary">
 											<b>{connection.remote_ip || 'Unknown address'}</b><span
@@ -532,8 +575,14 @@
 								<p>Source failures remain here after a successful failover.</p>
 							</div>
 						</header>
-						{#if sessionEvents(selected.incident_id).length}<div class="event-list">
-								{#each sessionEvents(selected.incident_id) as event}<article
+						<!-- svelte-ignore a11y_no_noninteractive_tabindex (scrollable regions need keyboard focus) -->
+						{#if sessionEvents(selected.incident_id).length}<div
+								class="event-list"
+								role="region"
+								aria-label="Session events, newest first"
+								tabindex="0"
+							>
+								{#each sessionEvents(selected.incident_id) as event (event.id)}<article
 										class:error={event.severity === 'error'}
 										class:warning={event.severity === 'warning'}
 									>
@@ -821,15 +870,9 @@
 		height: 3rem;
 		grid-row: 1/3;
 		place-items: center;
-		overflow: hidden;
-		border-radius: 0.65rem;
-		background: color-mix(in oklch, var(--muted) 10%, var(--surface-raised));
 	}
-	.channel-logo img {
-		width: 82%;
-		height: 82%;
-		object-fit: contain;
-		filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.38));
+	.channel-logo :global(.logo-tile) {
+		box-shadow: 0 0.3rem 0.8rem color-mix(in oklch, var(--ink) 18%, transparent);
 	}
 	.stream-copy {
 		display: grid;
@@ -1020,10 +1063,29 @@
 	.legend .out::before {
 		background: var(--periwinkle);
 	}
+	.chart-visual {
+		display: grid;
+		grid-template-columns: max-content minmax(0, 1fr);
+		gap: 0.65rem;
+		align-items: stretch;
+		margin-top: 0.7rem;
+	}
+	.chart-axis {
+		display: flex;
+		height: 11rem;
+		flex-direction: column;
+		justify-content: space-between;
+		box-sizing: border-box;
+		padding-block: 0.35rem;
+		color: var(--muted);
+		font-size: 0.53rem;
+		font-variant-numeric: tabular-nums;
+		line-height: 1;
+		text-align: right;
+	}
 	.chart-block svg {
 		width: 100%;
 		height: 11rem;
-		margin-top: 0.7rem;
 		overflow: visible;
 	}
 	.chart-block line {
@@ -1098,6 +1160,18 @@
 		display: grid;
 		gap: 0.4rem;
 		margin-top: 0.75rem;
+	}
+	.events-block .event-list {
+		max-height: min(28rem, 55dvh);
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		scrollbar-gutter: stable;
+		padding-right: 0.35rem;
+	}
+	.events-block .event-list:focus-visible {
+		border-radius: 0.45rem;
+		outline: 2px solid var(--periwinkle);
+		outline-offset: 0.2rem;
 	}
 	.connection-table article {
 		display: grid;

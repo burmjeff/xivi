@@ -36,6 +36,7 @@ type Config struct {
 	StallTimeout      time.Duration
 	HedgeTimeout      time.Duration
 	IdleTimeout       time.Duration
+	CleanupTimeout    time.Duration
 	RetryLimit        int
 	RetryBackoff      time.Duration
 	HLSSegmentSeconds int
@@ -88,6 +89,9 @@ func (c Config) normalized() Config {
 	}
 	if c.IdleTimeout < 10*time.Second {
 		c.IdleTimeout = 45 * time.Second
+	}
+	if c.CleanupTimeout <= 0 {
+		c.CleanupTimeout = 6 * time.Second
 	}
 	if c.RetryLimit < 1 {
 		c.RetryLimit = 6
@@ -223,6 +227,9 @@ type managedProducer struct {
 	hedged       bool
 	startedAt    time.Time
 	readyAt      time.Time
+	cleanupOnce  sync.Once
+	cleanupAlert sync.Once
+	cleanupDone  chan struct{}
 }
 
 type sourceHealthState struct {
@@ -279,9 +286,15 @@ type FileCleanupReport struct {
 const (
 	endedClientRetention   = 5 * time.Minute
 	maximumEndedClientRows = 1000
+	minimumClientTimeout   = 35 * time.Second
 )
 
 var validSessionID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+
+var (
+	ErrSessionStopping        = errors.New("stream session is stopping")
+	ErrProducerCleanupTimeout = errors.New("stream producer cleanup timed out")
+)
 
 var DefaultManager = NewManager(nil, nil)
 
@@ -351,6 +364,13 @@ func (m *Manager) acquireSources(ctx context.Context, id string, sources []Sourc
 
 	m.mu.Lock()
 	if existing := m.sessions[id]; existing != nil {
+		existing.mu.RLock()
+		stopping := existing.state == StateStopping || existing.state == StateStopped
+		existing.mu.RUnlock()
+		if stopping {
+			m.mu.Unlock()
+			return existing, ErrSessionStopping
+		}
 		existing.touch()
 		existing.updateSources(cleanSources)
 		if !prewarm {
@@ -607,7 +627,11 @@ func (s *Session) run() {
 			}
 			if err != nil {
 				if errors.Is(err, context.Canceled) || s.ctx.Err() != nil {
-					s.finish(StateStopped, nil)
+					if errors.Is(err, ErrProducerCleanupTimeout) {
+						s.finish(StateFailed, err)
+					} else {
+						s.finish(StateStopped, nil)
+					}
 					return
 				}
 				attempt++
@@ -626,8 +650,11 @@ func (s *Session) run() {
 
 		reason, hedge := s.monitorProducer(active)
 		if errors.Is(reason, context.Canceled) || s.ctx.Err() != nil {
-			s.stopManagedProducer(active)
-			s.finish(StateStopped, nil)
+			if cleanupErr := s.stopManagedProducer(active); cleanupErr != nil {
+				s.finish(StateFailed, cleanupErr)
+			} else {
+				s.finish(StateStopped, nil)
+			}
 			return
 		}
 
@@ -778,14 +805,42 @@ func (s *Session) startManagedProducer(source Source, sourceIndex, sourceCount i
 	producer := s.factory(s.id, source.URL, generation, s.config, localHub)
 	managed := &managedProducer{producer: producer, hub: localHub, lease: lease,
 		sourceIndex: sourceIndex, generation: generation, startedAt: time.Now()}
-	if err := producer.Start(); err != nil {
-		if s.recordSourceResult != nil {
-			s.recordSourceResult(source, time.Since(managed.startedAt), err)
+	startupDeadline := time.Now().Add(s.config.StartupTimeout)
+	startResult := make(chan error, 1)
+	go func() { startResult <- producer.Start() }()
+	startTimer := time.NewTimer(time.Until(startupDeadline))
+	var startErr error
+	select {
+	case startErr = <-startResult:
+		if !startTimer.Stop() {
+			select {
+			case <-startTimer.C:
+			default:
+			}
 		}
-		s.stopManagedProducer(managed)
-		return nil, err
+	case <-startTimer.C:
+		startErr = fmt.Errorf("source pipeline construction exceeded %s: %w", s.config.StartupTimeout, context.DeadlineExceeded)
+	case <-s.ctx.Done():
+		if !startTimer.Stop() {
+			select {
+			case <-startTimer.C:
+			default:
+			}
+		}
+		startErr = context.Canceled
 	}
-	timer := time.NewTimer(s.config.StartupTimeout)
+	if startErr != nil {
+		if s.recordSourceResult != nil {
+			s.recordSourceResult(source, time.Since(managed.startedAt), startErr)
+		}
+		cleanupErr := s.stopManagedProducer(managed)
+		return nil, errors.Join(startErr, cleanupErr)
+	}
+	remaining := time.Until(startupDeadline)
+	if remaining < 0 {
+		remaining = 0
+	}
+	timer := time.NewTimer(remaining)
 	defer timer.Stop()
 	select {
 	case <-producer.Ready():
@@ -803,17 +858,20 @@ func (s *Session) startManagedProducer(source Source, sourceIndex, sourceCount i
 		if s.recordSourceResult != nil {
 			s.recordSourceResult(source, time.Since(managed.startedAt), err)
 		}
-		s.stopManagedProducer(managed)
-		return nil, err
+		cleanupErr := s.stopManagedProducer(managed)
+		return nil, errors.Join(err, cleanupErr)
 	case <-timer.C:
 		if s.recordSourceResult != nil {
 			s.recordSourceResult(source, time.Since(managed.startedAt), context.DeadlineExceeded)
 		}
-		s.stopManagedProducer(managed)
-		return nil, fmt.Errorf("source produced no valid MPEG-TS programme within %s", s.config.StartupTimeout)
+		cleanupErr := s.stopManagedProducer(managed)
+		return nil, errors.Join(
+			fmt.Errorf("source produced no valid MPEG-TS programme within %s", s.config.StartupTimeout),
+			cleanupErr,
+		)
 	case <-s.ctx.Done():
-		s.stopManagedProducer(managed)
-		return nil, context.Canceled
+		cleanupErr := s.stopManagedProducer(managed)
+		return nil, errors.Join(context.Canceled, cleanupErr)
 	}
 }
 
@@ -879,15 +937,36 @@ func (s *Session) stopManagedBridge(managed *managedProducer) {
 	managed.bridgeCancel = nil
 }
 
-func (s *Session) stopManagedProducer(managed *managedProducer) {
+func (s *Session) stopManagedProducer(managed *managedProducer) error {
 	if managed == nil {
-		return
+		return nil
 	}
 	s.stopManagedBridge(managed)
-	managed.producer.Stop()
-	managed.hub.Close(nil)
-	managed.lease.Release()
-	s.clearProducer(managed.producer)
+	managed.hub.Close(context.Canceled)
+	managed.cleanupOnce.Do(func() {
+		managed.cleanupDone = make(chan struct{})
+		go func() {
+			defer close(managed.cleanupDone)
+			managed.producer.Stop()
+			managed.lease.Release()
+			s.clearProducer(managed.producer)
+		}()
+	})
+	timer := time.NewTimer(s.config.CleanupTimeout)
+	defer timer.Stop()
+	select {
+	case <-managed.cleanupDone:
+		return nil
+	case <-timer.C:
+		err := fmt.Errorf("%w after %s", ErrProducerCleanupTimeout, s.config.CleanupTimeout)
+		s.clearProducer(managed.producer)
+		managed.cleanupAlert.Do(func() {
+			s.emitEvent("error", "producer_cleanup_timeout",
+				"The upstream pipeline did not stop within its cleanup deadline; its source capacity remains reserved.",
+				fmt.Sprintf("{\"timeout_ms\":%d}", s.config.CleanupTimeout.Milliseconds()))
+		})
+		return err
+	}
 }
 
 func (s *Session) monitorProducer(active *managedProducer) (error, bool) {
@@ -1078,6 +1157,10 @@ func (s *Session) RegisterClient(metadata ClientMetadata, cancel func()) (string
 	metadata.UserAgent = strings.Clone(metadata.UserAgent)
 	now := time.Now()
 	s.mu.Lock()
+	if s.state == StateStopping || s.state == StateStopped {
+		s.mu.Unlock()
+		return metadata.ID, false
+	}
 	if metadata.ID != "" {
 		if existing := s.clients[metadata.ID]; existing != nil {
 			if existing.endReason != "" {
@@ -1210,22 +1293,66 @@ func (s *Session) touch() {
 	s.mu.Unlock()
 }
 
-func (s *Session) Stop() {
+func (s *Session) requestStop(manual bool) bool {
+	requested := false
 	s.stopOnce.Do(func() {
+		requested = true
+		if manual {
+			s.emitEvent("warning", "manual_stop", "A user stopped the shared stream and its viewers.", "")
+		}
 		s.setState(StateStopping, nil)
 		s.cancel()
-		s.mu.RLock()
-		producer := s.current
-		s.mu.RUnlock()
-		if producer != nil {
-			producer.Stop()
-		}
+		// Closing the public hub first wakes MPEG-TS response writers even when
+		// the upstream GStreamer graph takes longer to transition to NULL.
+		s.hub.Close(context.Canceled)
+		s.closeAllClients("session_stopped")
 	})
+	return requested
+}
+
+func (s *Session) Stop() {
+	s.requestStop(false)
+}
+
+func (s *Session) StopManual() bool {
+	return s.requestStop(true)
+}
+
+func (s *Session) closeAllClients(reason string) {
+	type endedClient struct {
+		id     string
+		client *sessionClient
+		cancel func()
+		ended  time.Time
+	}
+	ended := make([]endedClient, 0)
+	now := time.Now()
+	s.mu.Lock()
+	for id, client := range s.clients {
+		if client.endReason != "" {
+			continue
+		}
+		client.endReason = reason
+		client.lastSeenAt = now
+		ended = append(ended, endedClient{id: id, client: client, cancel: client.cancel, ended: now})
+	}
+	s.mu.Unlock()
+	for _, item := range ended {
+		s.observeConnection(item.client, &item.ended)
+		s.emitEventForClient(item.id, "info", "viewer_disconnected", "Viewer disconnected: "+reason+".", "")
+		if item.cancel != nil {
+			item.cancel()
+		}
+	}
 }
 
 func (s *Session) sample(now time.Time) {
 	bytesIn, _ := s.hub.Metrics()
-	timedOut := []ConnectionRecord{}
+	type timedOutClient struct {
+		record ConnectionRecord
+		cancel func()
+	}
+	timedOut := []timedOutClient{}
 	s.mu.Lock()
 	if elapsed := now.Sub(s.lastSampleAt); elapsed > 0 {
 		type endedClient struct {
@@ -1264,14 +1391,19 @@ func (s *Session) sample(now time.Time) {
 				bytesOut += client.bytesDelivered
 				continue
 			}
-			if client.metadata.Protocol == "hls" && now.Sub(client.lastSeenAt) > 35*time.Second {
+			timeout := minimumClientTimeout
+			if client.metadata.Protocol == "mpegts" {
+				timeout = max(timeout, 2*s.config.StallTimeout)
+			}
+			if now.Sub(client.lastSeenAt) > timeout {
 				client.endReason = "viewer_timeout"
 				endedAt := now
-				timedOut = append(timedOut, ConnectionRecord{ID: client.metadata.ID, IncidentID: s.incidentID,
-					StreamID: s.id, Protocol: client.metadata.Protocol, RemoteIP: client.metadata.RemoteIP,
-					Method: client.metadata.Method, UserAgent: client.metadata.UserAgent, StartedAt: client.startedAt,
+				timedOut = append(timedOut, timedOutClient{record: ConnectionRecord{ID: client.metadata.ID,
+					IncidentID: s.incidentID, StreamID: s.id, Protocol: client.metadata.Protocol,
+					RemoteIP: client.metadata.RemoteIP, Method: client.metadata.Method,
+					UserAgent: client.metadata.UserAgent, StartedAt: client.startedAt,
 					LastSeenAt: client.lastSeenAt, EndedAt: &endedAt, BytesDelivered: client.bytesDelivered,
-					EndReason: client.endReason})
+					EndReason: client.endReason}, cancel: client.cancel})
 				continue
 			}
 			active++
@@ -1297,8 +1429,17 @@ func (s *Session) sample(now time.Time) {
 	s.mu.Unlock()
 	if s.observer != nil {
 		for index := range timedOut {
-			record := timedOut[index]
-			s.observer(Observation{Connection: &record})
+			item := timedOut[index]
+			s.observer(Observation{Connection: &item.record})
+			if item.cancel != nil {
+				item.cancel()
+			}
+		}
+	} else {
+		for _, item := range timedOut {
+			if item.cancel != nil {
+				item.cancel()
+			}
 		}
 	}
 }
@@ -1340,6 +1481,12 @@ func (s *Session) Snapshot() SessionSnapshot {
 		snapshot.IngressBitrateBPS, snapshot.EgressBitrateBPS = last.IngressBPS, last.EgressBPS
 	}
 	s.mu.RUnlock()
+	sort.Slice(snapshot.ClientDetails, func(i, j int) bool {
+		if snapshot.ClientDetails[i].StartedAt.Equal(snapshot.ClientDetails[j].StartedAt) {
+			return snapshot.ClientDetails[i].ID < snapshot.ClientDetails[j].ID
+		}
+		return snapshot.ClientDetails[i].StartedAt.Before(snapshot.ClientDetails[j].StartedAt)
+	})
 	if producer != nil {
 		snapshot.LastMediaAt = producer.LastDataAt()
 		if inspector, ok := producer.(ProducerInspector); ok {
@@ -1359,10 +1506,16 @@ func (m *Manager) Get(id string) (*Session, bool) {
 
 func (m *Manager) Touch(id string) bool {
 	session, ok := m.Get(id)
-	if ok {
-		session.touch()
+	if !ok {
+		return false
 	}
-	return ok
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if session.state == StateStopping || session.state == StateStopped {
+		return false
+	}
+	session.lastAccess = time.Now()
+	return true
 }
 
 func (m *Manager) Stop(id string) {
@@ -1373,8 +1526,7 @@ func (m *Manager) Stop(id string) {
 
 func (m *Manager) StopManual(id string) bool {
 	if session, ok := m.Get(id); ok {
-		session.emitEvent("warning", "manual_stop", "A user stopped the shared stream and its viewers.", "")
-		session.Stop()
+		session.StopManual()
 		return true
 	}
 	return false
@@ -1406,6 +1558,12 @@ func (m *Manager) Snapshots() []SessionSnapshot {
 	for _, session := range sessions {
 		items = append(items, session.Snapshot())
 	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].StartedAt.Equal(items[j].StartedAt) {
+			return items[i].ID < items[j].ID
+		}
+		return items[i].StartedAt.After(items[j].StartedAt)
+	})
 	return items
 }
 
