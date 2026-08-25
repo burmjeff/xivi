@@ -54,7 +54,7 @@
 <div class="home-page">
 	<section class="hero">
 		<div>
-			<p class="eyebrow"><Sparkles size={13} /> Your television, organized</p>
+			<p class="eyebrow"><Sparkles size={13} /> Your channels, organized</p>
 			<h1 class="page-title">What’s good<br />right now?</h1>
 			<p class="hero-copy">
 				Jump into something live, or open the guide when you want the full picture.

@@ -43,6 +43,13 @@
 			? new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' }).format(new Date(value))
 			: '';
 	}
+	function programmeProgress(channel: GuideChannel) {
+		if (!channel.current) return 0;
+		const start = new Date(channel.current.start).getTime();
+		const end = new Date(channel.current.end).getTime();
+		if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+		return Math.max(0, Math.min(100, ((Date.now() - start) / (end - start)) * 100));
+	}
 </script>
 
 <svelte:head><title>Channels · Xivi</title></svelte:head>
@@ -109,7 +116,8 @@
 			class:list={preferences.channelView === 'list'}
 			class="channel-directory"
 		>
-			{#each channels as channel}<article>
+			{#each channels as channel}{@const progress = programmeProgress(channel)}
+				<article>
 					<LogoTile
 						src={channel.logo_url}
 						name={channel.name}
@@ -125,6 +133,18 @@
 							>{#if channel.current}<time
 									>{time(channel.current.start)}–{time(channel.current.end)}</time
 								>{/if}
+							<div
+								class="programme-progress"
+								role="progressbar"
+								aria-valuemin="0"
+								aria-valuemax="100"
+								aria-valuenow={Math.round(progress)}
+								aria-label={channel.current
+									? `${channel.current.title}, ${Math.round(progress)} percent complete`
+									: 'Schedule unavailable'}
+							>
+								<i style={`width:${progress}%`}></i>
+							</div>
 						</div>
 						{#if channel.next}<p>
 								Next at {time(channel.next.start)} <b>{channel.next.title}</b>
@@ -297,6 +317,20 @@
 		grid-column: 2;
 		color: var(--muted);
 		font-size: 0.72rem;
+	}
+	.programme-progress {
+		grid-column: 1 / -1;
+		height: 0.34rem;
+		overflow: hidden;
+		margin-top: 0.4rem;
+		border-radius: 999px;
+		background: var(--surface-raised);
+	}
+	.programme-progress i {
+		display: block;
+		height: 100%;
+		border-radius: inherit;
+		background: var(--aqua);
 	}
 	.channel-copy > p {
 		overflow: hidden;
