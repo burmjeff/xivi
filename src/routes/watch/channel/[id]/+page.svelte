@@ -7,23 +7,29 @@
 	import { onDestroy } from 'svelte';
 	import { ChevronDown, ChevronLeft, ChevronRight, RotateCcw, Radio, Play } from '@lucide/svelte';
 	import { api } from '$lib/api/client';
-	import type { GuideChannel, Paginated } from '$lib/api/types';
-	import { preferences } from '$lib/state/preferences.svelte';
+	import type { GuideChannel, LineupSummary, Paginated } from '$lib/api/types';
+	import { preferences, selectLineup } from '$lib/state/preferences.svelte';
 	import LogoTile from '$lib/components/brand/LogoTile.svelte';
 
-	const channelId = Number(page.params.id);
+	let channelId = $derived(Number(page.params.id));
 	const channelQuery = createQuery(() => ({
 		queryKey: ['watch', 'channel', channelId],
 		queryFn: () => api<GuideChannel>(`/api/v2/watch/channels/${channelId}`),
 		refetchInterval: 60_000
 	}));
+	const lineupsQuery = createQuery(() => ({
+		queryKey: ['watch', 'lineups'],
+		queryFn: () => api<Paginated<LineupSummary>>('/api/v2/watch/lineups')
+	}));
+	let lineupId = $derived(preferences.lineupId ?? lineupsQuery.data?.items[0]?.id ?? null);
+	$effect(() => {
+		if (!preferences.lineupId && lineupId) selectLineup(lineupId);
+	});
 	const lineupQuery = createQuery(() => ({
-		queryKey: ['watch', 'player-lineup', preferences.lineupId],
-		enabled: !!preferences.lineupId,
+		queryKey: ['watch', 'player-lineup', lineupId],
+		enabled: !!lineupId,
 		queryFn: () =>
-			api<Paginated<GuideChannel>>(
-				`/api/v2/watch/lineups/${preferences.lineupId}/channels?limit=500`
-			)
+			api<Paginated<GuideChannel>>(`/api/v2/watch/lineups/${lineupId}/channels?limit=500`)
 	}));
 	let video = $state<HTMLVideoElement>(),
 		hls: Hls | null = null,
