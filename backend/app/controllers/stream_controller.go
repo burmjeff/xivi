@@ -26,10 +26,11 @@ import (
 
 const streamOperationTimeout = 30 * time.Second
 
-func streamSources(channels []models.ChannelUrl) []string {
-	sources := make([]string, 0, len(channels))
+func streamSources(channels []models.ChannelUrl) []streaming.Source {
+	sources := make([]streaming.Source, 0, len(channels))
 	for _, channel := range channels {
-		sources = append(sources, channel.Url)
+		sources = append(sources, streaming.Source{URL: channel.Url, PoolID: channel.PlaylistID,
+			PoolName: channel.PlaylistName, ConnectionLimit: channel.ConnectionLimit})
 	}
 	return sources
 }
@@ -45,7 +46,7 @@ func acquireStreamSession(ctx context.Context, streamID string) (*streaming.Sess
 	if !settings.APP_SETTINGS.Streaming.Proxy {
 		return nil, *channels, nil
 	}
-	session, err := streaming.DefaultManager.Acquire(ctx, streamID, streamSources(*channels))
+	session, err := streaming.DefaultManager.AcquireSources(ctx, streamID, streamSources(*channels))
 	if err != nil {
 		return nil, *channels, err
 	}
@@ -133,6 +134,7 @@ func GetStream(c *fiber.Ctx) error {
 		reason := "client_disconnected"
 		defer func() { session.CloseClient(clientID, reason) }()
 		buffered := 0
+		firstChunk := true
 		lastFlush := time.Now()
 		for {
 			chunk, ok := subscription.Next()
@@ -146,12 +148,13 @@ func GetStream(c *fiber.Ctx) error {
 			}
 			session.AddClientBytes(clientID, len(chunk))
 			buffered += len(chunk)
-			if buffered >= 256*1024 || time.Since(lastFlush) >= 200*time.Millisecond {
+			if firstChunk || buffered >= 256*1024 || time.Since(lastFlush) >= 200*time.Millisecond {
 				if err := writer.Flush(); err != nil {
 					reason = "client_flush_failed"
 					return
 				}
 				buffered = 0
+				firstChunk = false
 				lastFlush = time.Now()
 			}
 		}
@@ -224,7 +227,14 @@ func sendHLSFile(c *fiber.Ctx, streamID, asset string) error {
 		var snapshot *streaming.HLSPlaylistSnapshot
 		var err error
 		for attempt := 0; attempt < 4; attempt++ {
-			snapshot, err = streaming.ReadHLSPlaylist(path)
+			session, active := streaming.DefaultManager.Get(streamID)
+			if active {
+				snapshot, err = session.HLSPlaylistSnapshot()
+			} else {
+				// The media routes require a managed session; this fallback keeps
+				// the stable-file helper independently testable.
+				snapshot, err = streaming.ReadHLSPlaylist(path)
+			}
 			if err == nil {
 				content := snapshot.Content
 				viewerID := ""
@@ -282,8 +292,9 @@ func sendHLSFile(c *fiber.Ctx, streamID, asset string) error {
 // and slow-client eviction without relying on server logs.
 func V2StreamingStatus(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
-		"summary":  streaming.DefaultManager.Summary(),
-		"sessions": streaming.DefaultManager.Snapshots(),
+		"summary":            streaming.DefaultManager.Summary(),
+		"sessions":           streaming.DefaultManager.Snapshots(),
+		"source_connections": streaming.DefaultManager.ConnectionUsage(),
 	})
 }
 
@@ -347,7 +358,8 @@ func V2StudioStreams(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusInternalServerError, "stream_events_failed", "Stream events could not be loaded.", true)
 	}
 	return c.JSON(fiber.Map{"summary": streaming.DefaultManager.Summary(), "items": items,
-		"history": history, "recent_events": events, "proxy_enabled": settings.APP_SETTINGS.Streaming.Proxy})
+		"history": history, "recent_events": events, "proxy_enabled": settings.APP_SETTINGS.Streaming.Proxy,
+		"source_connections": streaming.DefaultManager.ConnectionUsage()})
 }
 
 func V2StudioStreamHistory(c *fiber.Ctx) error {
@@ -384,6 +396,26 @@ func V2RestartStream(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusConflict, "restart_unavailable", "The active source could not be restarted right now.", true)
 	}
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"status": "restart_requested"})
+}
+
+func V2PrewarmStream(c *fiber.Ctx) error {
+	if settings.APP_SETTINGS.Streaming.PrewarmChannels <= 0 {
+		return c.SendStatus(fiber.StatusNoContent)
+	}
+	streamID := strings.Clone(c.Params("stream_id"))
+	channels, err := database.Db.GetChannelsbyUuid(c.UserContext(), streamID)
+	if err != nil || channels == nil || len(*channels) == 0 {
+		return v2Error(c, fiber.StatusNotFound, "stream_not_found", "That channel has no playable sources.", false)
+	}
+	sources := streamSources(*channels)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if _, err := streaming.DefaultManager.PrewarmSources(ctx, streamID, sources); err != nil {
+			log.Debug().Err(err).Str("stream_id", streamID).Msg("Optional stream prewarm was skipped")
+		}
+	}()
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"status": "prewarm_requested"})
 }
 
 func V2DisconnectStreamClient(c *fiber.Ctx) error {

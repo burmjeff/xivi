@@ -60,7 +60,6 @@ func StartServer(app *fiber.App) {
 
 	//Start Cronjobs
 	cron.RunCronJobs()
-	go cron.RunUpdates()
 
 	if err := virtualtuner.Reconfigure(); err != nil {
 		log.Error().Err(err).Msg("Failed to configure virtual tuner discovery")

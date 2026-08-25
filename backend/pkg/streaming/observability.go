@@ -111,6 +111,8 @@ func ClassifyError(err error) (code string, retryable bool) {
 		return "dns_failure", true
 	case strings.Contains(message, "connection refused"):
 		return "connection_refused", true
+	case strings.Contains(message, "connection limit"):
+		return "source_connection_limit", true
 	case strings.Contains(message, "hls") || strings.Contains(message, "playlist") || strings.Contains(message, "segment"):
 		return "hls_not_ready", true
 	case strings.Contains(message, "timed out"), strings.Contains(message, "timeout"), strings.Contains(message, "deadline exceeded"):

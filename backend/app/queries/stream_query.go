@@ -18,7 +18,9 @@ const (
 		SELECT channelurl.*,
 			COALESCE(playlistchannel.title, '') AS source_name,
 			COALESCE(playlistgroup.name, '') AS group_name,
-			COALESCE(playlist.name, '') AS playlist_name
+			COALESCE(playlist.name, '') AS playlist_name,
+			COALESCE(playlist.id, 0) AS playlist_id,
+			COALESCE(playlist.connection_limit, 1) AS connection_limit
 		FROM templatechannelitem
 		JOIN templatechannel ON templatechannel.id = templatechannelitem.channel_id
 		JOIN playlistchannel ON playlistchannel.id = templatechannelitem.playlist_channel_id

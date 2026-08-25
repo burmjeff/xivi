@@ -32,13 +32,17 @@ const (
 type Config struct {
 	IngestBuffer      time.Duration
 	StartupTimeout    time.Duration
+	StartupHedge      time.Duration
 	StallTimeout      time.Duration
+	HedgeTimeout      time.Duration
 	IdleTimeout       time.Duration
 	RetryLimit        int
 	RetryBackoff      time.Duration
 	HLSSegmentSeconds int
 	HLSPlaylistLength int
+	HLSCompatibility  bool
 	ClientBufferBytes int
+	PrewarmChannels   int
 	TLSVerify         bool
 	UserAgent         string
 	StreamRoot        string
@@ -49,13 +53,17 @@ func CurrentConfig() Config {
 	return Config{
 		IngestBuffer:      time.Duration(configured.IngestBufferMS) * time.Millisecond,
 		StartupTimeout:    time.Duration(configured.StartupTimeoutSeconds) * time.Second,
+		StartupHedge:      time.Duration(configured.StartupHedgeMS) * time.Millisecond,
 		StallTimeout:      time.Duration(configured.StallTimeoutSeconds) * time.Second,
+		HedgeTimeout:      time.Duration(configured.HedgeTimeoutSeconds) * time.Second,
 		IdleTimeout:       time.Duration(configured.IdleTimeoutSeconds) * time.Second,
 		RetryLimit:        configured.RetryLimit,
 		RetryBackoff:      time.Duration(configured.RetryBackoffMS) * time.Millisecond,
 		HLSSegmentSeconds: configured.HLSSegmentSeconds,
 		HLSPlaylistLength: configured.HLSPlaylistLength,
+		HLSCompatibility:  configured.HLSCompatibilityMode,
 		ClientBufferBytes: configured.ClientBufferMB * 1024 * 1024,
+		PrewarmChannels:   configured.PrewarmChannels,
 		TLSVerify:         configured.TLSVerify,
 		UserAgent:         configured.UserAgent,
 		StreamRoot:        settings.STREAM_FILEPATH,
@@ -69,8 +77,14 @@ func (c Config) normalized() Config {
 	if c.StartupTimeout < 3*time.Second {
 		c.StartupTimeout = 12 * time.Second
 	}
+	if c.StartupHedge < 0 || c.StartupHedge >= c.StartupTimeout {
+		c.StartupHedge = 750 * time.Millisecond
+	}
 	if c.StallTimeout < 3*time.Second {
 		c.StallTimeout = 10 * time.Second
+	}
+	if c.HedgeTimeout < time.Second || c.HedgeTimeout >= c.StallTimeout {
+		c.HedgeTimeout = max(time.Second, c.StallTimeout-2*time.Second)
 	}
 	if c.IdleTimeout < 10*time.Second {
 		c.IdleTimeout = 45 * time.Second
@@ -89,6 +103,9 @@ func (c Config) normalized() Config {
 	}
 	if c.ClientBufferBytes < 1024*1024 {
 		c.ClientBufferBytes = 2 * 1024 * 1024
+	}
+	if c.PrewarmChannels < 0 || c.PrewarmChannels > 8 {
+		c.PrewarmChannels = 2
 	}
 	if c.UserAgent == "" {
 		c.UserAgent = "Xivi 1.0"
@@ -114,6 +131,15 @@ type ProducerInspector interface {
 	MediaTracks() []string
 }
 
+type HLSCompatibilityInspector interface {
+	HLSCompatibilityActions() []string
+}
+
+type HLSProducer interface {
+	HLSGeneration() uint64
+	HLSPlaylistSnapshot() (*HLSPlaylistSnapshot, error)
+}
+
 type Manager struct {
 	mu                sync.RWMutex
 	sessions          map[string]*Session
@@ -127,13 +153,15 @@ type Manager struct {
 	completedDrops    uint64
 	completedDelivery uint64
 	observer          Observer
+	connections       *connectionCoordinator
+	sourceHealth      map[string]*sourceHealthState
 }
 
 type Session struct {
 	id                 string
 	incidentID         string
 	mu                 sync.RWMutex
-	sources            []string
+	sources            []Source
 	config             Config
 	factory            ProducerFactory
 	hub                *Hub
@@ -162,7 +190,13 @@ type Session struct {
 	retiredClientBytes uint64
 	firstMediaAt       *time.Time
 	restartSource      bool
+	prewarm            bool
 	observer           func(Observation)
+	connections        *connectionCoordinator
+	hls                hlsTimeline
+	sourceAllowed      func(Source, int) bool
+	recordSourceResult func(Source, time.Duration, error)
+	hlsReadyOnce       sync.Once
 	onReconnect        func()
 	onDone             func(*Session)
 }
@@ -176,6 +210,32 @@ type sessionClient struct {
 	bitrateBPS      uint64
 	endReason       string
 	cancel          func()
+}
+
+type managedProducer struct {
+	producer     Producer
+	hub          *Hub
+	lease        *connectionLease
+	sourceIndex  int
+	generation   uint64
+	bridgeCancel context.CancelFunc
+	bridgeDone   chan struct{}
+	hedged       bool
+	startedAt    time.Time
+	readyAt      time.Time
+}
+
+type sourceHealthState struct {
+	failures      int
+	retryAfter    time.Time
+	averageStart  time.Duration
+	lastSucceeded time.Time
+	updatedAt     time.Time
+}
+
+type producerStartResult struct {
+	managed *managedProducer
+	err     error
 }
 
 type SessionSnapshot struct {
@@ -233,11 +293,13 @@ func NewManager(factory ProducerFactory, configProvider func() Config) *Manager 
 		configProvider = CurrentConfig
 	}
 	manager := &Manager{
-		sessions:    make(map[string]*Session),
-		factory:     factory,
-		config:      configProvider,
-		cleanupStop: make(chan struct{}),
-		cleanupDone: make(chan struct{}),
+		sessions:     make(map[string]*Session),
+		factory:      factory,
+		config:       configProvider,
+		cleanupStop:  make(chan struct{}),
+		cleanupDone:  make(chan struct{}),
+		connections:  newConnectionCoordinator(),
+		sourceHealth: make(map[string]*sourceHealthState),
 	}
 	go manager.cleanupLoop()
 	return manager
@@ -259,6 +321,22 @@ func (m *Manager) observe(observation Observation) {
 }
 
 func (m *Manager) Acquire(ctx context.Context, id string, sources []string) (*Session, error) {
+	variants := make([]Source, 0, len(sources))
+	for _, source := range sources {
+		variants = append(variants, Source{URL: source})
+	}
+	return m.AcquireSources(ctx, id, variants)
+}
+
+func (m *Manager) AcquireSources(ctx context.Context, id string, sources []Source) (*Session, error) {
+	return m.acquireSources(ctx, id, sources, false)
+}
+
+func (m *Manager) PrewarmSources(ctx context.Context, id string, sources []Source) (*Session, error) {
+	return m.acquireSources(ctx, id, sources, true)
+}
+
+func (m *Manager) acquireSources(ctx context.Context, id string, sources []Source, prewarm bool) (*Session, error) {
 	cleanSources, err := validateSources(id, sources)
 	if err != nil {
 		return nil, err
@@ -267,11 +345,19 @@ func (m *Manager) Acquire(ctx context.Context, id string, sources []string) (*Se
 	// request that created it, so retaining that storage would let later
 	// requests mutate map keys and diagnostic IDs underneath the manager.
 	id = strings.Clone(id)
+	if !prewarm {
+		m.reclaimPrewarms(cleanSources, id)
+	}
 
 	m.mu.Lock()
 	if existing := m.sessions[id]; existing != nil {
 		existing.touch()
 		existing.updateSources(cleanSources)
+		if !prewarm {
+			existing.mu.Lock()
+			existing.prewarm = false
+			existing.mu.Unlock()
+		}
 		m.mu.Unlock()
 		if err := existing.WaitReady(ctx); err != nil {
 			return nil, err
@@ -280,26 +366,50 @@ func (m *Manager) Acquire(ctx context.Context, id string, sources []string) (*Se
 	}
 
 	config := m.config().normalized()
+	if prewarm {
+		if config.PrewarmChannels == 0 {
+			m.mu.Unlock()
+			return nil, errors.New("stream prewarming is disabled")
+		}
+		prewarmCount := 0
+		for _, candidate := range m.sessions {
+			candidate.mu.RLock()
+			if candidate.prewarm {
+				prewarmCount++
+			}
+			candidate.mu.RUnlock()
+		}
+		if prewarmCount >= config.PrewarmChannels {
+			m.mu.Unlock()
+			return nil, errors.New("stream prewarm pool is full")
+		}
+		config.RetryLimit = min(config.RetryLimit, max(len(cleanSources), 1))
+		config.IdleTimeout = min(config.IdleTimeout, 20*time.Second)
+	}
 	sessionContext, cancel := context.WithCancel(context.Background())
 	session := &Session{
-		id:           id,
-		incidentID:   randomIdentifier("str_"),
-		sources:      cleanSources,
-		config:       config,
-		factory:      m.factory,
-		hub:          NewHub(config.ClientBufferBytes),
-		state:        StateStarting,
-		lastAccess:   time.Now(),
-		startedAt:    time.Now(),
-		sourceIndex:  -1,
-		initialDone:  make(chan struct{}),
-		ctx:          sessionContext,
-		cancel:       cancel,
-		done:         make(chan struct{}),
-		forceNext:    make(chan error, 1),
-		clients:      make(map[string]*sessionClient),
-		lastSampleAt: time.Now(),
-		observer:     m.observe,
+		id:                 id,
+		incidentID:         randomIdentifier("str_"),
+		sources:            cleanSources,
+		config:             config,
+		factory:            m.factory,
+		hub:                NewHub(config.ClientBufferBytes),
+		state:              StateStarting,
+		lastAccess:         time.Now(),
+		startedAt:          time.Now(),
+		sourceIndex:        -1,
+		initialDone:        make(chan struct{}),
+		ctx:                sessionContext,
+		cancel:             cancel,
+		done:               make(chan struct{}),
+		forceNext:          make(chan error, 1),
+		clients:            make(map[string]*sessionClient),
+		lastSampleAt:       time.Now(),
+		observer:           m.observe,
+		connections:        m.connections,
+		prewarm:            prewarm,
+		sourceAllowed:      m.sourceIsAllowed,
+		recordSourceResult: m.recordSourceResult,
 		onReconnect: func() {
 			m.mu.Lock()
 			m.totalReconnect++
@@ -331,19 +441,120 @@ func (m *Manager) Acquire(ctx context.Context, id string, sources []string) (*Se
 	return session, nil
 }
 
-func validateSources(id string, sources []string) ([]string, error) {
+func (m *Manager) reclaimPrewarms(sources []Source, exceptID string) {
+	pools := make(map[int64]bool)
+	for _, source := range sources {
+		if source.PoolID != 0 {
+			pools[source.PoolID] = true
+		}
+	}
+	if len(pools) == 0 {
+		return
+	}
+	m.mu.RLock()
+	candidates := make([]*Session, 0)
+	for id, session := range m.sessions {
+		if id == exceptID {
+			continue
+		}
+		session.mu.RLock()
+		prewarm := session.prewarm
+		position := session.sourceIndex
+		poolID := int64(0)
+		if position >= 0 && position < len(session.sources) {
+			poolID = session.sources[position].PoolID
+		}
+		session.mu.RUnlock()
+		if prewarm && pools[poolID] {
+			candidates = append(candidates, session)
+		}
+	}
+	m.mu.RUnlock()
+	for _, session := range candidates {
+		session.emitEvent("info", "prewarm_reclaimed", "Prewarmed capacity was released for an active viewer.", "")
+		session.Stop()
+	}
+	// Stop is asynchronous because the GStreamer pipeline must first transition
+	// to NULL. Give the reclaimed leases a short, bounded window to return so a
+	// real viewer does not lose the first startup attempt to speculative work.
+	deadline := time.NewTimer(350 * time.Millisecond)
+	defer deadline.Stop()
+	for _, session := range candidates {
+		select {
+		case <-session.done:
+		case <-deadline.C:
+			return
+		}
+	}
+}
+
+func (m *Manager) sourceIsAllowed(source Source, sourceCount int) bool {
+	if sourceCount < 2 {
+		return true
+	}
+	m.mu.RLock()
+	health := m.sourceHealth[source.URL]
+	allowed := health == nil || time.Now().After(health.retryAfter)
+	m.mu.RUnlock()
+	return allowed
+}
+
+func (m *Manager) recordSourceResult(source Source, duration time.Duration, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	health := m.sourceHealth[source.URL]
+	if health == nil {
+		health = &sourceHealthState{}
+		m.sourceHealth[source.URL] = health
+	}
+	health.updatedAt = time.Now()
+	if len(m.sourceHealth) > 5000 {
+		var oldestURL string
+		var oldest time.Time
+		for url, candidate := range m.sourceHealth {
+			if url == source.URL {
+				continue
+			}
+			if oldestURL == "" || candidate.updatedAt.Before(oldest) {
+				oldestURL, oldest = url, candidate.updatedAt
+			}
+		}
+		delete(m.sourceHealth, oldestURL)
+	}
+	if err == nil {
+		health.failures = 0
+		health.retryAfter = time.Time{}
+		health.lastSucceeded = time.Now()
+		if health.averageStart == 0 {
+			health.averageStart = duration
+		} else {
+			health.averageStart = (health.averageStart*3 + duration) / 4
+		}
+		return
+	}
+	health.failures++
+	cooldown := time.Duration(1<<min(health.failures-1, 5)) * time.Second
+	health.retryAfter = time.Now().Add(cooldown)
+}
+
+func validateSources(id string, sources []Source) ([]Source, error) {
 	if !validSessionID.MatchString(id) {
 		return nil, fmt.Errorf("invalid stream id")
 	}
-	clean := make([]string, 0, len(sources))
+	clean := make([]Source, 0, len(sources))
 	seen := make(map[string]bool)
 	for _, source := range sources {
-		parsed, err := url.Parse(source)
+		parsed, err := url.Parse(source.URL)
 		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 			continue
 		}
-		if !seen[source] {
-			seen[source] = true
+		if !seen[source.URL] {
+			seen[source.URL] = true
+			if source.ConnectionLimit < 1 && source.PoolID != 0 {
+				source.ConnectionLimit = 1
+			}
+			source.URL = strings.Clone(source.URL)
+			source.PoolName = strings.Clone(source.PoolName)
 			clean = append(clean, source)
 		}
 	}
@@ -363,121 +574,356 @@ func (s *Session) run() {
 
 	attempt := 0
 	nextSource := 0
+	var active *managedProducer
 	for {
-		select {
-		case <-s.ctx.Done():
-			s.finish(StateStopped, nil)
-			return
-		default:
-		}
-
 		sources := s.sourceList()
 		if len(sources) == 0 {
 			s.failInitial(errors.New("no source variants are available"))
 			return
 		}
-		if nextSource >= len(sources) {
-			nextSource = 0
-		}
-		if attempt >= s.config.RetryLimit {
-			err := fmt.Errorf("all ordered source variants failed after %d attempts", attempt)
-			if !s.isReady() {
-				s.failInitial(err)
-				return
+		if active == nil {
+			if nextSource >= len(sources) {
+				nextSource = 0
 			}
-			s.setState(StateFailed, err)
-			if !s.wait(backoff(s.config.RetryBackoff, attempt)) {
-				s.finish(StateStopped, nil)
-				return
+			if attempt >= s.config.RetryLimit {
+				err := fmt.Errorf("all ordered source variants failed after %d attempts", attempt)
+				if !s.isReady() {
+					s.failInitial(err)
+					return
+				}
+				s.setState(StateFailed, err)
+				if !s.wait(backoff(s.config.RetryBackoff, attempt)) {
+					s.finish(StateStopped, nil)
+					return
+				}
+				attempt = 0
 			}
+			var candidate *managedProducer
+			var err error
+			if !s.isReady() && len(sources) > 1 && s.config.StartupHedge > 0 {
+				candidate, err = s.startColdProducerRace(sources, nextSource)
+			} else {
+				candidate, err = s.startManagedProducer(sources[nextSource], nextSource, len(sources))
+			}
+			if err != nil {
+				if errors.Is(err, context.Canceled) || s.ctx.Err() != nil {
+					s.finish(StateStopped, nil)
+					return
+				}
+				attempt++
+				s.reportSourceFailure(err, attempt)
+				nextSource = (nextSource + 1) % len(sources)
+				if nextSource == 0 && !s.wait(backoff(s.config.RetryBackoff, max(attempt-len(sources), 0))) {
+					s.finish(StateStopped, nil)
+					return
+				}
+				continue
+			}
+			s.promoteProducer(candidate, nil)
+			active = candidate
 			attempt = 0
 		}
 
-		s.mu.Lock()
-		s.generation++
-		generation := s.generation
-		s.sourceIndex = nextSource
-		if s.everReady {
-			s.state = StateReconnecting
-			s.reconnects++
-		} else {
-			s.state = StateStarting
-		}
-		shouldReportReconnect := s.everReady
-		s.mu.Unlock()
-		if shouldReportReconnect && s.onReconnect != nil {
-			s.onReconnect()
-		}
-
-		s.hub.ResetWarmBuffer()
-		s.emitEvent("info", "source_connecting", fmt.Sprintf("Connecting to ordered source %d of %d.", nextSource+1, len(sources)), "")
-		producer := s.factory(s.id, sources[nextSource], generation, s.config, s.hub)
-		s.setProducer(producer)
-		err := producer.Start()
-		becameReady := false
-		if err == nil {
-			becameReady, err = s.waitForProducer(producer)
-		}
-		producer.Stop()
-		s.clearProducer(producer)
-		if errors.Is(err, context.Canceled) || s.ctx.Err() != nil {
+		reason, hedge := s.monitorProducer(active)
+		if errors.Is(reason, context.Canceled) || s.ctx.Err() != nil {
+			s.stopManagedProducer(active)
 			s.finish(StateStopped, nil)
 			return
 		}
 
-		if becameReady {
-			attempt = 0
-		}
-		attempt++
 		s.mu.Lock()
 		restartSource := s.restartSource
 		s.restartSource = false
 		s.mu.Unlock()
+		target := active.sourceIndex
 		if !restartSource {
-			nextSource = (nextSource + 1) % len(sources)
+			target = (target + 1) % len(sources)
 		}
-		s.setState(StateReconnecting, err)
-		code, _ := ClassifyError(err)
-		severity := "error"
-		if code == "manual_failover" {
-			severity = "warning"
+
+		// A suspected stall or manual operation first tries to prepare a
+		// replacement while the current producer remains connected. The source
+		// coordinator refuses this when it would exceed a playlist budget.
+		if hedge || strings.Contains(reason.Error(), "manual") {
+			candidate, candidateErr := s.startManagedProducer(sources[target], target, len(sources))
+			if candidateErr == nil && s.hasActiveHLSClient() {
+				candidateErr = s.waitManagedHLS(candidate)
+				if candidateErr != nil {
+					s.stopManagedProducer(candidate)
+					candidate = nil
+				}
+			}
+			if candidateErr == nil {
+				s.promoteProducer(candidate, active)
+				active = candidate
+				attempt = 0
+				continue
+			}
+			if hedge && active.producer.LastDataAt().After(time.Now().Add(-s.config.HedgeTimeout)) {
+				s.emitEvent("warning", "hedged_recovery_cancelled", "The original source recovered before its replacement was ready.", "")
+				active.hedged = false
+				s.setState(StateRunning, nil)
+				continue
+			}
+			if hedge {
+				active.hedged = true
+				continue
+			}
+			if code, _ := ClassifyError(candidateErr); code != "source_connection_limit" {
+				s.setState(StateRunning, nil)
+				s.emitEvent("warning", "replacement_failed", "The requested replacement failed to become ready; the current source was retained.", "")
+				continue
+			}
+			// With a one-connection source budget, make-before-break is
+			// intentionally impossible. Release the old lease before retrying.
+			s.emitEvent("warning", "break_before_make", candidateErr.Error(), "")
 		}
-		s.emitEvent(severity, code, err.Error(), "")
-		log.Warn().Err(err).Str("stream_id", s.id).Int("source_position", s.sourcePosition()).Int("attempt", attempt).Msg("Streaming source failed; trying the next ordered variant")
-		if !s.wait(backoff(s.config.RetryBackoff, attempt-1)) {
-			s.finish(StateStopped, nil)
-			return
-		}
+
+		s.stopManagedProducer(active)
+		active = nil
+		nextSource = target
+		attempt++
+		s.reportSourceFailure(reason, attempt)
 	}
 }
 
-func (s *Session) waitForProducer(producer Producer) (bool, error) {
+func (s *Session) hasActiveHLSClient() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, client := range s.clients {
+		if client.endReason == "" && client.metadata.Protocol == "hls" {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Session) waitManagedHLS(managed *managedProducer) error {
+	timer := time.NewTimer(s.config.StartupTimeout)
+	defer timer.Stop()
+	select {
+	case <-managed.producer.HLSReady():
+		return nil
+	case err := <-managed.producer.Errors():
+		return err
+	case <-timer.C:
+		return fmt.Errorf("replacement HLS segment was not ready within %s", s.config.StartupTimeout)
+	case <-s.ctx.Done():
+		return context.Canceled
+	}
+}
+
+func (s *Session) startColdProducerRace(sources []Source, primaryIndex int) (*managedProducer, error) {
+	results := make(chan producerStartResult, 2)
+	start := func(index int) {
+		managed, err := s.startManagedProducer(sources[index], index, len(sources))
+		results <- producerStartResult{managed: managed, err: err}
+	}
+	go start(primaryIndex)
+	timer := time.NewTimer(s.config.StartupHedge)
+	defer timer.Stop()
+	select {
+	case result := <-results:
+		if result.err == nil {
+			return result.managed, nil
+		}
+		backupIndex := (primaryIndex + 1) % len(sources)
+		return s.startManagedProducer(sources[backupIndex], backupIndex, len(sources))
+	case <-timer.C:
+	}
+
+	backupIndex := (primaryIndex + 1) % len(sources)
+	go start(backupIndex)
+	var failures []error
+	for completed := 0; completed < 2; completed++ {
+		result := <-results
+		if result.err != nil {
+			failures = append(failures, result.err)
+			continue
+		}
+		// Whichever ordered source becomes valid first wins. The other
+		// candidate is stopped as soon as its startup attempt resolves.
+		if completed == 0 {
+			go func() {
+				remaining := <-results
+				if remaining.managed != nil {
+					s.stopManagedProducer(remaining.managed)
+				}
+			}()
+		}
+		return result.managed, nil
+	}
+	return nil, errors.Join(failures...)
+}
+
+func (s *Session) startManagedProducer(source Source, sourceIndex, sourceCount int) (*managedProducer, error) {
+	if s.sourceAllowed != nil && !s.sourceAllowed(source, sourceCount) {
+		return nil, errors.New("source is in a short health cooldown after recent failures")
+	}
+	lease, err := s.connections.acquire(source)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	s.generation++
+	generation := s.generation
+	starting := !s.everReady
+	if starting {
+		s.state = StateStarting
+	} else {
+		s.state = StateReconnecting
+	}
+	s.mu.Unlock()
+	s.emitEvent("info", "source_connecting", fmt.Sprintf("Connecting to ordered source %d of %d.", sourceIndex+1, sourceCount), "")
+	localHub := NewHub(s.config.ClientBufferBytes)
+	producer := s.factory(s.id, source.URL, generation, s.config, localHub)
+	managed := &managedProducer{producer: producer, hub: localHub, lease: lease,
+		sourceIndex: sourceIndex, generation: generation, startedAt: time.Now()}
+	if err := producer.Start(); err != nil {
+		if s.recordSourceResult != nil {
+			s.recordSourceResult(source, time.Since(managed.startedAt), err)
+		}
+		s.stopManagedProducer(managed)
+		return nil, err
+	}
 	timer := time.NewTimer(s.config.StartupTimeout)
 	defer timer.Stop()
 	select {
 	case <-producer.Ready():
-		s.markReady()
+		managed.readyAt = time.Now()
+		if inspector, ok := producer.(HLSCompatibilityInspector); ok {
+			for _, action := range inspector.HLSCompatibilityActions() {
+				s.emitEvent("info", "hls_compatibility_transcode", action, "")
+			}
+		}
+		if s.recordSourceResult != nil {
+			s.recordSourceResult(source, managed.readyAt.Sub(managed.startedAt), nil)
+		}
+		return managed, nil
 	case err := <-producer.Errors():
-		return false, err
+		if s.recordSourceResult != nil {
+			s.recordSourceResult(source, time.Since(managed.startedAt), err)
+		}
+		s.stopManagedProducer(managed)
+		return nil, err
 	case <-timer.C:
-		return false, fmt.Errorf("source produced no valid MPEG-TS programme within %s", s.config.StartupTimeout)
+		if s.recordSourceResult != nil {
+			s.recordSourceResult(source, time.Since(managed.startedAt), context.DeadlineExceeded)
+		}
+		s.stopManagedProducer(managed)
+		return nil, fmt.Errorf("source produced no valid MPEG-TS programme within %s", s.config.StartupTimeout)
 	case <-s.ctx.Done():
-		return false, context.Canceled
-	case err := <-s.forceNext:
-		return false, err
+		s.stopManagedProducer(managed)
+		return nil, context.Canceled
 	}
+}
 
-	s.setState(StateRunning, nil)
-	s.emitEvent("info", "media_ready", "Valid media is flowing from the selected source.", "")
-	s.observeSession(nil, "")
-	select {
-	case err := <-producer.Errors():
-		return true, err
-	case <-s.ctx.Done():
-		return true, context.Canceled
-	case err := <-s.forceNext:
-		return true, err
+func (s *Session) promoteProducer(next, previous *managedProducer) {
+	if previous != nil {
+		s.stopManagedBridge(previous)
 	}
+	s.hub.ResetForDiscontinuity()
+	s.startManagedBridge(next)
+	s.mu.Lock()
+	wasReady := s.everReady
+	s.current = next.producer
+	s.sourceIndex = next.sourceIndex
+	s.everReady = true
+	s.state = StateRunning
+	s.lastError = ""
+	if wasReady {
+		s.reconnects++
+	}
+	s.mu.Unlock()
+	if wasReady && s.onReconnect != nil {
+		s.onReconnect()
+	}
+	s.initialOnce.Do(func() { close(s.initialDone) })
+	s.emitEvent("info", "media_ready", "Valid media is flowing from the selected source.",
+		fmt.Sprintf("{\"generation\":%d,\"startup_ms\":%d}", next.generation, next.readyAt.Sub(next.startedAt).Milliseconds()))
+	s.observeSession(nil, "")
+	if previous != nil {
+		s.stopManagedProducer(previous)
+	}
+}
+
+func (s *Session) startManagedBridge(managed *managedProducer) {
+	bridgeContext, cancel := context.WithCancel(s.ctx)
+	managed.bridgeCancel = cancel
+	managed.bridgeDone = make(chan struct{})
+	subscription := managed.hub.Subscribe()
+	go func() {
+		defer close(managed.bridgeDone)
+		defer subscription.Close()
+		for {
+			select {
+			case <-bridgeContext.Done():
+				return
+			default:
+			}
+			chunk, ok := subscription.Next()
+			if !ok {
+				return
+			}
+			s.hub.PublishOwned(chunk)
+		}
+	}()
+}
+
+func (s *Session) stopManagedBridge(managed *managedProducer) {
+	if managed == nil || managed.bridgeCancel == nil {
+		return
+	}
+	managed.bridgeCancel()
+	managed.hub.Close(context.Canceled)
+	<-managed.bridgeDone
+	managed.bridgeCancel = nil
+}
+
+func (s *Session) stopManagedProducer(managed *managedProducer) {
+	if managed == nil {
+		return
+	}
+	s.stopManagedBridge(managed)
+	managed.producer.Stop()
+	managed.hub.Close(nil)
+	managed.lease.Release()
+	s.clearProducer(managed.producer)
+}
+
+func (s *Session) monitorProducer(active *managedProducer) (error, bool) {
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	hedgeAttempted := false
+	for {
+		select {
+		case err := <-active.producer.Errors():
+			return err, false
+		case <-s.ctx.Done():
+			return context.Canceled, false
+		case err := <-s.forceNext:
+			return err, false
+		case <-ticker.C:
+			last := active.producer.LastDataAt()
+			if active.hedged && !last.IsZero() && time.Since(last) < s.config.HedgeTimeout/2 {
+				active.hedged = false
+			}
+			if !hedgeAttempted && !active.hedged && !last.IsZero() && time.Since(last) >= s.config.HedgeTimeout {
+				hedgeAttempted = true
+				return fmt.Errorf("source delivery is delayed by %s", time.Since(last).Round(100*time.Millisecond)), true
+			}
+		}
+	}
+}
+
+func (s *Session) reportSourceFailure(err error, attempt int) {
+	s.setState(StateReconnecting, err)
+	code, _ := ClassifyError(err)
+	severity := "error"
+	if strings.Contains(code, "manual") || code == "source_connection_limit" {
+		severity = "warning"
+	}
+	s.emitEvent(severity, code, err.Error(), "")
+	log.Warn().Err(err).Str("stream_id", s.id).Int("source_position", s.sourcePosition()).Int("attempt", attempt).Msg("Streaming source failed; trying the next ordered variant")
 }
 
 func backoff(base time.Duration, exponent int) time.Duration {
@@ -501,14 +947,6 @@ func (s *Session) wait(delay time.Duration) bool {
 	case <-s.ctx.Done():
 		return false
 	}
-}
-
-func (s *Session) markReady() {
-	s.mu.Lock()
-	s.everReady = true
-	s.lastError = ""
-	s.mu.Unlock()
-	s.initialOnce.Do(func() { close(s.initialDone) })
 }
 
 func (s *Session) failInitial(err error) {
@@ -549,12 +987,6 @@ func (s *Session) setState(state State, err error) {
 	s.mu.Unlock()
 }
 
-func (s *Session) setProducer(producer Producer) {
-	s.mu.Lock()
-	s.current = producer
-	s.mu.Unlock()
-}
-
 func (s *Session) clearProducer(producer Producer) {
 	s.mu.Lock()
 	if s.current == producer {
@@ -563,15 +995,15 @@ func (s *Session) clearProducer(producer Producer) {
 	s.mu.Unlock()
 }
 
-func (s *Session) sourceList() []string {
+func (s *Session) sourceList() []Source {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return append([]string(nil), s.sources...)
+	return append([]Source(nil), s.sources...)
 }
 
-func (s *Session) updateSources(sources []string) {
+func (s *Session) updateSources(sources []Source) {
 	s.mu.Lock()
-	s.sources = append([]string(nil), sources...)
+	s.sources = append([]Source(nil), sources...)
 	s.mu.Unlock()
 }
 
@@ -616,6 +1048,9 @@ func (s *Session) WaitHLS(ctx context.Context) error {
 		select {
 		case <-producer.HLSReady():
 			s.touch()
+			s.hlsReadyOnce.Do(func() {
+				s.emitEvent("info", "hls_ready", "The first independently playable HLS segment is ready.", "")
+			})
 			return nil
 		case <-time.After(100 * time.Millisecond):
 			// Re-read the current producer so the supervisor remains the sole
@@ -995,6 +1430,8 @@ func (m *Manager) Summary() Summary {
 	}
 	return summary
 }
+
+func (m *Manager) ConnectionUsage() []ConnectionUsage { return m.connections.usage() }
 
 // PruneOrphanedStreamFiles removes HLS work directories left behind by a crash
 // while holding the manager lock for each final active-session check. A stream

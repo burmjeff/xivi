@@ -103,6 +103,18 @@
 			? lineupQuery.data?.items[channelIndex + 1]
 			: undefined
 	);
+	const prewarmed = new Set<string>();
+	$effect(() => {
+		const candidates = [previous, next];
+		for (const candidate of candidates) {
+			const id = candidate?.stream_url ? streamId(candidate.stream_url) : '';
+			if (!id || prewarmed.has(id)) continue;
+			prewarmed.add(id);
+			void api(`/api/v2/stream/prewarm/${id}`, { method: 'POST' }).catch(() => {
+				// Prewarming is opportunistic and may be refused by a source connection budget.
+			});
+		}
+	});
 
 	function cleanup() {
 		if (retryTimer) clearTimeout(retryTimer);
@@ -207,16 +219,16 @@
 				lowLatencyMode: false,
 				initialLiveManifestSize: 1,
 				startFragPrefetch: true,
-				backBufferLength: 30,
-				maxBufferLength: 40,
-				maxMaxBufferLength: 60,
+				backBufferLength: 15,
+				maxBufferLength: 20,
+				maxMaxBufferLength: 30,
 				maxBufferHole: 0.5,
 				highBufferWatchdogPeriod: 4,
 				nudgeOffset: 0.15,
 				nudgeMaxRetry: 5,
-				liveSyncDurationCount: 3,
+				liveSyncDurationCount: 2,
 				liveSyncOnStallIncrease: 1,
-				liveMaxLatencyDurationCount: 8,
+				liveMaxLatencyDurationCount: 6,
 				maxLiveSyncPlaybackRate: 1.05,
 				manifestLoadPolicy: {
 					default: {

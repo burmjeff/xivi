@@ -31,6 +31,7 @@
 		selectedChannels = $state(new Set<number>()),
 		name = $state(''),
 		url = $state(''),
+		connectionLimit = $state(1),
 		editing = $state<LegacyPlaylist | null>(null),
 		busy = $state<number | 'form' | `group:${number}` | null>(null),
 		groupsOpen = $state(true),
@@ -71,11 +72,13 @@
 		editing = source;
 		name = source.name;
 		url = source.url;
+		connectionLimit = source.connection_limit || 1;
 	}
 	function reset() {
 		editing = null;
 		name = '';
 		url = '';
+		connectionLimit = 1;
 	}
 	async function save() {
 		if (!name.trim() || !url.trim()) return;
@@ -89,6 +92,7 @@
 					...(editing ? { id: editing.id } : {}),
 					name: name.trim(),
 					url: url.trim(),
+					connection_limit: connectionLimit,
 					created_at: editing?.created_at,
 					updated_at: new Date().toISOString()
 				})
@@ -229,6 +233,18 @@
 					required
 				/></label
 			>
+			<label
+				>Maximum stream connections<input
+					bind:value={connectionLimit}
+					type="number"
+					min="1"
+					max="100"
+					required
+				/><small
+					>While proxying, Xivi shares viewers of the same channel and never exceeds this source’s
+					upstream limit. Recovery and prewarming use spare connections only.</small
+				></label
+			>
 			<div>
 				<button class="app-button app-button--primary" disabled={busy === 'form'}
 					><Plus size={17} />{editing ? 'Save source' : 'Add and import'}</button
@@ -279,9 +295,14 @@
 											><CheckCircle2 size={13} /> Connected</small
 										></button
 									></td
-								><td><span class="url">{source.url}</span></td><td class="tabular"
-									>{format(source.updated_at)}</td
 								><td
+									><span class="url">{source.url}</span><small class="connection-limit"
+										>{source.active_connections || 0}/{source.connection_limit || 1} upstream connection{(source.connection_limit ||
+											1) === 1
+											? ''
+											: 's'} max</small
+									></td
+								><td class="tabular">{format(source.updated_at)}</td><td
 									><div class="row-actions">
 										<button
 											onclick={() => refresh(source)}
@@ -471,6 +492,14 @@
 		background: var(--surface-raised);
 		padding: 0.55rem 0.7rem;
 		color: var(--text);
+	}
+	.source-editor label small,
+	.connection-limit {
+		display: block;
+		margin-top: 0.25rem;
+		color: var(--muted);
+		font-size: 0.64rem;
+		line-height: 1.35;
 	}
 	.source-editor form > div {
 		display: flex;

@@ -18,13 +18,15 @@ type PlaylistChannel struct {
 }
 
 type ChannelUrl struct {
-	ID           int64     `db:"id" json:"id"`
-	Url          string    `db:"url" json:"url" validate:"required,lte=255"`
-	ChannelId    int64     `db:"channel_id" json:"channel_id" validate:"required"`
-	Order        int64     `db:"orderr" json:"orderr"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
-	SourceName   string    `db:"source_name" json:"source_name,omitempty"`
-	GroupName    string    `db:"group_name" json:"group_name,omitempty"`
-	PlaylistName string    `db:"playlist_name" json:"playlist_name,omitempty"`
+	ID              int64     `db:"id" json:"id"`
+	Url             string    `db:"url" json:"url" validate:"required,lte=255"`
+	ChannelId       int64     `db:"channel_id" json:"channel_id" validate:"required"`
+	Order           int64     `db:"orderr" json:"orderr"`
+	CreatedAt       time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
+	SourceName      string    `db:"source_name" json:"source_name,omitempty"`
+	GroupName       string    `db:"group_name" json:"group_name,omitempty"`
+	PlaylistName    string    `db:"playlist_name" json:"playlist_name,omitempty"`
+	PlaylistID      int64     `db:"playlist_id" json:"playlist_id,omitempty"`
+	ConnectionLimit int       `db:"connection_limit" json:"connection_limit,omitempty"`
 }

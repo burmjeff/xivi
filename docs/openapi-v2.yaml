@@ -172,6 +172,16 @@ paths:
                   incident_id: { type: string }
                   code: { type: string }
         default: { $ref: '#/components/responses/Error' }
+  /stream/prewarm/{stream_id}:
+    post:
+      operationId: prewarmStream
+      description: Opportunistically starts a channel without a viewer. Per-source connection budgets always take precedence.
+      parameters:
+        - { name: stream_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '202': { description: Prewarm requested. }
+        '204': { description: Prewarming is disabled. }
+        default: { $ref: '#/components/responses/Error' }
   /studio/device-outputs:
     get:
       operationId: getDeviceOutputs
@@ -1046,10 +1056,20 @@ components:
         logo_count: { type: integer, format: int64 }
     StreamingStatus:
       type: object
-      required: [summary, sessions]
+      required: [summary, sessions, source_connections]
       properties:
         summary: { $ref: '#/components/schemas/StreamingSummary' }
         sessions: { type: array, items: { $ref: '#/components/schemas/StreamingSession' } }
+        source_connections:
+          { type: array, items: { $ref: '#/components/schemas/SourceConnectionUsage' } }
+    SourceConnectionUsage:
+      type: object
+      required: [source_id, source_name, active, limit]
+      properties:
+        source_id: { type: integer, format: int64 }
+        source_name: { type: string }
+        active: { type: integer }
+        limit: { type: integer }
     StreamingSummary:
       type: object
       required:
@@ -1199,13 +1219,15 @@ components:
             events: { type: array, items: { $ref: '#/components/schemas/StreamEvent' } }
     StudioStreamsResponse:
       type: object
-      required: [proxy_enabled, summary, items, history, recent_events]
+      required: [proxy_enabled, summary, items, history, recent_events, source_connections]
       properties:
         proxy_enabled: { type: boolean }
         summary: { $ref: '#/components/schemas/StreamingSummary' }
         items: { type: array, items: { $ref: '#/components/schemas/StudioStream' } }
         history: { type: array, items: { $ref: '#/components/schemas/StreamSessionHistory' } }
         recent_events: { type: array, items: { $ref: '#/components/schemas/StreamEvent' } }
+        source_connections:
+          { type: array, items: { $ref: '#/components/schemas/SourceConnectionUsage' } }
     CoverageSummary:
       type: object
       required:

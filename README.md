@@ -18,6 +18,22 @@
 5. Run it: npm run serve
 6. Go to your API Docs page: [127.0.0.1:3000/swagger/index.html](http://127.0.0.1:3000/swagger/index.html)
 
+### Shared streaming and source limits
+
+When stream proxying is enabled, Xivi opens one GStreamer producer per active
+channel and shares it across MPEG-TS and HLS viewers. Configure **Maximum stream
+connections** for each playlist in Studio → Sources. Cold starts, retries,
+make-before-break recovery, and optional channel prewarming all consume the same
+per-source budget and never exceed it. A limit of `1` disables parallel recovery
+against that source; ordered variants from a different source can still be
+prepared when their own budget permits.
+
+Studio → Streams shows current source-budget use and per-session media,
+connections, bitrate, failovers, and errors. Studio → Settings → Streaming
+controls the startup race, recovery hedge, prewarm pool, and browser HLS
+compatibility mode. The compatibility mode transcodes only codecs browsers
+commonly reject and leaves the canonical MPEG-TS branch unchanged.
+
 ### Virtual tuner device outputs
 
 Enable **Tuner** on an individual lineup in Studio's Device outputs panel to advertise only that lineup as a virtual network tuner. Each enabled lineup receives a stable device ID and its own `discover.json`, `lineup.json`, and MPEG-TS stream URLs. Plex, Emby, and Jellyfin can therefore add the lineups independently.

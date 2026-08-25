@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -21,7 +22,7 @@ func TestGSTProducerSharesMPEGTSAndCreatesHLS(t *testing.T) {
 	command := exec.Command(
 		"gst-launch-1.0", "-q",
 		"videotestsrc", "num-buffers=90", "pattern=smpte",
-		"!", "video/x-raw,framerate=30/1,width=320,height=180",
+		"!", "video/x-raw,format=I420,framerate=30/1,width=320,height=180",
 		"!", "x264enc", "tune=zerolatency", "speed-preset=ultrafast", "key-int-max=30",
 		"!", "h264parse", "config-interval=-1",
 		"!", "mpegtsmux",
@@ -109,7 +110,7 @@ func TestGSTProducerSharesMPEGTSAndCreatesHLS(t *testing.T) {
 	case <-context.Done():
 		t.Fatal("producer did not create a playable HLS playlist and segment")
 	}
-	playlistPath := filepath.Join(config.StreamRoot, "integration-channel", "playlist.m3u8")
+	playlistPath := producer.(*gstProducer).playlist
 	playlist, err := os.ReadFile(playlistPath)
 	if err != nil {
 		t.Fatalf("read generated HLS playlist: %v", err)
@@ -188,5 +189,71 @@ func TestGSTProducerRemuxesHLSIntoSharedOutputs(t *testing.T) {
 		t.Fatalf("HLS ingest failed before shared HLS readiness: %v", err)
 	case <-time.After(8 * time.Second):
 		t.Fatal("remuxed HLS output did not become ready")
+	}
+}
+
+func TestGSTProducerNormalizesH265ForBrowserHLS(t *testing.T) {
+	if _, err := exec.LookPath("gst-launch-1.0"); err != nil {
+		t.Skip("gst-launch-1.0 is not installed")
+	}
+	temporary := t.TempDir()
+	fixture := filepath.Join(temporary, "h265.ts")
+	command := exec.Command(
+		"gst-launch-1.0", "-q",
+		"videotestsrc", "num-buffers=90", "pattern=ball",
+		"!", "video/x-raw,format=I420,framerate=30/1,width=320,height=180",
+		"!", "x265enc", "speed-preset=ultrafast", "key-int-max=30",
+		"!", "h265parse", "config-interval=-1",
+		"!", "mpegtsmux",
+		"!", "filesink", "location="+fixture,
+	)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("generate H.265 fixture: %v\n%s", err, output)
+	}
+	transport, err := os.ReadFile(fixture)
+	if err != nil || len(transport) == 0 {
+		t.Fatalf("read H.265 fixture: %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "video/mp2t")
+		flusher, _ := writer.(http.Flusher)
+		for {
+			select {
+			case <-request.Context().Done():
+				return
+			default:
+			}
+			if _, err := writer.Write(transport); err != nil {
+				return
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+	}))
+	defer server.Close()
+
+	config := testConfig(filepath.Join(temporary, "output"))
+	config.HLSCompatibility = true
+	config.StartupTimeout = 12 * time.Second
+	config.StallTimeout = 5 * time.Second
+	producer := newGSTProducer("h265-compatibility", server.URL, 1, config, NewHub(config.ClientBufferBytes))
+	if err := producer.Start(); err != nil {
+		t.Fatalf("start H.265 producer: %v", err)
+	}
+	defer producer.Stop()
+	timeout := time.NewTimer(15 * time.Second)
+	defer timeout.Stop()
+	select {
+	case <-producer.HLSReady():
+	case err := <-producer.Errors():
+		t.Fatalf("H.265 compatibility pipeline failed: %v", err)
+	case <-timeout.C:
+		t.Fatal("H.265 compatibility pipeline did not create browser HLS")
+	}
+	actions := producer.(*gstProducer).HLSCompatibilityActions()
+	if len(actions) != 1 || !strings.Contains(actions[0], "H.265") {
+		t.Fatalf("H.265 normalization was not reported: %#v", actions)
 	}
 }

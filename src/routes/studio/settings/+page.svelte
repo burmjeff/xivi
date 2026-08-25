@@ -32,13 +32,17 @@
 			proxy: boolean;
 			ingest_buffer_ms: number;
 			startup_timeout_seconds: number;
+			startup_hedge_ms: number;
 			stall_timeout_seconds: number;
+			hedge_timeout_seconds: number;
 			idle_timeout_seconds: number;
 			retry_limit: number;
 			retry_backoff_ms: number;
 			hls_segment_seconds: number;
 			hls_playlist_length: number;
+			hls_compatibility_mode: boolean;
 			client_buffer_mb: number;
+			prewarm_channels: number;
 			tls_verify: boolean;
 			useragent: string;
 		};
@@ -90,8 +94,15 @@
 				next.ingest_buffer_ms = 'Use a jitter buffer from 0 to 30,000 ms.';
 			if (settings.streaming.startup_timeout_seconds < 3)
 				next.startup_timeout_seconds = 'Allow at least 3 seconds for startup.';
+			if (settings.streaming.startup_hedge_ms < 0 || settings.streaming.startup_hedge_ms > 5000)
+				next.startup_hedge_ms = 'Use 0 to disable racing, or a delay up to 5,000 ms.';
 			if (settings.streaming.stall_timeout_seconds < 3)
 				next.stall_timeout_seconds = 'Allow at least 3 seconds before failover.';
+			if (
+				settings.streaming.hedge_timeout_seconds < 1 ||
+				settings.streaming.hedge_timeout_seconds >= settings.streaming.stall_timeout_seconds
+			)
+				next.hedge_timeout_seconds = 'Start recovery at least 1 second before hard failover.';
 			if (settings.streaming.idle_timeout_seconds < 10)
 				next.idle_timeout_seconds = 'Allow at least 10 seconds before cleanup.';
 			if (settings.streaming.retry_limit < 1)
@@ -104,6 +115,8 @@
 				next.hls_playlist_length = 'Keep at least 3 segments in the live playlist.';
 			if (settings.streaming.client_buffer_mb < 1)
 				next.client_buffer_mb = 'Reserve at least 1 MB per MPEG-TS viewer.';
+			if (settings.streaming.prewarm_channels < 0 || settings.streaming.prewarm_channels > 8)
+				next.prewarm_channels = 'Prewarm from 0 to 8 nearby channels.';
 		}
 		if (
 			section === 'devices' &&
@@ -279,6 +292,13 @@
 					><input type="checkbox" bind:checked={settings.streaming.proxy} /></label
 				><label class="switch-row"
 					><span
+						><strong>Browser HLS compatibility</strong><small
+							>Normalize H.265, MPEG video, AC-3, and MPEG audio only when a browser-safe codec is
+							needed. MPEG-TS output stays original.</small
+						></span
+					><input type="checkbox" bind:checked={settings.streaming.hls_compatibility_mode} /></label
+				><label class="switch-row"
+					><span
 						><strong>Verify source TLS</strong><small
 							>Reject invalid HTTPS certificates instead of silently trusting them.</small
 						></span
@@ -303,11 +323,29 @@
 						/>{#if errors.startup_timeout_seconds}<em>{errors.startup_timeout_seconds}</em
 							>{/if}</label
 					><label
+						>Backup race delay (ms)<input
+							type="number"
+							min="0"
+							max="5000"
+							step="50"
+							bind:value={settings.streaming.startup_hedge_ms}
+						/>{#if errors.startup_hedge_ms}<em>{errors.startup_hedge_ms}</em>{/if}<small
+							>Races the next source after this delay only when its connection pool has capacity.</small
+						></label
+					><label
 						>Stall failover (seconds)<input
 							type="number"
 							min="3"
 							bind:value={settings.streaming.stall_timeout_seconds}
 						/>{#if errors.stall_timeout_seconds}<em>{errors.stall_timeout_seconds}</em>{/if}</label
+					><label
+						>Recovery hedge (seconds)<input
+							type="number"
+							min="1"
+							bind:value={settings.streaming.hedge_timeout_seconds}
+						/>{#if errors.hedge_timeout_seconds}<em>{errors.hedge_timeout_seconds}</em>{/if}<small
+							>Prepares a backup only when its source has spare connection capacity.</small
+						></label
 					><label
 						>Idle cleanup (seconds)<input
 							type="number"
@@ -334,7 +372,7 @@
 							max="10"
 							bind:value={settings.streaming.hls_segment_seconds}
 						/>{#if errors.hls_segment_seconds}<em>{errors.hls_segment_seconds}</em>{/if}<small
-							>Two seconds balances startup speed, resilience, and disk activity.</small
+							>One second gives fast channel changes when the upstream keyframe cadence allows it.</small
 						></label
 					><label
 						>HLS playlist segments<input
@@ -342,7 +380,7 @@
 							min="3"
 							bind:value={settings.streaming.hls_playlist_length}
 						/>{#if errors.hls_playlist_length}<em>{errors.hls_playlist_length}</em>{/if}<small
-							>Ten segments is recommended for jittery IPTV sources.</small
+							>Eight segments provides recovery headroom without excessive live latency.</small
 						></label
 					><label
 						>Per-viewer buffer (MB)<input
@@ -350,6 +388,16 @@
 							min="1"
 							bind:value={settings.streaming.client_buffer_mb}
 						/>{#if errors.client_buffer_mb}<em>{errors.client_buffer_mb}</em>{/if}</label
+					>
+					<label
+						>Nearby channels to prewarm<input
+							type="number"
+							min="0"
+							max="8"
+							bind:value={settings.streaming.prewarm_channels}
+						/>{#if errors.prewarm_channels}<em>{errors.prewarm_channels}</em>{/if}<small
+							>Uses only unused per-source connections. Zero disables predictive warming.</small
+						></label
 					>
 				</div>
 				<label>User agent<input bind:value={settings.streaming.useragent} /></label>

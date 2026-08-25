@@ -52,10 +52,23 @@ func NewHub(maxClientBytes int) *Hub {
 }
 
 func (h *Hub) Publish(data []byte) {
+	h.publish(data, false)
+}
+
+// PublishOwned transfers an immutable chunk already owned by the streaming
+// layer. It avoids another full transport-stream copy in the session bridge.
+func (h *Hub) PublishOwned(data []byte) {
+	h.publish(data, true)
+}
+
+func (h *Hub) publish(data []byte, ownedData bool) {
 	if len(data) == 0 {
 		return
 	}
-	owned := append([]byte(nil), data...)
+	owned := data
+	if !ownedData {
+		owned = append([]byte(nil), data...)
+	}
 	chunk := mediaChunk{data: owned}
 
 	h.mu.Lock()
@@ -89,6 +102,33 @@ func (h *Hub) Publish(data []byte) {
 			h.dropLocked(id, sub)
 			h.slowClientDrops.Add(1)
 		}
+	}
+}
+
+// ResetForDiscontinuity removes queued bytes from the previous source before
+// publishing a validated replacement. Subscribers remain registered and keep
+// the same HTTP connection.
+func (h *Hub) ResetForDiscontinuity() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for index := range h.ring {
+		h.ring[index] = mediaChunk{}
+	}
+	h.ring = nil
+	h.ringBytes = 0
+	for _, sub := range h.subscribers {
+		if sub.closed {
+			continue
+		}
+		for {
+			select {
+			case <-sub.chunks:
+			default:
+				sub.pending = 0
+				goto drained
+			}
+		}
+	drained:
 	}
 }
 

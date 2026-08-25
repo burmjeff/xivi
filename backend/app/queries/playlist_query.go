@@ -55,9 +55,9 @@ func (q *PlaylistQueries) GetPlaylist(id int64) (*models.Playlist, error) {
 
 // CreatePlaylist method for creating a playlist by given Playlist object.
 func (q *PlaylistQueries) CreatePlaylist(p models.Playlist) (int64, error) {
-	query := `INSERT INTO playlist VALUES (null, ?, ?, ?, ?)`
+	query := `INSERT INTO playlist (name, url, connection_limit, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`
 
-	res, err := q.Exec(query, p.Name, p.URL, p.CreatedAt, p.UpdatedAt)
+	res, err := q.Exec(query, p.Name, p.URL, p.ConnectionLimit, p.CreatedAt, p.UpdatedAt)
 	if err != sql.ErrNoRows && err != nil {
 		return 0, err
 	}
@@ -73,9 +73,9 @@ func (q *PlaylistQueries) CreatePlaylist(p models.Playlist) (int64, error) {
 
 // UpdatePlaylist method for updating playlist by given Playlist object.
 func (q *PlaylistQueries) UpdatePlaylist(id int64, p *models.Playlist) error {
-	query := `UPDATE playlist SET name = ?, url = ?, updated_at = ? WHERE id = ?`
+	query := `UPDATE playlist SET name = ?, url = ?, connection_limit = ?, updated_at = ? WHERE id = ?`
 
-	_, err := q.Exec(query, p.Name, p.URL, p.UpdatedAt, id)
+	_, err := q.Exec(query, p.Name, p.URL, p.ConnectionLimit, p.UpdatedAt, id)
 	if err != nil {
 		return err
 	}

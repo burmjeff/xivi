@@ -24,27 +24,30 @@ type gstProducer struct {
 	config     Config
 	hub        *Hub
 
-	mu          sync.Mutex
-	lifecycle   sync.Mutex
-	graphMu     sync.Mutex
-	pipeline    *gst.Pipeline
-	ready       chan struct{}
-	hlsReady    chan struct{}
-	errors      chan error
-	readyOnce   sync.Once
-	hlsOnce     sync.Once
-	errorOnce   sync.Once
-	stopOnce    sync.Once
-	stopping    atomic.Bool
-	lastDataNS  atomic.Int64
-	probe       tsProbe
-	busDone     chan struct{}
-	playlist    string
-	inputTSOnce sync.Once
-	routeMu     sync.Mutex
-	routed      map[string]bool
-	mediaMu     sync.RWMutex
-	mediaTracks []string
+	mu                   sync.Mutex
+	lifecycle            sync.Mutex
+	graphMu              sync.Mutex
+	pipeline             *gst.Pipeline
+	ready                chan struct{}
+	hlsReady             chan struct{}
+	errors               chan error
+	readyOnce            sync.Once
+	hlsOnce              sync.Once
+	errorOnce            sync.Once
+	stopOnce             sync.Once
+	stopping             atomic.Bool
+	lastDataNS           atomic.Int64
+	probe                tsProbe
+	busDone              chan struct{}
+	playlist             string
+	hlsSink              *gst.Element
+	sourceBin            *gst.Element
+	inputTSOnce          sync.Once
+	routeMu              sync.Mutex
+	routed               map[string]bool
+	mediaMu              sync.RWMutex
+	mediaTracks          []string
+	compatibilityActions []string
 }
 
 func newGSTProducer(id, source string, generation uint64, config Config, hub *Hub) Producer {
@@ -80,6 +83,18 @@ func (p *gstProducer) MediaTracks() []string {
 	return append([]string(nil), p.mediaTracks...)
 }
 
+func (p *gstProducer) HLSCompatibilityActions() []string {
+	p.mediaMu.RLock()
+	defer p.mediaMu.RUnlock()
+	return append([]string(nil), p.compatibilityActions...)
+}
+
+func (p *gstProducer) HLSGeneration() uint64 { return p.generation }
+
+func (p *gstProducer) HLSPlaylistSnapshot() (*HLSPlaylistSnapshot, error) {
+	return ReadHLSPlaylist(p.playlist)
+}
+
 func (p *gstProducer) rememberMediaTrack(caps string) {
 	p.mediaMu.Lock()
 	defer p.mediaMu.Unlock()
@@ -89,6 +104,17 @@ func (p *gstProducer) rememberMediaTrack(caps string) {
 		}
 	}
 	p.mediaTracks = append(p.mediaTracks, caps)
+}
+
+func (p *gstProducer) rememberCompatibilityAction(action string) {
+	p.mediaMu.Lock()
+	defer p.mediaMu.Unlock()
+	for _, current := range p.compatibilityActions {
+		if current == action {
+			return
+		}
+	}
+	p.compatibilityActions = append(p.compatibilityActions, action)
 }
 
 func (p *gstProducer) Start() error {
@@ -139,7 +165,10 @@ func (p *gstProducer) Start() error {
 	setOptional(source, "use-buffering", true)
 	setOptional(source, "download", false)
 	setOptional(source, "buffer-duration", int64(p.config.IngestBuffer))
+	setOptional(source, "low-watermark", 0.02)
+	setOptional(source, "high-watermark", 0.20)
 	setOptional(source, "ring-buffer-max-size", uint64(8*1024*1024))
+	p.sourceBin = source
 	setOptional(mux, "alignment", 7)
 	if _, err := source.Connect("source-setup", func(self *gst.Element, child *gst.Element) {
 		setOptional(child, "user-agent", p.config.UserAgent)
@@ -164,10 +193,12 @@ func (p *gstProducer) Start() error {
 		p.disposePipeline()
 		return err
 	}
-	if err := p.addHLSOutput(tee); err != nil {
+	hlsSink, err := p.addHLSOutput()
+	if err != nil {
 		p.disposePipeline()
 		return err
 	}
+	p.hlsSink = hlsSink
 
 	if _, err := source.Connect("pad-added", func(self *gst.Element, pad *gst.Pad) {
 		if p.stopping.Load() {
@@ -311,7 +342,7 @@ func (p *gstProducer) routeElementaryPad(pad *gst.Pad, capsString string, mux *g
 	}
 	p.routed[media] = true
 	p.routeMu.Unlock()
-	if err := p.routePadToMux(pad, parserName, mux); err != nil {
+	if err := p.routePadToMux(pad, parserName, capsString, media, mux); err != nil {
 		p.routeMu.Lock()
 		delete(p.routed, media)
 		p.routeMu.Unlock()
@@ -320,7 +351,7 @@ func (p *gstProducer) routeElementaryPad(pad *gst.Pad, capsString string, mux *g
 	return nil
 }
 
-func (p *gstProducer) routePadToMux(pad *gst.Pad, parserName string, mux *gst.Element) error {
+func (p *gstProducer) routePadToMux(pad *gst.Pad, parserName, capsString, media string, mux *gst.Element) error {
 	parser, err := gst.NewElement(parserName)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", parserName, err)
@@ -333,13 +364,21 @@ func (p *gstProducer) routePadToMux(pad *gst.Pad, parserName string, mux *gst.El
 	_ = queue.Set("max-size-time", uint64(3*time.Second))
 	_ = queue.Set("max-size-bytes", uint(0))
 	_ = queue.Set("max-size-buffers", uint(0))
+	tee, err := gst.NewElement("tee")
+	if err != nil {
+		return fmt.Errorf("create %s output tee: %w", media, err)
+	}
 	p.pipeline.Add(parser)
+	p.pipeline.Add(tee)
 	p.pipeline.Add(queue)
 	if result := pad.Link(parser.GetStaticPad("sink")); result != gst.PadLinkOK {
 		return fmt.Errorf("link adaptive track to %s: %s", parserName, result.String())
 	}
-	if err := parser.Link(queue); err != nil {
-		return fmt.Errorf("link %s to adaptive queue: %w", parserName, err)
+	if err := parser.Link(tee); err != nil {
+		return fmt.Errorf("link %s to shared track outputs: %w", parserName, err)
+	}
+	if err := tee.Link(queue); err != nil {
+		return fmt.Errorf("link %s to transport queue: %w", parserName, err)
 	}
 	muxPad := mux.GetRequestPad("sink_%d")
 	if muxPad == nil {
@@ -348,9 +387,106 @@ func (p *gstProducer) routePadToMux(pad *gst.Pad, parserName string, mux *gst.El
 	if result := queue.GetStaticPad("src").Link(muxPad); result != gst.PadLinkOK {
 		return fmt.Errorf("link adaptive queue to MPEG-TS muxer: %s", result.String())
 	}
+	if p.hlsSink != nil {
+		hlsQueue, queueErr := gst.NewElement("queue")
+		if queueErr != nil {
+			return fmt.Errorf("create %s HLS queue: %w", media, queueErr)
+		}
+		_ = hlsQueue.Set("max-size-time", uint64(10*time.Second))
+		_ = hlsQueue.Set("max-size-bytes", uint(0))
+		_ = hlsQueue.Set("max-size-buffers", uint(0))
+		p.pipeline.Add(hlsQueue)
+		if err := tee.Link(hlsQueue); err != nil {
+			return fmt.Errorf("link %s to HLS queue: %w", media, err)
+		}
+		hlsTail := hlsQueue
+		compatibility, action, compatibilityErr := p.hlsCompatibilityChain(parserName, capsString)
+		if compatibilityErr != nil {
+			return compatibilityErr
+		}
+		for _, element := range compatibility {
+			p.pipeline.Add(element)
+			if err := hlsTail.Link(element); err != nil {
+				return fmt.Errorf("link %s HLS compatibility pipeline: %w", media, err)
+			}
+			hlsTail = element
+		}
+		hlsPad := p.hlsSink.GetRequestPad(media)
+		if hlsPad == nil {
+			return fmt.Errorf("request HLS %s input pad", media)
+		}
+		if result := hlsTail.GetStaticPad("src").Link(hlsPad); result != gst.PadLinkOK {
+			return fmt.Errorf("link %s to HLS segmenter: %s", media, result.String())
+		}
+		hlsQueue.SyncStateWithParent()
+		for _, element := range compatibility {
+			element.SyncStateWithParent()
+		}
+		if action != "" {
+			p.rememberCompatibilityAction(action)
+		}
+	}
 	parser.SyncStateWithParent()
+	tee.SyncStateWithParent()
 	queue.SyncStateWithParent()
 	return nil
+}
+
+// hlsCompatibilityChain preserves the original elementary stream for the
+// canonical MPEG-TS branch, but normalizes codecs that browsers commonly
+// reject in HLS. The resulting encoder is shared by every viewer of a channel.
+func (p *gstProducer) hlsCompatibilityChain(parserName, capsString string) ([]*gst.Element, string, error) {
+	if !p.config.HLSCompatibility {
+		return nil, "", nil
+	}
+	names, action := hlsCompatibilityElements(parserName, capsString)
+	if len(names) == 0 {
+		return nil, "", nil
+	}
+	elements := make([]*gst.Element, 0, len(names))
+	for _, name := range names {
+		element, err := gst.NewElement(name)
+		if err != nil {
+			return nil, "", fmt.Errorf("create HLS compatibility element %s: %w", name, err)
+		}
+		switch name {
+		case "x264enc":
+			element.SetArg("tune", "zerolatency")
+			element.SetArg("speed-preset", "veryfast")
+			setOptional(element, "byte-stream", true)
+			setOptional(element, "key-int-max", uint(60))
+			setOptional(element, "bframes", uint(0))
+		case "h264parse":
+			configureStreamParser(element, name)
+		case "voaacenc":
+			setOptional(element, "bitrate", 128000)
+		}
+		elements = append(elements, element)
+	}
+	return elements, action, nil
+}
+
+func hlsCompatibilityElements(parserName, capsString string) ([]string, string) {
+	lowerCaps := strings.ToLower(capsString)
+	var names []string
+	var action string
+	switch {
+	case parserName == "h265parse":
+		names = []string{"libde265dec", "videoconvert", "x264enc", "h264parse"}
+		action = "H.265 video is being normalized to low-latency H.264 for browser playback."
+	case parserName == "mpegvideoparse":
+		names = []string{"mpeg2dec", "videoconvert", "x264enc", "h264parse"}
+		action = "MPEG video is being normalized to low-latency H.264 for browser playback."
+	case parserName == "ac3parse" && !strings.Contains(lowerCaps, "eac3"):
+		names = []string{"a52dec", "audioconvert", "audioresample", "voaacenc", "aacparse"}
+		action = "AC-3 audio is being normalized to AAC for browser playback."
+	case parserName == "mpegaudioparse":
+		names = []string{"mpg123audiodec", "audioconvert", "audioresample", "voaacenc", "aacparse"}
+		action = "MPEG audio is being normalized to AAC for browser playback."
+	default:
+		return nil, ""
+	}
+	return names, action
 }
 
 func (p *gstProducer) addTransportOutput(tee *gst.Element) error {
@@ -390,7 +526,10 @@ func (p *gstProducer) addTransportOutput(tee *gst.Element) error {
 			data := buffer.Extract(0, buffer.GetSize())
 			p.lastDataNS.Store(time.Now().UnixNano())
 			if p.probe.Push(data) {
-				p.readyOnce.Do(func() { close(p.ready) })
+				p.readyOnce.Do(func() {
+					close(p.ready)
+					go p.enableSteadyBuffering()
+				})
 			}
 			p.hub.Publish(data)
 			return gst.FlowOK
@@ -413,47 +552,46 @@ func (p *gstProducer) addTransportOutput(tee *gst.Element) error {
 	return nil
 }
 
-func (p *gstProducer) addHLSOutput(tee *gst.Element) error {
-	queue, err := gst.NewElement("queue")
-	if err != nil {
-		return fmt.Errorf("create HLS transport queue: %w", err)
+func (p *gstProducer) enableSteadyBuffering() {
+	timer := time.NewTimer(3 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		if !p.stopping.Load() && p.sourceBin != nil {
+			setOptional(p.sourceBin, "high-watermark", 0.60)
+		}
+	case <-p.busDone:
 	}
-	_ = queue.Set("max-size-time", uint64(10*time.Second))
-	_ = queue.Set("max-size-bytes", uint(0))
-	_ = queue.Set("max-size-buffers", uint(0))
-	sink, err := gst.NewElement("hlssink")
+}
+
+func (p *gstProducer) addHLSOutput() (*gst.Element, error) {
+	sink, err := gst.NewElement("hlssink2")
 	if err != nil {
-		return fmt.Errorf("create HLS segmenter: %w", err)
+		return nil, fmt.Errorf("create HLS segmenter: %w", err)
 	}
 	hlsDirectory := filepath.Join(p.config.StreamRoot, p.id)
-	p.playlist = filepath.Join(hlsDirectory, "playlist.m3u8")
+	p.playlist = filepath.Join(hlsDirectory, fmt.Sprintf("playlist.%d.m3u8", p.generation))
 	if err := setRequired(sink, "playlist-location", p.playlist); err != nil {
-		return err
+		return nil, err
 	}
 	if err := setRequired(sink, "location", filepath.Join(hlsDirectory, fmt.Sprintf("segment.%d.%%05d.ts", p.generation))); err != nil {
-		return err
+		return nil, err
 	}
 	if err := setRequired(sink, "playlist-root", fmt.Sprintf("/stream/hls/%s", p.id)); err != nil {
-		return err
+		return nil, err
 	}
 	if err := setRequired(sink, "target-duration", uint(p.config.HLSSegmentSeconds)); err != nil {
-		return err
+		return nil, err
 	}
 	if err := setRequired(sink, "playlist-length", uint(p.config.HLSPlaylistLength)); err != nil {
-		return err
+		return nil, err
 	}
 	if err := setRequired(sink, "max-files", uint(p.config.HLSPlaylistLength+6)); err != nil {
-		return err
+		return nil, err
 	}
-	p.pipeline.Add(queue)
+	setOptional(sink, "send-keyframe-requests", true)
 	p.pipeline.Add(sink)
-	if err := queue.Link(sink); err != nil {
-		return fmt.Errorf("link HLS transport segmenter: %w", err)
-	}
-	if err := tee.Link(queue); err != nil {
-		return fmt.Errorf("link HLS shared output: %w", err)
-	}
-	return nil
+	return sink, nil
 }
 
 // Repeating video parameter sets at each keyframe makes every HLS fragment
@@ -553,10 +691,7 @@ func (p *gstProducer) playlistLoop() {
 		if err := snapshot.ValidateSegments(filepath.Dir(p.playlist)); err != nil {
 			continue
 		}
-		p.hlsOnce.Do(func() {
-			p.removeOldSegments()
-			close(p.hlsReady)
-		})
+		p.hlsOnce.Do(func() { close(p.hlsReady) })
 		return
 	}
 }
@@ -582,7 +717,8 @@ func (p *gstProducer) prepareHLSDirectory() error {
 		}
 		for _, entry := range entries {
 			name := entry.Name()
-			if entry.IsDir() || (name != "playlist.m3u8" && !(strings.HasPrefix(name, "segment.") && strings.HasSuffix(name, ".ts"))) {
+			isPlaylist := strings.HasPrefix(name, "playlist.") && strings.HasSuffix(name, ".m3u8")
+			if entry.IsDir() || (!isPlaylist && name != "playlist.m3u8" && !(strings.HasPrefix(name, "segment.") && strings.HasSuffix(name, ".ts"))) {
 				continue
 			}
 			if err := os.Remove(filepath.Join(directory, name)); err != nil && !os.IsNotExist(err) {
@@ -591,22 +727,6 @@ func (p *gstProducer) prepareHLSDirectory() error {
 		}
 	}
 	return nil
-}
-
-func (p *gstProducer) removeOldSegments() {
-	directory := filepath.Join(p.config.StreamRoot, p.id)
-	currentPrefix := fmt.Sprintf("segment.%d.", p.generation)
-	segments, err := filepath.Glob(filepath.Join(directory, "segment.*.ts"))
-	if err != nil {
-		return
-	}
-	for _, segment := range segments {
-		if !strings.HasPrefix(filepath.Base(segment), currentPrefix) {
-			if err := os.Remove(segment); err != nil && !os.IsNotExist(err) {
-				log.Debug().Err(err).Str("path", segment).Msg("Could not remove old HLS segment")
-			}
-		}
-	}
 }
 
 func (p *gstProducer) Stop() {

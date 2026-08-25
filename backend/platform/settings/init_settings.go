@@ -78,6 +78,9 @@ func InitSettings() error {
 		}
 	}
 
+	if appSettings.Streaming.HedgeTimeoutSeconds == 0 {
+		appSettings.Streaming.HedgeTimeoutSeconds = 3
+	}
 	if err := WriteSettings(appSettings); err != nil {
 		return err
 	}
@@ -107,15 +110,19 @@ func SetDefaults() (*AppSettings, error) {
 		},
 		Streaming: Streaming{
 			Proxy:                 true,
-			IngestBufferMS:        1500,
+			IngestBufferMS:        750,
 			StartupTimeoutSeconds: 12,
-			StallTimeoutSeconds:   10,
+			StartupHedgeMS:        750,
+			StallTimeoutSeconds:   5,
+			HedgeTimeoutSeconds:   3,
 			IdleTimeoutSeconds:    45,
 			RetryLimit:            6,
 			RetryBackoffMS:        500,
-			HLSSegmentSeconds:     2,
-			HLSPlaylistLength:     10,
+			HLSSegmentSeconds:     1,
+			HLSPlaylistLength:     8,
+			HLSCompatibilityMode:  true,
 			ClientBufferMB:        2,
+			PrewarmChannels:       2,
 			TLSVerify:             true,
 			UserAgent:             "Xivi 1.0",
 		},

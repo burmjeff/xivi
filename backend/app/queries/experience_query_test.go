@@ -23,7 +23,7 @@ func newExperienceTestDB(t *testing.T) *sqlx.DB {
 	db := sqlx.MustOpen("sqlite3", ":memory:?_foreign_keys=on&_loc=UTC")
 	t.Cleanup(func() { _ = db.Close() })
 	schema := []string{
-		`CREATE TABLE playlist (id INTEGER PRIMARY KEY, name TEXT NOT NULL, url TEXT, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE playlist (id INTEGER PRIMARY KEY, name TEXT NOT NULL, url TEXT, connection_limit INTEGER NOT NULL DEFAULT 1, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE template (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`,
 		`CREATE TABLE templategroup (id INTEGER PRIMARY KEY, name TEXT NOT NULL, dynamic BOOLEAN, dynamicgroup INTEGER)`,
 		`CREATE TABLE template_group_item (template_id INTEGER, group_id INTEGER, orderr INTEGER)`,
@@ -199,7 +199,7 @@ func TestStudioOverviewSeparatesUnmatchedAndLowConfidenceChannels(t *testing.T) 
 func TestGetMatchSuggestionsRanksEligibleUnattachedSources(t *testing.T) {
 	db := newExperienceTestDB(t)
 	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'BBC World News', 'bbc.world', 0, 'bbc')`)
-	db.MustExec(`INSERT INTO playlist VALUES
+	db.MustExec(`INSERT INTO playlist (id, name, url, created_at, updated_at) VALUES
 		(1, 'Already attached', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 		(2, 'TVG provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 		(3, 'Name provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
@@ -256,7 +256,7 @@ func TestGetSourceChannelsCanHideSourcesUsedByTheActiveLineup(t *testing.T) {
 		(2, 'Used elsewhere', NULL, 0, 'used-elsewhere'),
 		(3, 'Also used here', NULL, 0, 'also-used-here')`)
 	db.MustExec(`INSERT INTO template_group_channel VALUES (10, 1, 1), (10, 3, 2), (20, 2, 1)`)
-	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlist (id, name, url, created_at, updated_at) VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
 	db.MustExec(`INSERT INTO playlistgroup VALUES
 		(30, 'Partly available', 1, 1),
 		(31, 'Fully used', 1, 1),
@@ -307,7 +307,7 @@ func TestGetSourceChannelsCanHideSourcesUsedByTheActiveLineup(t *testing.T) {
 
 func TestSourceBrowserExcludesDisabledGroupsAndChannels(t *testing.T) {
 	db := newExperienceTestDB(t)
-	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlist (id, name, url, created_at, updated_at) VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
 	db.MustExec(`INSERT INTO playlistgroup VALUES
 		(10, 'Mixed', 1, 1),
 		(20, 'Disabled group', 1, 0),
@@ -355,7 +355,7 @@ func TestGetMatchSuggestionsRequiresExistingChannel(t *testing.T) {
 func TestGetMatchSuggestionsIncludesBackupFromRepresentedPlaylist(t *testing.T) {
 	db := newExperienceTestDB(t)
 	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'TYT Network', 'tyt.us', 0, 'tyt')`)
-	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlist (id, name, url, created_at, updated_at) VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
 	db.MustExec(`INSERT INTO playlistgroup VALUES (10, 'News', 1, 1)`)
 	db.MustExec(`INSERT INTO playlistchannel VALUES
 		(100, 'tyt.us', 'TYT Network', NULL, 'TYT Network', 10, 1),
@@ -381,7 +381,7 @@ func TestGetMatchSuggestionsIncludesBackupFromRepresentedPlaylist(t *testing.T) 
 func TestGetMatchSuggestionsReturnsFiveOfAllEligibleSources(t *testing.T) {
 	db := newExperienceTestDB(t)
 	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'US TYT NETWORK', NULL, 0, 'tyt')`)
-	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlist (id, name, url, created_at, updated_at) VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
 	db.MustExec(`INSERT INTO playlistgroup VALUES (10, 'Mixed', 1, 1)`)
 	db.MustExec(`INSERT INTO playlistchannel VALUES
 		(100, NULL, 'TYT Network', NULL, 'TYT Network', 10, 1),
@@ -416,7 +416,7 @@ func TestManualMatchStackAllowsSamePlaylistAndCanBeReordered(t *testing.T) {
 			WHERE existing.channel_id = NEW.channel_id AND existing_pg.playlist_id = new_pg.playlist_id
 		) BEGIN SELECT RAISE(IGNORE); END`)
 	db.MustExec(`INSERT INTO templatechannel VALUES (1, 'News', NULL, 0, 'news')`)
-	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlist (id, name, url, created_at, updated_at) VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
 	db.MustExec(`INSERT INTO playlistgroup VALUES (10, 'News', 1, 1)`)
 	db.MustExec(`INSERT INTO playlistchannel VALUES
 		(100, 'news.tv', 'News primary', NULL, 'News primary', 10, 1),
@@ -465,7 +465,7 @@ func TestManualMatchStackAllowsSamePlaylistAndCanBeReordered(t *testing.T) {
 
 func TestSourceGroupEnablementPreservesChannelsAndPausesLinkedSnapshots(t *testing.T) {
 	db := newExperienceTestDB(t)
-	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlist (id, name, url, created_at, updated_at) VALUES (1, 'Provider', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
 	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'News', 1, 1)`)
 	db.MustExec(`INSERT INTO playlistchannel VALUES
 		(100, 'alpha.tv', 'Alpha', NULL, 'Alpha', 20, 1),
@@ -585,7 +585,7 @@ func TestStreamSourcesSkipDisabledChannelsAndGroups(t *testing.T) {
 
 func TestMatchRejectionRestoreResolvesOnlyUniqueEligibleSource(t *testing.T) {
 	db := newExperienceTestDB(t)
-	db.MustExec(`INSERT INTO playlist VALUES
+	db.MustExec(`INSERT INTO playlist (id, name, url, created_at, updated_at) VALUES
 		(1, 'Resolvable', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 		(2, 'Ambiguous', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 		(3, 'Already represented', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
@@ -762,7 +762,7 @@ func TestCreateStudioGroupRollsBackEveryStepWhenSourceLinkFails(t *testing.T) {
 func TestCreateStudioGroupAtomicallyAttachesLineupAndSource(t *testing.T) {
 	db := newExperienceTestDB(t)
 	db.MustExec(`INSERT INTO template VALUES (1, 'Main')`)
-	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlist (id, name, url, created_at, updated_at) VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
 	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'Provider News', 1, 1)`)
 	query := NewExperienceQueries(db)
 	groupID, err := query.CreateStudioGroup(context.Background(), 1, models.StudioGroupCreateRequest{
@@ -813,7 +813,7 @@ func TestDeleteStudioGroupRemovesOnlyOrphanedCanonicalChannels(t *testing.T) {
 func TestCopySourceGroupToLineupCreatesManualSnapshotWithUniqueName(t *testing.T) {
 	db := newExperienceTestDB(t)
 	db.MustExec(`INSERT INTO template VALUES (1, 'Main')`)
-	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlist (id, name, url, created_at, updated_at) VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
 	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'News', 1, 1)`)
 	db.MustExec(`INSERT INTO playlistchannel VALUES
 		(100, 'alpha.tv', 'Alpha Guide', NULL, 'Alpha', 20, 1),
@@ -856,7 +856,7 @@ func TestCopySourceGroupToLineupCreatesManualSnapshotWithUniqueName(t *testing.T
 
 func TestAddSourceGroupToStudioGroupSkipsExistingVariants(t *testing.T) {
 	db := newExperienceTestDB(t)
-	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlist (id, name, url, created_at, updated_at) VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
 	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'News', 1, 1)`)
 	db.MustExec(`INSERT INTO playlistchannel VALUES
 		(100, 'alpha.tv', 'Alpha Guide', NULL, 'Alpha', 20, 1),
@@ -891,7 +891,7 @@ func TestAddSourceGroupToStudioGroupSkipsExistingVariants(t *testing.T) {
 func TestCopySourceGroupToLineupRollsBackEmptySource(t *testing.T) {
 	db := newExperienceTestDB(t)
 	db.MustExec(`INSERT INTO template VALUES (1, 'Main')`)
-	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlist (id, name, url, created_at, updated_at) VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
 	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'Empty', 1, 1)`)
 	query := NewExperienceQueries(db)
 	if _, err := query.CopySourceGroupToLineup(context.Background(), 1, 20); !errors.Is(err, ErrSourceGroupEmpty) {
@@ -908,7 +908,7 @@ func TestCopySourceGroupToLineupRollsBackEmptySource(t *testing.T) {
 
 func TestSourceGroupSyncReconcilesOwnedMembershipAndPreservesEnrichment(t *testing.T) {
 	db := newExperienceTestDB(t)
-	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlist (id, name, url, created_at, updated_at) VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
 	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'Provider News', 1, 1)`)
 	db.MustExec(`INSERT INTO playlistchannel VALUES
 		(100, 'alpha.tv', 'Provider Alpha', NULL, 'Alpha', 20, 1),
@@ -960,7 +960,7 @@ func TestSourceGroupSyncReconcilesOwnedMembershipAndPreservesEnrichment(t *testi
 
 func TestSourceGroupSyncImportsSourceLogoWithoutOverwritingManualChoice(t *testing.T) {
 	db := newExperienceTestDB(t)
-	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlist (id, name, url, created_at, updated_at) VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
 	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'Provider News', 1, 1)`)
 	db.MustExec(`INSERT INTO playlistchannel VALUES (100, 'alpha.tv', 'Provider Alpha', 'https://cdn.example.test/Alpha Logo.svg?size=512', 'Alpha', 20, 1)`)
 	db.MustExec(`INSERT INTO templategroup VALUES (10, 'News', 0, NULL)`)
@@ -1005,7 +1005,7 @@ func TestSourceGroupSyncImportsSourceLogoWithoutOverwritingManualChoice(t *testi
 
 func TestSourceGroupSyncKeepsDefaultWhenSourceLogoDownloadFails(t *testing.T) {
 	db := newExperienceTestDB(t)
-	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlist (id, name, url, created_at, updated_at) VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
 	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'Provider News', 1, 1)`)
 	db.MustExec(`INSERT INTO playlistchannel VALUES (100, 'alpha.tv', 'Provider Alpha', 'https://cdn.example.test/missing.png', 'Alpha', 20, 1)`)
 	db.MustExec(`INSERT INTO templategroup VALUES (10, 'News', 0, NULL)`)
@@ -1029,7 +1029,7 @@ func TestSourceGroupSyncKeepsDefaultWhenSourceLogoDownloadFails(t *testing.T) {
 
 func TestSourceGroupSyncRetainsLastSnapshotWhenSourceBecomesEmpty(t *testing.T) {
 	db := newExperienceTestDB(t)
-	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlist (id, name, url, created_at, updated_at) VALUES (1, 'Provider', 'https://example.test/list.m3u', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
 	db.MustExec(`INSERT INTO playlistgroup VALUES (20, 'Provider News', 1, 1)`)
 	db.MustExec(`INSERT INTO playlistchannel VALUES (100, 'alpha.tv', 'Provider Alpha', NULL, 'Alpha', 20, 1)`)
 	db.MustExec(`INSERT INTO templategroup VALUES (10, 'News', 0, NULL)`)

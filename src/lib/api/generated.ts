@@ -228,6 +228,23 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/stream/prewarm/{stream_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** @description Opportunistically starts a channel without a viewer. Per-source connection budgets always take precedence. */
+		post: operations['prewarmStream'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/studio/device-outputs': {
 		parameters: {
 			query?: never;
@@ -1092,6 +1109,14 @@ export interface components {
 		StreamingStatus: {
 			summary: components['schemas']['StreamingSummary'];
 			sessions: components['schemas']['StreamingSession'][];
+			source_connections: components['schemas']['SourceConnectionUsage'][];
+		};
+		SourceConnectionUsage: {
+			/** Format: int64 */
+			source_id: number;
+			source_name: string;
+			active: number;
+			limit: number;
 		};
 		StreamingSummary: {
 			sessions: number;
@@ -1233,6 +1258,7 @@ export interface components {
 			items: components['schemas']['StudioStream'][];
 			history: components['schemas']['StreamSessionHistory'][];
 			recent_events: components['schemas']['StreamEvent'][];
+			source_connections: components['schemas']['SourceConnectionUsage'][];
 		};
 		CoverageSummary: {
 			/** Format: int64 */
@@ -1672,6 +1698,34 @@ export interface operations {
 						code: string;
 					};
 				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	prewarmStream: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				stream_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Prewarm requested. */
+			202: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			/** @description Prewarming is disabled. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
 			};
 			default: components['responses']['Error'];
 		};

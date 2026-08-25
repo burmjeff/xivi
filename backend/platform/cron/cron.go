@@ -40,7 +40,9 @@ func RunCronJobs() {
 	log.Log().Msgf("Full update scheduled at: %s", updateJob.ScheduledAtTime())
 
 	maintenanceInterval := settings.APP_SETTINGS.Maintenance.CleanupIntervalHours
-	if _, err := s.Every(maintenanceInterval).Hours().Do(RunMaintenance); err != nil {
+	// Startup already performs a maintenance pass after migrations. Waiting for
+	// the first interval avoids racing that pass and any manual refresh.
+	if _, err := s.Every(maintenanceInterval).Hours().StartAt(time.Now().Add(time.Duration(maintenanceInterval) * time.Hour)).Do(RunMaintenance); err != nil {
 		log.Error().Err(err).Msg("Failed to schedule storage maintenance")
 	} else {
 		log.Info().Int("interval_hours", maintenanceInterval).Msg("Storage maintenance scheduled")
@@ -374,7 +376,6 @@ func pruneTemporaryFiles(before time.Time) (temporaryFileCleanup, error) {
 // This is used by the cron scheduler to ensure updates happen in the correct order
 func RunUpdates() {
 	log.Log().Msg("Starting scheduled update process")
-	database.ReinitializePreparedStatements()
 
 	// Step 1: Update playlists
 	log.Info().Msg("Step 1/3: Starting playlist update")

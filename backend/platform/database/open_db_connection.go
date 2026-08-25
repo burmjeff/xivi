@@ -153,58 +153,6 @@ func InitDB(db *sqlx.DB) error {
 	return nil
 }
 
-// ReinitializePreparedStatements reinitializes all prepared statements in the database
-func ReinitializePreparedStatements() {
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
-	if dbInstance == nil {
-		log.Error().Msg("Cannot reinitialize prepared statements: database instance is nil")
-		return
-	}
-
-	log.Info().Msg("Reinitializing all prepared statements")
-
-	// Reinitialize vector queries prepared statements
-	if Db != nil && Db.VectorQueries != nil {
-		Db.VectorQueries = queries.NewVectorQueries(dbInstance)
-		log.Info().Msg("Vector queries prepared statements reinitialized")
-	}
-
-	// Force a connection reset by closing and reopening connections
-	if err := dbInstance.Close(); err != nil {
-		log.Error().Err(err).Msg("Error closing database connections")
-		return
-	}
-
-	// Reopen the database connection
-	newDb, err := getDB()
-	if err != nil {
-		log.Error().Err(err).Msg("Error reopening database connection")
-		return
-	}
-
-	// Apply optimizations to the new connection
-	optimizeDBConnection(newDb)
-
-	// Update the global instance
-	dbInstance = newDb
-
-	// Recreate all query instances
-	Db = &Queries{
-		PlaylistQueries:   queries.NewPlaylistQueries(newDb),
-		TemplateQueries:   queries.NewTemplateQueries(newDb),
-		EpgQueries:        queries.NewEpgQueries(newDb),
-		VectorQueries:     queries.NewVectorQueries(newDb),
-		LogoQueries:       queries.NewLogoQueries(newDb),
-		StreamQueries:     queries.NewStreamQueries(newDb),
-		CleanupQueries:    queries.NewCleanupQueries(newDb),
-		ExperienceQueries: queries.NewExperienceQueries(newDb),
-	}
-
-	log.Info().Msg("All database prepared statements successfully reinitialized")
-}
-
 // CloseDBConnection closes the database connection.
 func CloseDBConnection() error {
 	// Acquire write lock

@@ -20,6 +20,12 @@ var ErrHLSPlaylistNotReady = errors.New("HLS playlist is not ready")
 type HLSPlaylistSnapshot struct {
 	Content  []byte
 	Segments []string
+	Media    []HLSSegment
+	Duration time.Duration
+}
+
+type HLSSegment struct {
+	Name     string
 	Duration time.Duration
 }
 
@@ -80,7 +86,9 @@ func ReadHLSPlaylist(path string) (*HLSPlaylistSnapshot, error) {
 			return nil, fmt.Errorf("%w: unsafe segment URI", ErrHLSPlaylistNotReady)
 		}
 		snapshot.Segments = append(snapshot.Segments, segment)
-		snapshot.Duration += time.Duration(pendingDuration * float64(time.Second))
+		segmentDuration := time.Duration(pendingDuration * float64(time.Second))
+		snapshot.Media = append(snapshot.Media, HLSSegment{Name: segment, Duration: segmentDuration})
+		snapshot.Duration += segmentDuration
 		pendingDuration = -1
 	}
 	if err := scanner.Err(); err != nil {

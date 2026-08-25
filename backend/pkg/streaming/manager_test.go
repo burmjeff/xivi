@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -261,4 +262,97 @@ func TestSessionBoundsEndedClientsWithoutLosingDeliveryTotals(t *testing.T) {
 	if delivered := session.Snapshot().BytesDelivered; delivered != clients*10 {
 		t.Fatalf("delivery total changed after client cleanup: got %d, want %d", delivered, clients*10)
 	}
+}
+
+func TestManagerEnforcesPlaylistConnectionLimitAcrossChannels(t *testing.T) {
+	config := testConfig(t.TempDir())
+	config.RetryLimit = 1
+	config.StartupHedge = 0
+	manager := NewManager(func(id, source string, generation uint64, config Config, hub *Hub) Producer {
+		return newReadyFake()
+	}, func() Config { return config })
+	t.Cleanup(manager.Close)
+	source := Source{URL: "https://provider.example/live.ts", PoolID: 9, PoolName: "Provider", ConnectionLimit: 1}
+	if _, err := manager.AcquireSources(context.Background(), "limited-one", []Source{source}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if _, err := manager.AcquireSources(ctx, "limited-two", []Source{source}); err == nil {
+		t.Fatal("a second channel exceeded the playlist connection limit")
+	}
+	usage := manager.ConnectionUsage()
+	if len(usage) != 1 || usage[0].Active != 1 || usage[0].Limit != 1 {
+		t.Fatalf("unexpected connection usage: %#v", usage)
+	}
+}
+
+func TestManagerColdStartupRacesBackupWithIndependentCapacity(t *testing.T) {
+	config := testConfig(t.TempDir())
+	config.StartupHedge = 40 * time.Millisecond
+	manager := NewManager(func(id, source string, generation uint64, config Config, hub *Hub) Producer {
+		producer := newReadyFake()
+		if strings.Contains(source, "primary") {
+			producer.ready = make(chan struct{})
+			go func() {
+				time.Sleep(400 * time.Millisecond)
+				close(producer.ready)
+			}()
+		}
+		return producer
+	}, func() Config { return config })
+	t.Cleanup(manager.Close)
+	started := time.Now()
+	session, err := manager.AcquireSources(context.Background(), "raced-channel", []Source{
+		{URL: "https://primary.example/live.ts", PoolID: 1, ConnectionLimit: 1},
+		{URL: "https://backup.example/live.ts", PoolID: 2, ConnectionLimit: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed > 250*time.Millisecond {
+		t.Fatalf("backup race did not reduce startup time: %s", elapsed)
+	}
+	if session.Snapshot().SourcePosition != 2 {
+		t.Fatalf("source position = %d, want fast backup 2", session.Snapshot().SourcePosition)
+	}
+}
+
+func TestManagerManualFailoverPreparesReplacementBeforeStoppingCurrent(t *testing.T) {
+	config := testConfig(t.TempDir())
+	config.StartupHedge = 0
+	var mu sync.Mutex
+	created := map[string]*fakeProducer{}
+	manager := NewManager(func(id, source string, generation uint64, config Config, hub *Hub) Producer {
+		producer := newReadyFake()
+		mu.Lock()
+		created[source] = producer
+		mu.Unlock()
+		return producer
+	}, func() Config { return config })
+	t.Cleanup(manager.Close)
+	session, err := manager.AcquireSources(context.Background(), "manual-switch", []Source{
+		{URL: "https://one.example/live.ts", PoolID: 1, ConnectionLimit: 1},
+		{URL: "https://two.example/live.ts", PoolID: 2, ConnectionLimit: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !session.ForceNextSource() {
+		t.Fatal("manual failover was not accepted")
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if session.Snapshot().SourcePosition == 2 {
+			mu.Lock()
+			old := created["https://one.example/live.ts"]
+			mu.Unlock()
+			if old == nil || old.stops.Load() == 0 {
+				t.Fatal("old producer was not stopped after replacement promotion")
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("manual replacement was not promoted")
 }

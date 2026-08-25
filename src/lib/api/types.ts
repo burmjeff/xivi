@@ -39,6 +39,8 @@ export interface LegacyPlaylist {
 	id: number;
 	name: string;
 	url: string;
+	connection_limit: number;
+	active_connections: number;
 	created_at: string;
 	updated_at: string;
 }

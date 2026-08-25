@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"xivi/backend/app/models"
+	"xivi/backend/pkg/streaming"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/platform/cron"
 	"xivi/backend/platform/database"
@@ -33,6 +34,13 @@ func GetPlaylists(c *fiber.Ctx) error {
 			"count":     0,
 			"playlists": nil,
 		})
+	}
+	usage := make(map[int64]int)
+	for _, source := range streaming.DefaultManager.ConnectionUsage() {
+		usage[source.PoolID] = source.Active
+	}
+	for index := range *playlists {
+		(*playlists)[index].ActiveConnections = usage[(*playlists)[index].ID]
 	}
 
 	// Return status 200 OK.
@@ -71,6 +79,12 @@ func GetPlaylist(c *fiber.Ctx) error {
 			"msg":      "playlist with the given ID is not found",
 			"playlist": nil,
 		})
+	}
+	for _, source := range streaming.DefaultManager.ConnectionUsage() {
+		if source.PoolID == playlist.ID {
+			playlist.ActiveConnections = source.Active
+			break
+		}
 	}
 
 	// Return status 200 OK.
@@ -220,6 +234,9 @@ func CreatePlaylist(c *fiber.Ctx) error {
 	// Set initialized default data for playlist:
 	playlist.CreatedAt = time.Now()
 	playlist.UpdatedAt = time.Now()
+	if playlist.ConnectionLimit == 0 {
+		playlist.ConnectionLimit = 1
+	}
 	//TODO IF Enable on new channel add: playlist.Enabled = 1 // 0 == inactive, 1 == active
 
 	// Validate playlist fields.
@@ -293,6 +310,12 @@ func UpdatePlaylist(c *fiber.Ctx) error {
 
 	// Set initialized default data for playlist:
 	playlist.UpdatedAt = time.Now()
+	// Older API clients do not send the additive connection_limit field. Keep
+	// their existing provider budget instead of turning a routine edit into a
+	// validation failure or silently changing the limit.
+	if playlist.ConnectionLimit == 0 {
+		playlist.ConnectionLimit = foundPlaylist.ConnectionLimit
+	}
 
 	// Create a new validator for a Playlist model.
 	validate := utils.NewValidator()

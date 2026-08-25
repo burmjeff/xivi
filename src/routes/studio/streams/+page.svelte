@@ -267,6 +267,29 @@
 				><small>{streamsQuery.data.summary.slow_client_drops} slow viewers dropped</small>
 			</article>
 		</section>
+		{#if streamsQuery.data.source_connections.length}
+			<section class="source-budgets panel" aria-label="Upstream connection budgets">
+				<header>
+					<div>
+						<p class="eyebrow">Source capacity</p>
+						<h2>Upstream connection budgets</h2>
+					</div>
+					<small>Recovery and prewarming cannot exceed these limits.</small>
+				</header>
+				<div>
+					{#each streamsQuery.data.source_connections as source}
+						<article>
+							<span
+								><strong>{source.source_name || `Source ${source.source_id}`}</strong><em
+									>{source.active}/{source.limit} active</em
+								></span
+							>
+							<progress value={source.active} max={source.limit}></progress>
+						</article>
+					{/each}
+				</div>
+			</section>
+		{/if}
 
 		<div class="workspace">
 			<section class="stream-list panel">
@@ -686,6 +709,50 @@
 		grid-column: 1/3;
 		color: var(--muted);
 		font-size: 0.65rem;
+	}
+	.source-budgets {
+		display: grid;
+		grid-template-columns: minmax(14rem, 0.6fr) 1fr;
+		gap: 1rem;
+		padding: 1rem;
+	}
+	.source-budgets > header h2,
+	.source-budgets > header p {
+		margin: 0;
+	}
+	.source-budgets > header > small {
+		display: block;
+		margin-top: 0.35rem;
+		color: var(--muted);
+		font-size: 0.66rem;
+	}
+	.source-budgets > div {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+		gap: 0.6rem;
+	}
+	.source-budgets article,
+	.source-budgets article span {
+		display: grid;
+		gap: 0.35rem;
+	}
+	.source-budgets article {
+		border-radius: 0.8rem;
+		background: var(--surface-raised);
+		padding: 0.7rem;
+	}
+	.source-budgets article span {
+		grid-template-columns: 1fr auto;
+		font-size: 0.68rem;
+	}
+	.source-budgets article em {
+		color: var(--muted);
+		font-style: normal;
+	}
+	.source-budgets progress {
+		width: 100%;
+		height: 0.35rem;
+		accent-color: var(--aqua);
 	}
 	.workspace {
 		display: grid;
@@ -1338,6 +1405,9 @@
 		}
 	}
 	@media (max-width: 850px) {
+		.source-budgets {
+			grid-template-columns: 1fr;
+		}
 		.workspace {
 			grid-template-columns: 1fr;
 		}
