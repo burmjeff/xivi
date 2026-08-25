@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
 	import { page } from '$app/state';
-	import { Search, ArrowRight, Sparkles } from '@lucide/svelte';
+	import { Search, ArrowRight, ChevronLeft, ChevronRight, Sparkles } from '@lucide/svelte';
 	import { api, params } from '$lib/api/client';
 	import type { GuideChannel, LineupSummary, Paginated } from '$lib/api/types';
 	import { preferences, selectLineup } from '$lib/state/preferences.svelte';
@@ -34,6 +34,15 @@
 			result.set(channel.group_name, [...(result.get(channel.group_name) ?? []), channel]);
 		return [...result.entries()];
 	});
+	function scrollRail(event: MouseEvent, direction: -1 | 1) {
+		const button = event.currentTarget as HTMLButtonElement;
+		const rail = button.closest('.rail')?.querySelector<HTMLElement>('.rail-scroll');
+		if (!rail) return;
+		rail.scrollBy({
+			left: direction * Math.max(rail.clientWidth * 0.82, 320),
+			behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+		});
+	}
 </script>
 
 <svelte:head
@@ -89,11 +98,28 @@
 							<p class="eyebrow">On now</p>
 							<h2>{name}</h2>
 						</div>
-						<a href={`/channels?group=${encodeURIComponent(name)}`}
-							>See all <ArrowRight size={16} /></a
-						>
+						<div class="rail-actions">
+							<div class="rail-nav" aria-label={`Scroll ${name} channels`}>
+								<button
+									aria-label={`Scroll ${name} left`}
+									onclick={(event) => scrollRail(event, -1)}><ChevronLeft size={18} /></button
+								><button
+									aria-label={`Scroll ${name} right`}
+									onclick={(event) => scrollRail(event, 1)}><ChevronRight size={18} /></button
+								>
+							</div>
+							<a href={`/channels?group=${encodeURIComponent(name)}`}
+								>See all <ArrowRight size={16} /></a
+							>
+						</div>
 					</header>
-					<div class="rail-scroll">
+					<!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard users need to scroll the rail) -->
+					<div
+						class="rail-scroll"
+						role="region"
+						aria-label={`${name} channels, horizontal list`}
+						tabindex="0"
+					>
 						{#each channels as channel}<ChannelCard {channel} />{/each}
 					</div>
 				</section>{/each}
@@ -102,6 +128,9 @@
 
 <style>
 	.home-page {
+		width: 100%;
+		min-width: 0;
+		overflow-x: clip;
 		padding-bottom: 4rem;
 	}
 	.hero {
@@ -150,8 +179,14 @@
 	}
 	.rails {
 		display: grid;
+		width: 100%;
+		min-width: 0;
 		gap: 3rem;
 		padding: 3rem 0;
+	}
+	.rail {
+		width: 100%;
+		min-width: 0;
 	}
 	.rail header {
 		display: flex;
@@ -163,6 +198,35 @@
 		margin: 0;
 		font-size: clamp(1.6rem, 3vw, 2.45rem);
 	}
+	.rail-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+	.rail-nav {
+		display: flex;
+		gap: 0.3rem;
+	}
+	.rail-nav button {
+		display: grid;
+		width: 2.5rem;
+		height: 2.5rem;
+		place-items: center;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--watch-card);
+		color: var(--text);
+		cursor: pointer;
+		transition:
+			border-color var(--micro),
+			background var(--micro),
+			transform var(--micro) var(--ease-out);
+	}
+	.rail-nav button:hover {
+		border-color: color-mix(in oklch, var(--aqua) 55%, var(--line));
+		background: color-mix(in oklch, var(--aqua) 12%, var(--watch-card));
+		transform: translateY(-1px);
+	}
 	.rail header a {
 		display: flex;
 		align-items: center;
@@ -173,17 +237,45 @@
 	}
 	.rail-scroll {
 		display: flex;
+		width: 100%;
+		min-width: 0;
+		max-width: 100vw;
+		box-sizing: border-box;
 		gap: 1rem;
 		overflow-x: auto;
+		overflow-y: hidden;
+		overscroll-behavior-inline: contain;
 		padding: 0.35rem clamp(1rem, 5vw, 5rem) 1.5rem;
 		scroll-padding-inline: clamp(1rem, 5vw, 5rem);
 		scroll-snap-type: x proximity;
 		scrollbar-width: thin;
+		scrollbar-color: color-mix(in oklch, var(--aqua) 50%, var(--line)) transparent;
+		-webkit-overflow-scrolling: touch;
+	}
+	.rail-scroll:focus-visible {
+		outline: 2px solid var(--aqua);
+		outline-offset: -2px;
+	}
+	.rail-scroll::-webkit-scrollbar {
+		height: 0.55rem;
+	}
+	.rail-scroll::-webkit-scrollbar-track {
+		background: transparent;
+	}
+	.rail-scroll::-webkit-scrollbar-thumb {
+		border: 2px solid transparent;
+		border-radius: 999px;
+		background: color-mix(in oklch, var(--aqua) 50%, var(--line));
+		background-clip: padding-box;
 	}
 	.loading-rail {
 		display: flex;
+		width: 100%;
+		min-width: 0;
+		box-sizing: border-box;
 		gap: 1rem;
-		overflow: hidden;
+		overflow-x: auto;
+		overflow-y: hidden;
 		padding: 3rem 5vw;
 	}
 	.loading-rail > div {
@@ -205,6 +297,16 @@
 		}
 		.hero-tools {
 			align-content: initial;
+		}
+		.rail header {
+			align-items: center;
+		}
+		.rail-nav button {
+			width: 2.75rem;
+			height: 2.75rem;
+		}
+		.rail header a {
+			display: none;
 		}
 	}
 </style>
