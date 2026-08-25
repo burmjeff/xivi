@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"xivi/backend/pkg/streaming"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/pkg/virtualtuner"
 	"xivi/backend/platform/cron"
@@ -32,6 +33,18 @@ func StartServer(app *fiber.App) {
 	} else if interrupted > 0 {
 		log.Warn().Int64("jobs", interrupted).Msg("Marked interrupted operation jobs as failed")
 	}
+	if interrupted, reconcileErr := database.Db.ReconcileStreamSessions(context.Background()); reconcileErr != nil {
+		log.Error().Err(reconcileErr).Msg("Failed to reconcile interrupted stream sessions")
+	} else if interrupted > 0 {
+		log.Warn().Int64("sessions", interrupted).Msg("Marked interrupted stream sessions as stopped")
+	}
+	cron.RunMaintenance()
+	streamAudit := newStreamObserver()
+	streaming.DefaultManager.SetObserver(streamAudit)
+	defer func() {
+		streaming.DefaultManager.SetObserver(nil)
+		streamAudit.Close()
+	}()
 
 	// Now that database is initialized, we can safely initialize the vector cache
 	utils.InitializeCache()
@@ -65,6 +78,7 @@ func StartServer(app *fiber.App) {
 	go func() {
 		<-c
 		log.Info().Msg("Gracefully shutting down...")
+		streaming.DefaultManager.Close()
 
 		// Shutdown Fiber app
 		if err := app.Shutdown(); err != nil {

@@ -17,6 +17,12 @@ func V2Routes(a *fiber.App) {
 
 	v2.Get("/studio/overview", controllers.V2StudioOverview)
 	v2.Get("/studio/streaming/status", controllers.V2StreamingStatus)
+	v2.Get("/studio/streams", controllers.V2StudioStreams)
+	v2.Get("/studio/streams/history/:incident_id", controllers.V2StudioStreamHistory)
+	v2.Post("/studio/streams/:stream_id/failover", controllers.V2FailoverStream)
+	v2.Post("/studio/streams/:stream_id/restart", controllers.V2RestartStream)
+	v2.Delete("/studio/streams/:stream_id", controllers.V2StopStream)
+	v2.Delete("/studio/streams/:stream_id/connections/:connection_id", controllers.V2DisconnectStreamClient)
 	v2.Get("/studio/device-outputs", controllers.V2DeviceOutputs)
 	v2.Patch("/studio/device-outputs/virtual-tuner/:lineup_id", controllers.V2SetLineupVirtualTunerEnabled)
 	v2.Get("/studio/guide-data/coverage", controllers.V2StudioCoverage)
@@ -56,4 +62,5 @@ func V2Routes(a *fiber.App) {
 	v2.Get("/jobs", controllers.V2Jobs)
 	v2.Get("/jobs/:job_id", controllers.V2Job)
 	v2.Get("/events", controllers.V2Events)
+	v2.Post("/stream/telemetry", controllers.V2StreamTelemetry)
 }

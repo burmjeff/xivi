@@ -10,6 +10,7 @@ var APP_SETTINGS = &AppSettings{
 	Playlist:     Playlist{},
 	Streaming:    Streaming{},
 	Vector:       Vector{},
+	Maintenance:  Maintenance{},
 	VirtualTuner: VirtualTuner{},
 }
 var SERVER_PATH = ""
@@ -26,6 +27,7 @@ type AppSettings struct {
 	Playlist     `yaml:"playlist" json:"playlist"`
 	Streaming    `yaml:"streaming" json:"streaming"`
 	Vector       `yaml:"vector" json:"vector"`
+	Maintenance  `yaml:"maintenance" json:"maintenance"`
 	VirtualTuner `yaml:"virtual_tuner" json:"virtual_tuner"`
 }
 
@@ -70,6 +72,17 @@ type Vector struct {
 	ParallelBatches int `yaml:"parallel_batches" json:"parallel_batches"`
 	Timeout         int `yaml:"timeout" json:"timeout"`
 	CacheSize       int `yaml:"cache_size" json:"cache_size"`
+}
+
+// Maintenance controls bounded retention for generated operational data. The
+// record ceilings are hard safety limits in addition to the age-based policy,
+// so an unusually noisy source cannot consume unbounded storage between runs.
+type Maintenance struct {
+	CleanupIntervalHours      int `yaml:"cleanup_interval_hours" json:"cleanup_interval_hours"`
+	OperationJobRetentionDays int `yaml:"operation_job_retention_days" json:"operation_job_retention_days"`
+	StreamDiagnosticsDays     int `yaml:"stream_diagnostics_days" json:"stream_diagnostics_days"`
+	MaximumOperationJobs      int `yaml:"maximum_operation_jobs" json:"maximum_operation_jobs"`
+	MaximumStreamSessions     int `yaml:"maximum_stream_sessions" json:"maximum_stream_sessions"`
 }
 
 type VirtualTuner struct {

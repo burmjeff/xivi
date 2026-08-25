@@ -14,6 +14,7 @@ import (
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/app/queries"
+	"xivi/backend/pkg/streaming"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/platform/cron"
 	"xivi/backend/platform/database"
@@ -949,7 +950,8 @@ func V2Events(c *fiber.Ctx) error {
 			if err != nil {
 				return false, err
 			}
-			payload, _ := json.Marshal(fiber.Map{"jobs": jobs, "at": time.Now().UTC()})
+			streamSummary := streaming.DefaultManager.Summary()
+			payload, _ := json.Marshal(fiber.Map{"jobs": jobs, "streams": streamSummary, "at": time.Now().UTC()})
 			lastID := int64(0)
 			active := false
 			if len(jobs) > 0 {
@@ -960,6 +962,9 @@ func V2Events(c *fiber.Ctx) error {
 					active = true
 					break
 				}
+			}
+			if streamSummary.Sessions > 0 {
+				active = true
 			}
 			if _, err := fmt.Fprintf(w, "id: %d\nretry: 5000\nevent: snapshot\ndata: %s\n\n", lastID, payload); err != nil {
 				return false, err

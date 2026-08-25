@@ -14,6 +14,7 @@
 		let activeJobIds = new Set<number>();
 		const refreshResources = (event: Event) => {
 			void queryClient.invalidateQueries({ queryKey: ['studio', 'overview'] });
+			void queryClient.invalidateQueries({ queryKey: ['studio', 'streams'] });
 			try {
 				const payload = JSON.parse((event as MessageEvent<string>).data) as {
 					jobs?: Array<{ id: number; status: string }>;

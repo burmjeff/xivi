@@ -33,8 +33,67 @@
 		attachedUrl = '',
 		networkRetries = 0,
 		mediaRecoveries = 0,
+		viewerId = '',
+		incidentId = $state(''),
+		lastTelemetryAt = 0,
 		retryTimer: ReturnType<typeof setTimeout> | undefined,
 		stallTimer: ReturnType<typeof setTimeout> | undefined;
+	function ensureViewerId() {
+		if (!viewerId) {
+			viewerId =
+				globalThis.crypto?.randomUUID?.() ??
+				`viewer-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		}
+		return viewerId;
+	}
+	function streamId(url: string) {
+		try {
+			const parts = new URL(url, location.origin).pathname.split('/').filter(Boolean);
+			return parts.at(-1) ?? '';
+		} catch {
+			return '';
+		}
+	}
+	function viewerUrl(url: string) {
+		const result = new URL(url, location.origin);
+		result.searchParams.set('viewer_id', ensureViewerId());
+		return `${result.pathname}${result.search}${result.hash}`;
+	}
+	async function reportPlayerEvent(
+		url: string,
+		severity: 'info' | 'warning' | 'error',
+		code: string,
+		message: string,
+		details: Record<string, unknown> = {},
+		throttle = false
+	) {
+		if (throttle && Date.now() - lastTelemetryAt < 30_000) return;
+		lastTelemetryAt = Date.now();
+		try {
+			const result = await api<{ incident_id?: string }>('/api/v2/stream/telemetry', {
+				method: 'POST',
+				body: JSON.stringify({
+					stream_id: streamId(url),
+					viewer_id: ensureViewerId(),
+					severity,
+					code,
+					message,
+					details: {
+						...details,
+						ready_state: video?.readyState,
+						network_state: video?.networkState,
+						buffered_seconds:
+							video && video.buffered.length
+								? Math.max(0, video.buffered.end(video.buffered.length - 1) - video.currentTime)
+								: 0
+					}
+				})
+			});
+			if (result.incident_id) incidentId = result.incident_id;
+		} catch {
+			// Playback diagnostics must never interfere with recovery.
+		}
+	}
 	let channelIndex = $derived(
 		(lineupQuery.data?.items ?? []).findIndex((item) => item.id === channelId)
 	);
@@ -83,6 +142,15 @@
 			if (liveSyncPosition != null && liveSyncPosition - video.currentTime > 12) {
 				video.currentTime = liveSyncPosition;
 			}
+			if (attachedUrl)
+				void reportPlayerEvent(
+					attachedUrl,
+					'warning',
+					'player_buffer_stall',
+					'The browser ran out of playable media.',
+					{},
+					true
+				);
 		}, 4_000);
 	}
 	async function startPlayback() {
@@ -99,6 +167,10 @@
 			if (playError instanceof DOMException && playError.name === 'AbortError') return;
 			loading = false;
 			error = 'The browser could not start this live stream. Retry to reconnect.';
+			if (attachedUrl)
+				void reportPlayerEvent(attachedUrl, 'error', 'player_start_failed', error, {
+					name: playError instanceof Error ? playError.name : 'unknown'
+				});
 		}
 	}
 	function scheduleNetworkRecovery(url: string) {
@@ -106,6 +178,9 @@
 		if (networkRetries >= 5) {
 			loading = false;
 			error = 'The source stayed unavailable after several reconnect attempts.';
+			void reportPlayerEvent(url, 'error', 'player_network_retries_exhausted', error, {
+				retries: networkRetries
+			});
 			return;
 		}
 		networkRetries += 1;
@@ -122,6 +197,7 @@
 		if (!video || !url || attachedUrl === url) return;
 		cleanup();
 		attachedUrl = url;
+		incidentId = '';
 		loading = true;
 		error = '';
 		playbackPaused = true;
@@ -129,7 +205,7 @@
 			hls = new Hls({
 				enableWorker: true,
 				lowLatencyMode: false,
-				initialLiveManifestSize: 3,
+				initialLiveManifestSize: 1,
 				startFragPrefetch: true,
 				backBufferLength: 30,
 				maxBufferLength: 40,
@@ -202,7 +278,17 @@
 			});
 			hls.on(Hls.Events.ERROR, (_event, data) => {
 				if (!data.fatal) {
-					if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) onWaiting();
+					if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
+						onWaiting();
+						void reportPlayerEvent(
+							url,
+							'warning',
+							'hls_buffer_stalled',
+							'HLS.js reported a playback stall.',
+							{ type: data.type, detail: data.details },
+							true
+						);
+					}
 					return;
 				}
 				if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
@@ -215,20 +301,33 @@
 					error = 'The player is repairing the live signal…';
 					if (mediaRecoveries === 2) hls?.swapAudioCodec();
 					hls?.recoverMediaError();
+					void reportPlayerEvent(
+						url,
+						'warning',
+						'hls_media_recovery',
+						'HLS.js is attempting media recovery.',
+						{ recovery: mediaRecoveries, detail: data.details }
+					);
 					return;
 				}
 				loading = false;
 				error = 'This stream could not be decoded by the browser.';
+				void reportPlayerEvent(url, 'error', 'hls_fatal_error', error, {
+					type: data.type,
+					detail: data.details,
+					fatal: data.fatal
+				});
 			});
 			hls.attachMedia(video);
-			hls.loadSource(url);
+			hls.loadSource(viewerUrl(url));
 		} else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-			video.src = url;
+			video.src = viewerUrl(url);
 			video.load();
 			void startPlayback();
 		} else {
 			loading = false;
 			error = 'HLS playback is not supported in this browser.';
+			void reportPlayerEvent(url, 'error', 'hls_unsupported', error);
 		}
 	}
 	$effect(() => {
@@ -278,6 +377,10 @@
 							if (!hls) {
 								loading = false;
 								error = 'The native player lost the live signal. Retry to reconnect.';
+								if (attachedUrl)
+									void reportPlayerEvent(attachedUrl, 'error', 'native_media_error', error, {
+										media_error_code: video?.error?.code
+									});
 							}
 						}}
 						aria-label={`${channelQuery.data.name} live stream`}
@@ -302,6 +405,12 @@
 				{#if error}<div class="stream-overlay error">
 						<h2>Signal interrupted</h2>
 						<p>{error}</p>
+						{#if incidentId}<p class="incident-reference">
+								Diagnostic incident <a
+									href={`/studio/streams?stream_id=${streamId(channelQuery.data.stream_url)}`}
+									>{incidentId}</a
+								>
+							</p>{/if}
 						<button
 							class="app-button app-button--primary"
 							onclick={() => {
@@ -450,6 +559,15 @@
 	}
 	.stream-overlay.error h2 {
 		margin: 0;
+	}
+	.incident-reference {
+		font-size: 0.68rem;
+	}
+	.incident-reference a {
+		color: var(--aqua);
+		font-family: ui-monospace, monospace;
+		text-decoration: underline;
+		text-underline-offset: 0.2rem;
 	}
 	.now-playing {
 		display: grid;

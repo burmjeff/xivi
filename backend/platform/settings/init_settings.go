@@ -125,6 +125,13 @@ func SetDefaults() (*AppSettings, error) {
 			Timeout:         90,
 			CacheSize:       500,
 		},
+		Maintenance: Maintenance{
+			CleanupIntervalHours:      6,
+			OperationJobRetentionDays: 30,
+			StreamDiagnosticsDays:     14,
+			MaximumOperationJobs:      2000,
+			MaximumStreamSessions:     2000,
+		},
 		VirtualTuner: VirtualTuner{
 			TunerCount: 6,
 		},
@@ -134,6 +141,7 @@ func SetDefaults() (*AppSettings, error) {
 }
 
 func WriteSettings(settings *AppSettings) error {
+	normalizeMaintenance(&settings.Maintenance)
 	config := fmt.Sprintf("%s/config.yaml", CONFIG_PATH)
 	yamlData, err := yaml.Marshal(&settings)
 	if err != nil {
@@ -152,6 +160,24 @@ func WriteSettings(settings *AppSettings) error {
 
 	APP_SETTINGS = settings
 	return nil
+}
+
+func normalizeMaintenance(maintenance *Maintenance) {
+	if maintenance.CleanupIntervalHours < 1 || maintenance.CleanupIntervalHours > 168 {
+		maintenance.CleanupIntervalHours = 6
+	}
+	if maintenance.OperationJobRetentionDays < 1 || maintenance.OperationJobRetentionDays > 365 {
+		maintenance.OperationJobRetentionDays = 30
+	}
+	if maintenance.StreamDiagnosticsDays < 1 || maintenance.StreamDiagnosticsDays > 365 {
+		maintenance.StreamDiagnosticsDays = 14
+	}
+	if maintenance.MaximumOperationJobs < 100 || maintenance.MaximumOperationJobs > 100000 {
+		maintenance.MaximumOperationJobs = 2000
+	}
+	if maintenance.MaximumStreamSessions < 100 || maintenance.MaximumStreamSessions > 100000 {
+		maintenance.MaximumStreamSessions = 2000
+	}
 }
 
 func InitPaths() error {

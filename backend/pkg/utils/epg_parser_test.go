@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"xivi/backend/app/models"
 )
@@ -36,6 +37,26 @@ func TestParseEpgReturnsSourceError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "could not load guide data") {
 		t.Fatalf("expected a useful guide error, got %q", err)
+	}
+}
+
+func TestCurrentEPGProgrammesSkipsExpiredRowsBeforeImport(t *testing.T) {
+	cutoff := time.Date(2026, time.August, 24, 12, 0, 0, 0, time.UTC)
+	programmes := []models.EpgProgramme{
+		{Title: models.Title{Value: "Expired"}, Stop: &models.Time{Time: cutoff.Add(-time.Second)}},
+		{Title: models.Title{Value: "Boundary"}, Stop: &models.Time{Time: cutoff}},
+		{Title: models.Title{Value: "Current"}, Stop: &models.Time{Time: cutoff.Add(time.Hour)}},
+		{Title: models.Title{Value: "Missing stop"}},
+	}
+
+	retained := currentEPGProgrammes(programmes, cutoff)
+	if len(retained) != 3 {
+		t.Fatalf("retained %d programmes, want 3", len(retained))
+	}
+	for _, programme := range retained {
+		if programme.Title.Value == "Expired" {
+			t.Fatal("expired programme was retained")
+		}
 	}
 }
 

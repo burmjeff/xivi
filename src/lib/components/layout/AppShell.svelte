@@ -9,6 +9,7 @@
 		Database,
 		BookOpen,
 		Settings,
+		Activity,
 		ArrowLeftRight,
 		PanelLeftClose,
 		PanelLeftOpen
@@ -29,6 +30,7 @@
 		{ href: '/studio/lineups', label: 'Lineups', icon: Rows3 },
 		{ href: '/studio/sources', label: 'Sources', icon: Database },
 		{ href: '/studio/guide-data', label: 'Guide Data', icon: BookOpen },
+		{ href: '/studio/streams', label: 'Streams', icon: Activity },
 		{ href: '/studio/settings', label: 'Settings', icon: Settings }
 	];
 	function active(href: string) {

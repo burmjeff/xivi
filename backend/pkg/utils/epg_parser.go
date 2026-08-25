@@ -61,6 +61,11 @@ func ParseEpgWithProgress(epg *models.Epg, reporter ProgressReporter) error {
 		log.Error().Err(err).Msg("Failed to parse EPG data")
 		return fmt.Errorf("could not load guide data: %w", err)
 	}
+	programmeCount := len(epgItem.Programmes)
+	epgItem.Programmes = currentEPGProgrammes(epgItem.Programmes, time.Now().Add(-24*time.Hour))
+	if skipped := programmeCount - len(epgItem.Programmes); skipped > 0 {
+		log.Info().Int("expired_programmes_skipped", skipped).Msg("Skipped expired XMLTV programmes before database import")
+	}
 	reportProgress(reporter, 20, fmt.Sprintf("XMLTV loaded: %d channels and %d programmes.", len(epgItem.Channels), len(epgItem.Programmes)))
 
 	// Process channels in batches
@@ -93,6 +98,17 @@ func ParseEpgWithProgress(epg *models.Epg, reporter ProgressReporter) error {
 	}
 	reportProgress(reporter, 95, "Guide import saved.")
 	return nil
+}
+
+func currentEPGProgrammes(programmes []models.EpgProgramme, cutoff time.Time) []models.EpgProgramme {
+	retained := programmes[:0]
+	for _, programme := range programmes {
+		if programme.Stop != nil && programme.Stop.Time.Before(cutoff) {
+			continue
+		}
+		retained = append(retained, programme)
+	}
+	return retained
 }
 
 // fetchAndParseEPG fetches and parses the EPG data from a URL or file

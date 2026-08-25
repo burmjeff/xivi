@@ -3,8 +3,12 @@ package controllers
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -49,12 +53,49 @@ func acquireStreamSession(ctx context.Context, streamID string) (*streaming.Sess
 }
 
 func streamError(c *fiber.Ctx, status int, message string, err error) error {
+	var incidentID string
+	if session, ok := streaming.DefaultManager.Get(c.Params("stream_id")); ok {
+		incidentID = session.IncidentID()
+	}
+	return streamErrorForSession(c, status, message, err, incidentID)
+}
+
+func streamErrorForSession(c *fiber.Ctx, status int, message string, err error, incidentID string) error {
 	log.Error().Err(err).Str("stream_id", c.Params("stream_id")).Msg(message)
 	detail := ""
+	code, retryable := streaming.ClassifyError(err)
 	if err != nil {
-		detail = err.Error()
+		detail = streaming.SanitizeDiagnostic(err.Error())
 	}
-	return c.Status(status).JSON(fiber.Map{"error": true, "msg": message, "detail": detail})
+	if incidentID != "" {
+		c.Set("X-Xivi-Incident-ID", incidentID)
+	}
+	return c.Status(status).JSON(fiber.Map{
+		"error": true, "code": code, "message": message, "msg": message,
+		"detail": detail, "incident_id": incidentID, "retryable": retryable,
+	})
+}
+
+func streamClientMetadata(c *fiber.Ctx, protocol, id string) streaming.ClientMetadata {
+	return streaming.ClientMetadata{ID: strings.Clone(id), Protocol: protocol, RemoteIP: strings.Clone(c.IP()),
+		Method: c.Method() + " " + c.Path(), UserAgent: strings.Clone(c.Get(fiber.HeaderUserAgent))}
+}
+
+func hlsViewerID(c *fiber.Ctx, streamID string) string {
+	if candidate := c.Query("viewer_id"); len(candidate) > 0 && len(candidate) <= 128 {
+		valid := true
+		for _, character := range candidate {
+			if !(character == '-' || character == '_' || character >= '0' && character <= '9' || character >= 'A' && character <= 'Z' || character >= 'a' && character <= 'z') {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return strings.Clone(candidate)
+		}
+	}
+	sum := sha256.Sum256([]byte(streamID + "|" + c.IP() + "|" + c.Get(fiber.HeaderUserAgent)))
+	return "hls_" + hex.EncodeToString(sum[:8])
 }
 
 // GetStream returns the shared MPEG-TS transport stream for a channel UUID.
@@ -62,7 +103,7 @@ func streamError(c *fiber.Ctx, status int, message string, err error) error {
 // disconnected client cannot stall the one upstream GStreamer producer.
 // @Router /stream/{stream_id} [get]
 func GetStream(c *fiber.Ctx) error {
-	streamID := c.Params("stream_id")
+	streamID := strings.Clone(c.Params("stream_id"))
 	if streamID == "" {
 		return streamError(c, fiber.StatusBadRequest, "A stream id is required.", nil)
 	}
@@ -70,18 +111,27 @@ func GetStream(c *fiber.Ctx) error {
 	defer cancel()
 	session, channels, err := acquireStreamSession(ctx, streamID)
 	if err != nil {
-		return streamError(c, fiber.StatusBadGateway, "The stream could not start.", err)
+		incidentID := ""
+		if session != nil {
+			incidentID = session.IncidentID()
+		}
+		return streamErrorForSession(c, fiber.StatusBadGateway, "The stream could not start.", err, incidentID)
 	}
 	if !settings.APP_SETTINGS.Streaming.Proxy {
 		return c.Redirect(channels[0].Url, http.StatusTemporaryRedirect)
 	}
 
 	subscription := session.Subscribe()
+	clientID, _ := session.RegisterClient(streamClientMetadata(c, "mpegts", ""), subscription.Close)
+	c.Set("X-Xivi-Incident-ID", session.IncidentID())
+	c.Set("X-Xivi-Connection-ID", clientID)
 	c.Set(fiber.HeaderContentType, "video/MP2T")
 	c.Set(fiber.HeaderCacheControl, "no-store")
 	c.Set(fiber.HeaderConnection, "keep-alive")
 	c.Context().Response.SetBodyStreamWriter(func(writer *bufio.Writer) {
 		defer subscription.Close()
+		reason := "client_disconnected"
+		defer func() { session.CloseClient(clientID, reason) }()
 		buffered := 0
 		lastFlush := time.Now()
 		for {
@@ -91,11 +141,14 @@ func GetStream(c *fiber.Ctx) error {
 				return
 			}
 			if _, err := writer.Write(chunk); err != nil {
+				reason = "client_write_failed"
 				return
 			}
+			session.AddClientBytes(clientID, len(chunk))
 			buffered += len(chunk)
 			if buffered >= 256*1024 || time.Since(lastFlush) >= 200*time.Millisecond {
 				if err := writer.Flush(); err != nil {
+					reason = "client_flush_failed"
 					return
 				}
 				buffered = 0
@@ -111,7 +164,7 @@ func GetStream(c *fiber.Ctx) error {
 // the existence of a playlist file.
 // @Router /stream/hls/{stream_id} [get]
 func GetHlsStream(c *fiber.Ctx) error {
-	streamID := c.Params("stream_id")
+	streamID := strings.Clone(c.Params("stream_id"))
 	if streamID == "" {
 		return streamError(c, fiber.StatusBadRequest, "A stream id is required.", nil)
 	}
@@ -119,13 +172,26 @@ func GetHlsStream(c *fiber.Ctx) error {
 	defer cancel()
 	session, channels, err := acquireStreamSession(ctx, streamID)
 	if err != nil {
-		return streamError(c, fiber.StatusBadGateway, "The stream could not start.", err)
+		incidentID := ""
+		if session != nil {
+			incidentID = session.IncidentID()
+		}
+		return streamErrorForSession(c, fiber.StatusBadGateway, "The stream could not start.", err, incidentID)
 	}
 	if !settings.APP_SETTINGS.Streaming.Proxy {
 		return c.Redirect(channels[0].Url, http.StatusTemporaryRedirect)
 	}
+	viewerID := hlsViewerID(c, streamID)
+	if _, allowed := session.RegisterClient(streamClientMetadata(c, "hls", viewerID), nil); !allowed {
+		return c.SendStatus(fiber.StatusGone)
+	}
+	c.Set("X-Xivi-Incident-ID", session.IncidentID())
+	c.Set("X-Xivi-Connection-ID", viewerID)
 	if err := session.WaitHLS(ctx); err != nil {
-		return streamError(c, fiber.StatusGatewayTimeout, "The HLS playlist did not become ready.", err)
+		diagnostic := fmt.Errorf("HLS playlist did not become ready: %w", err)
+		session.RecordClientEvent(viewerID, "error", "hls_not_ready", diagnostic.Error(), "")
+		session.CloseClient(viewerID, "hls_start_failed")
+		return streamErrorForSession(c, fiber.StatusGatewayTimeout, "The HLS playlist did not become ready.", diagnostic, session.IncidentID())
 	}
 	return sendHLSFile(c, streamID, "playlist.m3u8")
 }
@@ -139,9 +205,16 @@ func GetHlsAsset(c *fiber.Ctx) error {
 	if filepath.Base(asset) != asset || (!strings.HasSuffix(asset, ".ts") && asset != "playlist.m3u8") {
 		return c.SendStatus(fiber.StatusNotFound)
 	}
-	if !streaming.DefaultManager.Touch(streamID) {
+	session, ok := streaming.DefaultManager.Get(streamID)
+	if !ok || !streaming.DefaultManager.Touch(streamID) {
 		return c.SendStatus(fiber.StatusNotFound)
 	}
+	viewerID := hlsViewerID(c, streamID)
+	if _, allowed := session.RegisterClient(streamClientMetadata(c, "hls", viewerID), nil); !allowed {
+		return c.SendStatus(fiber.StatusGone)
+	}
+	c.Set("X-Xivi-Incident-ID", session.IncidentID())
+	c.Set("X-Xivi-Connection-ID", viewerID)
 	return sendHLSFile(c, streamID, asset)
 }
 
@@ -153,11 +226,39 @@ func sendHLSFile(c *fiber.Ctx, streamID, asset string) error {
 		for attempt := 0; attempt < 4; attempt++ {
 			snapshot, err = streaming.ReadHLSPlaylist(path)
 			if err == nil {
+				content := snapshot.Content
+				viewerID := ""
+				if c.Query("viewer_id") != "" {
+					viewerID = hlsViewerID(c, streamID)
+				} else if _, active := streaming.DefaultManager.Get(streamID); active {
+					viewerID = hlsViewerID(c, streamID)
+				}
+				if viewerID != "" {
+					lines := strings.Split(string(content), "\n")
+					for index, line := range lines {
+						trimmed := strings.TrimSpace(line)
+						if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+							continue
+						}
+						parsed, parseErr := url.Parse(trimmed)
+						if parseErr != nil {
+							continue
+						}
+						query := parsed.Query()
+						query.Set("viewer_id", viewerID)
+						parsed.RawQuery = query.Encode()
+						lines[index] = parsed.String()
+					}
+					content = []byte(strings.Join(lines, "\n"))
+				}
 				c.Set(fiber.HeaderContentType, "application/vnd.apple.mpegurl")
 				c.Set(fiber.HeaderCacheControl, "no-cache, no-store, must-revalidate")
 				c.Set("Pragma", "no-cache")
 				c.Set("Expires", "0")
-				return c.Send(snapshot.Content)
+				if session, ok := streaming.DefaultManager.Get(streamID); ok {
+					session.AddClientBytes(hlsViewerID(c, streamID), len(content))
+				}
+				return c.Send(content)
 			}
 			time.Sleep(15 * time.Millisecond)
 		}
@@ -171,6 +272,9 @@ func sendHLSFile(c *fiber.Ctx, streamID, asset string) error {
 	}
 	c.Set(fiber.HeaderContentType, "video/MP2T")
 	c.Set(fiber.HeaderCacheControl, "public, max-age=60, immutable")
+	if session, ok := streaming.DefaultManager.Get(streamID); ok {
+		session.AddClientBytes(hlsViewerID(c, streamID), int(info.Size()))
+	}
 	return c.SendFile(path)
 }
 
@@ -181,6 +285,155 @@ func V2StreamingStatus(c *fiber.Ctx) error {
 		"summary":  streaming.DefaultManager.Summary(),
 		"sessions": streaming.DefaultManager.Snapshots(),
 	})
+}
+
+type studioStreamItem struct {
+	streaming.SessionSnapshot
+	ChannelID      int64                `json:"channel_id,omitempty"`
+	ChannelName    string               `json:"channel_name"`
+	LogoURL        string               `json:"logo_url,omitempty"`
+	ProgrammeTitle string               `json:"programme_title,omitempty"`
+	ProgrammeStart string               `json:"programme_start,omitempty"`
+	ProgrammeEnd   string               `json:"programme_end,omitempty"`
+	NextTitle      string               `json:"next_title,omitempty"`
+	SourceName     string               `json:"source_name,omitempty"`
+	SourceGroup    string               `json:"source_group,omitempty"`
+	SourcePlaylist string               `json:"source_playlist,omitempty"`
+	Events         []models.StreamEvent `json:"events"`
+}
+
+func enrichStreamSnapshot(ctx context.Context, snapshot streaming.SessionSnapshot) studioStreamItem {
+	item := studioStreamItem{SessionSnapshot: snapshot, ChannelName: snapshot.ID, Events: []models.StreamEvent{}}
+	if events, err := database.Db.ListStreamEvents(ctx, snapshot.IncidentID, 100); err == nil {
+		item.Events = events
+	}
+	if identity, err := database.Db.GetStreamIdentity(ctx, snapshot.ID); err == nil {
+		item.ChannelID, item.ChannelName = identity.ID, identity.Name
+		if identity.LogoName != "" {
+			item.LogoURL = utils.GetLogoUrl(identity.LogoName)
+		}
+		if identity.TvgID != nil {
+			if programme, programmeErr := database.Db.GetCurrentProgramme(ctx, *identity.TvgID, time.Now()); programmeErr == nil {
+				item.ProgrammeTitle = programme.Title.Value
+				item.ProgrammeStart, item.ProgrammeEnd = programme.Start.Time.Format(time.RFC3339), programme.Stop.Time.Format(time.RFC3339)
+				if next, nextErr := database.Db.GetCurrentProgramme(ctx, *identity.TvgID, programme.Stop.Time); nextErr == nil {
+					item.NextTitle = next.Title.Value
+				}
+			}
+		}
+	}
+	if sources, err := database.Db.GetChannelsbyUuid(ctx, snapshot.ID); err == nil && sources != nil && snapshot.SourcePosition > 0 && snapshot.SourcePosition <= len(*sources) {
+		source := (*sources)[snapshot.SourcePosition-1]
+		item.SourceName, item.SourceGroup, item.SourcePlaylist = source.SourceName, source.GroupName, source.PlaylistName
+	}
+	return item
+}
+
+func V2StudioStreams(c *fiber.Ctx) error {
+	ctx := c.UserContext()
+	snapshots := streaming.DefaultManager.Snapshots()
+	items := make([]studioStreamItem, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		items = append(items, enrichStreamSnapshot(ctx, snapshot))
+	}
+	history, err := database.Db.ListStreamSessions(ctx, 50)
+	if err != nil {
+		log.Error().Err(err).Msg("Stream history could not be loaded")
+		return v2Error(c, fiber.StatusInternalServerError, "stream_history_failed", "Stream history could not be loaded.", true)
+	}
+	events, err := database.Db.ListStreamEvents(ctx, "", 50)
+	if err != nil {
+		log.Error().Err(err).Msg("Stream events could not be loaded")
+		return v2Error(c, fiber.StatusInternalServerError, "stream_events_failed", "Stream events could not be loaded.", true)
+	}
+	return c.JSON(fiber.Map{"summary": streaming.DefaultManager.Summary(), "items": items,
+		"history": history, "recent_events": events, "proxy_enabled": settings.APP_SETTINGS.Streaming.Proxy})
+}
+
+func V2StudioStreamHistory(c *fiber.Ctx) error {
+	incidentID := c.Params("incident_id")
+	connections, err := database.Db.ListStreamConnections(c.UserContext(), incidentID)
+	if err != nil {
+		log.Error().Err(err).Msg("Stream connections could not be loaded")
+		return v2Error(c, fiber.StatusInternalServerError, "stream_connections_failed", "Stream connections could not be loaded.", true)
+	}
+	events, err := database.Db.ListStreamEvents(c.UserContext(), incidentID, 250)
+	if err != nil {
+		log.Error().Err(err).Msg("Stream events could not be loaded")
+		return v2Error(c, fiber.StatusInternalServerError, "stream_events_failed", "Stream events could not be loaded.", true)
+	}
+	return c.JSON(fiber.Map{"connections": connections, "events": events})
+}
+
+func V2StopStream(c *fiber.Ctx) error {
+	if !streaming.DefaultManager.StopManual(c.Params("stream_id")) {
+		return v2Error(c, fiber.StatusNotFound, "stream_not_found", "That stream is no longer active.", false)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func V2FailoverStream(c *fiber.Ctx) error {
+	if !streaming.DefaultManager.ForceNextSource(c.Params("stream_id")) {
+		return v2Error(c, fiber.StatusConflict, "failover_unavailable", "The source could not be advanced right now.", true)
+	}
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"status": "failover_requested"})
+}
+
+func V2RestartStream(c *fiber.Ctx) error {
+	if !streaming.DefaultManager.RestartSource(c.Params("stream_id")) {
+		return v2Error(c, fiber.StatusConflict, "restart_unavailable", "The active source could not be restarted right now.", true)
+	}
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"status": "restart_requested"})
+}
+
+func V2DisconnectStreamClient(c *fiber.Ctx) error {
+	if !streaming.DefaultManager.DisconnectClient(c.Params("stream_id"), c.Params("connection_id")) {
+		return v2Error(c, fiber.StatusNotFound, "connection_not_found", "That viewer is no longer connected.", false)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func V2StreamTelemetry(c *fiber.Ctx) error {
+	var request struct {
+		StreamID string         `json:"stream_id"`
+		ViewerID string         `json:"viewer_id"`
+		Severity string         `json:"severity"`
+		Code     string         `json:"code"`
+		Message  string         `json:"message"`
+		Details  map[string]any `json:"details"`
+	}
+	if err := c.BodyParser(&request); err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_telemetry", "Player telemetry was not valid.", false)
+	}
+	session, ok := streaming.DefaultManager.Get(request.StreamID)
+	details, _ := json.Marshal(request.Details)
+	if request.Severity != "error" && request.Severity != "warning" {
+		request.Severity = "info"
+	}
+	if request.Code == "" {
+		request.Code = "player_event"
+	}
+	if request.Message == "" {
+		request.Message = "The player reported a stream event."
+	}
+	if ok {
+		session.RecordClientEvent(request.ViewerID, request.Severity, request.Code, request.Message, string(details))
+		return c.JSON(fiber.Map{"incident_id": session.IncidentID(), "code": request.Code})
+	}
+	history, err := database.Db.GetLatestStreamSession(c.UserContext(), request.StreamID)
+	if err != nil {
+		return v2Error(c, fiber.StatusNotFound, "stream_not_found", "That stream session has ended.", false)
+	}
+	var connectionID *string
+	if request.ViewerID != "" {
+		connectionID = &request.ViewerID
+	}
+	if err := database.Db.InsertStreamEvent(c.UserContext(), models.StreamEvent{IncidentID: history.IncidentID,
+		ConnectionID: connectionID, StreamID: request.StreamID, Severity: request.Severity,
+		Code: request.Code, Message: request.Message, Details: string(details), CreatedAt: time.Now()}); err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "telemetry_failed", "Player telemetry could not be saved.", true)
+	}
+	return c.JSON(fiber.Map{"incident_id": history.IncidentID, "code": request.Code})
 }
 
 // GetHlsChannels gets HLS channels by legacy template group.

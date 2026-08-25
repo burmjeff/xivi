@@ -43,6 +43,8 @@ type gstProducer struct {
 	inputTSOnce sync.Once
 	routeMu     sync.Mutex
 	routed      map[string]bool
+	mediaMu     sync.RWMutex
+	mediaTracks []string
 }
 
 func newGSTProducer(id, source string, generation uint64, config Config, hub *Hub) Producer {
@@ -70,6 +72,23 @@ func (p *gstProducer) LastDataAt() time.Time {
 		return time.Time{}
 	}
 	return time.Unix(0, nanoseconds)
+}
+
+func (p *gstProducer) MediaTracks() []string {
+	p.mediaMu.RLock()
+	defer p.mediaMu.RUnlock()
+	return append([]string(nil), p.mediaTracks...)
+}
+
+func (p *gstProducer) rememberMediaTrack(caps string) {
+	p.mediaMu.Lock()
+	defer p.mediaMu.Unlock()
+	for _, current := range p.mediaTracks {
+		if current == caps {
+			return
+		}
+	}
+	p.mediaTracks = append(p.mediaTracks, caps)
 }
 
 func (p *gstProducer) Start() error {
@@ -274,6 +293,7 @@ func (p *gstProducer) routeTransportPad(pad *gst.Pad, mux *gst.Element) error {
 }
 
 func (p *gstProducer) routeElementaryPad(pad *gst.Pad, capsString string, mux *gst.Element) error {
+	p.rememberMediaTrack(capsString)
 	p.graphMu.Lock()
 	defer p.graphMu.Unlock()
 	if p.stopping.Load() {
@@ -401,11 +421,7 @@ func (p *gstProducer) addHLSOutput(tee *gst.Element) error {
 	_ = queue.Set("max-size-time", uint64(10*time.Second))
 	_ = queue.Set("max-size-bytes", uint(0))
 	_ = queue.Set("max-size-buffers", uint(0))
-	demux, err := gst.NewElement("tsdemux")
-	if err != nil {
-		return fmt.Errorf("create HLS transport demuxer: %w", err)
-	}
-	sink, err := gst.NewElement("hlssink2")
+	sink, err := gst.NewElement("hlssink")
 	if err != nil {
 		return fmt.Errorf("create HLS segmenter: %w", err)
 	}
@@ -429,82 +445,14 @@ func (p *gstProducer) addHLSOutput(tee *gst.Element) error {
 	if err := setRequired(sink, "max-files", uint(p.config.HLSPlaylistLength+6)); err != nil {
 		return err
 	}
-	setOptional(sink, "send-keyframe-requests", true)
-
 	p.pipeline.Add(queue)
-	p.pipeline.Add(demux)
 	p.pipeline.Add(sink)
-	if err := queue.Link(demux); err != nil {
-		return fmt.Errorf("link HLS transport demuxer: %w", err)
+	if err := queue.Link(sink); err != nil {
+		return fmt.Errorf("link HLS transport segmenter: %w", err)
 	}
 	if err := tee.Link(queue); err != nil {
 		return fmt.Errorf("link HLS shared output: %w", err)
 	}
-
-	var routeMu sync.Mutex
-	routed := map[string]bool{}
-	demux.Connect("pad-added", func(self *gst.Element, pad *gst.Pad) {
-		if p.stopping.Load() {
-			return
-		}
-		caps := currentOrQueriedCaps(pad)
-		if caps == nil {
-			return
-		}
-		parserName, media, ok := parserForCaps(caps.String())
-		if !ok {
-			log.Warn().Str("stream_id", p.id).Str("caps", caps.String()).Msg("HLS cannot use this media track without transcoding")
-			return
-		}
-		routeMu.Lock()
-		if routed[media] {
-			routeMu.Unlock()
-			return
-		}
-		routed[media] = true
-		routeMu.Unlock()
-		p.graphMu.Lock()
-		defer p.graphMu.Unlock()
-		if p.stopping.Load() {
-			return
-		}
-		if err := p.routePadToHLSSink(pad, parserName, media, sink); err != nil {
-			p.reportError(err)
-		}
-	})
-	return nil
-}
-
-func (p *gstProducer) routePadToHLSSink(pad *gst.Pad, parserName, media string, sink *gst.Element) error {
-	parser, err := gst.NewElement(parserName)
-	if err != nil {
-		return fmt.Errorf("create HLS %s: %w", parserName, err)
-	}
-	configureStreamParser(parser, parserName)
-	queue, err := gst.NewElement("queue")
-	if err != nil {
-		return fmt.Errorf("create HLS %s queue: %w", media, err)
-	}
-	_ = queue.Set("max-size-time", uint64(5*time.Second))
-	_ = queue.Set("max-size-bytes", uint(0))
-	_ = queue.Set("max-size-buffers", uint(0))
-	p.pipeline.Add(parser)
-	p.pipeline.Add(queue)
-	if result := pad.Link(parser.GetStaticPad("sink")); result != gst.PadLinkOK {
-		return fmt.Errorf("link HLS track to %s: %s", parserName, result.String())
-	}
-	if err := parser.Link(queue); err != nil {
-		return fmt.Errorf("link HLS %s parser: %w", media, err)
-	}
-	sinkPad := sink.GetRequestPad(media)
-	if sinkPad == nil {
-		return fmt.Errorf("request HLS %s pad", media)
-	}
-	if result := queue.GetStaticPad("src").Link(sinkPad); result != gst.PadLinkOK {
-		return fmt.Errorf("link HLS %s queue: %s", media, result.String())
-	}
-	parser.SyncStateWithParent()
-	queue.SyncStateWithParent()
 	return nil
 }
 
@@ -593,12 +541,13 @@ func (p *gstProducer) stallLoop() {
 func (p *gstProducer) playlistLoop() {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
-	startupSegments := min(3, p.config.HLSPlaylistLength)
-	startupDuration := time.Duration(max(p.config.HLSSegmentSeconds*2, 3)) * time.Second
 	for !p.stopping.Load() {
 		<-ticker.C
 		snapshot, err := ReadHLSPlaylist(p.playlist)
-		if err != nil || len(snapshot.Segments) < startupSegments || snapshot.Duration < startupDuration {
+		// One validated, non-empty segment is enough to start. Waiting for three
+		// makes startup depend on the upstream keyframe cadence and can turn a
+		// healthy transport stream into a 30-second HLS timeout.
+		if err != nil || len(snapshot.Segments) < 1 || snapshot.Duration <= 0 {
 			continue
 		}
 		if err := snapshot.ValidateSegments(filepath.Dir(p.playlist)); err != nil {
@@ -625,6 +574,21 @@ func (p *gstProducer) prepareHLSDirectory() error {
 	directory := filepath.Join(p.config.StreamRoot, p.id)
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return fmt.Errorf("create HLS directory: %w", err)
+	}
+	if p.generation == 1 {
+		entries, err := os.ReadDir(directory)
+		if err != nil {
+			return fmt.Errorf("inspect HLS directory: %w", err)
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if entry.IsDir() || (name != "playlist.m3u8" && !(strings.HasPrefix(name, "segment.") && strings.HasSuffix(name, ".ts"))) {
+				continue
+			}
+			if err := os.Remove(filepath.Join(directory, name)); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("remove stale HLS asset %s: %w", name, err)
+			}
+		}
 	}
 	return nil
 }

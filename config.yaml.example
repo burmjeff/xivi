@@ -35,5 +35,12 @@ vector:
   timeout: 90
   cache_size: 500
 
+maintenance:
+  cleanup_interval_hours: 6
+  operation_job_retention_days: 30
+  stream_diagnostics_days: 14
+  maximum_operation_jobs: 2000
+  maximum_stream_sessions: 2000
+
 virtual_tuner:
   tuner_count: 6

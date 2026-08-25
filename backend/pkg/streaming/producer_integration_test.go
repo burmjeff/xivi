@@ -65,7 +65,7 @@ func TestGSTProducerSharesMPEGTSAndCreatesHLS(t *testing.T) {
 	if err := os.MkdirAll(staleDirectory, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	staleSegment := filepath.Join(staleDirectory, "segment.0.00000.ts")
+	staleSegment := filepath.Join(staleDirectory, "segment.1.99999.ts")
 	if err := os.WriteFile(staleSegment, []byte("stale"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -121,8 +121,8 @@ func TestGSTProducerSharesMPEGTSAndCreatesHLS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read stable HLS playlist: %v", err)
 	}
-	if len(snapshot.Segments) < 3 || snapshot.Duration < 3*time.Second {
-		t.Fatalf("HLS became ready without a startup buffer: %#v", snapshot)
+	if len(snapshot.Segments) < 1 || snapshot.Duration <= 0 {
+		t.Fatalf("HLS became ready without a complete playable segment: %#v", snapshot)
 	}
 	if _, err := os.Stat(staleSegment); !os.IsNotExist(err) {
 		t.Fatalf("stale HLS generation was not cleaned after the replacement became ready: %v", err)

@@ -2,9 +2,14 @@ package cron
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 	"xivi/backend/app/models"
+	"xivi/backend/app/queries"
+	"xivi/backend/pkg/streaming"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/platform/database"
 	"xivi/backend/platform/settings"
@@ -15,8 +20,9 @@ import (
 
 // Mutex to prevent concurrent database operations
 var (
-	updateMutex sync.Mutex
-	isUpdating  bool
+	updateMutex      sync.Mutex
+	isUpdating       bool
+	maintenanceMutex sync.Mutex
 )
 
 // TODO DISPLAY RUN COUNT AND NEXT UPDATE TIME IN GUI
@@ -32,6 +38,13 @@ func RunCronJobs() {
 	// Schedule the update process that runs all updates
 	updateJob, _ := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(RunUpdates)
 	log.Log().Msgf("Full update scheduled at: %s", updateJob.ScheduledAtTime())
+
+	maintenanceInterval := settings.APP_SETTINGS.Maintenance.CleanupIntervalHours
+	if _, err := s.Every(maintenanceInterval).Hours().Do(RunMaintenance); err != nil {
+		log.Error().Err(err).Msg("Failed to schedule storage maintenance")
+	} else {
+		log.Info().Int("interval_hours", maintenanceInterval).Msg("Storage maintenance scheduled")
+	}
 
 	s.StartAsync()
 	log.Info().Msg("Cron scheduler started successfully")
@@ -255,6 +268,106 @@ func CleanupOldEpgProgrammes() {
 		return
 	}
 	log.Info().Msg("EPG programme cleanup completed successfully")
+}
+
+type temporaryFileCleanup struct {
+	FilesRemoved   int
+	BytesReclaimed int64
+}
+
+// RunMaintenance applies both time and count ceilings. It is safe to call at
+// startup and from the scheduler; overlapping passes are skipped.
+func RunMaintenance() {
+	if !maintenanceMutex.TryLock() {
+		log.Debug().Msg("Skipping storage maintenance because a pass is already running")
+		return
+	}
+	defer maintenanceMutex.Unlock()
+	if database.Db == nil {
+		return
+	}
+
+	configured := settings.APP_SETTINGS.Maintenance
+	now := time.Now().UTC()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	report, databaseErr := database.Db.PruneRetentionData(ctx, queries.RetentionPolicy{
+		OperationJobsBefore:          now.AddDate(0, 0, -configured.OperationJobRetentionDays),
+		StreamHistoryBefore:          now.AddDate(0, 0, -configured.StreamDiagnosticsDays),
+		EPGProgrammesBefore:          now.Add(-24 * time.Hour),
+		MaximumOperationJobs:         configured.MaximumOperationJobs,
+		MaximumStreamSessions:        configured.MaximumStreamSessions,
+		MaximumEventsPerSession:      1000,
+		MaximumConnectionsPerSession: 1000,
+		BatchSize:                    500,
+		PruneOrphanVectors:           true,
+	})
+	if databaseErr != nil {
+		log.Error().Err(databaseErr).Msg("Storage maintenance completed with database errors")
+	}
+
+	streamFiles, streamErr := streaming.DefaultManager.PruneOrphanedStreamFiles()
+	if streamErr != nil {
+		log.Error().Err(streamErr).Msg("Failed to remove one or more orphaned stream directories")
+	}
+	temporaryFiles, temporaryErr := pruneTemporaryFiles(now.Add(-24 * time.Hour))
+	if temporaryErr != nil {
+		log.Error().Err(temporaryErr).Msg("Failed to remove one or more stale temporary files")
+	}
+
+	if databaseErr == nil {
+		if err := database.Db.CleanupQueries.VacuumDB(ctx); err != nil {
+			log.Error().Err(err).Msg("Bounded database compaction failed after maintenance")
+		}
+	}
+
+	log.Info().
+		Int64("jobs", report.OperationJobs).
+		Int64("stream_sessions", report.StreamSessions).
+		Int64("stream_events", report.StreamEvents).
+		Int64("stream_connections", report.StreamConnections).
+		Int64("epg_programmes", report.EPGProgrammes).
+		Int64("orphan_vectors", report.OrphanVectors).
+		Int("stream_directories", streamFiles.DirectoriesRemoved).
+		Int("temporary_files", temporaryFiles.FilesRemoved).
+		Int64("file_bytes_reclaimed", streamFiles.BytesReclaimed+temporaryFiles.BytesReclaimed).
+		Msg("Storage maintenance completed")
+}
+
+func pruneTemporaryFiles(before time.Time) (temporaryFileCleanup, error) {
+	report := temporaryFileCleanup{}
+	var cleanupErrors []error
+	for _, root := range []string{settings.M3U_FILEPATH, settings.EPG_FILEPATH, settings.LOGO_FILEPATH} {
+		entries, err := os.ReadDir(root)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			cleanupErrors = append(cleanupErrors, err)
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || filepath.Ext(entry.Name()) != ".tmp" {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil {
+				cleanupErrors = append(cleanupErrors, err)
+				continue
+			}
+			if !info.ModTime().Before(before) {
+				continue
+			}
+			if err := os.Remove(filepath.Join(root, entry.Name())); err != nil && !os.IsNotExist(err) {
+				cleanupErrors = append(cleanupErrors, err)
+				continue
+			}
+			report.FilesRemoved++
+			report.BytesReclaimed += info.Size()
+		}
+	}
+	return report, errors.Join(cleanupErrors...)
 }
 
 // RunUpdates runs all updates in sequence: playlist -> EPG -> vacuum

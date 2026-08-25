@@ -82,6 +82,96 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/StreamingStatus' }
+  /studio/streams:
+    get:
+      operationId: getStudioStreams
+      responses:
+        '200':
+          description: Active stream telemetry plus retained session and event history.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudioStreamsResponse' }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/streams/history/{incident_id}:
+    get:
+      operationId: getStudioStreamHistory
+      parameters:
+        - { name: incident_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Durable viewer and event audit for one session instance.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [connections, events]
+                properties:
+                  connections:
+                    { type: array, items: { $ref: '#/components/schemas/StreamConnection' } }
+                  events: { type: array, items: { $ref: '#/components/schemas/StreamEvent' } }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/streams/{stream_id}:
+    delete:
+      operationId: stopStudioStream
+      parameters:
+        - { name: stream_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Producer and viewers stopped. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/streams/{stream_id}/restart:
+    post:
+      operationId: restartStudioStreamSource
+      parameters:
+        - { name: stream_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '202': { description: Source restart requested. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/streams/{stream_id}/failover:
+    post:
+      operationId: failoverStudioStreamSource
+      parameters:
+        - { name: stream_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '202': { description: Ordered-source failover requested. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/streams/{stream_id}/connections/{connection_id}:
+    delete:
+      operationId: disconnectStudioStreamViewer
+      parameters:
+        - { name: stream_id, in: path, required: true, schema: { type: string } }
+        - { name: connection_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Viewer disconnected. }
+        default: { $ref: '#/components/responses/Error' }
+  /stream/telemetry:
+    post:
+      operationId: recordPlayerTelemetry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stream_id, viewer_id, severity, code, message]
+              properties:
+                stream_id: { type: string }
+                viewer_id: { type: string }
+                severity: { type: string, enum: [info, warning, error] }
+                code: { type: string }
+                message: { type: string }
+                details: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Telemetry linked to an active diagnostic incident.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [incident_id, code]
+                properties:
+                  incident_id: { type: string }
+                  code: { type: string }
+        default: { $ref: '#/components/responses/Error' }
   /studio/device-outputs:
     get:
       operationId: getDeviceOutputs
@@ -962,41 +1052,160 @@ components:
         sessions: { type: array, items: { $ref: '#/components/schemas/StreamingSession' } }
     StreamingSummary:
       type: object
-      required: [sessions, clients, reconnects, bytes_published, slow_client_drops]
+      required:
+        [
+          sessions,
+          clients,
+          reconnects,
+          bytes_published,
+          bytes_delivered,
+          slow_client_drops,
+          ingress_bitrate_bps,
+          egress_bitrate_bps
+        ]
       properties:
         sessions: { type: integer }
         clients: { type: integer }
         reconnects: { type: integer, format: int64 }
         bytes_published: { type: integer, format: int64 }
+        bytes_delivered: { type: integer, format: int64 }
         slow_client_drops: { type: integer, format: int64 }
+        ingress_bitrate_bps: { type: integer, format: int64 }
+        egress_bitrate_bps: { type: integer, format: int64 }
     StreamingSession:
       type: object
       required:
         [
           id,
+          incident_id,
           state,
           source_position,
           source_count,
           clients,
           reconnects,
           bytes_published,
+          bytes_delivered,
           slow_client_drops,
           started_at,
           last_access
         ]
       properties:
         id: { type: string }
+        incident_id: { type: string }
         state: { type: string, enum: [starting, running, reconnecting, failed, stopping, stopped] }
         source_position: { type: integer }
         source_count: { type: integer }
         clients: { type: integer }
         reconnects: { type: integer, format: int64 }
         bytes_published: { type: integer, format: int64 }
+        bytes_delivered: { type: integer, format: int64 }
         slow_client_drops: { type: integer, format: int64 }
         last_error: { type: string }
         started_at: { type: string, format: date-time }
         last_access: { type: string, format: date-time }
         last_media_at: { type: string, format: date-time }
+        ingress_bitrate_bps: { type: integer, format: int64 }
+        egress_bitrate_bps: { type: integer, format: int64 }
+        connections: { type: array, items: { $ref: '#/components/schemas/StreamConnection' } }
+        samples: { type: array, items: { $ref: '#/components/schemas/StreamMetricSample' } }
+        media_tracks: { type: array, items: { type: string } }
+    StreamMetricSample:
+      type: object
+      required: [at, ingress_bps, egress_bps, active_clients]
+      properties:
+        at: { type: string, format: date-time }
+        ingress_bps: { type: integer, format: int64 }
+        egress_bps: { type: integer, format: int64 }
+        active_clients: { type: integer }
+    StreamConnection:
+      type: object
+      required:
+        [id, protocol, remote_ip, method, user_agent, started_at, last_seen_at, bytes_delivered]
+      properties:
+        id: { type: string }
+        incident_id: { type: string }
+        stream_id: { type: string }
+        protocol: { type: string, enum: [hls, mpegts] }
+        remote_ip: { type: string }
+        method: { type: string }
+        user_agent: { type: string }
+        started_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time }
+        bytes_delivered: { type: integer, format: int64 }
+        bitrate_bps: { type: integer, format: int64 }
+        end_reason: { type: string }
+    StreamEvent:
+      type: object
+      required: [id, incident_id, stream_id, severity, code, message, source_position, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        incident_id: { type: string }
+        connection_id: { type: string }
+        stream_id: { type: string }
+        severity: { type: string, enum: [info, warning, error] }
+        code: { type: string }
+        message: { type: string }
+        source_position: { type: integer }
+        details: { type: string }
+        created_at: { type: string, format: date-time }
+    StreamSessionHistory:
+      type: object
+      required:
+        [
+          incident_id,
+          stream_id,
+          state,
+          source_count,
+          reconnects,
+          bytes_ingested,
+          bytes_delivered,
+          slow_client_drops,
+          started_at
+        ]
+      properties:
+        incident_id: { type: string }
+        stream_id: { type: string }
+        channel_id: { type: integer, format: int64 }
+        channel_name: { type: string }
+        state: { type: string }
+        source_count: { type: integer }
+        reconnects: { type: integer, format: int64 }
+        bytes_ingested: { type: integer, format: int64 }
+        bytes_delivered: { type: integer, format: int64 }
+        slow_client_drops: { type: integer, format: int64 }
+        started_at: { type: string, format: date-time }
+        first_media_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time }
+        end_reason: { type: string }
+        error_code: { type: string }
+        last_error: { type: string }
+    StudioStream:
+      allOf:
+        - { $ref: '#/components/schemas/StreamingSession' }
+        - type: object
+          required: [channel_name]
+          properties:
+            channel_id: { type: integer, format: int64 }
+            channel_name: { type: string }
+            logo_url: { type: string }
+            programme_title: { type: string }
+            programme_start: { type: string, format: date-time }
+            programme_end: { type: string, format: date-time }
+            next_title: { type: string }
+            source_name: { type: string }
+            source_group: { type: string }
+            source_playlist: { type: string }
+            events: { type: array, items: { $ref: '#/components/schemas/StreamEvent' } }
+    StudioStreamsResponse:
+      type: object
+      required: [proxy_enabled, summary, items, history, recent_events]
+      properties:
+        proxy_enabled: { type: boolean }
+        summary: { $ref: '#/components/schemas/StreamingSummary' }
+        items: { type: array, items: { $ref: '#/components/schemas/StudioStream' } }
+        history: { type: array, items: { $ref: '#/components/schemas/StreamSessionHistory' } }
+        recent_events: { type: array, items: { $ref: '#/components/schemas/StreamEvent' } }
     CoverageSummary:
       type: object
       required:

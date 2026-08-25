@@ -9,7 +9,8 @@
 		Server,
 		CalendarClock,
 		Cast,
-		Palette
+		Palette,
+		HardDrive
 	} from '@lucide/svelte';
 	import { api } from '$lib/api/client';
 	import StudioHeader from '$lib/components/studio/StudioHeader.svelte';
@@ -43,6 +44,13 @@
 		};
 		// Preserve legacy vector values while the settings endpoint still replaces the full document.
 		vector: { batch_size: number; parallel_batches: number; timeout: number; cache_size: number };
+		maintenance: {
+			cleanup_interval_hours: number;
+			operation_job_retention_days: number;
+			stream_diagnostics_days: number;
+			maximum_operation_jobs: number;
+			maximum_stream_sessions: number;
+		};
 		virtual_tuner: {
 			tuner_count: number;
 		};
@@ -104,6 +112,33 @@
 			next.tuner_count = 'Use between 1 and 255 tuners.';
 		if (section === 'scheduling' && settings.application.updatecron.trim().split(/\s+/).length < 5)
 			next.updatecron = 'Enter a valid five- or six-field cron expression.';
+		if (section === 'maintenance') {
+			if (
+				settings.maintenance.cleanup_interval_hours < 1 ||
+				settings.maintenance.cleanup_interval_hours > 168
+			)
+				next.cleanup_interval_hours = 'Use an interval from 1 hour to 7 days.';
+			if (
+				settings.maintenance.operation_job_retention_days < 1 ||
+				settings.maintenance.operation_job_retention_days > 365
+			)
+				next.operation_job_retention_days = 'Keep jobs from 1 to 365 days.';
+			if (
+				settings.maintenance.stream_diagnostics_days < 1 ||
+				settings.maintenance.stream_diagnostics_days > 365
+			)
+				next.stream_diagnostics_days = 'Keep diagnostics from 1 to 365 days.';
+			if (
+				settings.maintenance.maximum_operation_jobs < 100 ||
+				settings.maintenance.maximum_operation_jobs > 100000
+			)
+				next.maximum_operation_jobs = 'Keep between 100 and 100,000 jobs.';
+			if (
+				settings.maintenance.maximum_stream_sessions < 100 ||
+				settings.maintenance.maximum_stream_sessions > 100000
+			)
+				next.maximum_stream_sessions = 'Keep between 100 and 100,000 sessions.';
+		}
 		errors = next;
 		return !Object.keys(next).length;
 	}
@@ -116,7 +151,7 @@
 			if (section === 'devices') {
 				await client.invalidateQueries({ queryKey: ['studio', 'device-outputs'] });
 			}
-			message = `${section[0].toUpperCase()}${section.slice(1)} settings saved.${section === 'server' ? ' Restart Xivi to apply every change.' : ''}`;
+			message = `${section[0].toUpperCase()}${section.slice(1)} settings saved.${section === 'server' || section === 'maintenance' ? ' Restart Xivi to apply scheduling changes.' : ''}`;
 		} catch {
 			message = 'Settings could not be saved.';
 		} finally {
@@ -385,6 +420,79 @@
 					class="app-button app-button--primary"
 					onclick={() => save('scheduling')}
 					disabled={saving === 'scheduling'}><Save size={16} />Save Scheduling</button
+				>
+			</footer>
+		</section>
+		<section class="settings-card">
+			<header>
+				<HardDrive />
+				<div>
+					<p class="eyebrow">Maintenance</p>
+					<h2>Storage retention</h2>
+				</div>
+			</header>
+			<div class="fields">
+				<p class="section-note">
+					Cleanup always protects active jobs and streams. Guide data older than 24 hours, orphaned
+					generated vectors, crash-left stream segments, and stale temporary files are removed
+					automatically. Each retained stream session is also capped at 1,000 events and 1,000
+					viewer records.
+				</p>
+				<div class="field-pair">
+					<label
+						>Cleanup interval (hours) <span class="restart">Restart</span><input
+							type="number"
+							min="1"
+							max="168"
+							bind:value={settings.maintenance.cleanup_interval_hours}
+						/>{#if errors.cleanup_interval_hours}<em>{errors.cleanup_interval_hours}</em
+							>{/if}</label
+					>
+					<label
+						>Job history (days)<input
+							type="number"
+							min="1"
+							max="365"
+							bind:value={settings.maintenance.operation_job_retention_days}
+						/>{#if errors.operation_job_retention_days}<em>{errors.operation_job_retention_days}</em
+							>{/if}</label
+					>
+					<label
+						>Stream diagnostics (days)<input
+							type="number"
+							min="1"
+							max="365"
+							bind:value={settings.maintenance.stream_diagnostics_days}
+						/>{#if errors.stream_diagnostics_days}<em>{errors.stream_diagnostics_days}</em
+							>{/if}</label
+					>
+					<label
+						>Maximum completed jobs<input
+							type="number"
+							min="100"
+							max="100000"
+							step="100"
+							bind:value={settings.maintenance.maximum_operation_jobs}
+						/>{#if errors.maximum_operation_jobs}<em>{errors.maximum_operation_jobs}</em
+							>{/if}</label
+					>
+					<label
+						>Maximum completed sessions<input
+							type="number"
+							min="100"
+							max="100000"
+							step="100"
+							bind:value={settings.maintenance.maximum_stream_sessions}
+						/>{#if errors.maximum_stream_sessions}<em>{errors.maximum_stream_sessions}</em
+							>{/if}</label
+					>
+				</div>
+			</div>
+			<footer>
+				<button
+					class="app-button app-button--primary"
+					onclick={() => save('maintenance')}
+					disabled={saving === 'maintenance'}><Save size={16} />Save Maintenance</button
 				>
 			</footer>
 		</section>

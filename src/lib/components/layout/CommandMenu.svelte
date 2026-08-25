@@ -15,6 +15,7 @@
 		Database,
 		BookOpen,
 		Settings,
+		Activity,
 		RefreshCw,
 		UploadCloud,
 		Play
@@ -62,6 +63,12 @@
 			detail: 'EPG coverage and logos',
 			href: '/studio/guide-data',
 			icon: BookOpen
+		},
+		{
+			label: 'Streams',
+			detail: 'Live viewers and playback diagnostics',
+			href: '/studio/streams',
+			icon: Activity
 		},
 		{
 			label: 'Settings',

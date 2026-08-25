@@ -3,6 +3,7 @@ package streaming
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -185,5 +186,79 @@ func TestManagerStopRemovesSessionFilesAndProducer(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "channel-cleanup")); !os.IsNotExist(err) {
 		t.Fatalf("session files remained after cleanup: %v", err)
+	}
+}
+
+func TestManagerPrunesCrashLeftStreamFilesButPreservesActiveDirectory(t *testing.T) {
+	root := t.TempDir()
+	staleDirectory := filepath.Join(root, "stale-channel")
+	if err := os.MkdirAll(staleDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staleDirectory, "segment.ts"), []byte("stale media"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	config := testConfig(root)
+	manager := NewManager(func(id, source string, generation uint64, config Config, hub *Hub) Producer {
+		return newReadyFake()
+	}, func() Config { return config })
+	t.Cleanup(manager.Close)
+	if _, err := manager.Acquire(context.Background(), "active-channel", []string{"https://example.com/live.ts"}); err != nil {
+		t.Fatal(err)
+	}
+	activeDirectory := filepath.Join(root, "active-channel")
+	if err := os.MkdirAll(activeDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(activeDirectory, "segment.ts"), []byte("active media"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := manager.PruneOrphanedStreamFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.DirectoriesRemoved != 1 || report.BytesReclaimed != int64(len("stale media")) {
+		t.Fatalf("unexpected file cleanup report: %+v", report)
+	}
+	if _, err := os.Stat(staleDirectory); !os.IsNotExist(err) {
+		t.Fatalf("stale stream directory was not removed: %v", err)
+	}
+	if _, err := os.Stat(activeDirectory); err != nil {
+		t.Fatalf("active stream directory was removed: %v", err)
+	}
+}
+
+func TestSessionBoundsEndedClientsWithoutLosingDeliveryTotals(t *testing.T) {
+	config := testConfig(t.TempDir())
+	manager := NewManager(func(id, source string, generation uint64, config Config, hub *Hub) Producer {
+		return newReadyFake()
+	}, func() Config { return config })
+	t.Cleanup(manager.Close)
+	session, err := manager.Acquire(context.Background(), "client-retention", []string{"https://example.com/live.ts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const clients = maximumEndedClientRows + 2
+	for index := 0; index < clients; index++ {
+		id := fmt.Sprintf("client-%d", index)
+		if _, accepted := session.RegisterClient(ClientMetadata{ID: id, Protocol: "hls"}, nil); !accepted {
+			t.Fatalf("client %s was rejected", id)
+		}
+		session.AddClientBytes(id, 10)
+		session.CloseClient(id, "test_complete")
+	}
+	session.sample(time.Now().Add(time.Second))
+
+	session.mu.RLock()
+	retained := len(session.clients)
+	session.mu.RUnlock()
+	if retained != maximumEndedClientRows {
+		t.Fatalf("retained %d ended clients, want %d", retained, maximumEndedClientRows)
+	}
+	if delivered := session.Snapshot().BytesDelivered; delivered != clients*10 {
+		t.Fatalf("delivery total changed after client cleanup: got %d, want %d", delivered, clients*10)
 	}
 }

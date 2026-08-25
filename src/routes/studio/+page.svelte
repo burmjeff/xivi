@@ -13,13 +13,7 @@
 		Server
 	} from '@lucide/svelte';
 	import { api } from '$lib/api/client';
-	import type {
-		LineupSummary,
-		OperationJob,
-		Paginated,
-		StreamingStatus,
-		StudioOverview
-	} from '$lib/api/types';
+	import type { LineupSummary, OperationJob, Paginated, StudioOverview } from '$lib/api/types';
 	import StudioHeader from '$lib/components/studio/StudioHeader.svelte';
 	import { copyText } from '$lib/browser/clipboard';
 	const client = useQueryClient();
@@ -66,11 +60,6 @@
 		queryKey: ['system', 'status'],
 		queryFn: () => api<SystemResponse>('/api/system/status'),
 		refetchInterval: 10_000
-	}));
-	const streamingQuery = createQuery(() => ({
-		queryKey: ['studio', 'streaming', 'status'],
-		queryFn: () => api<StreamingStatus>('/api/v2/studio/streaming/status'),
-		refetchInterval: 5_000
 	}));
 	const deviceOutputsQuery = createQuery(() => ({
 		queryKey: ['studio', 'device-outputs'],
@@ -339,22 +328,9 @@
 							<dd>{systemQuery.data.status.slow_client_drops}</dd>
 						</div>
 					</dl>{:else}<p class="muted"><Cpu size={15} /> Loading host metrics…</p>{/if}
-				{#if streamingQuery.data?.sessions.length}<div class="stream-sessions">
-						{#each streamingQuery.data.sessions as session}<article>
-								<div>
-									<strong>{session.id}</strong><small
-										>Source {session.source_position}/{session.source_count} · {session.clients} viewer{session.clients ===
-										1
-											? ''
-											: 's'}</small
-									>
-								</div>
-								<b class:failed={session.state === 'failed'}>{session.state}</b>
-								{#if session.last_error}<p>{session.last_error}</p>{/if}
-							</article>{/each}
-					</div>{:else if streamingQuery.data}<p class="muted">
-						No stream producers are active.
-					</p>{/if}
+				<a class="diagnostics-link" href="/studio/streams"
+					><Radio size={15} />Open stream diagnostics</a
+				>
 			</details>
 		</section>
 	</div>
@@ -690,45 +666,19 @@
 		margin: 0;
 		text-align: right;
 	}
-	.stream-sessions {
-		display: grid;
+	.diagnostics-link {
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		gap: 0.4rem;
 		margin-top: 0.8rem;
-	}
-	.stream-sessions article {
-		display: grid;
-		grid-template-columns: 1fr auto;
-		gap: 0.2rem 0.6rem;
 		border: 1px solid var(--line);
-		border-radius: 0.65rem;
+		border-radius: 0.7rem;
 		background: var(--surface-raised);
-		padding: 0.55rem 0.65rem;
-	}
-	.stream-sessions article > div {
-		display: grid;
-		min-width: 0;
-	}
-	.stream-sessions strong,
-	.stream-sessions small,
-	.stream-sessions b,
-	.stream-sessions p {
-		font-size: 0.62rem;
-	}
-	.stream-sessions small {
-		color: var(--muted);
-	}
-	.stream-sessions b {
+		padding: 0.65rem;
 		color: var(--aqua);
-		text-transform: capitalize;
-	}
-	.stream-sessions b.failed,
-	.stream-sessions p {
-		color: var(--error);
-	}
-	.stream-sessions p {
-		grid-column: 1/3;
-		margin: 0;
-		overflow-wrap: anywhere;
+		font-size: 0.68rem;
+		font-weight: 800;
 	}
 	.empty-inline {
 		display: flex;

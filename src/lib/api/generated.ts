@@ -116,6 +116,118 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/studio/streams': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getStudioStreams'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/streams/history/{incident_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getStudioStreamHistory'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/streams/{stream_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['stopStudioStream'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/streams/{stream_id}/restart': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['restartStudioStreamSource'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/streams/{stream_id}/failover': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['failoverStudioStreamSource'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/streams/{stream_id}/connections/{connection_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['disconnectStudioStreamViewer'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/stream/telemetry': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['recordPlayerTelemetry'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/studio/device-outputs': {
 		parameters: {
 			query?: never;
@@ -989,10 +1101,17 @@ export interface components {
 			/** Format: int64 */
 			bytes_published: number;
 			/** Format: int64 */
+			bytes_delivered: number;
+			/** Format: int64 */
 			slow_client_drops: number;
+			/** Format: int64 */
+			ingress_bitrate_bps: number;
+			/** Format: int64 */
+			egress_bitrate_bps: number;
 		};
 		StreamingSession: {
 			id: string;
+			incident_id: string;
 			/** @enum {string} */
 			state: 'starting' | 'running' | 'reconnecting' | 'failed' | 'stopping' | 'stopped';
 			source_position: number;
@@ -1003,6 +1122,8 @@ export interface components {
 			/** Format: int64 */
 			bytes_published: number;
 			/** Format: int64 */
+			bytes_delivered: number;
+			/** Format: int64 */
 			slow_client_drops: number;
 			last_error?: string;
 			/** Format: date-time */
@@ -1011,6 +1132,107 @@ export interface components {
 			last_access: string;
 			/** Format: date-time */
 			last_media_at?: string;
+			/** Format: int64 */
+			ingress_bitrate_bps?: number;
+			/** Format: int64 */
+			egress_bitrate_bps?: number;
+			connections?: components['schemas']['StreamConnection'][];
+			samples?: components['schemas']['StreamMetricSample'][];
+			media_tracks?: string[];
+		};
+		StreamMetricSample: {
+			/** Format: date-time */
+			at: string;
+			/** Format: int64 */
+			ingress_bps: number;
+			/** Format: int64 */
+			egress_bps: number;
+			active_clients: number;
+		};
+		StreamConnection: {
+			id: string;
+			incident_id?: string;
+			stream_id?: string;
+			/** @enum {string} */
+			protocol: 'hls' | 'mpegts';
+			remote_ip: string;
+			method: string;
+			user_agent: string;
+			/** Format: date-time */
+			started_at: string;
+			/** Format: date-time */
+			last_seen_at: string;
+			/** Format: date-time */
+			ended_at?: string;
+			/** Format: int64 */
+			bytes_delivered: number;
+			/** Format: int64 */
+			bitrate_bps?: number;
+			end_reason?: string;
+		};
+		StreamEvent: {
+			/** Format: int64 */
+			id: number;
+			incident_id: string;
+			connection_id?: string;
+			stream_id: string;
+			/** @enum {string} */
+			severity: 'info' | 'warning' | 'error';
+			code: string;
+			message: string;
+			source_position: number;
+			details?: string;
+			/** Format: date-time */
+			created_at: string;
+		};
+		StreamSessionHistory: {
+			incident_id: string;
+			stream_id: string;
+			/** Format: int64 */
+			channel_id?: number;
+			channel_name?: string;
+			state: string;
+			source_count: number;
+			/** Format: int64 */
+			reconnects: number;
+			/** Format: int64 */
+			bytes_ingested: number;
+			/** Format: int64 */
+			bytes_delivered: number;
+			/** Format: int64 */
+			slow_client_drops: number;
+			/** Format: date-time */
+			started_at: string;
+			/** Format: date-time */
+			first_media_at?: string;
+			/** Format: date-time */
+			ended_at?: string;
+			end_reason?: string;
+			error_code?: string;
+			last_error?: string;
+		};
+		StudioStream: components['schemas']['StreamingSession'] & {
+			/** Format: int64 */
+			channel_id?: number;
+			channel_name: string;
+			logo_url?: string;
+			programme_title?: string;
+			/** Format: date-time */
+			programme_start?: string;
+			/** Format: date-time */
+			programme_end?: string;
+			next_title?: string;
+			source_name?: string;
+			source_group?: string;
+			source_playlist?: string;
+			events?: components['schemas']['StreamEvent'][];
+		};
+		StudioStreamsResponse: {
+			proxy_enabled: boolean;
+			summary: components['schemas']['StreamingSummary'];
+			items: components['schemas']['StudioStream'][];
+			history: components['schemas']['StreamSessionHistory'][];
+			recent_events: components['schemas']['StreamEvent'][];
 		};
 		CoverageSummary: {
 			/** Format: int64 */
@@ -1282,6 +1504,176 @@ export interface operations {
 					'application/json': components['schemas']['StreamingStatus'];
 				};
 			};
+		};
+	};
+	getStudioStreams: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Active stream telemetry plus retained session and event history. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['StudioStreamsResponse'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	getStudioStreamHistory: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				incident_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Durable viewer and event audit for one session instance. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						connections: components['schemas']['StreamConnection'][];
+						events: components['schemas']['StreamEvent'][];
+					};
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	stopStudioStream: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				stream_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Producer and viewers stopped. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	restartStudioStreamSource: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				stream_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Source restart requested. */
+			202: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	failoverStudioStreamSource: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				stream_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Ordered-source failover requested. */
+			202: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	disconnectStudioStreamViewer: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				stream_id: string;
+				connection_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Viewer disconnected. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	recordPlayerTelemetry: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': {
+					stream_id: string;
+					viewer_id: string;
+					/** @enum {string} */
+					severity: 'info' | 'warning' | 'error';
+					code: string;
+					message: string;
+					details?: {
+						[key: string]: unknown;
+					};
+				};
+			};
+		};
+		responses: {
+			/** @description Telemetry linked to an active diagnostic incident. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						incident_id: string;
+						code: string;
+					};
+				};
+			};
+			default: components['responses']['Error'];
 		};
 	};
 	getDeviceOutputs: {

@@ -20,6 +20,12 @@ export type CoverageSummary = components['schemas']['CoverageSummary'];
 export type StreamingStatus = components['schemas']['StreamingStatus'];
 export type StreamingSummary = components['schemas']['StreamingSummary'];
 export type StreamingSession = components['schemas']['StreamingSession'];
+export type StudioStream = components['schemas']['StudioStream'];
+export type StudioStreamsResponse = components['schemas']['StudioStreamsResponse'];
+export type StreamConnection = components['schemas']['StreamConnection'];
+export type StreamMetricSample = components['schemas']['StreamMetricSample'];
+export type StreamEvent = components['schemas']['StreamEvent'];
+export type StreamSessionHistory = components['schemas']['StreamSessionHistory'];
 export type APIError = components['schemas']['APIError'];
 
 // Shared page view model, also used for legacy adapters outside API v2.
