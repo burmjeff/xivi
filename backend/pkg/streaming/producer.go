@@ -480,6 +480,13 @@ func hlsCompatibilityElements(parserName, capsString string) ([]string, string) 
 	case parserName == "ac3parse" && !strings.Contains(lowerCaps, "eac3"):
 		names = []string{"a52dec", "audioconvert", "audioresample", "voaacenc", "aacparse"}
 		action = "AC-3 audio is being normalized to AAC for browser playback."
+	case parserName == "aacparse" && aacProfileNeedsNormalization(lowerCaps):
+		// Chromium's Media Source implementation rejects AAC Main (mp4a.40.1)
+		// and the other legacy AAC profiles even though they are valid in an
+		// MPEG transport stream. Keep the original elementary stream on the
+		// canonical MPEG-TS branch, and encode only the HLS branch as AAC-LC.
+		names = []string{"faad", "audioconvert", "audioresample", "voaacenc", "aacparse"}
+		action = "The source AAC profile is being normalized to AAC-LC for browser playback."
 	case parserName == "mpegaudioparse":
 		names = []string{"mpg123audiodec", "audioconvert", "audioresample", "voaacenc", "aacparse"}
 		action = "MPEG audio is being normalized to AAC for browser playback."
@@ -487,6 +494,18 @@ func hlsCompatibilityElements(parserName, capsString string) ([]string, string) 
 		return nil, ""
 	}
 	return names, action
+}
+
+func aacProfileNeedsNormalization(lowerCaps string) bool {
+	for _, profile := range []string{"main", "ssr", "ltp", "ld", "eld"} {
+		if strings.Contains(lowerCaps, "profile=(string)"+profile) ||
+			strings.Contains(lowerCaps, "profile="+profile) ||
+			strings.Contains(lowerCaps, "base-profile=(string)"+profile) ||
+			strings.Contains(lowerCaps, "base-profile="+profile) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *gstProducer) addTransportOutput(tee *gst.Element) error {

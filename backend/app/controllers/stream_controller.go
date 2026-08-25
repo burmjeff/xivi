@@ -221,6 +221,45 @@ func GetHlsAsset(c *fiber.Ctx) error {
 	return sendHLSFile(c, streamID, asset)
 }
 
+// scopeHLSPlaylist makes every segment URI independent of the URL used to
+// request the manifest. The public entry point intentionally omits a trailing
+// slash (/stream/hls/:id), so a bare segment name would otherwise resolve to
+// /stream/hls/segment.ts and lose the stream id entirely.
+func scopeHLSPlaylist(content []byte, streamID, viewerID string) []byte {
+	lines := strings.Split(string(content), "\n")
+	segmentRoot := "/stream/hls/" + url.PathEscape(streamID) + "/"
+	for index, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		parsed, err := url.Parse(trimmed)
+		if err != nil {
+			continue
+		}
+		segment := filepath.Base(parsed.Path)
+		if segment == "." || segment == "" {
+			continue
+		}
+		// HLS media is always served by this managed session. Discard any
+		// origin inherited from the producer playlist and emit one canonical,
+		// root-relative asset URL for browsers and external HLS clients.
+		parsed.Scheme = ""
+		parsed.Host = ""
+		parsed.User = nil
+		parsed.Path = segmentRoot + url.PathEscape(segment)
+		parsed.RawPath = ""
+		parsed.Fragment = ""
+		if viewerID != "" {
+			query := parsed.Query()
+			query.Set("viewer_id", viewerID)
+			parsed.RawQuery = query.Encode()
+		}
+		lines[index] = parsed.String()
+	}
+	return []byte(strings.Join(lines, "\n"))
+}
+
 func sendHLSFile(c *fiber.Ctx, streamID, asset string) error {
 	path := filepath.Join(settings.STREAM_FILEPATH, streamID, asset)
 	if asset == "playlist.m3u8" {
@@ -236,31 +275,13 @@ func sendHLSFile(c *fiber.Ctx, streamID, asset string) error {
 				snapshot, err = streaming.ReadHLSPlaylist(path)
 			}
 			if err == nil {
-				content := snapshot.Content
 				viewerID := ""
 				if c.Query("viewer_id") != "" {
 					viewerID = hlsViewerID(c, streamID)
 				} else if _, active := streaming.DefaultManager.Get(streamID); active {
 					viewerID = hlsViewerID(c, streamID)
 				}
-				if viewerID != "" {
-					lines := strings.Split(string(content), "\n")
-					for index, line := range lines {
-						trimmed := strings.TrimSpace(line)
-						if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-							continue
-						}
-						parsed, parseErr := url.Parse(trimmed)
-						if parseErr != nil {
-							continue
-						}
-						query := parsed.Query()
-						query.Set("viewer_id", viewerID)
-						parsed.RawQuery = query.Encode()
-						lines[index] = parsed.String()
-					}
-					content = []byte(strings.Join(lines, "\n"))
-				}
+				content := scopeHLSPlaylist(snapshot.Content, streamID, viewerID)
 				c.Set(fiber.HeaderContentType, "application/vnd.apple.mpegurl")
 				c.Set(fiber.HeaderCacheControl, "no-cache, no-store, must-revalidate")
 				c.Set("Pragma", "no-cache")

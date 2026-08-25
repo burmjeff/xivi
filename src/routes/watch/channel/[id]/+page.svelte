@@ -289,7 +289,27 @@
 				void startPlayback();
 			});
 			hls.on(Hls.Events.ERROR, (_event, data) => {
+				const hlsDetails = {
+					type: data.type,
+					detail: data.details,
+					fatal: data.fatal,
+					mime_type: 'mimeType' in data ? String(data.mimeType ?? '') : undefined,
+					source_buffer:
+						'sourceBufferName' in data ? String(data.sourceBufferName ?? '') : undefined,
+					reason: 'reason' in data ? String(data.reason ?? '') : undefined,
+					media_error:
+						'error' in data && data.error instanceof Error ? data.error.message : undefined
+				};
 				if (!data.fatal) {
+					if (data.details === Hls.ErrorDetails.BUFFER_ADD_CODEC_ERROR) {
+						void reportPlayerEvent(
+							url,
+							'warning',
+							'hls_codec_rejected',
+							'The browser rejected an HLS media codec.',
+							hlsDetails
+						);
+					}
 					if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
 						onWaiting();
 						void reportPlayerEvent(
@@ -297,7 +317,7 @@
 							'warning',
 							'hls_buffer_stalled',
 							'HLS.js reported a playback stall.',
-							{ type: data.type, detail: data.details },
+							hlsDetails,
 							true
 						);
 					}
@@ -318,17 +338,13 @@
 						'warning',
 						'hls_media_recovery',
 						'HLS.js is attempting media recovery.',
-						{ recovery: mediaRecoveries, detail: data.details }
+						{ ...hlsDetails, recovery: mediaRecoveries }
 					);
 					return;
 				}
 				loading = false;
 				error = 'This stream could not be decoded by the browser.';
-				void reportPlayerEvent(url, 'error', 'hls_fatal_error', error, {
-					type: data.type,
-					detail: data.details,
-					fatal: data.fatal
-				});
+				void reportPlayerEvent(url, 'error', 'hls_fatal_error', error, hlsDetails);
 			});
 			hls.attachMedia(video);
 			hls.loadSource(viewerUrl(url));

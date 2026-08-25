@@ -80,7 +80,38 @@ func TestSendHLSPlaylistCarriesLogicalViewerIntoSegments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "segment.1.ts?viewer_id=browser-1") {
+	if !strings.Contains(string(body), "/stream/hls/channel-1/segment.1.ts?viewer_id=browser-1") {
 		t.Fatalf("viewer id did not propagate to segment requests: %q", body)
+	}
+}
+
+func TestSendHLSPlaylistScopesRelativeSegmentsToStream(t *testing.T) {
+	root := t.TempDir()
+	previousRoot := settings.STREAM_FILEPATH
+	settings.STREAM_FILEPATH = root
+	t.Cleanup(func() { settings.STREAM_FILEPATH = previousRoot })
+	directory := filepath.Join(root, "channel-1")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	playlist := "#EXTM3U\n#EXTINF:2.0,\nsegment.1.ts\n"
+	if err := os.WriteFile(filepath.Join(directory, "playlist.m3u8"), []byte(playlist), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	app := fiber.New()
+	app.Get("/stream/hls/channel-1", func(c *fiber.Ctx) error {
+		return sendHLSFile(c, "channel-1", "playlist.m3u8")
+	})
+	response, err := app.Test(httptest.NewRequest("GET", "/stream/hls/channel-1", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "/stream/hls/channel-1/segment.1.ts") {
+		t.Fatalf("relative segment was not scoped to its stream: %q", body)
 	}
 }

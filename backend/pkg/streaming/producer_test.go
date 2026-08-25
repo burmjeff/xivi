@@ -13,9 +13,12 @@ func TestHLSCompatibilityElementsNormalizeOnlyBrowserIncompatibleCodecs(t *testi
 		{name: "h265", parser: "h265parse", caps: "video/x-h265", wantFirst: "libde265dec", wantLength: 4},
 		{name: "mpeg2", parser: "mpegvideoparse", caps: "video/mpeg, mpegversion=2", wantFirst: "mpeg2dec", wantLength: 4},
 		{name: "ac3", parser: "ac3parse", caps: "audio/x-ac3", wantFirst: "a52dec", wantLength: 5},
+		{name: "aac main", parser: "aacparse", caps: "audio/mpeg, mpegversion=(int)4, profile=(string)main", wantFirst: "faad", wantLength: 5},
+		{name: "aac main base profile", parser: "aacparse", caps: "audio/mpeg, mpegversion=4, base-profile=main", wantFirst: "faad", wantLength: 5},
 		{name: "mpeg audio", parser: "mpegaudioparse", caps: "audio/mpeg, mpegversion=1", wantFirst: "mpg123audiodec", wantLength: 5},
 		{name: "h264 passthrough", parser: "h264parse", caps: "video/x-h264"},
-		{name: "aac passthrough", parser: "aacparse", caps: "audio/mpeg, mpegversion=4"},
+		{name: "aac lc passthrough", parser: "aacparse", caps: "audio/mpeg, mpegversion=4, profile=lc"},
+		{name: "aac unknown passthrough", parser: "aacparse", caps: "audio/mpeg, mpegversion=4"},
 		{name: "eac3 remains visible for diagnostics", parser: "ac3parse", caps: "audio/x-eac3"},
 	}
 	for _, test := range tests {
