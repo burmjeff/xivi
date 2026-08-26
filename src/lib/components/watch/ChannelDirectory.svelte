@@ -158,7 +158,6 @@
 		position: relative;
 		height: max(30rem, calc(100dvh - 13rem));
 		overflow-y: auto;
-		overscroll-behavior: contain;
 		scrollbar-gutter: stable;
 	}
 	.virtual-space {

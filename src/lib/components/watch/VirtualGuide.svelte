@@ -215,7 +215,6 @@
 		height: calc(100dvh - 13.5rem);
 		min-height: 30rem;
 		overflow: auto;
-		overscroll-behavior: contain;
 		background: var(--deep);
 	}
 	.ruler {

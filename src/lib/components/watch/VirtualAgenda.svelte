@@ -104,7 +104,6 @@
 		height: calc(100dvh - 16rem);
 		min-height: 28rem;
 		overflow-y: auto;
-		overscroll-behavior: contain;
 		background: var(--deep);
 	}
 	.virtual-space {

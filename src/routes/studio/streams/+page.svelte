@@ -621,7 +621,8 @@
 				</div>
 				<History size={22} />
 			</header>
-			{#if streamsQuery.data.history.length}<div class="history-list">
+			{#if streamsQuery.data.history.length}<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+				<div class="history-list" role="region" aria-label="Recent stream sessions" tabindex="0">
 					{#each streamsQuery.data.history as item}<button
 							class:active={selectedIncident === item.incident_id}
 							onclick={() =>
@@ -1164,7 +1165,6 @@
 	.events-block .event-list {
 		max-height: min(28rem, 55dvh);
 		overflow-y: auto;
-		overscroll-behavior: contain;
 		scrollbar-gutter: stable;
 		padding-right: 0.35rem;
 	}
@@ -1319,7 +1319,15 @@
 	}
 	.history-list {
 		display: grid;
+		max-height: min(36rem, 65dvh);
+		overflow-y: auto;
+		scrollbar-gutter: stable;
 		padding: 0.45rem;
+	}
+	.history-list:focus-visible {
+		border-radius: 0 0 0.8rem 0.8rem;
+		outline: 2px solid var(--periwinkle);
+		outline-offset: -2px;
 	}
 	.history-list > button {
 		display: grid;
@@ -1397,7 +1405,6 @@
 	.history-scroll {
 		max-height: min(20rem, 50dvh);
 		overflow-y: auto;
-		overscroll-behavior: contain;
 		scrollbar-gutter: stable;
 		padding-right: 0.35rem;
 	}

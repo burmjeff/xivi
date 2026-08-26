@@ -503,7 +503,6 @@
 		min-height: 0;
 		flex: 1;
 		overflow-y: auto;
-		overscroll-behavior: contain;
 	}
 	.source-virtual-space {
 		position: relative;
