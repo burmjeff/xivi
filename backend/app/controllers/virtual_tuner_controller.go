@@ -1,7 +1,9 @@
 package controllers
 
 import (
+	"fmt"
 	"strconv"
+	"xivi/backend/pkg/utils"
 	"xivi/backend/pkg/virtualtuner"
 	"xivi/backend/platform/database"
 	"xivi/backend/platform/settings"
@@ -122,4 +124,40 @@ func V2SetLineupVirtualTunerEnabled(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusConflict, "virtual_tuner_discovery_unavailable", err.Error(), true)
 	}
 	return V2DeviceOutputs(c)
+}
+
+func V2SetLineupFillMissingGuideSlots(c *fiber.Ctx) error {
+	lineupID, err := strconv.ParseInt(c.Params("lineup_id"), 10, 64)
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
+	}
+	request := struct {
+		Enabled *bool `json:"enabled"`
+	}{}
+	if err := c.BodyParser(&request); err != nil || request.Enabled == nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_device_output", "An enabled value is required.", false)
+	}
+
+	lineup, err := database.Db.GetTemplate(lineupID)
+	if err != nil {
+		return v2Error(c, fiber.StatusNotFound, "lineup_not_found", "The lineup was not found.", false)
+	}
+	if lineup.FillMissingGuideSlots == *request.Enabled {
+		return V2DeviceOutputs(c)
+	}
+	if err := database.Db.SetTemplateFillMissingGuideSlots(lineupID, *request.Enabled); err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "device_output_save_failed", "The guide output setting could not be saved.", true)
+	}
+	lineup.FillMissingGuideSlots = *request.Enabled
+
+	return queueV2Job(c, "publish", "xmltv", lineupID,
+		"XMLTV rebuild queued.",
+		"Rebuilding the lineup guide output…",
+		"Lineup XMLTV rebuilt.",
+		func(report jobProgressFunc) error {
+			if err := utils.CreateEpgXMLWithProgress(*lineup, utils.ProgressReporter(report)); err != nil {
+				return fmt.Errorf("XMLTV publication failed: %w", err)
+			}
+			return nil
+		})
 }

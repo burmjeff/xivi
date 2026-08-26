@@ -22,15 +22,16 @@ const (
 )
 
 type Device struct {
-	LineupID    int64  `json:"lineup_id"`
-	LineupName  string `json:"lineup_name"`
-	Enabled     bool   `json:"enabled"`
-	DeviceID    uint32 `json:"-"`
-	DeviceIDHex string `json:"device_id"`
-	DeviceAuth  string `json:"-"`
-	TunerCount  uint8  `json:"tuner_count"`
-	BaseURL     string `json:"base_url"`
-	LineupURL   string `json:"lineup_url"`
+	LineupID              int64  `json:"lineup_id"`
+	LineupName            string `json:"lineup_name"`
+	Enabled               bool   `json:"enabled"`
+	FillMissingGuideSlots bool   `json:"fill_missing_guide_slots"`
+	DeviceID              uint32 `json:"-"`
+	DeviceIDHex           string `json:"device_id"`
+	DeviceAuth            string `json:"-"`
+	TunerCount            uint8  `json:"tuner_count"`
+	BaseURL               string `json:"base_url"`
+	LineupURL             string `json:"lineup_url"`
 }
 
 type DiscoverData struct {
@@ -98,15 +99,16 @@ func NewDevice(lineup models.Template, origin string, tunerCount int) Device {
 	}
 	hash := sha256.Sum256([]byte(fmt.Sprintf("xivi-virtual-tuner-%d", lineup.ID)))
 	return Device{
-		LineupID:    lineup.ID,
-		LineupName:  lineup.Name,
-		Enabled:     lineup.VirtualTunerEnabled,
-		DeviceID:    deviceID,
-		DeviceIDHex: fmt.Sprintf("%08X", deviceID),
-		DeviceAuth:  fmt.Sprintf("%x", hash[:12]),
-		TunerCount:  uint8(tunerCount),
-		BaseURL:     baseURL,
-		LineupURL:   baseURL + "/lineup.json",
+		LineupID:              lineup.ID,
+		LineupName:            lineup.Name,
+		Enabled:               lineup.VirtualTunerEnabled,
+		FillMissingGuideSlots: lineup.FillMissingGuideSlots,
+		DeviceID:              deviceID,
+		DeviceIDHex:           fmt.Sprintf("%08X", deviceID),
+		DeviceAuth:            fmt.Sprintf("%x", hash[:12]),
+		TunerCount:            uint8(tunerCount),
+		BaseURL:               baseURL,
+		LineupURL:             baseURL + "/lineup.json",
 	}
 }
 

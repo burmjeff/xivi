@@ -234,6 +234,37 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/DeviceOutputs' }
         default: { $ref: '#/components/responses/Error' }
+  /studio/device-outputs/fill-missing-guide-slots/{lineup_id}:
+    patch:
+      operationId: setLineupFillMissingGuideSlots
+      description: Controls export-only placeholder programmes for uncovered XMLTV intervals and queues an XMLTV rebuild when changed.
+      parameters: [{ $ref: '#/components/parameters/LineupId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '202':
+          description: Updated setting and queued XMLTV rebuild.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job_id, status]
+                properties:
+                  job_id: { type: integer, format: int64 }
+                  status: { type: string, enum: [queued] }
+        '200':
+          description: The setting was already in the requested state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceOutputs' }
+        default: { $ref: '#/components/responses/Error' }
   /studio/guide-data/coverage:
     get:
       operationId: getGuideCoverage
@@ -752,11 +783,24 @@ components:
   schemas:
     VirtualTunerDevice:
       type: object
-      required: [lineup_id, lineup_name, enabled, device_id, tuner_count, base_url, lineup_url]
+      required:
+        [
+          lineup_id,
+          lineup_name,
+          enabled,
+          fill_missing_guide_slots,
+          device_id,
+          tuner_count,
+          base_url,
+          lineup_url
+        ]
       properties:
         lineup_id: { type: integer, format: int64 }
         lineup_name: { type: string }
         enabled: { type: boolean }
+        fill_missing_guide_slots:
+          type: boolean
+          description: Whether uncovered XMLTV intervals receive export-only placeholder programmes.
         device_id: { type: string, pattern: '^[0-9A-F]{8}$' }
         tuner_count: { type: integer, minimum: 1, maximum: 255 }
         base_url: { type: string, format: uri }

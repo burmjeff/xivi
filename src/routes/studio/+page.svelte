@@ -22,6 +22,7 @@
 		lineup_id: number;
 		lineup_name: string;
 		enabled: boolean;
+		fill_missing_guide_slots: boolean;
 		device_id: string;
 		tuner_count: number;
 		base_url: string;
@@ -67,8 +68,17 @@
 	}));
 	let copied = $state(''),
 		publishing = $state<number | null>(null),
-		deviceSaving = $state<number | null>(null),
+		deviceSaving = $state<string[]>([]),
 		publishMessage = $state('');
+	function saving(key: string) {
+		return deviceSaving.includes(key);
+	}
+	function startSaving(key: string) {
+		deviceSaving = [...deviceSaving, key];
+	}
+	function stopSaving(key: string) {
+		deviceSaving = deviceSaving.filter((item) => item !== key);
+	}
 	async function copy(value: string) {
 		publishMessage = '';
 		try {
@@ -96,7 +106,8 @@
 		}
 	}
 	async function setVirtualTunerEnabled(lineupId: number, lineupName: string, enabled: boolean) {
-		deviceSaving = lineupId;
+		const savingKey = `tuner:${lineupId}`;
+		startSaving(savingKey);
 		publishMessage = '';
 		try {
 			await api(`/api/v2/studio/device-outputs/virtual-tuner/${lineupId}`, {
@@ -113,7 +124,28 @@
 				: `${lineupName} could not be disabled.`;
 			await deviceOutputsQuery.refetch();
 		} finally {
-			deviceSaving = null;
+			stopSaving(savingKey);
+		}
+	}
+	async function setGuideFillEnabled(lineupId: number, lineupName: string, enabled: boolean) {
+		const savingKey = `guide:${lineupId}`;
+		startSaving(savingKey);
+		publishMessage = '';
+		try {
+			await api(`/api/v2/studio/device-outputs/fill-missing-guide-slots/${lineupId}`, {
+				method: 'PATCH',
+				body: JSON.stringify({ enabled })
+			});
+			await deviceOutputsQuery.refetch();
+			await client.invalidateQueries({ queryKey: ['studio', 'overview'] });
+			publishMessage = enabled
+				? `${lineupName} will fill uncovered XMLTV times with channel placeholders.`
+				: `${lineupName} will publish only real guide programmes.`;
+		} catch {
+			publishMessage = `The guide output setting for ${lineupName} could not be saved.`;
+			await deviceOutputsQuery.refetch();
+		} finally {
+			stopSaving(savingKey);
 		}
 	}
 	function jobLabel(job: OperationJob) {
@@ -230,9 +262,36 @@
 										role="switch"
 										aria-label={`Enable virtual tuner for ${lineup.name}`}
 										checked={tuner?.enabled ?? false}
-										disabled={deviceSaving === lineup.id || deviceOutputsQuery.isPending || !tuner}
+										disabled={saving(`tuner:${lineup.id}`) ||
+											deviceOutputsQuery.isPending ||
+											!tuner}
 										onchange={(event) =>
 											setVirtualTunerEnabled(
+												lineup.id,
+												lineup.name,
+												(event.currentTarget as HTMLInputElement).checked
+											)}
+									/>
+								</label>
+								<label
+									class="tuner-toggle"
+									title="Fill uncovered XMLTV intervals without changing real guide coverage"
+								>
+									<span
+										><strong>Guide gaps</strong><small
+											>{tuner?.fill_missing_guide_slots ? 'Filled' : 'Blank'}</small
+										></span
+									>
+									<input
+										type="checkbox"
+										role="switch"
+										aria-label={`Fill missing XMLTV guide slots for ${lineup.name}`}
+										checked={tuner?.fill_missing_guide_slots ?? true}
+										disabled={saving(`guide:${lineup.id}`) ||
+											deviceOutputsQuery.isPending ||
+											!tuner}
+										onchange={(event) =>
+											setGuideFillEnabled(
 												lineup.id,
 												lineup.name,
 												(event.currentTarget as HTMLInputElement).checked
@@ -547,6 +606,8 @@
 	}
 	.output-links {
 		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
 		gap: 0.4rem;
 	}
 	.output-links button {

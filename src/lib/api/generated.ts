@@ -309,6 +309,23 @@ export interface paths {
 		patch: operations['setLineupVirtualTunerEnabled'];
 		trace?: never;
 	};
+	'/studio/device-outputs/fill-missing-guide-slots/{lineup_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		/** @description Controls export-only placeholder programmes for uncovered XMLTV intervals and queues an XMLTV rebuild when changed. */
+		patch: operations['setLineupFillMissingGuideSlots'];
+		trace?: never;
+	};
 	'/studio/guide-data/coverage': {
 		parameters: {
 			query?: never;
@@ -847,6 +864,8 @@ export interface components {
 			lineup_id: number;
 			lineup_name: string;
 			enabled: boolean;
+			/** @description Whether uncovered XMLTV intervals receive export-only placeholder programmes. */
+			fill_missing_guide_slots: boolean;
 			device_id: string;
 			tuner_count: number;
 			/** Format: uri */
@@ -1873,6 +1892,49 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['DeviceOutputs'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	setLineupFillMissingGuideSlots: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				lineup_id: components['parameters']['LineupId'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': {
+					enabled: boolean;
+				};
+			};
+		};
+		responses: {
+			/** @description The setting was already in the requested state. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['DeviceOutputs'];
+				};
+			};
+			/** @description Updated setting and queued XMLTV rebuild. */
+			202: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						/** Format: int64 */
+						job_id: number;
+						/** @enum {string} */
+						status: 'queued';
+					};
 				};
 			};
 			default: components['responses']['Error'];

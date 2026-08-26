@@ -372,21 +372,29 @@ func pruneTemporaryFiles(before time.Time) (temporaryFileCleanup, error) {
 	return report, errors.Join(cleanupErrors...)
 }
 
-// RunUpdates runs all updates in sequence: playlist -> EPG -> vacuum
+// RunUpdates runs all updates in sequence. XMLTV outputs are rolled forward
+// independently after guide acquisition, so placeholder windows remain current
+// even when every upstream guide source fails.
 // This is used by the cron scheduler to ensure updates happen in the correct order
 func RunUpdates() {
 	log.Log().Msg("Starting scheduled update process")
 
 	// Step 1: Update playlists
-	log.Info().Msg("Step 1/3: Starting playlist update")
+	log.Info().Msg("Step 1/4: Starting playlist update")
 	UpdatePlaylists()
 
 	// Step 2: Update EPGs
-	log.Info().Msg("Step 2/3: Starting EPG update")
+	log.Info().Msg("Step 2/4: Starting EPG update")
 	UpdateEpgs()
 
-	// Step 3: Vacuum database
-	log.Info().Msg("Step 3/3: Starting database vacuum")
+	// Step 3: Roll XMLTV output windows even if guide acquisition failed.
+	log.Info().Msg("Step 3/4: Rebuilding lineup XMLTV outputs")
+	if err := utils.RebuildEpgOutputs(nil); err != nil {
+		log.Error().Err(err).Msg("One or more lineup XMLTV outputs could not be rebuilt")
+	}
+
+	// Step 4: Vacuum database
+	log.Info().Msg("Step 4/4: Starting database vacuum")
 	VacuumDB()
 
 	log.Info().Msg("Update process completed successfully")

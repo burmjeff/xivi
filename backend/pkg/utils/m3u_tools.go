@@ -256,15 +256,10 @@ func (m *M3uTools) UpdateChannel(template models.Template, channel *models.Templ
 	oldLogoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, GetLogoUrl(logo.Name))
 	logoURL := fmt.Sprintf("http://%s:%d/%s", m.host, m.port, channel.Logo)
 
-	if oldChannel.TvgID == nil {
-		*oldChannel.TvgID = "xivi"
-	}
-	if channel.TvgID == nil {
-		*channel.TvgID = "xivi"
-	}
-
-	filter := fmt.Sprintf("tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\"", *oldChannel.TvgID, *oldChannel.TvgID, oldLogoURL)
-	newChannel := fmt.Sprintf("tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\"", *channel.TvgID, *channel.TvgID, logoURL)
+	oldExportID := xmlTVChannelID(template, *oldChannel)
+	newExportID := xmlTVChannelID(template, channel.TemplateChannel)
+	filter := fmt.Sprintf("tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\"", oldExportID, oldExportID, oldLogoURL)
+	newChannel := fmt.Sprintf("tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\"", newExportID, newExportID, logoURL)
 
 	// Process lines in-place
 	modified := false
@@ -397,12 +392,8 @@ func (m *M3uTools) marshallInto(writer *bufio.Writer) error {
 				channelURL := fmt.Sprintf("http://%s:%d/stream/%s", m.host, m.port, channel.Uuid)
 
 				//log.Info().Msgf("M3U Creation: Adding Template Channel: %s", channel.Name)
-				if channel.TvgID == nil {
-					xgid := "xivi"
-					channel.TvgID = &xgid
-				}
-
-				if _, err = writer.WriteString(fmt.Sprintf("#EXTINF:-1 tvg-chno=\"%d\" tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n%s\n", chNo, *channel.TvgID, *channel.TvgID, logoURL, group.Name, channel.Name, channelURL)); err != nil {
+				exportID := xmlTVChannelID(m.template, channel)
+				if _, err = writer.WriteString(fmt.Sprintf("#EXTINF:-1 tvg-chno=\"%d\" tvg-name=\"%s\" tvg-id=\"%s\" tvg-logo=\"%s\" group-title=\"%s\",%s\n%s\n", chNo, exportID, exportID, logoURL, group.Name, channel.Name, channelURL)); err != nil {
 					return fmt.Errorf("could not encode channel %q: %w", channel.Name, err)
 				}
 				chNo++

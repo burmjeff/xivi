@@ -101,6 +101,23 @@ func (q *TemplateQueries) SetTemplateVirtualTunerEnabled(id int64, enabled bool)
 	return nil
 }
 
+// SetTemplateFillMissingGuideSlots controls whether XMLTV publication fills
+// uncovered intervals with export-only placeholder programmes.
+func (q *TemplateQueries) SetTemplateFillMissingGuideSlots(id int64, enabled bool) error {
+	result, err := q.Exec(`UPDATE template SET fill_missing_guide_slots = ? WHERE id = ?`, enabled, id)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // Update a template by given Template object.
 func (q *TemplateQueries) UpdateTemplate(t *models.Template) error {
 	// Define query string.

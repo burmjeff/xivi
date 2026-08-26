@@ -12,7 +12,9 @@ func TestTemplateVirtualTunerIsOptInAndPersists(t *testing.T) {
 	db := sqlx.MustConnect("sqlite3", ":memory:")
 	t.Cleanup(func() { _ = db.Close() })
 	db.MustExec(`CREATE TABLE template (
-		id INTEGER PRIMARY KEY, name TEXT NOT NULL, virtual_tuner_enabled BOOLEAN NOT NULL DEFAULT false
+		id INTEGER PRIMARY KEY, name TEXT NOT NULL,
+		virtual_tuner_enabled BOOLEAN NOT NULL DEFAULT false,
+		fill_missing_guide_slots BOOLEAN NOT NULL DEFAULT true
 	)`)
 	queries := NewTemplateQueries(db)
 	id, err := queries.CreateTemplate(&models.Template{Name: "Local news"})
@@ -26,6 +28,9 @@ func TestTemplateVirtualTunerIsOptInAndPersists(t *testing.T) {
 	if lineup.VirtualTunerEnabled {
 		t.Fatal("new lineup virtual tuner should be disabled")
 	}
+	if !lineup.FillMissingGuideSlots {
+		t.Fatal("new lineup should fill missing XMLTV guide slots by default")
+	}
 	if err := queries.SetTemplateVirtualTunerEnabled(id, true); err != nil {
 		t.Fatal(err)
 	}
@@ -35,6 +40,16 @@ func TestTemplateVirtualTunerIsOptInAndPersists(t *testing.T) {
 	}
 	if !lineup.VirtualTunerEnabled {
 		t.Fatal("enabled virtual tuner state was not persisted")
+	}
+	if err := queries.SetTemplateFillMissingGuideSlots(id, false); err != nil {
+		t.Fatal(err)
+	}
+	lineup, err = queries.GetTemplate(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lineup.FillMissingGuideSlots {
+		t.Fatal("disabled guide fill state was not persisted")
 	}
 }
 

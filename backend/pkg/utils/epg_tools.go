@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
+	"sort"
+	"strings"
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/platform/database"
@@ -16,57 +17,110 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Constants for EPG XML generation
 const (
-	EpgChannelBatchSize   = 50              // Number of channels to process in a batch
-	EpgProgrammeBatchSize = 200             // Number of programmes to process in a batch
-	XMLBufferSize         = 4 * 1024 * 1024 // 4MB buffer for XML encoding
+	XMLBufferSize               = 4 * 1024 * 1024
+	xmlTVExportHistory          = 4 * time.Hour
+	xmlTVExportFuture           = 72 * time.Hour
+	xmlTVPlaceholderDuration    = 4 * time.Hour
+	xmlTVPlaceholderDescription = "Schedule information is unavailable."
 )
 
-// CreateEpgXML generates an EPG XML file for a template.
-func CreateEpgXML(template models.Template) error {
-	return CreateEpgXMLWithProgress(template, nil)
+type xmlTVExportChannel struct {
+	Channel  models.EpgChannel
+	SourceID string
 }
 
-// CreateEpgXMLWithProgress generates an EPG XML file while reporting the
-// measurable stages of channel, programme, and output generation.
-func CreateEpgXMLWithProgress(template models.Template, reporter ProgressReporter) error {
+// CreateEpgXML generates an EPG XML file for a lineup.
+func CreateEpgXML(lineup models.Template) error {
+	return CreateEpgXMLWithProgress(lineup, nil)
+}
+
+// CreateEpgXMLWithProgress builds a bounded XMLTV window. Real guide rows are
+// never changed or supplemented in the database; optional placeholders exist
+// only in the published file so Studio coverage continues to report real data.
+func CreateEpgXMLWithProgress(lineup models.Template, reporter ProgressReporter) error {
 	start := time.Now()
 	ctx := context.Background()
-	log.Info().Str("template", template.Name).Msg("Creating EPG XML")
-	reportProgress(reporter, 5, "Loading lineup channels for XMLTV…")
+	log.Info().Str("lineup", lineup.Name).Msg("Creating EPG XML")
+	reportProgress(reporter, 5, "Loading playable lineup channels for XMLTV…")
 
-	// Initialize EPG item with metadata
+	channels, err := database.Db.GetPlayableTmplChannels(lineup.ID)
+	if err != nil {
+		log.Error().Err(err).Int64("lineup_id", lineup.ID).Msg("Failed to get lineup channels")
+		return fmt.Errorf("could not load lineup channels for XMLTV: %w", err)
+	}
+	if len(channels) == 0 {
+		return fmt.Errorf("could not build the XMLTV export: the lineup has no playable channels")
+	}
+
+	exportChannels := make([]xmlTVExportChannel, 0, len(channels))
+	seenChannelIDs := make(map[string]struct{}, len(channels))
+	for index, channel := range channels {
+		exportID := xmlTVChannelID(lineup, channel)
+		if _, exists := seenChannelIDs[exportID]; exists {
+			reportProgress(reporter, 10+(index+1)*20/len(channels), fmt.Sprintf("Preparing XMLTV channels… %d/%d", index+1, len(channels)))
+			continue
+		}
+		seenChannelIDs[exportID] = struct{}{}
+
+		epgChannel := models.EpgChannel{ChannelId: exportID, DisplayName: channel.Name, Icon: models.Icon{}}
+		if logo, logoErr := database.Db.GetLogo(ctx, channel.LogoId); logoErr == nil {
+			epgChannel.Icon.Src = fmt.Sprintf("http://%s:%d/%s",
+				settings.APP_SETTINGS.Server.Host,
+				settings.APP_SETTINGS.Server.Port,
+				GetLogoUrl(logo.Name))
+		} else {
+			log.Debug().Err(logoErr).Str("channel", channel.Name).Msg("Leaving XMLTV channel icon empty")
+		}
+
+		sourceID := xmlTVSourceChannelID(channel)
+		exportChannels = append(exportChannels, xmlTVExportChannel{Channel: epgChannel, SourceID: sourceID})
+		reportProgress(reporter, 10+(index+1)*20/len(channels), fmt.Sprintf("Preparing XMLTV channels… %d/%d", index+1, len(channels)))
+	}
+
+	windowStart, windowEnd := xmlTVExportWindow(time.Now())
+	mappedIDs := make([]string, 0, len(exportChannels))
+	for _, channel := range exportChannels {
+		if channel.SourceID != "" {
+			mappedIDs = append(mappedIDs, channel.SourceID)
+		}
+	}
+	reportProgress(reporter, 32, fmt.Sprintf("Loading guide window for %d XMLTV channels…", len(exportChannels)))
+	realProgrammes, err := database.Db.GetProgrammesByTVGIDsWindow(ctx, mappedIDs, windowStart, windowEnd)
+	if err != nil {
+		return fmt.Errorf("could not load the XMLTV guide window: %w", err)
+	}
+	programmesByChannel := make(map[string][]models.EpgProgramme, len(mappedIDs))
+	for _, programme := range realProgrammes {
+		programmesByChannel[programme.Channel] = append(programmesByChannel[programme.Channel], programme)
+	}
+
 	epg := models.EpgItem{
 		GeneratorInfo:  settings.APP_SETTINGS.Application.AppName,
 		SourceInfoName: fmt.Sprintf("%s - %s", settings.APP_SETTINGS.Application.AppName, settings.APP_SETTINGS.Application.AppVersion),
+		Channels:       make([]models.EpgChannel, 0, len(exportChannels)),
+		Programmes:     make([]models.EpgProgramme, 0, len(realProgrammes)),
+	}
+	for index, channel := range exportChannels {
+		epg.Channels = append(epg.Channels, channel.Channel)
+		real := programmesByChannel[channel.SourceID]
+		epg.Programmes = append(epg.Programmes, programmesForXMLTV(
+			channel.Channel.ChannelId,
+			channel.Channel.DisplayName,
+			real,
+			windowStart,
+			windowEnd,
+			lineup.FillMissingGuideSlots,
+		)...)
+		reportProgress(reporter, 35+(index+1)*40/len(exportChannels), fmt.Sprintf("Building guide coverage… %d/%d channels", index+1, len(exportChannels)))
 	}
 
-	// Get template channels
-	channels, err := database.Db.GetTmplChannels(template.ID)
-	if err != nil {
-		log.Error().Err(err).Int64("template_id", template.ID).Msg("Failed to get template channels")
-		return fmt.Errorf("could not load lineup channels for XMLTV: %w", err)
-	}
-
-	if len(channels) == 0 {
-		log.Warn().Int64("template_id", template.ID).Msg("No channels found for template")
-		return fmt.Errorf("could not build the XMLTV export: the lineup has no channels")
-	}
-	reportProgress(reporter, 10, fmt.Sprintf("Preparing %d XMLTV channels…", len(channels)))
-
-	// Ensure directory exists
 	if err := os.MkdirAll(settings.EPG_FILEPATH, 0755); err != nil {
-		log.Error().Err(err).Str("path", settings.EPG_FILEPATH).Msg("Failed to create EPG directory")
 		return fmt.Errorf("could not create the XMLTV output directory: %w", err)
 	}
-
-	// Create a unique temporary file first so concurrent publishes cannot collide.
-	finalFilePath := fmt.Sprintf("%s/%s.xml", settings.EPG_FILEPATH, template.Name)
-
+	finalFilePath := filepath.Join(settings.EPG_FILEPATH, lineup.Name+".xml")
 	file, err := os.CreateTemp(settings.EPG_FILEPATH, ".xivi-*.xml.tmp")
 	if err != nil {
-		log.Error().Err(err).Str("path", settings.EPG_FILEPATH).Msg("Failed to create temporary EPG file")
 		return fmt.Errorf("could not create the XMLTV export: %w", err)
 	}
 	tempFilePath := file.Name()
@@ -78,180 +132,130 @@ func CreateEpgXMLWithProgress(template models.Template, reporter ProgressReporte
 		return fmt.Errorf("could not set XMLTV file permissions: %w", err)
 	}
 
-	// Use buffered writer for better performance
 	bufWriter := bufio.NewWriterSize(file, XMLBufferSize)
-	encoder := xml.NewEncoder(bufWriter)
-	encoder.Indent("", "  ")
-
-	// Write XML header
 	if _, err = bufWriter.WriteString(xml.Header); err != nil {
-		log.Error().Err(err).Msg("Failed to write XML header")
 		return fmt.Errorf("could not write the XMLTV header: %w", err)
 	}
-
-	// Process channels in parallel
-	channelChan := make(chan models.EpgChannel, len(channels))
-	var wg sync.WaitGroup
-
-	// Start goroutine to collect channels
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for _, channel := range channels {
-			if channel.TvgID != nil {
-				epgChannel, err := database.Db.GetEpgChannelByChannelId(ctx, *channel.TvgID)
-				if err != nil {
-					log.Debug().Str("channel", channel.Name).Str("tvg_id", *channel.TvgID).Msg("Creating default EPG channel")
-					epgChannel = &models.EpgChannel{
-						ChannelId:   *channel.TvgID,
-						DisplayName: channel.Name,
-						Icon:        models.Icon{}, // Initialize Icon struct
-					}
-				}
-
-				// Set icon URL - get the logo from database to match M3U tvg-logo URL format
-				logo, err := database.Db.GetLogo(ctx, channel.LogoId)
-				if err != nil {
-					log.Warn().Str("channel", channel.Name).Msg("Failed to get logo for XMLTV channel icon")
-					// Use empty icon URL if logo not found
-					epgChannel.Icon.Src = ""
-				} else {
-					epgChannel.Icon.Src = fmt.Sprintf("http://%s:%d/%s",
-						settings.APP_SETTINGS.Server.Host,
-						settings.APP_SETTINGS.Server.Port,
-						GetLogoUrl(logo.Name))
-				}
-
-				channelChan <- *epgChannel
-			}
-		}
-		close(channelChan)
-	}()
-
-	// Collect channels
-	collectedChannels := 0
-	for channel := range channelChan {
-		epg.Channels = append(epg.Channels, channel)
-		collectedChannels++
-		reportProgress(reporter, 10+collectedChannels*20/len(channels), fmt.Sprintf("Preparing XMLTV channels… %d/%d", collectedChannels, len(channels)))
-	}
-
-	// Wait for channel collection to complete
-	wg.Wait()
-
-	// Process programmes for each channel
-	programmeChan := make(chan []models.EpgProgramme, len(epg.Channels))
-	programmeErrors := make(chan error, len(epg.Channels))
-	wg = sync.WaitGroup{}
-
-	// Start goroutines to fetch programmes for each channel
-	for _, channel := range epg.Channels {
-		wg.Add(1)
-		go func(ch models.EpgChannel) {
-			defer wg.Done()
-
-			// Log the channel ID for debugging
-			log.Debug().Str("channelId", ch.ChannelId).Msg("Getting programmes for channel")
-
-			// Get programmes for this channel
-			epgProgrammes, err := database.Db.GetProgrammesBytvgid(ctx, ch.ChannelId)
-			if err != nil {
-				programmeErrors <- fmt.Errorf("could not load programmes for channel %q: %w", ch.DisplayName, err)
-				return
-			}
-			if epgProgrammes == nil || len(*epgProgrammes) == 0 {
-				log.Debug().Str("channel_id", ch.ChannelId).Msg("Generating default programmes")
-
-				// Generate default programmes if none exist
-				var defaultProgrammes []models.EpgProgramme
-				timeNow := &models.Time{Time: time.Now().Truncate(time.Hour)}
-				timeFrame := 4
-
-				for i := 0; i <= 48; i += timeFrame {
-					programme := models.EpgProgramme{
-						Start:   &models.Time{Time: timeNow.Add(time.Hour * time.Duration(i))},
-						Stop:    &models.Time{Time: timeNow.Add(time.Hour * time.Duration(i+timeFrame))},
-						Channel: ch.ChannelId,
-						Title: models.Title{
-							Value: ch.DisplayName,
-						},
-						Desc: ch.DisplayName,
-					}
-
-					defaultProgrammes = append(defaultProgrammes, programme)
-				}
-
-				programmeChan <- defaultProgrammes
-			} else {
-				// Ensure Title.Value is not empty for each programme
-				for i := range *epgProgrammes {
-					if (*epgProgrammes)[i].Title.Value == "" {
-						(*epgProgrammes)[i].Title.Value = "No Title"
-						log.Warn().Str("channel", (*epgProgrammes)[i].Channel).Msg("Empty Title.Value in programme, using default")
-					}
-				}
-				programmeChan <- *epgProgrammes
-			}
-		}(channel)
-	}
-
-	// Close programme channel when all goroutines are done
-	go func() {
-		wg.Wait()
-		close(programmeChan)
-		close(programmeErrors)
-	}()
-
-	// Collect programmes
-	collectedProgrammes := 0
-	for programmes := range programmeChan {
-		epg.Programmes = append(epg.Programmes, programmes...)
-		collectedProgrammes++
-		reportProgress(reporter, 30+collectedProgrammes*45/len(epg.Channels), fmt.Sprintf("Gathering schedules… %d/%d channels", collectedProgrammes, len(epg.Channels)))
-	}
-	for programmeErr := range programmeErrors {
-		log.Error().Err(programmeErr).Int64("template_id", template.ID).Msg("Failed to build XMLTV programmes")
-		return programmeErr
-	}
-
-	// Encode EPG to XML
+	encoder := xml.NewEncoder(bufWriter)
+	encoder.Indent("", "  ")
 	reportProgress(reporter, 82, fmt.Sprintf("Encoding %d programmes to XMLTV…", len(epg.Programmes)))
 	if err := encoder.Encode(epg); err != nil {
-		log.Error().Err(err).Msg("Failed to encode EPG to XML")
 		return fmt.Errorf("could not encode the XMLTV export: %w", err)
 	}
-
-	// Flush buffer to file
 	reportProgress(reporter, 92, "Finalizing XMLTV output…")
 	if err := bufWriter.Flush(); err != nil {
-		log.Error().Err(err).Msg("Failed to flush XML buffer")
 		return fmt.Errorf("could not finish writing the XMLTV export: %w", err)
 	}
-
-	// Close file before renaming
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("could not close the XMLTV export: %w", err)
 	}
-
-	// Rename temporary file to final file
 	if err := os.Rename(tempFilePath, finalFilePath); err != nil {
-		log.Error().Err(err).Str("from", tempFilePath).Str("to", finalFilePath).Msg("Failed to rename EPG file")
 		return fmt.Errorf("could not replace the XMLTV export: %w", err)
 	}
 
 	reportProgress(reporter, 98, "XMLTV output is ready.")
-	log.Info().Str("template", template.Name).Dur("duration", time.Since(start)).Msg("EPG XML created successfully")
+	log.Info().
+		Str("lineup", lineup.Name).
+		Int("channels", len(epg.Channels)).
+		Int("programmes", len(epg.Programmes)).
+		Dur("duration", time.Since(start)).
+		Msg("EPG XML created successfully")
 	return nil
 }
 
-// RemoveEpg removes an EPG file
+func xmlTVExportWindow(now time.Time) (time.Time, time.Time) {
+	location, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+	if err != nil {
+		location = time.UTC
+	}
+	local := now.In(location)
+	currentHour := time.Date(local.Year(), local.Month(), local.Day(), local.Hour(), 0, 0, 0, location)
+	return currentHour.Add(-xmlTVExportHistory), currentHour.Add(xmlTVExportFuture)
+}
+
+func programmesForXMLTV(channelID, channelName string, real []models.EpgProgramme, from, to time.Time, fillMissing bool) []models.EpgProgramme {
+	programmes := append([]models.EpgProgramme(nil), real...)
+	sort.SliceStable(programmes, func(i, j int) bool {
+		if programmes[i].Start == nil {
+			return false
+		}
+		if programmes[j].Start == nil {
+			return true
+		}
+		return programmes[i].Start.Before(programmes[j].Start.Time)
+	})
+	valid := programmes[:0]
+	for _, programme := range programmes {
+		if programme.Start == nil || programme.Stop == nil || !programme.Stop.After(programme.Start.Time) {
+			continue
+		}
+		programme.Channel = channelID
+		if strings.TrimSpace(programme.Title.Value) == "" {
+			programme.Title.Value = "No Title"
+		}
+		valid = append(valid, programme)
+	}
+	if !fillMissing {
+		return valid
+	}
+
+	result := make([]models.EpgProgramme, 0, len(valid)+4)
+	cursor := from
+	for _, programme := range valid {
+		if programme.Start.After(cursor) {
+			result = appendPlaceholderProgrammes(result, channelID, channelName, cursor, minTime(programme.Start.Time, to))
+		}
+		result = append(result, programme)
+		if programme.Stop.After(cursor) {
+			cursor = programme.Stop.Time
+		}
+		if !cursor.Before(to) {
+			return result
+		}
+	}
+	return appendPlaceholderProgrammes(result, channelID, channelName, cursor, to)
+}
+
+func appendPlaceholderProgrammes(programmes []models.EpgProgramme, channelID, channelName string, start, end time.Time) []models.EpgProgramme {
+	if !start.Before(end) {
+		return programmes
+	}
+	for start.Before(end) {
+		stop := start.Add(xmlTVPlaceholderDuration)
+		if stop.After(end) {
+			stop = end
+		}
+		programmes = append(programmes, models.EpgProgramme{
+			Start:   &models.Time{Time: start},
+			Stop:    &models.Time{Time: stop},
+			Channel: channelID,
+			Title:   models.Title{Value: channelName},
+			Desc:    xmlTVPlaceholderDescription,
+		})
+		start = stop
+	}
+	return programmes
+}
+
+func minTime(left, right time.Time) time.Time {
+	if left.Before(right) {
+		return left
+	}
+	return right
+}
+
+// RebuildEpgOutputs rolls every lineup's export window forward even when an
+// upstream guide refresh fails or no guide sources are configured.
+func RebuildEpgOutputs(reporter ProgressReporter) error {
+	return generateEPGFiles(context.Background(), reporter)
+}
+
+// RemoveEpg removes an EPG file.
 func RemoveEpg(epg *models.Epg) {
 	filePath := filepath.Join(settings.EPG_FILEPATH, epg.Name+".xml")
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		// File doesn't exist, nothing to do
 		return
 	}
-
 	if err := os.Remove(filePath); err != nil {
 		log.Error().Err(err).Str("file", filePath).Msg("Failed to remove EPG file")
 	}

@@ -28,6 +28,7 @@ func V2Routes(a *fiber.App) {
 	v2.Delete("/studio/streams/:stream_id/connections/:connection_id", controllers.V2DisconnectStreamClient)
 	v2.Get("/studio/device-outputs", controllers.V2DeviceOutputs)
 	v2.Patch("/studio/device-outputs/virtual-tuner/:lineup_id", controllers.V2SetLineupVirtualTunerEnabled)
+	v2.Patch("/studio/device-outputs/fill-missing-guide-slots/:lineup_id", controllers.V2SetLineupFillMissingGuideSlots)
 	v2.Get("/studio/guide-data/coverage", controllers.V2StudioCoverage)
 	v2.Get("/studio/lineups", controllers.V2StudioLineups)
 	v2.Get("/studio/lineups/:lineup_id/groups", controllers.V2StudioLineupGroups)
