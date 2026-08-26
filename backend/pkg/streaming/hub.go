@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 )
 
+const canonicalTransportChunkBytes = 7 * 188
+
 type mediaChunk struct {
 	data         []byte
 	hasPAT       bool
@@ -30,10 +32,11 @@ type Hub struct {
 }
 
 type subscriber struct {
-	id      uint64
-	chunks  chan mediaChunk
-	pending int
-	closed  bool
+	id          uint64
+	chunks      chan mediaChunk
+	pending     int
+	closed      bool
+	closeReason string
 }
 
 // Subscription is a single bounded view of a shared MPEG-TS stream.
@@ -100,7 +103,7 @@ func (h *Hub) publish(data []byte, ownedData bool) {
 			continue
 		}
 		if sub.pending+len(owned) > h.maxClientBytes {
-			h.dropLocked(id, sub)
+			h.dropLocked(id, sub, "slow_client_dropped")
 			h.slowClientDrops.Add(1)
 			continue
 		}
@@ -108,7 +111,7 @@ func (h *Hub) publish(data []byte, ownedData bool) {
 		case sub.chunks <- chunk:
 			sub.pending += len(owned)
 		default:
-			h.dropLocked(id, sub)
+			h.dropLocked(id, sub, "slow_client_dropped")
 			h.slowClientDrops.Add(1)
 		}
 	}
@@ -145,12 +148,16 @@ func (h *Hub) Subscribe() *Subscription {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	queueSize := len(h.ring) + 64
+	// mpegtsmux emits seven 188-byte packets per sample. Size the channel from
+	// the configured byte allowance so a cold producer's initial scheduling
+	// burst cannot hit an unrelated 64/512-chunk ceiling before the HTTP writer
+	// begins draining. The byte accounting remains the authoritative bound.
+	queueSize := (h.maxClientBytes + canonicalTransportChunkBytes - 1) / canonicalTransportChunkBytes
+	if warmCapacity := len(h.ring) + 64; queueSize < warmCapacity {
+		queueSize = warmCapacity
+	}
 	if queueSize < 64 {
 		queueSize = 64
-	}
-	if queueSize > 512 {
-		queueSize = 512
 	}
 	h.nextID++
 	sub := &subscriber{id: h.nextID, chunks: make(chan mediaChunk, queueSize)}
@@ -316,16 +323,25 @@ func (s *Subscription) Close() {
 		s.hub.mu.Lock()
 		defer s.hub.mu.Unlock()
 		if current, ok := s.hub.subscribers[s.sub.id]; ok {
-			s.hub.dropLocked(s.sub.id, current)
+			s.hub.dropLocked(s.sub.id, current, "subscription_closed")
 		}
 	})
 }
 
-func (h *Hub) dropLocked(id uint64, sub *subscriber) {
+// CloseReason distinguishes a bounded slow-client eviction from ordinary
+// connection teardown. It remains empty while the subscription is active.
+func (s *Subscription) CloseReason() string {
+	s.hub.mu.Lock()
+	defer s.hub.mu.Unlock()
+	return s.sub.closeReason
+}
+
+func (h *Hub) dropLocked(id uint64, sub *subscriber, reason string) {
 	if sub.closed {
 		return
 	}
 	sub.closed = true
+	sub.closeReason = reason
 	delete(h.subscribers, id)
 	close(sub.chunks)
 }
@@ -349,7 +365,7 @@ func (h *Hub) Close(err error) {
 	h.closed = true
 	h.closeErr = err
 	for id, sub := range h.subscribers {
-		h.dropLocked(id, sub)
+		h.dropLocked(id, sub, "hub_closed")
 	}
 	h.ring = nil
 	h.ringBytes = 0

@@ -222,6 +222,9 @@ func GetStream(c *fiber.Ctx) error {
 		for {
 			chunk, ok := subscription.Next()
 			if !ok {
+				if subscription.CloseReason() == "slow_client_dropped" {
+					reason = "slow_client_dropped"
+				}
 				_ = writer.Flush()
 				return
 			}

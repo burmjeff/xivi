@@ -100,6 +100,33 @@ func TestHubDropsOnlySlowSubscriber(t *testing.T) {
 	if _, ok := slow.Next(); ok {
 		t.Fatalf("dropped subscriber still received data")
 	}
+	if reason := slow.CloseReason(); reason != "slow_client_dropped" {
+		t.Fatalf("slow subscriber close reason = %q, want slow_client_dropped", reason)
+	}
+}
+
+func TestHubColdBurstUsesConfiguredByteBudget(t *testing.T) {
+	hub := NewHub(2 * 1024 * 1024)
+	subscription := hub.Subscribe()
+	t.Cleanup(subscription.Close)
+	chunk := make([]byte, canonicalTransportChunkBytes)
+
+	// This burst is much larger than the old 64-chunk cold queue but remains
+	// comfortably below the configured two-megabyte viewer allowance.
+	for range 1000 {
+		hub.Publish(chunk)
+	}
+	if count := hub.SubscriberCount(); count != 1 {
+		t.Fatalf("cold burst evicted a healthy subscriber; subscribers = %d", count)
+	}
+	for range 1000 {
+		if data, ok := subscription.Next(); !ok || len(data) != len(chunk) {
+			t.Fatal("cold burst was not retained for the subscriber")
+		}
+	}
+	if reason := subscription.CloseReason(); reason != "" {
+		t.Fatalf("healthy subscriber unexpectedly closed: %s", reason)
+	}
 }
 
 func TestHubConcurrentPublishSubscribeAndClose(t *testing.T) {
