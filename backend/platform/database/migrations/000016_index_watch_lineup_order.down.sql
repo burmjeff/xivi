@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS idx_template_group_channel_group_order;
+DROP INDEX IF EXISTS idx_template_group_item_template_order;

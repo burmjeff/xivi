@@ -116,6 +116,81 @@ func TestGetGuideChannelsReturnsAnEmptyProgrammeArray(t *testing.T) {
 	}
 }
 
+func TestWatchGroupsAndNeighborsUsePlayableSavedOrder(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO template VALUES (1, 'Main'), (2, 'Alternate')`)
+	db.MustExec(`INSERT INTO templategroup VALUES
+		(10, 'Sports', 0, NULL),
+		(20, 'News', 0, NULL),
+		(30, 'Empty', 0, NULL),
+		(40, 'Alternate group', 0, NULL)`)
+	db.MustExec(`INSERT INTO template_group_item VALUES
+		(1, 10, 20), (1, 20, 10), (1, 30, 30), (2, 40, 1)`)
+	db.MustExec(`INSERT INTO logo VALUES (0, 'xivi_channel')`)
+	db.MustExec(`INSERT INTO templatechannel VALUES
+		(100, 'Sports two', NULL, 0, 'sports-two'),
+		(101, 'Sports one', NULL, 0, 'sports-one'),
+		(200, 'News one', NULL, 0, 'news-one'),
+		(201, 'Unplayable', NULL, 0, 'unplayable'),
+		(400, 'Alternate channel', NULL, 0, 'alternate')`)
+	db.MustExec(`INSERT INTO template_group_channel VALUES
+		(10, 100, 2), (10, 101, 1),
+		(20, 200, 1), (20, 201, 2),
+		(40, 400, 1)`)
+	db.MustExec(`INSERT INTO templatechannelitem VALUES
+		(1, 100, 1000, 0, 'manual', 1, NULL, 2, 1),
+		(2, 101, 1001, 0, 'manual', 1, NULL, 2, 1),
+		(3, 200, 1002, 0, 'manual', 1, NULL, 2, 1),
+		(4, 400, 1003, 0, 'manual', 1, NULL, 2, 1)`)
+
+	query := NewExperienceQueries(db)
+	groups, err := query.GetWatchLineupGroups(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("GetWatchLineupGroups returned an error: %v", err)
+	}
+	if len(groups) != 2 || groups[0].ID != 20 || groups[0].ChannelCount != 1 || groups[1].ID != 10 || groups[1].ChannelCount != 2 {
+		t.Fatalf("expected non-empty groups in saved order with playable counts, got %#v", groups)
+	}
+	sportsID := int64(10)
+	sports, sportsTotal, err := query.GetGuideChannels(
+		context.Background(), 1, &sportsID, "", time.Now().Add(-time.Hour), time.Now().Add(time.Hour), 10, 0,
+	)
+	if err != nil || sportsTotal != 2 || len(sports) != 2 || sports[0].ID != 101 || sports[0].Number != 2 || sports[1].Number != 3 {
+		t.Fatalf("group filtering changed saved lineup numbers: channels=%#v total=%d error=%v", sports, sportsTotal, err)
+	}
+
+	neighbors, err := query.GetWatchChannelNeighbors(context.Background(), 1, 101)
+	if err != nil {
+		t.Fatalf("GetWatchChannelNeighbors returned an error: %v", err)
+	}
+	if neighbors.Previous == nil || neighbors.Previous.ID != 200 || neighbors.Previous.Number != 1 {
+		t.Fatalf("expected previous channel across the group boundary, got %#v", neighbors.Previous)
+	}
+	if neighbors.Next == nil || neighbors.Next.ID != 100 || neighbors.Next.Number != 3 {
+		t.Fatalf("expected next channel in saved channel order, got %#v", neighbors.Next)
+	}
+	if neighbors.Previous.ID == 201 || neighbors.Next.ID == 201 {
+		t.Fatal("unplayable channels must not appear as neighbors")
+	}
+
+	first, err := query.GetWatchChannelNeighbors(context.Background(), 1, 200)
+	if err != nil || first.Previous != nil || first.Next == nil || first.Next.ID != 101 {
+		t.Fatalf("unexpected first-channel neighbors: result=%#v error=%v", first, err)
+	}
+	last, err := query.GetWatchChannelNeighbors(context.Background(), 1, 100)
+	if err != nil || last.Previous == nil || last.Previous.ID != 101 || last.Next != nil {
+		t.Fatalf("unexpected last-channel neighbors: result=%#v error=%v", last, err)
+	}
+
+	scoped, err := query.GetGuideChannelForLineup(context.Background(), 2, 400, time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+	if err != nil || scoped.Number != 1 || scoped.GroupID != 40 {
+		t.Fatalf("lineup-scoped channel detail was incorrect: channel=%#v error=%v", scoped, err)
+	}
+	if _, err := query.GetGuideChannelForLineup(context.Background(), 2, 100, time.Now().Add(-time.Hour), time.Now().Add(time.Hour)); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected a channel outside the lineup to be rejected, got %v", err)
+	}
+}
+
 func TestGetGuideChannelsUsesConfiguredTimezoneForProgrammeWindow(t *testing.T) {
 	originalTZ := settings.APP_SETTINGS.Application.TZ
 	settings.APP_SETTINGS.Application.TZ = "America/New_York"

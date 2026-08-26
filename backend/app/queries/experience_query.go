@@ -72,19 +72,44 @@ func (q *ExperienceQueries) GetLineupGroups(ctx context.Context, lineupID int64)
 	return rows, nil
 }
 
+func (q *ExperienceQueries) GetWatchLineupGroups(ctx context.Context, lineupID int64) ([]models.WatchGroupSummary, error) {
+	rows := []models.WatchGroupSummary{}
+	query := `
+		SELECT tg.id, tg.name, tgi.orderr, COUNT(tgc.channel_id) AS channel_count
+		FROM template_group_item tgi
+		JOIN templategroup tg ON tg.id = tgi.group_id
+		JOIN template_group_channel tgc ON tgc.group_id = tg.id
+		WHERE tgi.template_id = ?
+		  AND EXISTS (SELECT 1 FROM templatechannelitem ti WHERE ti.channel_id = tgc.channel_id)
+		GROUP BY tg.id, tg.name, tgi.orderr
+		HAVING COUNT(tgc.channel_id) > 0
+		ORDER BY tgi.orderr, tg.id`
+	return rows, q.SelectContext(ctx, &rows, query, lineupID)
+}
+
 func (q *ExperienceQueries) GetGuideChannels(ctx context.Context, lineupID int64, groupID *int64, search string, from, to time.Time, limit, offset int) ([]models.GuideChannel, int64, error) {
 	where := []string{"tgi.template_id = ?", "EXISTS (SELECT 1 FROM templatechannelitem ti WHERE ti.channel_id = tc.id)"}
 	args := []any{lineupID}
+	pageWhere := []string{}
+	pageFilterArgs := []any{}
 	if groupID != nil {
 		where = append(where, "tg.id = ?")
 		args = append(args, *groupID)
+		pageWhere = append(pageWhere, "group_id = ?")
+		pageFilterArgs = append(pageFilterArgs, *groupID)
 	}
 	if search != "" {
 		where = append(where, "(LOWER(tc.name) LIKE ? OR LOWER(COALESCE(tc.tvgid, '')) LIKE ?)")
 		term := "%" + strings.ToLower(search) + "%"
 		args = append(args, term, term)
+		pageWhere = append(pageWhere, "(LOWER(name) LIKE ? OR LOWER(COALESCE(tvgid, '')) LIKE ?)")
+		pageFilterArgs = append(pageFilterArgs, term, term)
 	}
 	whereSQL := strings.Join(where, " AND ")
+	pageWhereSQL := ""
+	if len(pageWhere) > 0 {
+		pageWhereSQL = " WHERE " + strings.Join(pageWhere, " AND ")
+	}
 
 	var total int64
 	countQuery := `SELECT COUNT(*) FROM templatechannel tc
@@ -96,7 +121,8 @@ func (q *ExperienceQueries) GetGuideChannels(ctx context.Context, lineupID int64
 		return nil, 0, err
 	}
 
-	pageArgs := append(append([]any{}, args...), limit, offset)
+	pageArgs := append([]any{lineupID}, pageFilterArgs...)
+	pageArgs = append(pageArgs, limit, offset)
 	query := `
 		WITH ordered AS (
 			SELECT tc.id, tc.name, tc.tvgid, tc.uuid, COALESCE(l.name, '') AS logo,
@@ -107,14 +133,22 @@ func (q *ExperienceQueries) GetGuideChannels(ctx context.Context, lineupID int64
 			JOIN templategroup tg ON tg.id = tgc.group_id
 			JOIN template_group_item tgi ON tgi.group_id = tg.id
 			LEFT JOIN logo l ON l.id = tc.logoid
-			WHERE ` + whereSQL + `
+			WHERE tgi.template_id = ?
+			  AND EXISTS (SELECT 1 FROM templatechannelitem ti WHERE ti.channel_id = tc.id)
 		)
-		SELECT * FROM ordered ORDER BY number LIMIT ? OFFSET ?`
+		SELECT * FROM ordered` + pageWhereSQL + ` ORDER BY number LIMIT ? OFFSET ?`
 	channels := []models.GuideChannel{}
 	if err := q.SelectContext(ctx, &channels, query, pageArgs...); err != nil {
 		return nil, 0, err
 	}
 
+	if err := q.enrichGuideChannels(ctx, channels, from, to); err != nil {
+		return nil, 0, err
+	}
+	return channels, total, nil
+}
+
+func (q *ExperienceQueries) enrichGuideChannels(ctx context.Context, channels []models.GuideChannel, from, to time.Time) error {
 	tvgIDs := make([]string, 0, len(channels))
 	for i := range channels {
 		channels[i].StreamURL = "/stream/hls/" + channels[i].UUID
@@ -129,7 +163,7 @@ func (q *ExperienceQueries) GetGuideChannels(ctx context.Context, lineupID int64
 		}
 	}
 	if len(tvgIDs) == 0 {
-		return channels, total, nil
+		return nil
 	}
 
 	programmeQuery, programmeArgs, err := sqlx.In(`
@@ -140,11 +174,11 @@ func (q *ExperienceQueries) GetGuideChannels(ctx context.Context, lineupID int64
 		WHERE channel IN (?) AND start < ? AND stop > ?
 		ORDER BY channel, start`, tvgIDs, epgQueryTime(to), epgQueryTime(from))
 	if err != nil {
-		return nil, 0, err
+		return err
 	}
 	programmes := []models.Programme{}
 	if err := q.SelectContext(ctx, &programmes, q.Rebind(programmeQuery), programmeArgs...); err != nil {
-		return nil, 0, err
+		return err
 	}
 	byTVG := make(map[string][]models.Programme, len(tvgIDs))
 	now := time.Now()
@@ -174,7 +208,7 @@ func (q *ExperienceQueries) GetGuideChannels(ctx context.Context, lineupID int64
 			}
 		}
 	}
-	return channels, total, nil
+	return nil
 }
 
 // EPG timestamps are persisted using the configured application timezone.
@@ -194,16 +228,83 @@ func (q *ExperienceQueries) GetGuideChannel(ctx context.Context, channelID int64
 	if err != nil {
 		return nil, err
 	}
-	channels, _, err := q.GetGuideChannels(ctx, lineupID, nil, "", from, to, 100000, 0)
+	return q.GetGuideChannelForLineup(ctx, lineupID, channelID, from, to)
+}
+
+func (q *ExperienceQueries) GetGuideChannelForLineup(ctx context.Context, lineupID, channelID int64, from, to time.Time) (*models.GuideChannel, error) {
+	channels := []models.GuideChannel{}
+	err := q.SelectContext(ctx, &channels, `
+		WITH ordered AS (
+			SELECT tc.id, tc.name, tc.tvgid, tc.uuid, COALESCE(l.name, '') AS logo,
+			       tg.id AS group_id, tg.name AS group_name,
+			       ROW_NUMBER() OVER (ORDER BY tgi.orderr, tgc.orderr, tc.id) AS number
+			FROM templatechannel tc
+			JOIN template_group_channel tgc ON tgc.channel_id = tc.id
+			JOIN templategroup tg ON tg.id = tgc.group_id
+			JOIN template_group_item tgi ON tgi.group_id = tg.id
+			LEFT JOIN logo l ON l.id = tc.logoid
+			WHERE tgi.template_id = ?
+			  AND EXISTS (SELECT 1 FROM templatechannelitem ti WHERE ti.channel_id = tc.id)
+		)
+		SELECT * FROM ordered WHERE id = ?`, lineupID, channelID)
 	if err != nil {
 		return nil, err
 	}
+	if len(channels) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	if err := q.enrichGuideChannels(ctx, channels, from, to); err != nil {
+		return nil, err
+	}
+	return &channels[0], nil
+}
+
+func (q *ExperienceQueries) GetWatchChannelNeighbors(ctx context.Context, lineupID, channelID int64) (*models.WatchChannelNeighbors, error) {
+	current := struct {
+		Number int64 `db:"number"`
+	}{}
+	if err := q.GetContext(ctx, &current, `
+		WITH ordered AS (
+			SELECT tc.id, ROW_NUMBER() OVER (ORDER BY tgi.orderr, tgc.orderr, tc.id) AS number
+			FROM templatechannel tc
+			JOIN template_group_channel tgc ON tgc.channel_id = tc.id
+			JOIN template_group_item tgi ON tgi.group_id = tgc.group_id
+			WHERE tgi.template_id = ?
+			  AND EXISTS (SELECT 1 FROM templatechannelitem ti WHERE ti.channel_id = tc.id)
+		)
+		SELECT number FROM ordered WHERE id = ?`, lineupID, channelID); err != nil {
+		return nil, err
+	}
+
+	channels := []models.GuideChannel{}
+	if err := q.SelectContext(ctx, &channels, `
+		WITH ordered AS (
+			SELECT tc.id, tc.name, tc.tvgid, tc.uuid, COALESCE(l.name, '') AS logo,
+			       tg.id AS group_id, tg.name AS group_name,
+			       ROW_NUMBER() OVER (ORDER BY tgi.orderr, tgc.orderr, tc.id) AS number
+			FROM templatechannel tc
+			JOIN template_group_channel tgc ON tgc.channel_id = tc.id
+			JOIN templategroup tg ON tg.id = tgc.group_id
+			JOIN template_group_item tgi ON tgi.group_id = tg.id
+			LEFT JOIN logo l ON l.id = tc.logoid
+			WHERE tgi.template_id = ?
+			  AND EXISTS (SELECT 1 FROM templatechannelitem ti WHERE ti.channel_id = tc.id)
+		)
+		SELECT * FROM ordered WHERE number IN (?, ?) ORDER BY number`, lineupID, current.Number-1, current.Number+1); err != nil {
+		return nil, err
+	}
+	if err := q.enrichGuideChannels(ctx, channels, time.Now().UTC().Add(-time.Hour), time.Now().UTC().Add(4*time.Hour)); err != nil {
+		return nil, err
+	}
+	result := &models.WatchChannelNeighbors{}
 	for i := range channels {
-		if channels[i].ID == channelID {
-			return &channels[i], nil
+		if channels[i].Number < current.Number {
+			result.Previous = &channels[i]
+		} else {
+			result.Next = &channels[i]
 		}
 	}
-	return nil, sql.ErrNoRows
+	return result, nil
 }
 
 func (q *ExperienceQueries) GetWorkspaceChannels(ctx context.Context, groupID int64, search, matchHealth string, limit, offset int) ([]models.WorkspaceChannel, int64, error) {

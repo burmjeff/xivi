@@ -23,6 +23,27 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/GuideChannelPage' }
         default: { $ref: '#/components/responses/Error' }
+  /watch/lineups/{lineup_id}/groups:
+    get:
+      operationId: listWatchLineupGroups
+      parameters:
+        - $ref: '#/components/parameters/LineupId'
+      responses:
+        '200': { $ref: '#/components/responses/WatchGroupPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /watch/lineups/{lineup_id}/channels/{channel_id}/neighbors:
+    get:
+      operationId: getWatchChannelNeighbors
+      parameters:
+        - $ref: '#/components/parameters/LineupId'
+        - $ref: '#/components/parameters/ChannelId'
+      responses:
+        '200':
+          description: Adjacent playable channels in saved lineup order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WatchChannelNeighbors' }
+        default: { $ref: '#/components/responses/Error' }
   /watch/lineups/{lineup_id}/guide:
     get:
       operationId: getWatchGuide
@@ -42,6 +63,7 @@ paths:
       operationId: getWatchChannel
       parameters:
         - $ref: '#/components/parameters/ChannelId'
+        - { name: lineup_id, in: query, schema: { type: integer, format: int64 } }
       responses:
         '200':
           description: Channel with the current guide window.
@@ -714,6 +736,9 @@ components:
     GuideChannelPage:
       description: Paginated channels.
       content: { application/json: { schema: { $ref: '#/components/schemas/GuideChannelPage' } } }
+    WatchGroupPage:
+      description: Ordered non-empty Watch groups.
+      content: { application/json: { schema: { $ref: '#/components/schemas/WatchGroupPage' } } }
     JobAccepted:
       description: Background operation accepted.
       content:
@@ -771,6 +796,14 @@ components:
         group_count: { type: integer, format: int64 }
         channel_count: { type: integer, format: int64 }
         epg_coverage: { type: number, format: double }
+    WatchGroupSummary:
+      type: object
+      required: [id, name, order, channel_count]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        order: { type: integer, format: int64 }
+        channel_count: { type: integer, format: int64 }
     Programme:
       type: object
       required: [id, channel_id, title, categories, start, end]
@@ -798,6 +831,11 @@ components:
         programmes: { type: array, items: { $ref: '#/components/schemas/Programme' } }
         current: { $ref: '#/components/schemas/Programme' }
         next: { $ref: '#/components/schemas/Programme' }
+    WatchChannelNeighbors:
+      type: object
+      properties:
+        previous: { $ref: '#/components/schemas/GuideChannel' }
+        next: { $ref: '#/components/schemas/GuideChannel' }
     StudioGroup:
       type: object
       required: [id, name, order, channel_count]
@@ -1288,6 +1326,14 @@ components:
             type: object,
             properties:
               { items: { type: array, items: { $ref: '#/components/schemas/GuideChannel' } } }
+          }
+    WatchGroupPage:
+      allOf:
+        - { $ref: '#/components/schemas/PageMetadata' }
+        - {
+            type: object,
+            properties:
+              { items: { type: array, items: { $ref: '#/components/schemas/WatchGroupSummary' } } }
           }
     StudioGroupPage:
       allOf:

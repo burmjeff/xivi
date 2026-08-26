@@ -1,13 +1,21 @@
 <script lang="ts">
-	import { createVirtualizer } from '@tanstack/svelte-virtual';
+	import { createVirtualizer, type SvelteVirtualizer } from '@tanstack/svelte-virtual';
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
-	import { Play } from '@lucide/svelte';
+	import { LoaderCircle, Play } from '@lucide/svelte';
 	import LogoTile from '$lib/components/brand/LogoTile.svelte';
 	import type { GuideChannel, Programme } from '$lib/api/types';
 
-	let { channels, from, to } = $props<{ channels: GuideChannel[]; from: Date; to: Date }>();
+	let { channels, from, to, total, hasNextPage, isFetchingNextPage, onLoadMore } = $props<{
+		channels: GuideChannel[];
+		from: Date;
+		to: Date;
+		total: number;
+		hasNextPage: boolean;
+		isFetchingNextPage: boolean;
+		onLoadMore: () => void;
+	}>();
 	let viewport: HTMLDivElement;
 	const hourWidth = 220;
 	let timelineWidth = $derived(
@@ -29,10 +37,32 @@
 		estimateSize: () => 96,
 		overscan: 7
 	});
+	let virtualizerInstance: SvelteVirtualizer<HTMLDivElement, HTMLDivElement> | undefined;
+	let rowCount = $derived(channels.length + (hasNextPage ? 1 : 0));
+	function configureVirtualizer() {
+		if (!virtualizerInstance) return;
+		virtualizerInstance.setOptions({
+			count: rowCount,
+			getScrollElement: () => viewport,
+			estimateSize: () => 96,
+			overscan: 7
+		});
+		virtualizerInstance.measure();
+	}
+	$effect(() => {
+		rowCount;
+		viewport;
+		configureVirtualizer();
+	});
+	$effect(() => {
+		const last = $rowVirtualizer.getVirtualItems().at(-1);
+		if (last && last.index >= channels.length - 3 && hasNextPage && !isFetchingNextPage) {
+			onLoadMore();
+		}
+	});
 	onMount(() => {
-		const instance = get(rowVirtualizer);
-		instance.setOptions({ count: channels.length, getScrollElement: () => viewport });
-		instance.measure();
+		virtualizerInstance = get(rowVirtualizer);
+		configureVirtualizer();
 		if (nowX >= 0 && nowX <= timelineWidth) viewport.scrollLeft = Math.max(0, nowX - 320);
 	});
 	let nowX = $derived(
@@ -109,7 +139,8 @@
 	bind:this={viewport}
 	role="grid"
 	aria-label="Live programme guide"
-	aria-rowcount={channels.length}
+	aria-rowcount={total}
+	aria-busy={isFetchingNextPage}
 >
 	<div class="ruler" style={`width:${timelineWidth + 196}px`}>
 		<div class="ruler-channel">Channel</div>
@@ -125,7 +156,6 @@
 		style={`height:${$rowVirtualizer.getTotalSize() + 52}px;width:${timelineWidth + 196}px`}
 	>
 		{#each $rowVirtualizer.getVirtualItems() as virtualRow (virtualRow.key)}
-			{@const channel = channels[virtualRow.index]}
 			<div
 				class="guide-row"
 				role="row"
@@ -133,63 +163,50 @@
 				data-index={virtualRow.index}
 				style={`transform:translateY(${virtualRow.start + 52}px);width:${timelineWidth + 196}px`}
 			>
-				<div class="channel-cell" role="rowheader">
-					<LogoTile src={channel.logo_url} name={channel.name} size="sm" unbounded /><span
-						><b>{channel.name}</b><small class="tabular"
-							>{channel.number} · {channel.group_name}</small
-						></span
-					><a href={`/watch/channel/${channel.id}`} aria-label={`Play ${channel.name}`}
-						><Play size={15} fill="currentColor" /></a
-					>
-				</div>
-				<div class="programme-track" style={`width:${timelineWidth}px`}>
-					{#if channel.programmes.length}
-						{#each channel.programmes as programme, programmeIndex}
-							<button
-								class:current={channel.current?.id === programme.id}
-								role="gridcell"
-								tabindex={activeRow === virtualRow.index && activeProgramme === programmeIndex
-									? 0
-									: -1}
-								data-guide-cell={`${virtualRow.index}-${programmeIndex}`}
-								style={`left:${left(programme)}px;width:${width(programme)}px`}
-								onclick={() => goto(`/watch/channel/${channel.id}`)}
-								onkeydown={(event) => keys(event, virtualRow.index, programmeIndex)}
-								title={`${programme.title}, ${time(programme.start)} to ${time(programme.end)}`}
-								><strong>{programme.title}</strong><small class="tabular"
-									>{time(programme.start)}–{time(programme.end)}</small
-								></button
-							>
-						{/each}
-					{:else}<a class="unavailable" href={`/watch/channel/${channel.id}`}
-							>Schedule unavailable · Play channel</a
-						>{/if}
-					{#if nowX >= 0 && nowX <= timelineWidth}<i class="now-line" style={`left:${nowX}px`}
-							><span>Now</span></i
-						>{/if}
-				</div>
+				{#if virtualRow.index < channels.length}
+					{@const channel = channels[virtualRow.index]}
+					<div class="channel-cell" role="rowheader">
+						<LogoTile src={channel.logo_url} name={channel.name} size="sm" unbounded /><span
+							><b>{channel.name}</b><small class="tabular"
+								>{channel.number} · {channel.group_name}</small
+							></span
+						><a href={`/watch/channel/${channel.id}`} aria-label={`Play ${channel.name}`}
+							><Play size={15} fill="currentColor" /></a
+						>
+					</div>
+					<div class="programme-track" style={`width:${timelineWidth}px`}>
+						{#if channel.programmes.length}
+							{#each channel.programmes as programme, programmeIndex}
+								<button
+									class:current={channel.current?.id === programme.id}
+									role="gridcell"
+									tabindex={activeRow === virtualRow.index && activeProgramme === programmeIndex
+										? 0
+										: -1}
+									data-guide-cell={`${virtualRow.index}-${programmeIndex}`}
+									style={`left:${left(programme)}px;width:${width(programme)}px`}
+									onclick={() => goto(`/watch/channel/${channel.id}`)}
+									onkeydown={(event) => keys(event, virtualRow.index, programmeIndex)}
+									title={`${programme.title}, ${time(programme.start)} to ${time(programme.end)}`}
+									><strong>{programme.title}</strong><small class="tabular"
+										>{time(programme.start)}–{time(programme.end)}</small
+									></button
+								>
+							{/each}
+						{:else}<a class="unavailable" href={`/watch/channel/${channel.id}`}
+								>Schedule unavailable · Play channel</a
+							>{/if}
+						{#if nowX >= 0 && nowX <= timelineWidth}<i class="now-line" style={`left:${nowX}px`}
+								><span>Now</span></i
+							>{/if}
+					</div>
+				{:else}<button class="guide-load-more" onclick={onLoadMore}>
+						{#if isFetchingNextPage}<LoaderCircle class="spin" size={18} />{/if}
+						{isFetchingNextPage ? `Loading more of ${total}…` : 'Load more channels'}
+					</button>{/if}
 			</div>
 		{/each}
 	</div>
-</div>
-
-<div class="agenda" aria-label="Live programme agenda">
-	{#each channels as channel}<section>
-			<header>
-				<LogoTile src={channel.logo_url} name={channel.name} size="sm" unbounded />
-				<div><b>{channel.name}</b><small>{channel.number} · {channel.group_name}</small></div>
-				<a href={`/watch/channel/${channel.id}`}><Play size={17} fill="currentColor" />Play</a>
-			</header>
-			{#if channel.programmes.length}<div class="agenda-programmes">
-					{#each channel.programmes.slice(0, 4) as programme}<a
-							class:current={channel.current?.id === programme.id}
-							href={`/watch/channel/${channel.id}`}
-							><time>{time(programme.start)}</time><span>{programme.title}</span></a
-						>{/each}
-				</div>{:else}<a class="agenda-empty" href={`/watch/channel/${channel.id}`}
-					>Schedule unavailable. Tap to play.</a
-				>{/if}
-		</section>{/each}
 </div>
 
 <style>
@@ -368,72 +385,26 @@
 		font-size: 0.58rem;
 		font-weight: 850;
 	}
-	.agenda {
-		display: none;
-	}
-	.agenda section {
-		border-bottom: 1px solid var(--watch-card-border);
+	.guide-load-more {
+		display: flex;
+		width: 100%;
+		height: 100%;
+		align-items: center;
+		justify-content: center;
+		gap: 0.45rem;
+		border: 0;
+		border-bottom: 1px solid var(--line);
 		background: var(--watch-card);
-		padding: 1rem;
-	}
-	.agenda header {
-		display: flex;
-		align-items: center;
-		gap: 0.65rem;
-	}
-	.agenda header > div {
-		display: grid;
-		min-width: 0;
-		flex: 1;
-	}
-	.agenda header small {
-		color: var(--muted);
-		font-size: 0.7rem;
-	}
-	.agenda header > a {
-		display: flex;
-		min-height: 2.75rem;
-		align-items: center;
-		gap: 0.35rem;
-		border-radius: 0.75rem;
-		background: var(--coral);
-		padding: 0.55rem 0.75rem;
-		color: var(--ink);
+		color: var(--aqua);
 		font-weight: 800;
+		cursor: pointer;
 	}
-	.agenda-programmes {
-		display: grid;
-		margin: 1rem 0 0 2.9rem;
+	:global(.spin) {
+		animation: spin 0.8s linear infinite;
 	}
-	.agenda-programmes a {
-		display: grid;
-		grid-template-columns: 4.6rem 1fr;
-		gap: 0.6rem;
-		border-left: 2px solid var(--line);
-		padding: 0.65rem 0.8rem;
-		color: var(--muted);
-		font-size: 0.78rem;
-	}
-	.agenda-programmes a.current {
-		border-color: var(--aqua);
-		background: color-mix(in oklch, var(--aqua) 9%, transparent);
-		color: var(--text);
-	}
-	.agenda-programmes time {
-		font-variant-numeric: tabular-nums;
-	}
-	.agenda-empty {
-		display: block;
-		margin: 0.8rem 0 0 2.9rem;
-		color: var(--muted);
-		font-size: 0.78rem;
-	}
-	@media (max-width: 700px) {
-		.guide-grid {
-			display: none;
-		}
-		.agenda {
-			display: block;
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
 		}
 	}
 </style>

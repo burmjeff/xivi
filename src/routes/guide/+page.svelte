@@ -1,19 +1,26 @@
 <script lang="ts">
-	import { createQuery } from '@tanstack/svelte-query';
+	import { createInfiniteQuery, createQuery } from '@tanstack/svelte-query';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { Search, ChevronLeft, ChevronRight, CalendarDays } from '@lucide/svelte';
 	import { api, params } from '$lib/api/client';
-	import type { GuideChannel, LineupSummary, Paginated } from '$lib/api/types';
+	import type { GuideChannel, LineupSummary, Paginated, WatchGroupSummary } from '$lib/api/types';
 	import { preferences, selectLineup } from '$lib/state/preferences.svelte';
 	import LineupPicker from '$lib/components/watch/LineupPicker.svelte';
 	import VirtualGuide from '$lib/components/watch/VirtualGuide.svelte';
+	import VirtualAgenda from '$lib/components/watch/VirtualAgenda.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 
 	const initialDay = Number(page.url.searchParams.get('day') ?? 0);
 	let day = $state(Number.isFinite(initialDay) ? initialDay : 0),
-		search = $state(page.url.searchParams.get('q') ?? ''),
+		searchInput = $state(page.url.searchParams.get('q') ?? ''),
+		search = $state((page.url.searchParams.get('q') ?? '').trim()),
 		groupId = $state<number | null>(Number(page.url.searchParams.get('group')) || null);
+	$effect(() => {
+		const value = searchInput.trim();
+		const timeout = setTimeout(() => (search = value), 180);
+		return () => clearTimeout(timeout);
+	});
 	const lineupsQuery = createQuery(() => ({
 		queryKey: ['watch', 'lineups'],
 		queryFn: () => api<Paginated<LineupSummary>>('/api/v2/watch/lineups')
@@ -36,15 +43,15 @@
 	const groupsQuery = createQuery(() => ({
 		queryKey: ['watch', 'guide-groups', lineupId],
 		enabled: !!lineupId,
-		queryFn: () =>
-			api<Paginated<GuideChannel>>(`/api/v2/watch/lineups/${lineupId}/channels?limit=500`)
+		queryFn: () => api<Paginated<WatchGroupSummary>>(`/api/v2/watch/lineups/${lineupId}/groups`)
 	}));
-	const guideQuery = createQuery(() => ({
+	const guideQuery = createInfiniteQuery(() => ({
 		queryKey: ['watch', 'guide', lineupId, day, groupId, search],
 		enabled: !!lineupId,
-		queryFn: async () => {
+		initialPageParam: '' as string,
+		queryFn: async ({ pageParam }) => {
 			const result = await api<Paginated<GuideChannel>>(
-				`/api/v2/watch/lineups/${lineupId}/guide${params({ from: from.toISOString(), to: to.toISOString(), group_id: groupId, q: search, limit: 500 })}`
+				`/api/v2/watch/lineups/${lineupId}/guide${params({ from: from.toISOString(), to: to.toISOString(), group_id: groupId, q: search, cursor: typeof pageParam === 'string' && pageParam ? pageParam : undefined, limit: 50 })}`
 			);
 			return {
 				...result,
@@ -53,13 +60,11 @@
 					programmes: channel.programmes ?? []
 				}))
 			};
-		}
+		},
+		getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined
 	}));
-	let groups = $derived.by(() => [
-		...new Map(
-			(groupsQuery.data?.items ?? []).map((channel) => [channel.group_id, channel.group_name])
-		).entries()
-	]);
+	let channels = $derived(guideQuery.data?.pages.flatMap((result) => result.items) ?? []);
+	let total = $derived(guideQuery.data?.pages[0]?.total ?? 0);
 	function setDay(value: number) {
 		day = value;
 		const url = new URL(page.url);
@@ -87,7 +92,7 @@
 					value={lineupId}
 				/>{/if}<label class="guide-search"
 				><Search size={18} /><input
-					bind:value={search}
+					bind:value={searchInput}
 					placeholder="Search the guide"
 					aria-label="Search the guide"
 				/></label
@@ -114,9 +119,9 @@
 		</div>
 		<div class="chips">
 			<button class:active={groupId === null} onclick={() => setGroup(null)}>All channels</button
-			>{#each groups as [id, name]}<button
-					class:active={groupId === id}
-					onclick={() => setGroup(id)}>{name}</button
+			>{#each groupsQuery.data?.items ?? [] as group (group.id)}<button
+					class:active={groupId === group.id}
+					onclick={() => setGroup(group.id)}>{group.name}</button
 				>{/each}
 		</div>
 	</div>
@@ -131,17 +136,32 @@
 			action="Open channels"
 			href="/channels"
 		/>
-	{:else if !guideQuery.data?.total}<EmptyState
+	{:else if !total}<EmptyState
 			title="Nothing matches"
 			message="Try another group, date, or search. Missing schedules never block playback."
 			action="Clear filters"
 			href="/guide"
 		/>
-	{:else}{#key `${guideQuery.data.total}-${lineupId}`}<VirtualGuide
-				channels={guideQuery.data.items}
-				{from}
-				{to}
-			/>{/key}{/if}
+	{:else}{#key `${lineupId}-${day}-${groupId}-${search}`}<div class="desktop-guide">
+				<VirtualGuide
+					{channels}
+					{from}
+					{to}
+					{total}
+					hasNextPage={guideQuery.hasNextPage}
+					isFetchingNextPage={guideQuery.isFetchingNextPage}
+					onLoadMore={() => void guideQuery.fetchNextPage()}
+				/>
+			</div>
+			<div class="mobile-guide">
+				<VirtualAgenda
+					{channels}
+					{total}
+					hasNextPage={guideQuery.hasNextPage}
+					isFetchingNextPage={guideQuery.isFetchingNextPage}
+					onLoadMore={() => void guideQuery.fetchNextPage()}
+				/>
+			</div>{/key}{/if}
 </section>
 
 <style>
@@ -244,7 +264,16 @@
 	.guide-loading {
 		height: calc(100dvh - 14rem);
 	}
+	.mobile-guide {
+		display: none;
+	}
 	@media (max-width: 760px) {
+		.desktop-guide {
+			display: none;
+		}
+		.mobile-guide {
+			display: block;
+		}
 		.guide-header {
 			align-items: stretch;
 			flex-direction: column;

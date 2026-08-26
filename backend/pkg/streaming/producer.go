@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -308,19 +309,52 @@ func (p *gstProducer) routeTransportPad(pad *gst.Pad, mux *gst.Element) error {
 		return fmt.Errorf("link transport input demuxer: %w", err)
 	}
 	demux.Connect("pad-added", func(self *gst.Element, elementary *gst.Pad) {
-		caps := currentOrQueriedCaps(elementary)
-		if caps == nil || p.stopping.Load() {
+		if p.stopping.Load() {
 			return
 		}
-		if err := p.routeElementaryPad(elementary, caps.String(), mux); err != nil {
-			p.reportError(err)
-		}
+		p.routeElementaryPadWhenNegotiated(elementary, mux)
 	})
 	p.graphMu.Unlock()
 	locked = false
 	queue.SyncStateWithParent()
 	demux.SyncStateWithParent()
 	return nil
+}
+
+// routeElementaryPadWhenNegotiated waits for a fixed CAPS event instead of
+// choosing a parser from QueryCaps. QueryCaps describes every format a dynamic
+// pad may eventually produce (for example AAC versions 2 or 4 alongside MPEG
+// audio), not the format selected for this stream. Guessing from that list can
+// attach an incompatible parser and tear down the shared producer.
+func (p *gstProducer) routeElementaryPadWhenNegotiated(pad *gst.Pad, mux *gst.Element) {
+	var routeOnce sync.Once
+	route := func(caps *gst.Caps) {
+		if caps == nil || !caps.IsFixed() || p.stopping.Load() {
+			return
+		}
+		routeOnce.Do(func() {
+			if err := p.routeElementaryPad(pad, caps.String(), mux); err != nil {
+				p.reportError(err)
+			}
+		})
+	}
+
+	probeID := pad.AddProbe(gst.PadProbeTypeEventDownstream, func(self *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
+		event := info.GetEvent()
+		if event == nil || event.Type() != gst.EventTypeCaps {
+			return gst.PadProbeOK
+		}
+		caps := event.ParseCaps()
+		if caps == nil || !caps.IsFixed() {
+			return gst.PadProbeOK
+		}
+		route(caps)
+		return gst.PadProbeRemove
+	})
+	if caps := pad.GetCurrentCaps(); caps != nil && caps.IsFixed() {
+		route(caps)
+		pad.RemoveProbe(probeID)
+	}
 }
 
 func (p *gstProducer) routeElementaryPad(pad *gst.Pad, capsString string, mux *gst.Element) error {
@@ -648,20 +682,46 @@ func parserForCaps(caps string) (parser, media string, ok bool) {
 		return "ac3parse", "audio", true
 	case strings.Contains(lower, "audio/x-ac3"):
 		return "ac3parse", "audio", true
-	case strings.Contains(lower, "audio/mpeg") && (strings.Contains(lower, "mpegversion=(int)4") || strings.Contains(lower, "mpegversion=4")):
-		return "aacparse", "audio", true
 	case strings.Contains(lower, "audio/mpeg"):
-		return "mpegaudioparse", "audio", true
+		// GStreamer uses mpegversion 2 and 4 for AAC, and mpegversion 1
+		// for MPEG audio layers I-III. Do not guess when the version is
+		// absent, a range, or a list from unnegotiated QueryCaps.
+		mpegVersion, fixed := capsIntegerField(lower, "mpegversion")
+		if !fixed {
+			return "", "", false
+		}
+		switch mpegVersion {
+		case 2, 4:
+			return "aacparse", "audio", true
+		case 1:
+			return "mpegaudioparse", "audio", true
+		default:
+			return "", "", false
+		}
 	default:
 		return "", "", false
 	}
 }
 
-func currentOrQueriedCaps(pad *gst.Pad) *gst.Caps {
-	if caps := pad.GetCurrentCaps(); caps != nil {
-		return caps
+func capsIntegerField(caps, field string) (int, bool) {
+	marker := strings.ToLower(field) + "="
+	index := strings.Index(caps, marker)
+	if index < 0 {
+		return 0, false
 	}
-	return pad.QueryCaps(nil)
+	value := strings.TrimSpace(caps[index+len(marker):])
+	if strings.HasPrefix(value, "(int)") {
+		value = strings.TrimSpace(value[len("(int)"):])
+	}
+	end := 0
+	for end < len(value) && value[end] >= '0' && value[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return 0, false
+	}
+	parsed, err := strconv.Atoi(value[:end])
+	return parsed, err == nil
 }
 
 func (p *gstProducer) busLoop(bus *gst.Bus) {

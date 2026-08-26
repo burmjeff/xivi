@@ -114,6 +114,18 @@ func V2WatchLineups(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"items": items, "next_cursor": nil, "total": len(items)})
 }
 
+func V2WatchLineupGroups(c *fiber.Ctx) error {
+	lineupID, err := parseID(c, "lineup_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
+	}
+	items, err := database.Db.GetWatchLineupGroups(c.UserContext(), lineupID)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "groups_unavailable", "Groups could not be loaded.", true)
+	}
+	return c.JSON(fiber.Map{"items": items, "next_cursor": nil, "total": len(items)})
+}
+
 func v2LineupChannels(c *fiber.Ctx, guide bool) error {
 	lineupID, err := parseID(c, "lineup_id")
 	if err != nil {
@@ -147,11 +159,36 @@ func V2WatchChannel(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_channel", "The channel id is invalid.", false)
 	}
 	now := time.Now().UTC()
-	item, err := database.Db.GetGuideChannel(c.UserContext(), id, now.Add(-2*time.Hour), now.Add(12*time.Hour))
+	lineupID, queryErr := optionalIntQuery(c, "lineup_id")
+	if queryErr != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
+	}
+	var item *models.GuideChannel
+	if lineupID != nil {
+		item, err = database.Db.GetGuideChannelForLineup(c.UserContext(), *lineupID, id, now.Add(-2*time.Hour), now.Add(12*time.Hour))
+	} else {
+		item, err = database.Db.GetGuideChannel(c.UserContext(), id, now.Add(-2*time.Hour), now.Add(12*time.Hour))
+	}
 	if err != nil {
 		return v2Error(c, fiber.StatusNotFound, "channel_not_found", "That channel is no longer available.", false)
 	}
 	return c.JSON(item)
+}
+
+func V2WatchChannelNeighbors(c *fiber.Ctx) error {
+	lineupID, err := parseID(c, "lineup_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
+	}
+	channelID, err := parseID(c, "channel_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_channel", "The channel id is invalid.", false)
+	}
+	neighbors, err := database.Db.GetWatchChannelNeighbors(c.UserContext(), lineupID, channelID)
+	if err != nil {
+		return v2Error(c, fiber.StatusNotFound, "channel_not_found", "That channel is no longer available in this lineup.", false)
+	}
+	return c.JSON(neighbors)
 }
 
 func V2Search(c *fiber.Ctx) error {

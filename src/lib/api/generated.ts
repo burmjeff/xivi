@@ -36,6 +36,38 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/watch/lineups/{lineup_id}/groups': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listWatchLineupGroups'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/watch/lineups/{lineup_id}/channels/{channel_id}/neighbors': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getWatchChannelNeighbors'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/watch/lineups/{lineup_id}/guide': {
 		parameters: {
 			query?: never;
@@ -855,6 +887,15 @@ export interface components {
 			/** Format: double */
 			epg_coverage: number;
 		};
+		WatchGroupSummary: {
+			/** Format: int64 */
+			id: number;
+			name: string;
+			/** Format: int64 */
+			order: number;
+			/** Format: int64 */
+			channel_count: number;
+		};
 		Programme: {
 			/** Format: int64 */
 			id: number;
@@ -883,6 +924,10 @@ export interface components {
 			programmes: components['schemas']['Programme'][];
 			current?: components['schemas']['Programme'];
 			next?: components['schemas']['Programme'];
+		};
+		WatchChannelNeighbors: {
+			previous?: components['schemas']['GuideChannel'];
+			next?: components['schemas']['GuideChannel'];
 		};
 		StudioGroup: {
 			/** Format: int64 */
@@ -1305,6 +1350,9 @@ export interface components {
 		GuideChannelPage: components['schemas']['PageMetadata'] & {
 			items?: components['schemas']['GuideChannel'][];
 		};
+		WatchGroupPage: components['schemas']['PageMetadata'] & {
+			items?: components['schemas']['WatchGroupSummary'][];
+		};
 		StudioGroupPage: components['schemas']['PageMetadata'] & {
 			items?: components['schemas']['StudioGroup'][];
 		};
@@ -1356,6 +1404,15 @@ export interface components {
 			};
 			content: {
 				'application/json': components['schemas']['GuideChannelPage'];
+			};
+		};
+		/** @description Ordered non-empty Watch groups. */
+		WatchGroupPage: {
+			headers: {
+				[name: string]: unknown;
+			};
+			content: {
+				'application/json': components['schemas']['WatchGroupPage'];
 			};
 		};
 		/** @description Background operation accepted. */
@@ -1425,6 +1482,45 @@ export interface operations {
 			default: components['responses']['Error'];
 		};
 	};
+	listWatchLineupGroups: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				lineup_id: components['parameters']['LineupId'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: components['responses']['WatchGroupPage'];
+			default: components['responses']['Error'];
+		};
+	};
+	getWatchChannelNeighbors: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				lineup_id: components['parameters']['LineupId'];
+				channel_id: components['parameters']['ChannelId'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Adjacent playable channels in saved lineup order. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['WatchChannelNeighbors'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
 	getWatchGuide: {
 		parameters: {
 			query?: {
@@ -1449,7 +1545,9 @@ export interface operations {
 	};
 	getWatchChannel: {
 		parameters: {
-			query?: never;
+			query?: {
+				lineup_id?: number;
+			};
 			header?: never;
 			path: {
 				channel_id: components['parameters']['ChannelId'];

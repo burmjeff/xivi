@@ -19,6 +19,15 @@ type StudioGroupSummary struct {
 	SourceLink   *SourceGroupLink `json:"source_link,omitempty"`
 }
 
+// WatchGroupSummary is the lightweight ordered group representation used by
+// Watch. Empty groups are omitted by the query that produces it.
+type WatchGroupSummary struct {
+	ID           int64  `db:"id" json:"id"`
+	Name         string `db:"name" json:"name"`
+	Order        int64  `db:"orderr" json:"order"`
+	ChannelCount int64  `db:"channel_count" json:"channel_count"`
+}
+
 // SourceGroup is a selectable group from an ingested playlist source.
 type SourceGroup struct {
 	ID               int64  `db:"id" json:"id"`
@@ -107,6 +116,13 @@ type GuideChannel struct {
 	Programmes []Programme `json:"programmes"`
 	Current    *Programme  `json:"current,omitempty"`
 	Next       *Programme  `json:"next,omitempty"`
+}
+
+// WatchChannelNeighbors contains only the adjacent playable channels in a
+// lineup. It lets the player change channels without downloading the lineup.
+type WatchChannelNeighbors struct {
+	Previous *GuideChannel `json:"previous,omitempty"`
+	Next     *GuideChannel `json:"next,omitempty"`
 }
 
 type WorkspaceChannel struct {

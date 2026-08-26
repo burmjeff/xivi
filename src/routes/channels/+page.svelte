@@ -1,16 +1,23 @@
 <script lang="ts">
-	import { createQuery } from '@tanstack/svelte-query';
+	import { createInfiniteQuery, createQuery } from '@tanstack/svelte-query';
 	import { page } from '$app/state';
-	import { Search, Grid2X2, List, Play, ArrowRight } from '@lucide/svelte';
+	import { goto } from '$app/navigation';
+	import { Search, Grid2X2, List } from '@lucide/svelte';
 	import { api, params } from '$lib/api/client';
-	import type { GuideChannel, LineupSummary, Paginated } from '$lib/api/types';
+	import type { GuideChannel, LineupSummary, Paginated, WatchGroupSummary } from '$lib/api/types';
 	import { preferences, selectLineup, setChannelView } from '$lib/state/preferences.svelte';
 	import LineupPicker from '$lib/components/watch/LineupPicker.svelte';
-	import LogoTile from '$lib/components/brand/LogoTile.svelte';
+	import ChannelDirectory from '$lib/components/watch/ChannelDirectory.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 
-	let search = $state(page.url.searchParams.get('q') ?? ''),
-		groupName = $state(page.url.searchParams.get('group') ?? '');
+	let searchInput = $state(page.url.searchParams.get('q') ?? ''),
+		search = $state((page.url.searchParams.get('q') ?? '').trim()),
+		groupId = $state<number | null>(Number(page.url.searchParams.get('group')) || null);
+	$effect(() => {
+		const value = searchInput.trim();
+		const timeout = setTimeout(() => (search = value), 180);
+		return () => clearTimeout(timeout);
+	});
 	const lineupsQuery = createQuery(() => ({
 		queryKey: ['watch', 'lineups'],
 		queryFn: () => api<Paginated<LineupSummary>>('/api/v2/watch/lineups')
@@ -19,36 +26,33 @@
 	$effect(() => {
 		if (!preferences.lineupId && lineupId) selectLineup(lineupId);
 	});
-	const allQuery = createQuery(() => ({
-		queryKey: ['watch', 'directory', lineupId],
+	const groupsQuery = createQuery(() => ({
+		queryKey: ['watch', 'directory-groups', lineupId],
 		enabled: !!lineupId,
-		queryFn: () =>
-			api<Paginated<GuideChannel>>(`/api/v2/watch/lineups/${lineupId}/channels?limit=500`)
+		queryFn: () => api<Paginated<WatchGroupSummary>>(`/api/v2/watch/lineups/${lineupId}/groups`)
 	}));
-	let groups = $derived([
-		...new Set((allQuery.data?.items ?? []).map((channel) => channel.group_name))
-	]);
-	let channels = $derived(
-		(allQuery.data?.items ?? []).filter(
-			(channel) =>
-				(!groupName || channel.group_name === groupName) &&
-				(!search ||
-					`${channel.name} ${channel.current?.title ?? ''} ${channel.next?.title ?? ''}`
-						.toLowerCase()
-						.includes(search.toLowerCase()))
-		)
-	);
-	function time(value?: string) {
-		return value
-			? new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' }).format(new Date(value))
-			: '';
-	}
-	function programmeProgress(channel: GuideChannel) {
-		if (!channel.current) return 0;
-		const start = new Date(channel.current.start).getTime();
-		const end = new Date(channel.current.end).getTime();
-		if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
-		return Math.max(0, Math.min(100, ((Date.now() - start) / (end - start)) * 100));
+	const channelsQuery = createInfiniteQuery(() => ({
+		queryKey: ['watch', 'directory', lineupId, groupId, search],
+		enabled: !!lineupId,
+		initialPageParam: '' as string,
+		queryFn: ({ pageParam }) =>
+			api<Paginated<GuideChannel>>(
+				`/api/v2/watch/lineups/${lineupId}/channels${params({
+					group_id: groupId,
+					q: search,
+					cursor: typeof pageParam === 'string' && pageParam ? pageParam : undefined,
+					limit: 60
+				})}`
+			),
+		getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined
+	}));
+	let channels = $derived(channelsQuery.data?.pages.flatMap((result) => result.items) ?? []);
+	let total = $derived(channelsQuery.data?.pages[0]?.total ?? 0);
+	function setGroup(value: number | null) {
+		groupId = value;
+		const url = new URL(page.url);
+		value ? url.searchParams.set('group', String(value)) : url.searchParams.delete('group');
+		void goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true });
 	}
 </script>
 
@@ -78,83 +82,47 @@
 	<div class="directory-tools">
 		<label
 			><Search size={20} /><input
-				bind:value={search}
-				placeholder="Channel or programme"
+				bind:value={searchInput}
+				placeholder="Search channels"
 				aria-label="Search channels"
 			/></label
 		>
 		<div class="group-chips">
-			<button class:active={!groupName} onclick={() => (groupName = '')}>All</button
-			>{#each groups as group}<button
-					class:active={groupName === group}
-					onclick={() => (groupName = group)}>{group}</button
+			<button class:active={groupId === null} onclick={() => setGroup(null)}>All</button
+			>{#each groupsQuery.data?.items ?? [] as group (group.id)}<button
+					class:active={groupId === group.id}
+					onclick={() => setGroup(group.id)}>{group.name}</button
 				>{/each}
 		</div>
-		<span class="count tabular">{channels.length} channels</span>
+		<span class="count tabular">{total} channels</span>
 	</div>
-	{#if allQuery.isPending}<div class="loading-grid">
+	{#if channelsQuery.isPending}<div class="loading-grid">
 			{#each Array(12) as _}<div class="skeleton"></div>{/each}
 		</div>
-	{:else if allQuery.isError}<EmptyState
+	{:else if channelsQuery.isError}<EmptyState
 			title="The directory is off air"
 			message="We could not load this lineup. Try again, or check source health in Studio."
 			action="Check Studio"
 			href="/studio"
 		/>
-	{:else if !allQuery.data?.total}<EmptyState
-			title="No channels here yet"
-			message="Build a lineup in Studio and it will appear here automatically."
-		/>
-	{:else if !channels.length}<EmptyState
+	{:else if !total && (search || groupId)}<EmptyState
 			title="No match"
 			message="Try a broader search or another group."
 			action="Show every channel"
 			href="/channels"
 		/>
-	{:else}<div
-			class:grid={preferences.channelView === 'grid'}
-			class:list={preferences.channelView === 'list'}
-			class="channel-directory"
-		>
-			{#each channels as channel}{@const progress = programmeProgress(channel)}
-				<article>
-					<LogoTile
-						src={channel.logo_url}
-						name={channel.name}
-						size={preferences.channelView === 'grid' ? 'lg' : 'md'}
-						unbounded
-					/>
-					<div class="channel-copy">
-						<span class="channel-meta tabular">{channel.number} · {channel.group_name}</span>
-						<h2>{channel.name}</h2>
-						<div class="now">
-							<span class="live-pill">Live</span><strong
-								>{channel.current?.title ?? 'Schedule unavailable'}</strong
-							>{#if channel.current}<time
-									>{time(channel.current.start)}–{time(channel.current.end)}</time
-								>{/if}
-							<div
-								class="programme-progress"
-								role="progressbar"
-								aria-valuemin="0"
-								aria-valuemax="100"
-								aria-valuenow={Math.round(progress)}
-								aria-label={channel.current
-									? `${channel.current.title}, ${Math.round(progress)} percent complete`
-									: 'Schedule unavailable'}
-							>
-								<i style={`width:${progress}%`}></i>
-							</div>
-						</div>
-						{#if channel.next}<p>
-								Next at {time(channel.next.start)} <b>{channel.next.title}</b>
-							</p>{:else}<p>Upcoming schedule unavailable</p>{/if}
-					</div>
-					<a class="play" href={`/watch/channel/${channel.id}`} aria-label={`Play ${channel.name}`}
-						><Play size={20} fill="currentColor" /><span>Play</span><ArrowRight size={17} /></a
-					>
-				</article>{/each}
-		</div>{/if}
+	{:else if !total}<EmptyState
+			title="No channels here yet"
+			message="Build a lineup in Studio and it will appear here automatically."
+		/>
+	{:else}<ChannelDirectory
+			{channels}
+			{total}
+			view={preferences.channelView}
+			hasNextPage={channelsQuery.hasNextPage}
+			isFetchingNextPage={channelsQuery.isFetchingNextPage}
+			onLoadMore={() => void channelsQuery.fetchNextPage()}
+		/>{/if}
 </section>
 
 <style>
@@ -260,143 +228,6 @@
 		color: var(--muted);
 		font-size: 0.75rem;
 	}
-	.channel-directory.grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
-		gap: 1rem;
-	}
-	.channel-directory article {
-		border: 1px solid var(--watch-card-border);
-		background: var(--watch-card);
-	}
-	.channel-directory.grid article {
-		display: grid;
-		min-height: 23rem;
-		grid-template-rows: auto 1fr auto;
-		justify-items: start;
-		border-radius: 1.25rem;
-		box-shadow: var(--watch-card-shadow);
-		padding: 1.1rem;
-		transition:
-			transform var(--layout) var(--ease-out),
-			box-shadow var(--layout) var(--ease-out);
-	}
-	.channel-directory.grid article:hover {
-		transform: translateY(-3px);
-		box-shadow: var(--watch-card-shadow-hover);
-	}
-	.channel-copy {
-		min-width: 0;
-		width: 100%;
-	}
-	.channel-meta {
-		display: block;
-		margin-top: 1rem;
-		color: var(--muted);
-		font-size: 0.7rem;
-	}
-	.channel-copy h2 {
-		overflow: hidden;
-		margin: 0.2rem 0 1.2rem;
-		font-size: 1.4rem;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.now {
-		display: grid;
-		grid-template-columns: auto 1fr;
-		align-items: center;
-		gap: 0.45rem;
-	}
-	.now strong {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.now time {
-		grid-column: 2;
-		color: var(--muted);
-		font-size: 0.72rem;
-	}
-	.programme-progress {
-		grid-column: 1 / -1;
-		height: 0.34rem;
-		overflow: hidden;
-		margin-top: 0.4rem;
-		border-radius: 999px;
-		background: var(--surface-raised);
-	}
-	.programme-progress i {
-		display: block;
-		height: 100%;
-		border-radius: inherit;
-		background: var(--aqua);
-	}
-	.channel-copy > p {
-		overflow: hidden;
-		margin: 1rem 0;
-		color: var(--muted);
-		font-size: 0.73rem;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.channel-copy > p b {
-		color: var(--text);
-	}
-	.play {
-		display: flex;
-		width: 100%;
-		min-height: 3rem;
-		align-items: center;
-		gap: 0.45rem;
-		border-radius: 0.8rem;
-		background: var(--coral);
-		padding: 0.6rem 0.8rem;
-		color: var(--ink);
-		font-weight: 850;
-	}
-	.play span {
-		flex: 1;
-	}
-	.channel-directory.list {
-		display: grid;
-		gap: 0.55rem;
-	}
-	.channel-directory.list article {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-		border-radius: 1rem;
-		padding: 0.75rem;
-	}
-	.channel-directory.list .channel-copy {
-		display: grid;
-		grid-template-columns: minmax(10rem, 0.7fr) minmax(15rem, 1.3fr) minmax(12rem, 0.8fr);
-		align-items: center;
-		gap: 1rem;
-	}
-	.channel-directory.list .channel-meta {
-		margin: 0;
-	}
-	.channel-directory.list h2 {
-		margin: 0.15rem 0 0;
-	}
-	.channel-directory.list .now {
-		grid-row: 1/3;
-		grid-column: 2;
-	}
-	.channel-directory.list .channel-copy > p {
-		grid-row: 1/3;
-		grid-column: 3;
-		margin: 0;
-	}
-	.channel-directory.list .play {
-		width: auto;
-	}
-	.channel-directory.list .play span,
-	.channel-directory.list .play :global(svg:last-child) {
-		display: none;
-	}
 	.loading-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
@@ -423,15 +254,6 @@
 		.count {
 			display: none;
 		}
-		.channel-directory.list .channel-copy {
-			display: block;
-		}
-		.channel-directory.list .now {
-			display: grid;
-		}
-		.channel-directory.list .channel-copy > p {
-			display: none;
-		}
 	}
 	@media (max-width: 550px) {
 		.directory {
@@ -444,12 +266,6 @@
 		.group-chips {
 			order: 2;
 			width: 100%;
-		}
-		.channel-directory.grid {
-			grid-template-columns: 1fr;
-		}
-		.channel-directory.grid article {
-			min-height: 20rem;
 		}
 	}
 </style>

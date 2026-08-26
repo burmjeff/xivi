@@ -10,7 +10,9 @@ import (
 func V2Routes(a *fiber.App) {
 	v2 := a.Group("/api/v2")
 	v2.Get("/watch/lineups", controllers.V2WatchLineups)
+	v2.Get("/watch/lineups/:lineup_id/groups", controllers.V2WatchLineupGroups)
 	v2.Get("/watch/lineups/:lineup_id/channels", controllers.V2WatchChannels)
+	v2.Get("/watch/lineups/:lineup_id/channels/:channel_id/neighbors", controllers.V2WatchChannelNeighbors)
 	v2.Get("/watch/lineups/:lineup_id/guide", controllers.V2WatchGuide)
 	v2.Get("/watch/channels/:channel_id", controllers.V2WatchChannel)
 	v2.Get("/search", controllers.V2Search)

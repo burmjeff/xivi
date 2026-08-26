@@ -7,29 +7,40 @@
 	import { onDestroy } from 'svelte';
 	import { ChevronDown, ChevronLeft, ChevronRight, RotateCcw, Radio, Play } from '@lucide/svelte';
 	import { api } from '$lib/api/client';
-	import type { GuideChannel, LineupSummary, Paginated } from '$lib/api/types';
+	import type {
+		GuideChannel,
+		LineupSummary,
+		Paginated,
+		WatchChannelNeighbors
+	} from '$lib/api/types';
 	import { preferences, selectLineup } from '$lib/state/preferences.svelte';
 	import LogoTile from '$lib/components/brand/LogoTile.svelte';
 
 	let channelId = $derived(Number(page.params.id));
-	const channelQuery = createQuery(() => ({
-		queryKey: ['watch', 'channel', channelId],
-		queryFn: () => api<GuideChannel>(`/api/v2/watch/channels/${channelId}`),
-		refetchInterval: 60_000
-	}));
 	const lineupsQuery = createQuery(() => ({
 		queryKey: ['watch', 'lineups'],
 		queryFn: () => api<Paginated<LineupSummary>>('/api/v2/watch/lineups')
 	}));
-	let lineupId = $derived(preferences.lineupId ?? lineupsQuery.data?.items[0]?.id ?? null);
+	let requestedLineupId = $derived(Number(page.url.searchParams.get('lineup')) || null);
+	let lineupId = $derived(
+		requestedLineupId ?? preferences.lineupId ?? lineupsQuery.data?.items[0]?.id ?? null
+	);
 	$effect(() => {
-		if (!preferences.lineupId && lineupId) selectLineup(lineupId);
+		if (lineupId && preferences.lineupId !== lineupId) selectLineup(lineupId);
 	});
-	const lineupQuery = createQuery(() => ({
-		queryKey: ['watch', 'player-lineup', lineupId],
+	const channelQuery = createQuery(() => ({
+		queryKey: ['watch', 'channel', lineupId, channelId],
+		enabled: !!lineupId,
+		queryFn: () => api<GuideChannel>(`/api/v2/watch/channels/${channelId}?lineup_id=${lineupId}`),
+		refetchInterval: 60_000
+	}));
+	const neighborsQuery = createQuery(() => ({
+		queryKey: ['watch', 'channel-neighbors', lineupId, channelId],
 		enabled: !!lineupId,
 		queryFn: () =>
-			api<Paginated<GuideChannel>>(`/api/v2/watch/lineups/${lineupId}/channels?limit=500`)
+			api<WatchChannelNeighbors>(
+				`/api/v2/watch/lineups/${lineupId}/channels/${channelId}/neighbors`
+			)
 	}));
 	let video = $state<HTMLVideoElement>(),
 		hls: Hls | null = null,
@@ -100,15 +111,8 @@
 			// Playback diagnostics must never interfere with recovery.
 		}
 	}
-	let channelIndex = $derived(
-		(lineupQuery.data?.items ?? []).findIndex((item) => item.id === channelId)
-	);
-	let previous = $derived(channelIndex > 0 ? lineupQuery.data?.items[channelIndex - 1] : undefined);
-	let next = $derived(
-		channelIndex >= 0 && channelIndex < (lineupQuery.data?.items.length ?? 0) - 1
-			? lineupQuery.data?.items[channelIndex + 1]
-			: undefined
-	);
+	let previous = $derived(neighborsQuery.data?.previous);
+	let next = $derived(neighborsQuery.data?.next);
 	const prewarmed = new Set<string>();
 	$effect(() => {
 		const candidates = [previous, next];
@@ -379,8 +383,12 @@
 <section class="player-page">
 	<div class="player-dock">
 		<div class="player-bar">
-			<button onclick={() => (history.length > 1 ? history.back() : goto('/'))}
-				><ChevronDown size={20} /><span>Collapse player</span></button
+			<button
+				type="button"
+				aria-label="Minimize player"
+				title="Minimize player"
+				onclick={() => (history.length > 1 ? history.back() : goto('/'))}
+				><ChevronDown size={20} aria-hidden="true" /><span>Minimize</span></button
 			><span class="live-pill">Live</span>
 		</div>
 		<div class="player-stage">
@@ -483,12 +491,14 @@
 					<a
 						class:disabled={!previous}
 						aria-disabled={!previous}
-						href={previous ? `/watch/channel/${previous.id}` : undefined}
+						href={previous ? `/watch/channel/${previous.id}?lineup=${lineupId}` : undefined}
+						data-sveltekit-replacestate
 						aria-label="Previous channel"><ChevronLeft size={23} /></a
 					><a
 						class:disabled={!next}
 						aria-disabled={!next}
-						href={next ? `/watch/channel/${next.id}` : undefined}
+						href={next ? `/watch/channel/${next.id}?lineup=${lineupId}` : undefined}
+						data-sveltekit-replacestate
 						aria-label="Next channel"><ChevronRight size={23} /></a
 					>
 				</div>

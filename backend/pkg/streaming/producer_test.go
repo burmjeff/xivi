@@ -2,6 +2,85 @@ package streaming
 
 import "testing"
 
+func TestParserForCapsRoutesOnlyNegotiatedMPEGAudioVersions(t *testing.T) {
+	tests := []struct {
+		name       string
+		caps       string
+		wantParser string
+		wantOK     bool
+	}{
+		{
+			name:       "MPEG-4 AAC",
+			caps:       "audio/mpeg, mpegversion=(int)4, stream-format=(string)adts",
+			wantParser: "aacparse",
+			wantOK:     true,
+		},
+		{
+			name:       "MPEG-2 AAC",
+			caps:       "audio/mpeg, mpegversion=(int)2, stream-format=(string)adts",
+			wantParser: "aacparse",
+			wantOK:     true,
+		},
+		{
+			name:       "MPEG audio layers",
+			caps:       "audio/mpeg, mpegversion=(int)1",
+			wantParser: "mpegaudioparse",
+			wantOK:     true,
+		},
+		{
+			name:   "unnegotiated AAC version list",
+			caps:   "audio/mpeg, mpegversion=(int){ 2, 4 }, stream-format=(string)adts",
+			wantOK: false,
+		},
+		{
+			name:   "unnegotiated version range",
+			caps:   "audio/mpeg, mpegversion=(int)[ 1, 4 ]",
+			wantOK: false,
+		},
+		{
+			name:   "missing MPEG version",
+			caps:   "audio/mpeg",
+			wantOK: false,
+		},
+		{
+			name:   "unknown MPEG version",
+			caps:   "audio/mpeg, mpegversion=(int)3",
+			wantOK: false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parser, media, ok := parserForCaps(test.caps)
+			if ok != test.wantOK || parser != test.wantParser {
+				t.Fatalf("parserForCaps(%q) = parser %q, media %q, ok %v; want parser %q, ok %v", test.caps, parser, media, ok, test.wantParser, test.wantOK)
+			}
+			if ok && media != "audio" {
+				t.Fatalf("parserForCaps(%q) media = %q, want audio", test.caps, media)
+			}
+		})
+	}
+}
+
+func TestCapsIntegerFieldRejectsNonScalarValues(t *testing.T) {
+	tests := []struct {
+		caps  string
+		value int
+		ok    bool
+	}{
+		{caps: "audio/mpeg, mpegversion=4", value: 4, ok: true},
+		{caps: "audio/mpeg, mpegversion=(int) 2", value: 2, ok: true},
+		{caps: "audio/mpeg, mpegversion=(int){ 2, 4 }"},
+		{caps: "audio/mpeg, mpegversion=(int)[ 1, 4 ]"},
+		{caps: "audio/mpeg"},
+	}
+	for _, test := range tests {
+		value, ok := capsIntegerField(test.caps, "mpegversion")
+		if value != test.value || ok != test.ok {
+			t.Fatalf("capsIntegerField(%q) = %d, %v; want %d, %v", test.caps, value, ok, test.value, test.ok)
+		}
+	}
+}
+
 func TestHLSCompatibilityElementsNormalizeOnlyBrowserIncompatibleCodecs(t *testing.T) {
 	tests := []struct {
 		name       string

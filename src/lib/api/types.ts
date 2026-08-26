@@ -3,8 +3,10 @@ import type { components } from './generated';
 // API v2 DTOs are generated from docs/openapi-v2.yaml. Components consume
 // these named aliases and compose local view models without mirroring the wire contract.
 export type LineupSummary = components['schemas']['LineupSummary'];
+export type WatchGroupSummary = components['schemas']['WatchGroupSummary'];
 export type Programme = components['schemas']['Programme'];
 export type GuideChannel = components['schemas']['GuideChannel'];
+export type WatchChannelNeighbors = components['schemas']['WatchChannelNeighbors'];
 export type StudioGroup = components['schemas']['StudioGroup'];
 export type SourceGroup = components['schemas']['SourceGroup'];
 export type SourceGroupLink = components['schemas']['SourceGroupLink'];

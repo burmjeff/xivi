@@ -306,12 +306,6 @@
 		margin-left: 5rem;
 	}
 	@media (max-width: 900px) {
-		.watch-header {
-			grid-template-columns: auto 1fr;
-		}
-		.watch-header nav {
-			display: none;
-		}
 		.studio-link {
 			display: none;
 		}
@@ -380,8 +374,12 @@
 			display: none;
 		}
 		.watch-header {
+			grid-template-columns: auto 1fr;
 			height: 4.15rem;
 			padding: 0 0.9rem;
+		}
+		.watch-header nav {
+			display: none;
 		}
 		.watch-main {
 			min-height: calc(100dvh - 8.5rem);
