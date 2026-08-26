@@ -104,8 +104,12 @@ func parsePAT(section []byte) (uint16, bool) {
 }
 
 func pmtHasVideo(section []byte) bool {
+	return len(pmtVideoPIDs(section)) > 0
+}
+
+func pmtVideoPIDs(section []byte) []uint16 {
 	if len(section) < 12 || section[0] != 0x02 {
-		return false
+		return nil
 	}
 	sectionLength := int(section[1]&0x0f)<<8 | int(section[2])
 	end := 3 + sectionLength - 4
@@ -113,14 +117,16 @@ func pmtHasVideo(section []byte) bool {
 		end = len(section)
 	}
 	programInfoLength := int(section[10]&0x0f)<<8 | int(section[11])
+	videoPIDs := make([]uint16, 0, 1)
 	for index := 12 + programInfoLength; index+5 <= end; {
 		streamType := section[index]
 		switch streamType {
 		case 0x01, 0x02, 0x10, 0x1b, 0x24, 0x42:
-			return true
+			pid := uint16(section[index+1]&0x1f)<<8 | uint16(section[index+2])
+			videoPIDs = append(videoPIDs, pid)
 		}
 		esInfoLength := int(section[index+3]&0x0f)<<8 | int(section[index+4])
 		index += 5 + esInfoLength
 	}
-	return false
+	return videoPIDs
 }

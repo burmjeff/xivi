@@ -25,6 +25,10 @@ type Hub struct {
 	ringBytes       int
 	maxRingBytes    int
 	maxClientBytes  int
+	transportSeen   bool
+	programmeKnown  bool
+	hasVideo        bool
+	videoPIDs       map[uint16]bool
 	closed          bool
 	closeErr        error
 	bytesPublished  atomic.Uint64
@@ -37,6 +41,7 @@ type subscriber struct {
 	pending     int
 	closed      bool
 	closeReason string
+	waiting     bool
 }
 
 // Subscription is a single bounded view of a shared MPEG-TS stream.
@@ -76,17 +81,38 @@ func (h *Hub) publish(data []byte, ownedData bool) {
 		owned = append([]byte(nil), data...)
 	}
 	metadata := inspectTransportChunk(owned)
-	chunk := mediaChunk{
-		data:         owned,
-		hasPAT:       metadata.hasPAT,
-		hasPMT:       metadata.hasPMT,
-		randomAccess: metadata.randomAccess,
-	}
-
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.closed {
 		return
+	}
+	if metadata.isTransport {
+		h.transportSeen = true
+	}
+	if metadata.programmeKnown {
+		h.programmeKnown = true
+		h.hasVideo = h.hasVideo || metadata.hasVideo
+		if len(metadata.videoPIDs) > 0 {
+			if h.videoPIDs == nil {
+				h.videoPIDs = make(map[uint16]bool)
+			}
+			for _, pid := range metadata.videoPIDs {
+				h.videoPIDs[pid] = true
+			}
+		}
+	}
+	randomVideoAccess := false
+	for _, pid := range metadata.randomAccessPIDs {
+		if h.videoPIDs[pid] {
+			randomVideoAccess = true
+			break
+		}
+	}
+	chunk := mediaChunk{
+		data:         owned,
+		hasPAT:       metadata.hasPAT,
+		hasPMT:       metadata.hasPMT,
+		randomAccess: randomVideoAccess,
 	}
 
 	h.bytesPublished.Add(uint64(len(owned)))
@@ -102,18 +128,51 @@ func (h *Hub) publish(data []byte, ownedData bool) {
 		if sub.closed {
 			continue
 		}
-		if sub.pending+len(owned) > h.maxClientBytes {
-			h.dropLocked(id, sub, "slow_client_dropped")
-			h.slowClientDrops.Add(1)
+		if sub.waiting {
+			h.releaseWaitingLocked(id, sub, chunk)
 			continue
 		}
-		select {
-		case sub.chunks <- chunk:
-			sub.pending += len(owned)
-		default:
-			h.dropLocked(id, sub, "slow_client_dropped")
-			h.slowClientDrops.Add(1)
+		h.enqueueLocked(id, sub, chunk)
+	}
+}
+
+func (h *Hub) releaseWaitingLocked(id uint64, sub *subscriber, current mediaChunk) {
+	if !h.transportSeen {
+		// Preserve Hub's generic fan-out behavior for non-transport test and
+		// diagnostic payloads. Real session output is always MPEG-TS.
+		sub.waiting = false
+		h.enqueueLocked(id, sub, current)
+		return
+	}
+	if !h.programmeKnown {
+		return
+	}
+	start, ok := decoderBootstrapStart(h.ring, h.hasVideo)
+	if !ok {
+		return
+	}
+	sub.waiting = false
+	for _, replay := range h.ring[start:] {
+		if !h.enqueueLocked(id, sub, replay) {
+			return
 		}
+	}
+}
+
+func (h *Hub) enqueueLocked(id uint64, sub *subscriber, chunk mediaChunk) bool {
+	if sub.pending+len(chunk.data) > h.maxClientBytes {
+		h.dropLocked(id, sub, "slow_client_dropped")
+		h.slowClientDrops.Add(1)
+		return false
+	}
+	select {
+	case sub.chunks <- chunk:
+		sub.pending += len(chunk.data)
+		return true
+	default:
+		h.dropLocked(id, sub, "slow_client_dropped")
+		h.slowClientDrops.Add(1)
+		return false
 	}
 }
 
@@ -128,6 +187,10 @@ func (h *Hub) ResetForDiscontinuity() {
 	}
 	h.ring = nil
 	h.ringBytes = 0
+	h.transportSeen = false
+	h.programmeKnown = false
+	h.hasVideo = false
+	h.videoPIDs = nil
 	for _, sub := range h.subscribers {
 		if sub.closed {
 			continue
@@ -141,6 +204,7 @@ func (h *Hub) ResetForDiscontinuity() {
 			}
 		}
 	drained:
+		sub.waiting = true
 	}
 }
 
@@ -167,23 +231,28 @@ func (h *Hub) Subscribe() *Subscription {
 		return &Subscription{hub: h, sub: sub}
 	}
 
-	// Start a video viewer at the latest transport-table/keyframe boundary when
-	// one is available. Replaying an arbitrary ring boundary can make strict
-	// MPEG-TS clients consume their probe budget before seeing a decodable frame.
-	// Non-TS data and audio-only streams retain the complete warm-ring fallback.
 	start := 0
-	if decoderStart, ok := decoderBootstrapStart(h.ring, true); ok {
-		start = decoderStart
+	bootstrapReady := false
+	if h.programmeKnown {
+		start, bootstrapReady = decoderBootstrapStart(h.ring, h.hasVideo)
 	}
-	for _, chunk := range h.ring[start:] {
-		if sub.pending+len(chunk.data) > h.maxClientBytes {
-			break
-		}
-		select {
-		case sub.chunks <- chunk:
-			sub.pending += len(chunk.data)
-		default:
-			break
+	if (h.transportSeen && !bootstrapReady) || len(h.ring) == 0 {
+		// Never fall back to an arbitrary mid-GOP replay. A late video viewer
+		// waits for the next PAT/PMT/keyframe boundary; an audio-only viewer waits
+		// only for its programme tables. This keeps the queue bounded without
+		// retaining an unbounded GOP in the warm ring.
+		sub.waiting = true
+	} else {
+		for _, chunk := range h.ring[start:] {
+			if sub.pending+len(chunk.data) > h.maxClientBytes {
+				break
+			}
+			select {
+			case sub.chunks <- chunk:
+				sub.pending += len(chunk.data)
+			default:
+				break
+			}
 		}
 	}
 	h.subscribers[sub.id] = sub
@@ -201,9 +270,14 @@ func (h *Hub) HasDecoderBootstrap(requireRandomAccess bool) bool {
 }
 
 type transportChunkMetadata struct {
-	hasPAT       bool
-	hasPMT       bool
-	randomAccess bool
+	isTransport      bool
+	programmeKnown   bool
+	hasVideo         bool
+	hasPAT           bool
+	hasPMT           bool
+	randomAccess     bool
+	randomAccessPIDs []uint16
+	videoPIDs        []uint16
 }
 
 func inspectTransportChunk(data []byte) transportChunkMetadata {
@@ -230,11 +304,14 @@ func inspectTransportChunk(data []byte) transportChunkMetadata {
 		if packet[0] != 0x47 {
 			break
 		}
+		metadata.isTransport = true
+		pid := uint16(packet[1]&0x1f)<<8 | uint16(packet[2])
 		adaptation := (packet[3] >> 4) & 0x03
 		if adaptation == 2 || adaptation == 3 {
 			length := int(packet[4])
 			if length > 0 && 5+length <= len(packet) && packet[5]&0x40 != 0 {
 				metadata.randomAccess = true
+				metadata.randomAccessPIDs = appendUniquePID(metadata.randomAccessPIDs, pid)
 			}
 		}
 		if packet[1]&0x40 == 0 || adaptation == 0 || adaptation == 2 {
@@ -253,15 +330,29 @@ func inspectTransportChunk(data []byte) transportChunkMetadata {
 			continue
 		}
 		tableID := section[1+pointer]
-		pid := uint16(packet[1]&0x1f)<<8 | uint16(packet[2])
 		if pid == 0 && tableID == 0x00 {
 			metadata.hasPAT = true
 		}
 		if tableID == 0x02 {
 			metadata.hasPMT = true
+			metadata.programmeKnown = true
+			videoPIDs := pmtVideoPIDs(section[1+pointer:])
+			metadata.hasVideo = metadata.hasVideo || len(videoPIDs) > 0
+			for _, videoPID := range videoPIDs {
+				metadata.videoPIDs = appendUniquePID(metadata.videoPIDs, videoPID)
+			}
 		}
 	}
 	return metadata
+}
+
+func appendUniquePID(pids []uint16, candidate uint16) []uint16 {
+	for _, pid := range pids {
+		if pid == candidate {
+			return pids
+		}
+	}
+	return append(pids, candidate)
 }
 
 func decoderBootstrapStart(ring []mediaChunk, requireRandomAccess bool) (int, bool) {

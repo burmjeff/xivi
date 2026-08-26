@@ -70,9 +70,119 @@ func TestHubReplaysVideoFromLatestDecoderBootstrap(t *testing.T) {
 
 func TestInspectTransportChunkFindsRandomAccessFlag(t *testing.T) {
 	metadata := inspectTransportChunk(randomAccessPacket(0x0101))
+	if !metadata.isTransport {
+		t.Fatal("valid transport packet was not recognized")
+	}
 	if !metadata.randomAccess {
 		t.Fatal("transport random-access indicator was not detected")
 	}
+}
+
+func TestHubIgnoresRandomAccessOutsideVideoPID(t *testing.T) {
+	hub := NewHub(1024 * 1024)
+	tables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
+	tables = append(tables, tsPacket(0x1fff, nil)...)
+	hub.Publish(tables)
+	hub.Publish(randomAccessPacket(0x0102))
+	if hub.HasDecoderBootstrap(true) {
+		t.Fatal("non-video random-access packet was accepted as a video keyframe")
+	}
+	hub.Publish(randomAccessPacket(0x0101))
+	if !hub.HasDecoderBootstrap(true) {
+		t.Fatal("declared video PID random-access packet was not accepted")
+	}
+}
+
+func TestHubWaitsForNextBootstrapAfterWarmKeyframeRotatesOut(t *testing.T) {
+	hub := NewHub(1024 * 1024)
+	tables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
+	tables = append(tables, tsPacket(0x1fff, nil)...)
+	keyframe := randomAccessPacket(0x0101)
+	delta := transportPackets(0x0101, 7)
+
+	hub.Publish(tables)
+	hub.Publish(keyframe)
+	for range 500 {
+		hub.Publish(delta)
+	}
+	if hub.HasDecoderBootstrap(true) {
+		t.Fatal("test did not rotate the old keyframe out of the warm ring")
+	}
+
+	subscription := hub.Subscribe()
+	t.Cleanup(subscription.Close)
+	if pending := subscriptionPending(subscription); pending != 0 {
+		t.Fatalf("mid-GOP subscriber received %d bytes before a safe bootstrap", pending)
+	}
+	hub.Publish(delta)
+	if pending := subscriptionPending(subscription); pending != 0 {
+		t.Fatalf("mid-GOP delta data was queued while waiting: %d bytes", pending)
+	}
+	hub.Publish(tables)
+	if pending := subscriptionPending(subscription); pending != 0 {
+		t.Fatalf("video subscriber resumed from tables without a keyframe: %d bytes", pending)
+	}
+	hub.Publish(keyframe)
+
+	for index, expected := range [][]byte{tables, keyframe} {
+		chunk, ok := subscription.Next()
+		if !ok || !bytes.Equal(chunk, expected) {
+			t.Fatalf("resumed bootstrap chunk %d was not decoder-safe", index)
+		}
+	}
+}
+
+func TestHubAudioOnlySubscriberResumesAtProgrammeTables(t *testing.T) {
+	hub := NewHub(1024 * 1024)
+	subscription := hub.Subscribe()
+	t.Cleanup(subscription.Close)
+	tables := append(tsPacket(0, patSection()), tsPacket(0x0100, audioPMTSection())...)
+	tables = append(tables, tsPacket(0x1fff, nil)...)
+
+	hub.Publish(tables)
+	chunk, ok := subscription.Next()
+	if !ok || !bytes.Equal(chunk, tables) {
+		t.Fatal("audio-only subscriber did not resume from PAT/PMT")
+	}
+}
+
+func TestHubDiscontinuityRegatesExistingViewer(t *testing.T) {
+	hub := NewHub(1024 * 1024)
+	tables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
+	tables = append(tables, tsPacket(0x1fff, nil)...)
+	keyframe := randomAccessPacket(0x0101)
+	delta := transportPackets(0x0101, 7)
+	hub.Publish(tables)
+	hub.Publish(keyframe)
+	subscription := hub.Subscribe()
+	t.Cleanup(subscription.Close)
+	_, _ = subscription.Next()
+	_, _ = subscription.Next()
+
+	hub.ResetForDiscontinuity()
+	hub.Publish(delta)
+	if pending := subscriptionPending(subscription); pending != 0 {
+		t.Fatalf("viewer received %d bytes from a discontinuous mid-GOP source", pending)
+	}
+	hub.Publish(tables)
+	hub.Publish(keyframe)
+	if chunk, ok := subscription.Next(); !ok || !bytes.Equal(chunk, tables) {
+		t.Fatal("viewer did not resume safely after source discontinuity")
+	}
+}
+
+func subscriptionPending(subscription *Subscription) int {
+	subscription.hub.mu.Lock()
+	defer subscription.hub.mu.Unlock()
+	return subscription.sub.pending
+}
+
+func transportPackets(pid uint16, count int) []byte {
+	data := make([]byte, 0, count*188)
+	for range count {
+		data = append(data, tsPacket(pid, nil)...)
+	}
+	return data
 }
 
 func randomAccessPacket(pid uint16) []byte {
