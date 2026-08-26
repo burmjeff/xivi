@@ -40,6 +40,7 @@ func TestHubReplaysVideoFromLatestDecoderBootstrap(t *testing.T) {
 	oldDelta = append(oldDelta, tsPacket(0x0101, nil)...)
 	tables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
 	tables = append(tables, tsPacket(0x1fff, nil)...)
+	clock := pcrPacket(0x0101)
 	keyframe := randomAccessPacket(0x0101)
 	live := append(tsPacket(0x0101, nil), tsPacket(0x0101, nil)...)
 	live = append(live, tsPacket(0x0101, nil)...)
@@ -52,6 +53,7 @@ func TestHubReplaysVideoFromLatestDecoderBootstrap(t *testing.T) {
 	if !hub.HasDecoderBootstrap(false) {
 		t.Fatal("audio bootstrap did not accept valid programme tables")
 	}
+	hub.Publish(clock)
 	hub.Publish(keyframe)
 	hub.Publish(live)
 	if !hub.HasDecoderBootstrap(true) {
@@ -60,8 +62,9 @@ func TestHubReplaysVideoFromLatestDecoderBootstrap(t *testing.T) {
 
 	subscription := hub.Subscribe()
 	t.Cleanup(subscription.Close)
-	programmeTables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
-	for index, expected := range [][]byte{programmeTables, keyframe, live} {
+	programmeClock := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
+	programmeClock = append(programmeClock, bootstrapPCRPacket(clock)...)
+	for index, expected := range [][]byte{programmeClock, keyframe, live} {
 		chunk, ok := subscription.Next()
 		if !ok || !bytes.Equal(chunk, expected) {
 			t.Fatalf("bootstrap chunk %d did not match expected decoder-safe replay", index)
@@ -74,11 +77,13 @@ func TestHubStartsOnExactVideoRandomAccessPacket(t *testing.T) {
 	pat := tsPacket(0, patSection())
 	pmt := tsPacket(0x0100, pmtSection())
 	delta := tsPacket(0x0101, nil)
+	clock := pcrPacket(0x0101)
 	keyframe := randomAccessPacket(0x0101)
 	afterKeyframe := tsPacket(0x0102, nil)
 	combined := append([]byte{}, pat...)
 	combined = append(combined, pmt...)
 	combined = append(combined, delta...)
+	combined = append(combined, clock...)
 	combined = append(combined, keyframe...)
 	combined = append(combined, afterKeyframe...)
 
@@ -87,8 +92,10 @@ func TestHubStartsOnExactVideoRandomAccessPacket(t *testing.T) {
 	t.Cleanup(subscription.Close)
 
 	prefix, ok := subscription.Next()
-	if !ok || !bytes.Equal(prefix, append(append([]byte{}, pat...), pmt...)) {
-		t.Fatal("video bootstrap did not emit a compact PAT/PMT prefix")
+	wantPrefix := append(append([]byte{}, pat...), pmt...)
+	wantPrefix = append(wantPrefix, bootstrapPCRPacket(clock)...)
+	if !ok || !bytes.Equal(prefix, wantPrefix) {
+		t.Fatal("video bootstrap did not emit a compact PAT/PMT/PCR prefix")
 	}
 	media, ok := subscription.Next()
 	wantMedia := append(append([]byte{}, keyframe...), afterKeyframe...)
@@ -107,11 +114,48 @@ func TestInspectTransportChunkFindsRandomAccessFlag(t *testing.T) {
 	}
 }
 
+func TestHubRequiresProgramClockForVideoBootstrap(t *testing.T) {
+	hub := NewHub(1024 * 1024)
+	tables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
+	hub.Publish(tables)
+	hub.Publish(randomAccessPacket(0x0101))
+	if hub.HasDecoderBootstrap(true) {
+		t.Fatal("video bootstrap became ready without a program clock reference")
+	}
+	hub.Publish(pcrPacket(0x0101))
+	hub.Publish(randomAccessPacket(0x0101))
+	if !hub.HasDecoderBootstrap(true) {
+		t.Fatal("video bootstrap did not become ready with PAT, PMT, PCR, and keyframe")
+	}
+}
+
+func TestBootstrapPCRPacketStripsMediaPayload(t *testing.T) {
+	source := pcrPacket(0x0101)
+	source[12] = 0x12
+	source[13] = 0x34
+	packet := bootstrapPCRPacket(source)
+	if len(packet) != 188 || packet[0] != 0x47 {
+		t.Fatal("bootstrap PCR packet was not valid transport size")
+	}
+	if packet[3]&0x30 != 0x20 || packet[5]&0x90 != 0x90 {
+		t.Fatal("bootstrap PCR packet was not adaptation-only and discontinuous")
+	}
+	if !bytes.Equal(packet[6:12], source[6:12]) {
+		t.Fatal("bootstrap PCR value changed")
+	}
+	for _, value := range packet[12:] {
+		if value != 0xff {
+			t.Fatal("bootstrap PCR leaked source media payload")
+		}
+	}
+}
+
 func TestHubIgnoresRandomAccessOutsideVideoPID(t *testing.T) {
 	hub := NewHub(1024 * 1024)
 	tables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
 	tables = append(tables, tsPacket(0x1fff, nil)...)
 	hub.Publish(tables)
+	hub.Publish(pcrPacket(0x0101))
 	hub.Publish(randomAccessPacket(0x0102))
 	if hub.HasDecoderBootstrap(true) {
 		t.Fatal("non-video random-access packet was accepted as a video keyframe")
@@ -126,10 +170,12 @@ func TestHubWaitsForNextBootstrapAfterWarmKeyframeRotatesOut(t *testing.T) {
 	hub := NewHub(1024 * 1024)
 	tables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
 	tables = append(tables, tsPacket(0x1fff, nil)...)
+	clock := pcrPacket(0x0101)
 	keyframe := randomAccessPacket(0x0101)
 	delta := transportPackets(0x0101, 7)
 
 	hub.Publish(tables)
+	hub.Publish(clock)
 	hub.Publish(keyframe)
 	for range 500 {
 		hub.Publish(delta)
@@ -151,10 +197,12 @@ func TestHubWaitsForNextBootstrapAfterWarmKeyframeRotatesOut(t *testing.T) {
 	if pending := subscriptionPending(subscription); pending != 0 {
 		t.Fatalf("video subscriber resumed from tables without a keyframe: %d bytes", pending)
 	}
+	hub.Publish(clock)
 	hub.Publish(keyframe)
 
-	programmeTables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
-	for index, expected := range [][]byte{programmeTables, keyframe} {
+	programmeClock := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
+	programmeClock = append(programmeClock, bootstrapPCRPacket(clock)...)
+	for index, expected := range [][]byte{programmeClock, keyframe} {
 		chunk, ok := subscription.Next()
 		if !ok || !bytes.Equal(chunk, expected) {
 			t.Fatalf("resumed bootstrap chunk %d was not decoder-safe", index)
@@ -180,9 +228,11 @@ func TestHubDiscontinuityRegatesExistingViewer(t *testing.T) {
 	hub := NewHub(1024 * 1024)
 	tables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
 	tables = append(tables, tsPacket(0x1fff, nil)...)
+	clock := pcrPacket(0x0101)
 	keyframe := randomAccessPacket(0x0101)
 	delta := transportPackets(0x0101, 7)
 	hub.Publish(tables)
+	hub.Publish(clock)
 	hub.Publish(keyframe)
 	subscription := hub.Subscribe()
 	t.Cleanup(subscription.Close)
@@ -195,9 +245,11 @@ func TestHubDiscontinuityRegatesExistingViewer(t *testing.T) {
 		t.Fatalf("viewer received %d bytes from a discontinuous mid-GOP source", pending)
 	}
 	hub.Publish(tables)
+	hub.Publish(clock)
 	hub.Publish(keyframe)
-	programmeTables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
-	if chunk, ok := subscription.Next(); !ok || !bytes.Equal(chunk, programmeTables) {
+	programmeClock := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
+	programmeClock = append(programmeClock, bootstrapPCRPacket(clock)...)
+	if chunk, ok := subscription.Next(); !ok || !bytes.Equal(chunk, programmeClock) {
 		t.Fatal("viewer did not resume safely after source discontinuity")
 	}
 }
@@ -221,6 +273,15 @@ func randomAccessPacket(pid uint16) []byte {
 	packet[3] = 0x30
 	packet[4] = 1
 	packet[5] = 0x40
+	return packet
+}
+
+func pcrPacket(pid uint16) []byte {
+	packet := tsPacket(pid, nil)
+	packet[3] = 0x30
+	packet[4] = 7
+	packet[5] = 0x10
+	copy(packet[6:12], []byte{0x00, 0x12, 0x34, 0x56, 0x7e, 0x00})
 	return packet
 }
 

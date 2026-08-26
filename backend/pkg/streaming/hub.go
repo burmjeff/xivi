@@ -15,6 +15,7 @@ type mediaChunk struct {
 	randomAccessOffset int
 	patPackets         []transportPacket
 	pmtPackets         []transportPacket
+	pcrPackets         []transportPacket
 }
 
 type transportPacket struct {
@@ -38,6 +39,7 @@ type Hub struct {
 	programmeKnown  bool
 	hasVideo        bool
 	videoPIDs       map[uint16]bool
+	pcrPIDs         map[uint16]bool
 	closed          bool
 	closeErr        error
 	bytesPublished  atomic.Uint64
@@ -109,11 +111,25 @@ func (h *Hub) publish(data []byte, ownedData bool) {
 				h.videoPIDs[pid] = true
 			}
 		}
+		if len(metadata.pcrPIDs) > 0 {
+			if h.pcrPIDs == nil {
+				h.pcrPIDs = make(map[uint16]bool)
+			}
+			for _, pid := range metadata.pcrPIDs {
+				h.pcrPIDs[pid] = true
+			}
+		}
 	}
 	randomVideoAccessOffset := -1
 	for _, packet := range metadata.randomAccessPackets {
 		if h.videoPIDs[packet.pid] && (randomVideoAccessOffset < 0 || packet.offset < randomVideoAccessOffset) {
 			randomVideoAccessOffset = packet.offset
+		}
+	}
+	pcrPackets := make([]transportPacket, 0, len(metadata.pcrPackets))
+	for _, packet := range metadata.pcrPackets {
+		if h.pcrPIDs[packet.pid] {
+			pcrPackets = append(pcrPackets, packet)
 		}
 	}
 	chunk := mediaChunk{
@@ -124,6 +140,7 @@ func (h *Hub) publish(data []byte, ownedData bool) {
 		randomAccessOffset: randomVideoAccessOffset,
 		patPackets:         metadata.patPackets,
 		pmtPackets:         metadata.pmtPackets,
+		pcrPackets:         pcrPackets,
 	}
 
 	h.bytesPublished.Add(uint64(len(owned)))
@@ -209,6 +226,7 @@ func (h *Hub) ResetForDiscontinuity() {
 	h.programmeKnown = false
 	h.hasVideo = false
 	h.videoPIDs = nil
+	h.pcrPIDs = nil
 	for _, sub := range h.subscribers {
 		if sub.closed {
 			continue
@@ -256,7 +274,7 @@ func (h *Hub) Subscribe() *Subscription {
 	}
 	if (h.transportSeen && !bootstrapReady) || len(h.ring) == 0 {
 		// Never fall back to an arbitrary mid-GOP replay. A late video viewer
-		// waits for the next PAT/PMT/keyframe boundary; an audio-only viewer waits
+		// waits for the next PAT/PMT/PCR/keyframe boundary; an audio-only viewer waits
 		// only for its programme tables. This keeps the queue bounded without
 		// retaining an unbounded GOP in the warm ring.
 		sub.waiting = true
@@ -286,8 +304,8 @@ func (h *Hub) Subscribe() *Subscription {
 }
 
 // HasDecoderBootstrap reports whether the warm ring can start a decoder. A
-// video transport requires PAT, PMT, and a later random-access packet; an
-// audio-only transport needs only its programme tables.
+// video transport requires PAT, PMT, a program clock reference, and a later
+// random-access packet; an audio-only transport needs only its programme tables.
 func (h *Hub) HasDecoderBootstrap(requireRandomAccess bool) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -304,8 +322,10 @@ type transportChunkMetadata struct {
 	randomAccess        bool
 	randomAccessPackets []transportPacket
 	videoPIDs           []uint16
+	pcrPIDs             []uint16
 	patPackets          []transportPacket
 	pmtPackets          []transportPacket
+	pcrPackets          []transportPacket
 }
 
 func inspectTransportChunk(data []byte) transportChunkMetadata {
@@ -337,10 +357,16 @@ func inspectTransportChunk(data []byte) transportChunkMetadata {
 		adaptation := (packet[3] >> 4) & 0x03
 		if adaptation == 2 || adaptation == 3 {
 			length := int(packet[4])
-			if length > 0 && 5+length <= len(packet) && packet[5]&0x40 != 0 {
-				metadata.randomAccess = true
-				metadata.randomAccessPackets = append(metadata.randomAccessPackets,
-					transportPacket{pid: pid, offset: index, data: packet})
+			if length > 0 && 5+length <= len(packet) {
+				if packet[5]&0x40 != 0 {
+					metadata.randomAccess = true
+					metadata.randomAccessPackets = append(metadata.randomAccessPackets,
+						transportPacket{pid: pid, offset: index, data: packet})
+				}
+				if length >= 7 && packet[5]&0x10 != 0 {
+					metadata.pcrPackets = append(metadata.pcrPackets,
+						transportPacket{pid: pid, offset: index, data: packet})
+				}
 			}
 		}
 		if packet[1]&0x40 == 0 || adaptation == 0 || adaptation == 2 {
@@ -369,6 +395,9 @@ func inspectTransportChunk(data []byte) transportChunkMetadata {
 			metadata.pmtPackets = append(metadata.pmtPackets,
 				transportPacket{pid: pid, offset: index, data: packet})
 			metadata.programmeKnown = true
+			if pcrPID, ok := pmtPCRPID(section[1+pointer:]); ok {
+				metadata.pcrPIDs = appendUniquePID(metadata.pcrPIDs, pcrPID)
+			}
 			videoPIDs := pmtVideoPIDs(section[1+pointer:])
 			metadata.hasVideo = metadata.hasVideo || len(videoPIDs) > 0
 			for _, videoPID := range videoPIDs {
@@ -377,6 +406,17 @@ func inspectTransportChunk(data []byte) transportChunkMetadata {
 		}
 	}
 	return metadata
+}
+
+func pmtPCRPID(section []byte) (uint16, bool) {
+	if len(section) < 12 || section[0] != 0x02 {
+		return 0, false
+	}
+	pcrPID := uint16(section[8]&0x1f)<<8 | uint16(section[9])
+	if pcrPID == 0x1fff {
+		return 0, false
+	}
+	return pcrPID, true
 }
 
 func appendUniquePID(pids []uint16, candidate uint16) []uint16 {
@@ -395,10 +435,11 @@ type decoderBootstrap struct {
 }
 
 // decoderBootstrapPlan starts video replay on the exact transport packet that
-// carries the random-access frame. Programme tables are copied into a compact
-// prefix instead of replaying all multiplexed audio and delta-video packets
-// between an older PAT/PMT and the keyframe. That pre-roll could put audio more
-// than a GOP ahead of video and leave strict live-TV clients on a black frame.
+// carries the random-access frame. Programme tables and a payload-free program
+// clock reference are copied into a compact prefix instead of replaying all
+// multiplexed audio and delta-video packets between an older PAT/PMT and the
+// keyframe. The PCR gives strict remuxers a valid clock for the first IDR while
+// avoiding the old pre-roll that could put audio more than a GOP ahead of video.
 func decoderBootstrapPlan(ring []mediaChunk, requireRandomAccess bool) (decoderBootstrap, bool) {
 	if len(ring) == 0 {
 		return decoderBootstrap{}, false
@@ -414,24 +455,43 @@ func decoderBootstrapPlan(ring []mediaChunk, requireRandomAccess bool) (decoderB
 		keyframeOffset := ring[end].randomAccessOffset
 		var pat []byte
 		var pmt []byte
-		for index := end; index >= 0 && (len(pat) == 0 || len(pmt) == 0); index-- {
+		var pcr []byte
+		for index := end; index >= 0 && (len(pat) == 0 || len(pmt) == 0 || len(pcr) == 0); index-- {
 			limit := len(ring[index].data)
 			if index == end {
-				limit = keyframeOffset
+				// A PCR carried by the random-access packet itself is also safe to
+				// synthesize ahead of that packet. PAT and PMT must precede it.
+				limit = keyframeOffset + 1
 			}
 			if len(pat) == 0 {
-				pat = latestPacketBefore(ring[index].patPackets, limit)
+				patLimit := limit
+				if index == end {
+					patLimit = keyframeOffset
+				}
+				pat = latestPacketBefore(ring[index].patPackets, patLimit)
 			}
 			if len(pmt) == 0 {
-				pmt = latestPacketBefore(ring[index].pmtPackets, limit)
+				pmtLimit := limit
+				if index == end {
+					pmtLimit = keyframeOffset
+				}
+				pmt = latestPacketBefore(ring[index].pmtPackets, pmtLimit)
+			}
+			if len(pcr) == 0 {
+				pcr = latestPacketBefore(ring[index].pcrPackets, limit)
 			}
 		}
-		if len(pat) == 0 || len(pmt) == 0 {
+		if len(pat) == 0 || len(pmt) == 0 || len(pcr) == 0 {
 			return decoderBootstrap{}, false
 		}
-		prefix := make([]byte, 0, len(pat)+len(pmt))
+		clock := bootstrapPCRPacket(pcr)
+		if len(clock) == 0 {
+			return decoderBootstrap{}, false
+		}
+		prefix := make([]byte, 0, len(pat)+len(pmt)+len(clock))
 		prefix = append(prefix, pat...)
 		prefix = append(prefix, pmt...)
+		prefix = append(prefix, clock...)
 		return decoderBootstrap{start: end, offset: keyframeOffset, prefix: prefix}, true
 	}
 	for candidate := end; candidate >= 0; candidate-- {
@@ -447,6 +507,35 @@ func decoderBootstrapPlan(ring []mediaChunk, requireRandomAccess bool) (decoderB
 		break
 	}
 	return decoderBootstrap{}, false
+}
+
+// bootstrapPCRPacket copies only the clock from a source packet. Replaying the
+// original packet could include delta-video payload from before the selected
+// IDR. Adaptation-only packets do not advance payload continuity, and the
+// discontinuity flag tells a new demuxer to establish a fresh clock baseline.
+func bootstrapPCRPacket(source []byte) []byte {
+	if len(source) != 188 || source[0] != 0x47 {
+		return nil
+	}
+	adaptation := (source[3] >> 4) & 0x03
+	if adaptation != 2 && adaptation != 3 {
+		return nil
+	}
+	length := int(source[4])
+	if length < 7 || 5+length > len(source) || source[5]&0x10 == 0 {
+		return nil
+	}
+	packet := make([]byte, 188)
+	for index := range packet {
+		packet[index] = 0xff
+	}
+	copy(packet[:3], source[:3])
+	packet[1] &^= 0x40
+	packet[3] = source[3]&0x0f | 0x20
+	packet[4] = 183
+	packet[5] = 0x90
+	copy(packet[6:12], source[6:12])
+	return packet
 }
 
 func latestPacketBefore(packets []transportPacket, limit int) []byte {
