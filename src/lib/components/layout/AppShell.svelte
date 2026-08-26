@@ -306,9 +306,6 @@
 		margin-left: 5rem;
 	}
 	@media (max-width: 900px) {
-		.studio-link {
-			display: none;
-		}
 		.studio-rail,
 		.studio-rail.collapsed {
 			position: sticky;
@@ -379,6 +376,9 @@
 			padding: 0 0.9rem;
 		}
 		.watch-header nav {
+			display: none;
+		}
+		.studio-link {
 			display: none;
 		}
 		.watch-main {

@@ -2,13 +2,21 @@
 	import { ChevronDown } from '@lucide/svelte';
 	import type { LineupSummary } from '$lib/api/types';
 	import { selectLineup } from '$lib/state/preferences.svelte';
-	let { items, value } = $props<{ items: LineupSummary[]; value: number | null }>();
+	let {
+		items,
+		value,
+		fullWidth = false
+	} = $props<{
+		items: LineupSummary[];
+		value: number | null;
+		fullWidth?: boolean;
+	}>();
 	function change(event: Event) {
 		selectLineup(Number((event.currentTarget as HTMLSelectElement).value));
 	}
 </script>
 
-<label class="lineup-picker"
+<label class:full-width={fullWidth} class="lineup-picker"
 	><span class="sr-only">Selected lineup</span><select onchange={change} value={value ?? ''}
 		>{#each items as lineup}<option value={lineup.id}>{lineup.name}</option>{/each}</select
 	><ChevronDown size={17} aria-hidden="true" /></label
@@ -19,6 +27,10 @@
 		position: relative;
 		display: inline-flex;
 		align-items: center;
+	}
+	.lineup-picker.full-width,
+	.lineup-picker.full-width select {
+		width: 100%;
 	}
 	select {
 		min-height: 2.75rem;

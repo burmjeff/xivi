@@ -46,6 +46,7 @@
 			{#if lineupsQuery.data}<LineupPicker
 					items={lineupsQuery.data.items}
 					value={lineupId}
+					fullWidth
 				/>{/if}<a class="search-cta" href="/channels"
 				><Search size={19} /><span>Search channels and shows</span><ArrowRight size={18} /></a
 			>
