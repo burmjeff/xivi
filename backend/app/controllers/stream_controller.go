@@ -36,22 +36,26 @@ func streamSources(channels []models.ChannelUrl) []streaming.Source {
 	return sources
 }
 
-func acquireStreamSession(ctx context.Context, streamID string) (*streaming.Session, []models.ChannelUrl, error) {
+func acquireStreamSession(ctx context.Context, streamID, playbackID, protocol string) (*streaming.Session, []models.ChannelUrl, string, error) {
 	channels, err := database.Db.GetChannelsbyUuid(ctx, streamID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("load ordered source variants: %w", err)
+		return nil, nil, "", fmt.Errorf("load ordered source variants: %w", err)
 	}
 	if channels == nil || len(*channels) == 0 {
-		return nil, nil, fmt.Errorf("no streamable source variants are available")
+		return nil, nil, "", fmt.Errorf("no streamable source variants are available")
 	}
 	if !settings.APP_SETTINGS.Streaming.Proxy {
-		return nil, *channels, nil
+		return nil, *channels, "", nil
+	}
+	if playbackID != "" {
+		session, handle, acquireErr := streaming.DefaultManager.AcquirePlaybackSources(ctx, playbackID, streamID, protocol, streamSources(*channels))
+		return session, *channels, handle.ClientID, acquireErr
 	}
 	session, err := streaming.DefaultManager.AcquireSources(ctx, streamID, streamSources(*channels))
 	if err != nil {
-		return nil, *channels, err
+		return nil, *channels, "", err
 	}
-	return session, *channels, nil
+	return session, *channels, "", nil
 }
 
 func streamError(c *fiber.Ctx, status int, message string, err error) error {
@@ -83,6 +87,51 @@ func streamClientMetadata(c *fiber.Ctx, protocol, id string) streaming.ClientMet
 		Method: c.Method() + " " + c.Path(), UserAgent: strings.Clone(c.Get(fiber.HeaderUserAgent))}
 }
 
+func normalizedPlaybackID(namespace, candidate string) string {
+	candidate = strings.TrimSpace(candidate)
+	if candidate == "" || len(candidate) > 512 {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(namespace + "|" + candidate))
+	return "ply_" + hex.EncodeToString(sum[:12])
+}
+
+// requestPlaybackID accepts only explicit player or playback-session IDs.
+// Device/server IDs and IP addresses are intentionally excluded because one
+// Plex/Jellyfin server or NAT address can represent multiple simultaneous
+// viewers.
+func requestPlaybackID(c *fiber.Ctx) string {
+	if token := c.Query("playback_token"); len(token) == 28 && strings.HasPrefix(token, "ply_") {
+		if _, err := hex.DecodeString(strings.TrimPrefix(token, "ply_")); err == nil {
+			return strings.Clone(token)
+		}
+	}
+	for _, key := range []string{"playback_id", "viewer_id"} {
+		if candidate := c.Query(key); candidate != "" && !strings.HasPrefix(candidate, "hls_") {
+			return normalizedPlaybackID("viewer", candidate)
+		}
+	}
+	for _, key := range []string{"PlaySessionId", "playSessionId", "session_id"} {
+		if candidate := c.Query(key); candidate != "" {
+			return normalizedPlaybackID("media-session", candidate)
+		}
+	}
+	for _, key := range []string{
+		"X-Xivi-Playback-ID",
+		"X-Plex-Session-Identifier",
+		"X-Plex-Playback-Session-Id",
+		"X-Emby-Session-Id",
+		"X-Jellyfin-Session-Id",
+		"X-MediaBrowser-Session-Id",
+		"X-Playback-Session-Id",
+	} {
+		if candidate := c.Get(key); candidate != "" {
+			return normalizedPlaybackID("media-session", candidate)
+		}
+	}
+	return ""
+}
+
 func hlsViewerID(c *fiber.Ctx, streamID string) string {
 	if candidate := c.Query("viewer_id"); len(candidate) > 0 && len(candidate) <= 128 {
 		valid := true
@@ -111,7 +160,8 @@ func GetStream(c *fiber.Ctx) error {
 	}
 	ctx, cancel := context.WithTimeout(c.UserContext(), streamOperationTimeout)
 	defer cancel()
-	session, channels, err := acquireStreamSession(ctx, streamID)
+	playbackID := requestPlaybackID(c)
+	session, channels, trackedClientID, err := acquireStreamSession(ctx, streamID, playbackID, "mpegts")
 	if err != nil {
 		incidentID := ""
 		if session != nil {
@@ -129,7 +179,7 @@ func GetStream(c *fiber.Ctx) error {
 	}
 
 	subscription := session.Subscribe()
-	clientID, allowed := session.RegisterClient(streamClientMetadata(c, "mpegts", ""), subscription.Close)
+	clientID, allowed := session.RegisterClient(streamClientMetadata(c, "mpegts", trackedClientID), subscription.Close)
 	if !allowed {
 		subscription.Close()
 		return c.SendStatus(fiber.StatusGone)
@@ -183,7 +233,8 @@ func GetHlsStream(c *fiber.Ctx) error {
 	}
 	ctx, cancel := context.WithTimeout(c.UserContext(), streamOperationTimeout)
 	defer cancel()
-	session, channels, err := acquireStreamSession(ctx, streamID)
+	playbackID := requestPlaybackID(c)
+	session, channels, trackedClientID, err := acquireStreamSession(ctx, streamID, playbackID, "hls")
 	if err != nil {
 		incidentID := ""
 		if session != nil {
@@ -199,12 +250,17 @@ func GetHlsStream(c *fiber.Ctx) error {
 	if !settings.APP_SETTINGS.Streaming.Proxy {
 		return c.Redirect(channels[0].Url, http.StatusTemporaryRedirect)
 	}
-	viewerID := hlsViewerID(c, streamID)
+	viewerID := trackedClientID
+	if viewerID == "" {
+		viewerID = hlsViewerID(c, streamID)
+	}
 	if _, allowed := session.RegisterClient(streamClientMetadata(c, "hls", viewerID), nil); !allowed {
 		return c.SendStatus(fiber.StatusGone)
 	}
 	c.Set("X-Xivi-Incident-ID", session.IncidentID())
 	c.Set("X-Xivi-Connection-ID", viewerID)
+	c.Locals("stream_client_id", viewerID)
+	c.Locals("stream_playback_id", playbackID)
 	if err := session.WaitHLS(ctx); err != nil {
 		diagnostic := fmt.Errorf("HLS playlist did not become ready: %w", err)
 		session.RecordClientEvent(viewerID, "error", "hls_not_ready", diagnostic.Error(), "")
@@ -227,12 +283,24 @@ func GetHlsAsset(c *fiber.Ctx) error {
 	if !ok || !streaming.DefaultManager.Touch(streamID) {
 		return c.SendStatus(fiber.StatusNotFound)
 	}
-	viewerID := hlsViewerID(c, streamID)
+	playbackID := requestPlaybackID(c)
+	viewerID := ""
+	if playbackID != "" {
+		handle, current := streaming.DefaultManager.ResolvePlayback(playbackID, streamID)
+		if !current {
+			return c.SendStatus(fiber.StatusGone)
+		}
+		viewerID = handle.ClientID
+	} else {
+		viewerID = hlsViewerID(c, streamID)
+	}
 	if _, allowed := session.RegisterClient(streamClientMetadata(c, "hls", viewerID), nil); !allowed {
 		return c.SendStatus(fiber.StatusGone)
 	}
 	c.Set("X-Xivi-Incident-ID", session.IncidentID())
 	c.Set("X-Xivi-Connection-ID", viewerID)
+	c.Locals("stream_client_id", viewerID)
+	c.Locals("stream_playback_id", playbackID)
 	return sendHLSFile(c, streamID, asset)
 }
 
@@ -240,7 +308,7 @@ func GetHlsAsset(c *fiber.Ctx) error {
 // request the manifest. The public entry point intentionally omits a trailing
 // slash (/stream/hls/:id), so a bare segment name would otherwise resolve to
 // /stream/hls/segment.ts and lose the stream id entirely.
-func scopeHLSPlaylist(content []byte, streamID, viewerID string) []byte {
+func scopeHLSPlaylist(content []byte, streamID, identityKey, identityValue string) []byte {
 	lines := strings.Split(string(content), "\n")
 	segmentRoot := "/stream/hls/" + url.PathEscape(streamID) + "/"
 	for index, line := range lines {
@@ -265,9 +333,9 @@ func scopeHLSPlaylist(content []byte, streamID, viewerID string) []byte {
 		parsed.Path = segmentRoot + url.PathEscape(segment)
 		parsed.RawPath = ""
 		parsed.Fragment = ""
-		if viewerID != "" {
+		if identityKey != "" && identityValue != "" {
 			query := parsed.Query()
-			query.Set("viewer_id", viewerID)
+			query.Set(identityKey, identityValue)
 			parsed.RawQuery = query.Encode()
 		}
 		lines[index] = parsed.String()
@@ -290,19 +358,25 @@ func sendHLSFile(c *fiber.Ctx, streamID, asset string) error {
 				snapshot, err = streaming.ReadHLSPlaylist(path)
 			}
 			if err == nil {
-				viewerID := ""
-				if c.Query("viewer_id") != "" {
-					viewerID = hlsViewerID(c, streamID)
-				} else if _, active := streaming.DefaultManager.Get(streamID); active {
-					viewerID = hlsViewerID(c, streamID)
+				identityKey, identityValue := "", ""
+				if playbackID, ok := c.Locals("stream_playback_id").(string); ok && playbackID != "" {
+					identityKey, identityValue = "playback_token", playbackID
+				} else if token := c.Query("playback_token"); token != "" {
+					identityKey, identityValue = "playback_token", token
+				} else if _, active := streaming.DefaultManager.Get(streamID); active || c.Query("viewer_id") != "" {
+					identityKey, identityValue = "viewer_id", hlsViewerID(c, streamID)
 				}
-				content := scopeHLSPlaylist(snapshot.Content, streamID, viewerID)
+				content := scopeHLSPlaylist(snapshot.Content, streamID, identityKey, identityValue)
 				c.Set(fiber.HeaderContentType, "application/vnd.apple.mpegurl")
 				c.Set(fiber.HeaderCacheControl, "no-cache, no-store, must-revalidate")
 				c.Set("Pragma", "no-cache")
 				c.Set("Expires", "0")
 				if session, ok := streaming.DefaultManager.Get(streamID); ok {
-					session.AddClientBytes(hlsViewerID(c, streamID), len(content))
+					clientID, _ := c.Locals("stream_client_id").(string)
+					if clientID == "" {
+						clientID = hlsViewerID(c, streamID)
+					}
+					session.AddClientBytes(clientID, len(content))
 				}
 				return c.Send(content)
 			}
@@ -319,7 +393,11 @@ func sendHLSFile(c *fiber.Ctx, streamID, asset string) error {
 	c.Set(fiber.HeaderContentType, "video/MP2T")
 	c.Set(fiber.HeaderCacheControl, "public, max-age=60, immutable")
 	if session, ok := streaming.DefaultManager.Get(streamID); ok {
-		session.AddClientBytes(hlsViewerID(c, streamID), int(info.Size()))
+		clientID, _ := c.Locals("stream_client_id").(string)
+		if clientID == "" {
+			clientID = hlsViewerID(c, streamID)
+		}
+		session.AddClientBytes(clientID, int(info.Size()))
 	}
 	return c.SendFile(path)
 }
@@ -458,6 +536,29 @@ func V2DisconnectStreamClient(c *fiber.Ctx) error {
 	if !streaming.DefaultManager.DisconnectClient(c.Params("stream_id"), c.Params("connection_id")) {
 		return v2Error(c, fiber.StatusNotFound, "connection_not_found", "That viewer is no longer connected.", false)
 	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+type releasePlaybackRequest struct {
+	PlaybackID string `json:"playback_id"`
+	StreamID   string `json:"stream_id"`
+}
+
+// V2ReleasePlayback lets controlled players surrender a source connection
+// immediately. It is deliberately idempotent so unload beacons can race a
+// channel switch without turning normal navigation into an error.
+func V2ReleasePlayback(c *fiber.Ctx) error {
+	request := releasePlaybackRequest{}
+	if err := c.BodyParser(&request); err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_request", "Playback release data is invalid.", false)
+	}
+	playbackID := normalizedPlaybackID("viewer", request.PlaybackID)
+	if playbackID == "" || request.StreamID == "" {
+		return v2Error(c, fiber.StatusBadRequest, "missing_playback_identity", "A playback id and stream id are required.", false)
+	}
+	ctx, cancel := context.WithTimeout(c.UserContext(), streamOperationTimeout)
+	defer cancel()
+	streaming.DefaultManager.ReleasePlayback(ctx, playbackID, strings.Clone(request.StreamID))
 	return c.SendStatus(fiber.StatusNoContent)
 }
 

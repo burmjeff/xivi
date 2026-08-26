@@ -155,6 +155,39 @@ func TestSendHLSPlaylistCarriesLogicalViewerIntoSegments(t *testing.T) {
 	}
 }
 
+func TestPlaybackIdentityRequiresAPlaybackSessionNotAnAddressOrServerID(t *testing.T) {
+	app := fiber.New()
+	app.Get("/identity", func(c *fiber.Ctx) error {
+		return c.SendString(requestPlaybackID(c))
+	})
+
+	request := httptest.NewRequest("GET", "/identity", nil)
+	request.Header.Set("X-Forwarded-For", "192.0.2.10")
+	request.Header.Set("User-Agent", "PlexMediaServer/1.0")
+	request.Header.Set("X-Plex-Client-Identifier", "one-server-many-viewers")
+	response, err := app.Test(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if string(body) != "" {
+		t.Fatalf("unsafe request fingerprint became a playback identity: %q", body)
+	}
+
+	request = httptest.NewRequest("GET", "/identity", nil)
+	request.Header.Set("X-Plex-Session-Identifier", "playback-session-one")
+	response, err = app.Test(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ = io.ReadAll(response.Body)
+	response.Body.Close()
+	if !strings.HasPrefix(string(body), "ply_") {
+		t.Fatalf("session identifier was not recognized: %q", body)
+	}
+}
+
 func TestSendHLSPlaylistScopesRelativeSegmentsToStream(t *testing.T) {
 	root := t.TempDir()
 	previousRoot := settings.STREAM_FILEPATH

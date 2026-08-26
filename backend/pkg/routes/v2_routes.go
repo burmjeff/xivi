@@ -24,6 +24,7 @@ func V2Routes(a *fiber.App) {
 	v2.Post("/studio/streams/:stream_id/failover", controllers.V2FailoverStream)
 	v2.Post("/studio/streams/:stream_id/restart", controllers.V2RestartStream)
 	v2.Post("/stream/prewarm/:stream_id", controllers.V2PrewarmStream)
+	v2.Post("/watch/playback/release", controllers.V2ReleasePlayback)
 	v2.Delete("/studio/streams/:stream_id", controllers.V2StopStream)
 	v2.Delete("/studio/streams/:stream_id/connections/:connection_id", controllers.V2DisconnectStreamClient)
 	v2.Get("/studio/device-outputs", controllers.V2DeviceOutputs)

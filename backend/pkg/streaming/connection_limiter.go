@@ -1,9 +1,12 @@
 package streaming
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 )
+
+var ErrSourceConnectionLimit = errors.New("source connection limit reached")
 
 // Source identifies one playable upstream and the playlist/provider budget it
 // consumes. A zero PoolID is reserved for callers that cannot associate an
@@ -70,10 +73,33 @@ func (c *connectionCoordinator) acquire(source Source) (*connectionLease, error)
 	}
 	pool.name, pool.limit = source.PoolName, limit
 	if pool.active >= limit {
-		return nil, fmt.Errorf("source %q connection limit reached (%d/%d)", source.PoolName, pool.active, limit)
+		return nil, fmt.Errorf("%w: source %q is using %d/%d connections", ErrSourceConnectionLimit, source.PoolName, pool.active, limit)
 	}
 	pool.active++
 	return &connectionLease{coordinator: c, poolID: source.PoolID}, nil
+}
+
+// hasCapacityAny reports whether at least one ordered variant can start without
+// exceeding its source pool budget. Pool-less sources are intentionally
+// treated as unconstrained because Xivi cannot associate them with a configured
+// source limit.
+func (c *connectionCoordinator) hasCapacityAny(sources []Source) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, source := range sources {
+		if source.PoolID == 0 {
+			return true
+		}
+		limit := source.ConnectionLimit
+		if limit < 1 {
+			limit = 1
+		}
+		pool := c.pools[source.PoolID]
+		if pool == nil || pool.active < limit {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *connectionCoordinator) release(poolID int64) {

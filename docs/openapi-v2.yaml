@@ -204,6 +204,23 @@ paths:
         '202': { description: Prewarm requested. }
         '204': { description: Prewarming is disabled. }
         default: { $ref: '#/components/responses/Error' }
+  /watch/playback/release:
+    post:
+      operationId: releaseWatchPlayback
+      description: Immediately releases a controlled Watch playback lease. The operation is idempotent and safe to send during page unload.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [playback_id, stream_id]
+              properties:
+                playback_id: { type: string, minLength: 1, maxLength: 512 }
+                stream_id: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '204': { description: Playback lease released or already absent. }
+        default: { $ref: '#/components/responses/Error' }
   /studio/device-outputs:
     get:
       operationId: getDeviceOutputs

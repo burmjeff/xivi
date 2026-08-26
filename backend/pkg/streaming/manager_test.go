@@ -519,10 +519,14 @@ func TestManagerEnforcesPlaylistConnectionLimitAcrossChannels(t *testing.T) {
 	}, func() Config { return config })
 	t.Cleanup(manager.Close)
 	source := Source{URL: "https://provider.example/live.ts", PoolID: 9, PoolName: "Provider", ConnectionLimit: 1}
-	if _, err := manager.AcquireSources(context.Background(), "limited-one", []Source{source}); err != nil {
+	first, err := manager.AcquireSources(context.Background(), "limited-one", []Source{source})
+	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	if _, allowed := first.RegisterClient(ClientMetadata{ID: "active-viewer", Protocol: "mpegts"}, nil); !allowed {
+		t.Fatal("active viewer registration failed")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()
 	if _, err := manager.AcquireSources(ctx, "limited-two", []Source{source}); err == nil {
 		t.Fatal("a second channel exceeded the playlist connection limit")
@@ -530,6 +534,30 @@ func TestManagerEnforcesPlaylistConnectionLimitAcrossChannels(t *testing.T) {
 	usage := manager.ConnectionUsage()
 	if len(usage) != 1 || usage[0].Active != 1 || usage[0].Limit != 1 {
 		t.Fatalf("unexpected connection usage: %#v", usage)
+	}
+}
+
+func TestManagerReclaimsIdleSessionUnderSourcePressure(t *testing.T) {
+	config := testConfig(t.TempDir())
+	config.RetryLimit = 1
+	config.StartupHedge = 0
+	manager := NewManager(func(id, source string, generation uint64, config Config, hub *Hub) Producer {
+		return newReadyFake()
+	}, func() Config { return config })
+	t.Cleanup(manager.Close)
+	source := Source{URL: "https://provider.example/live.ts", PoolID: 10, PoolName: "Provider", ConnectionLimit: 1}
+	first, err := manager.AcquireSources(context.Background(), "idle-one", []Source{source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ActiveClientCount() != 0 {
+		t.Fatal("new session unexpectedly has viewers")
+	}
+	if _, err := manager.AcquireSources(context.Background(), "idle-two", []Source{source}); err != nil {
+		t.Fatalf("idle capacity was not reclaimed: %v", err)
+	}
+	if _, ok := manager.Get("idle-one"); ok {
+		t.Fatal("reclaimed idle session remained registered")
 	}
 }
 

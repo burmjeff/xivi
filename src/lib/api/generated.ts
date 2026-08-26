@@ -277,6 +277,23 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/watch/playback/release': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** @description Immediately releases a controlled Watch playback lease. The operation is idempotent and safe to send during page unload. */
+		post: operations['releaseWatchPlayback'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/studio/device-outputs': {
 		parameters: {
 			query?: never;
@@ -1838,6 +1855,32 @@ export interface operations {
 				content?: never;
 			};
 			/** @description Prewarming is disabled. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	releaseWatchPlayback: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': {
+					playback_id: string;
+					stream_id: string;
+				};
+			};
+		};
+		responses: {
+			/** @description Playback lease released or already absent. */
 			204: {
 				headers: {
 					[name: string]: unknown;

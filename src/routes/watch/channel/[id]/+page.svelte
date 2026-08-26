@@ -142,6 +142,18 @@
 		}
 		attachedUrl = '';
 	}
+	function releasePlayback() {
+		const id = attachedUrl ? streamId(attachedUrl) : '';
+		if (!id || !viewerId) return;
+		void fetch('/api/v2/watch/playback/release', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ playback_id: viewerId, stream_id: id }),
+			keepalive: true
+		}).catch(() => {
+			// Socket closure and server lease expiry remain the fallback.
+		});
+	}
 	function onPlaying() {
 		loading = false;
 		error = '';
@@ -371,7 +383,10 @@
 	$effect(() => {
 		if (video && channelQuery.data?.stream_url) void attach(channelQuery.data.stream_url);
 	});
-	onDestroy(cleanup);
+	onDestroy(() => {
+		releasePlayback();
+		cleanup();
+	});
 	function programmeTime(value?: string) {
 		return value
 			? new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' }).format(new Date(value))
@@ -380,6 +395,7 @@
 </script>
 
 <svelte:head><title>{channelQuery.data?.name ?? 'Watch'} · Xivi</title></svelte:head>
+<svelte:window onpagehide={releasePlayback} />
 <section class="player-page">
 	<div class="player-dock">
 		<div class="player-bar">

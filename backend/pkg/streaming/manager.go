@@ -147,6 +147,9 @@ type HLSProducer interface {
 type Manager struct {
 	mu                sync.RWMutex
 	sessions          map[string]*Session
+	playbackMu        sync.Mutex
+	playbacks         map[string]playbackLease
+	playbackStripes   [64]sync.Mutex
 	factory           ProducerFactory
 	config            func() Config
 	cleanupStop       chan struct{}
@@ -284,9 +287,10 @@ type FileCleanupReport struct {
 }
 
 const (
-	endedClientRetention   = 5 * time.Minute
-	maximumEndedClientRows = 1000
-	minimumClientTimeout   = 35 * time.Second
+	endedClientRetention    = 5 * time.Minute
+	maximumEndedClientRows  = 1000
+	minimumClientTimeout    = 35 * time.Second
+	minimumHLSClientTimeout = 10 * time.Second
 )
 
 var validSessionID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
@@ -307,6 +311,7 @@ func NewManager(factory ProducerFactory, configProvider func() Config) *Manager 
 	}
 	manager := &Manager{
 		sessions:     make(map[string]*Session),
+		playbacks:    make(map[string]playbackLease),
 		factory:      factory,
 		config:       configProvider,
 		cleanupStop:  make(chan struct{}),
@@ -360,6 +365,9 @@ func (m *Manager) acquireSources(ctx context.Context, id string, sources []Sourc
 	id = strings.Clone(id)
 	if !prewarm {
 		m.reclaimPrewarms(cleanSources, id)
+		if _, reusable := m.Get(id); !reusable {
+			m.ensureSourceCapacity(ctx, cleanSources, id)
+		}
 	}
 
 	m.mu.Lock()
@@ -1149,6 +1157,25 @@ func (s *Session) Subscribe() *Subscription {
 
 func (s *Session) IncidentID() string { return s.incidentID }
 
+func (s *Session) ActiveClientCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	active := 0
+	for _, client := range s.clients {
+		if client.endReason == "" {
+			active++
+		}
+	}
+	return active
+}
+
+func (s *Session) HasActiveClient(id string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	client := s.clients[id]
+	return client != nil && client.endReason == ""
+}
+
 func (s *Session) RegisterClient(metadata ClientMetadata, cancel func()) (string, bool) {
 	metadata.ID = strings.Clone(metadata.ID)
 	metadata.Protocol = strings.Clone(metadata.Protocol)
@@ -1230,7 +1257,7 @@ func (s *Session) CloseClient(id, reason string) {
 	s.emitEventForClient(id, "info", "viewer_disconnected", "Viewer disconnected: "+reason+".", "")
 }
 
-func (s *Session) DisconnectClient(id string) bool {
+func (s *Session) ReleaseClient(id, reason string) bool {
 	s.mu.Lock()
 	client := s.clients[id]
 	if client == nil || client.endReason != "" {
@@ -1239,11 +1266,15 @@ func (s *Session) DisconnectClient(id string) bool {
 	}
 	cancel := client.cancel
 	s.mu.Unlock()
-	s.CloseClient(id, "terminated_by_user")
+	s.CloseClient(id, reason)
 	if cancel != nil {
 		cancel()
 	}
 	return true
+}
+
+func (s *Session) DisconnectClient(id string) bool {
+	return s.ReleaseClient(id, "terminated_by_user")
 }
 
 func (s *Session) ForceNextSource() bool {
@@ -1391,9 +1422,9 @@ func (s *Session) sample(now time.Time) {
 				bytesOut += client.bytesDelivered
 				continue
 			}
-			timeout := minimumClientTimeout
+			timeout := max(minimumHLSClientTimeout, time.Duration(3*s.config.HLSSegmentSeconds)*time.Second)
 			if client.metadata.Protocol == "mpegts" {
-				timeout = max(timeout, 2*s.config.StallTimeout)
+				timeout = max(minimumClientTimeout, 2*s.config.StallTimeout)
 			}
 			if now.Sub(client.lastSeenAt) > timeout {
 				client.endReason = "viewer_timeout"
@@ -1668,6 +1699,7 @@ func (m *Manager) cleanupLoop() {
 			for _, session := range sessions {
 				session.sample(now)
 			}
+			m.prunePlaybacks(now)
 			for _, snapshot := range m.Snapshots() {
 				if snapshot.Clients == 0 {
 					session, ok := m.Get(snapshot.ID)
