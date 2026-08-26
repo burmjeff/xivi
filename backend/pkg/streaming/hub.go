@@ -8,10 +8,19 @@ import (
 const canonicalTransportChunkBytes = 7 * 188
 
 type mediaChunk struct {
-	data         []byte
-	hasPAT       bool
-	hasPMT       bool
-	randomAccess bool
+	data               []byte
+	hasPAT             bool
+	hasPMT             bool
+	randomAccess       bool
+	randomAccessOffset int
+	patPackets         []transportPacket
+	pmtPackets         []transportPacket
+}
+
+type transportPacket struct {
+	pid    uint16
+	offset int
+	data   []byte
 }
 
 // Hub fans one producer out to many MPEG-TS viewers. A slow viewer owns only
@@ -101,18 +110,20 @@ func (h *Hub) publish(data []byte, ownedData bool) {
 			}
 		}
 	}
-	randomVideoAccess := false
-	for _, pid := range metadata.randomAccessPIDs {
-		if h.videoPIDs[pid] {
-			randomVideoAccess = true
-			break
+	randomVideoAccessOffset := -1
+	for _, packet := range metadata.randomAccessPackets {
+		if h.videoPIDs[packet.pid] && (randomVideoAccessOffset < 0 || packet.offset < randomVideoAccessOffset) {
+			randomVideoAccessOffset = packet.offset
 		}
 	}
 	chunk := mediaChunk{
-		data:         owned,
-		hasPAT:       metadata.hasPAT,
-		hasPMT:       metadata.hasPMT,
-		randomAccess: randomVideoAccess,
+		data:               owned,
+		hasPAT:             metadata.hasPAT,
+		hasPMT:             metadata.hasPMT,
+		randomAccess:       randomVideoAccessOffset >= 0,
+		randomAccessOffset: randomVideoAccessOffset,
+		patPackets:         metadata.patPackets,
+		pmtPackets:         metadata.pmtPackets,
 	}
 
 	h.bytesPublished.Add(uint64(len(owned)))
@@ -147,12 +158,19 @@ func (h *Hub) releaseWaitingLocked(id uint64, sub *subscriber, current mediaChun
 	if !h.programmeKnown {
 		return
 	}
-	start, ok := decoderBootstrapStart(h.ring, h.hasVideo)
+	plan, ok := decoderBootstrapPlan(h.ring, h.hasVideo)
 	if !ok {
 		return
 	}
 	sub.waiting = false
-	for _, replay := range h.ring[start:] {
+	if len(plan.prefix) > 0 && !h.enqueueLocked(id, sub, mediaChunk{data: plan.prefix}) {
+		return
+	}
+	for index := plan.start; index < len(h.ring); index++ {
+		replay := h.ring[index]
+		if index == plan.start && plan.offset > 0 {
+			replay.data = replay.data[plan.offset:]
+		}
 		if !h.enqueueLocked(id, sub, replay) {
 			return
 		}
@@ -231,10 +249,10 @@ func (h *Hub) Subscribe() *Subscription {
 		return &Subscription{hub: h, sub: sub}
 	}
 
-	start := 0
+	plan := decoderBootstrap{start: 0}
 	bootstrapReady := false
 	if h.programmeKnown {
-		start, bootstrapReady = decoderBootstrapStart(h.ring, h.hasVideo)
+		plan, bootstrapReady = decoderBootstrapPlan(h.ring, h.hasVideo)
 	}
 	if (h.transportSeen && !bootstrapReady) || len(h.ring) == 0 {
 		// Never fall back to an arbitrary mid-GOP replay. A late video viewer
@@ -243,7 +261,15 @@ func (h *Hub) Subscribe() *Subscription {
 		// retaining an unbounded GOP in the warm ring.
 		sub.waiting = true
 	} else {
-		for _, chunk := range h.ring[start:] {
+		if len(plan.prefix) > 0 && sub.pending+len(plan.prefix) <= h.maxClientBytes {
+			sub.chunks <- mediaChunk{data: plan.prefix}
+			sub.pending += len(plan.prefix)
+		}
+		for index := plan.start; index < len(h.ring); index++ {
+			chunk := h.ring[index]
+			if index == plan.start && plan.offset > 0 {
+				chunk.data = chunk.data[plan.offset:]
+			}
 			if sub.pending+len(chunk.data) > h.maxClientBytes {
 				break
 			}
@@ -265,19 +291,21 @@ func (h *Hub) Subscribe() *Subscription {
 func (h *Hub) HasDecoderBootstrap(requireRandomAccess bool) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	_, ok := decoderBootstrapStart(h.ring, requireRandomAccess)
+	_, ok := decoderBootstrapPlan(h.ring, requireRandomAccess)
 	return ok
 }
 
 type transportChunkMetadata struct {
-	isTransport      bool
-	programmeKnown   bool
-	hasVideo         bool
-	hasPAT           bool
-	hasPMT           bool
-	randomAccess     bool
-	randomAccessPIDs []uint16
-	videoPIDs        []uint16
+	isTransport         bool
+	programmeKnown      bool
+	hasVideo            bool
+	hasPAT              bool
+	hasPMT              bool
+	randomAccess        bool
+	randomAccessPackets []transportPacket
+	videoPIDs           []uint16
+	patPackets          []transportPacket
+	pmtPackets          []transportPacket
 }
 
 func inspectTransportChunk(data []byte) transportChunkMetadata {
@@ -311,7 +339,8 @@ func inspectTransportChunk(data []byte) transportChunkMetadata {
 			length := int(packet[4])
 			if length > 0 && 5+length <= len(packet) && packet[5]&0x40 != 0 {
 				metadata.randomAccess = true
-				metadata.randomAccessPIDs = appendUniquePID(metadata.randomAccessPIDs, pid)
+				metadata.randomAccessPackets = append(metadata.randomAccessPackets,
+					transportPacket{pid: pid, offset: index, data: packet})
 			}
 		}
 		if packet[1]&0x40 == 0 || adaptation == 0 || adaptation == 2 {
@@ -332,9 +361,13 @@ func inspectTransportChunk(data []byte) transportChunkMetadata {
 		tableID := section[1+pointer]
 		if pid == 0 && tableID == 0x00 {
 			metadata.hasPAT = true
+			metadata.patPackets = append(metadata.patPackets,
+				transportPacket{pid: pid, offset: index, data: packet})
 		}
 		if tableID == 0x02 {
 			metadata.hasPMT = true
+			metadata.pmtPackets = append(metadata.pmtPackets,
+				transportPacket{pid: pid, offset: index, data: packet})
 			metadata.programmeKnown = true
 			videoPIDs := pmtVideoPIDs(section[1+pointer:])
 			metadata.hasVideo = metadata.hasVideo || len(videoPIDs) > 0
@@ -355,9 +388,20 @@ func appendUniquePID(pids []uint16, candidate uint16) []uint16 {
 	return append(pids, candidate)
 }
 
-func decoderBootstrapStart(ring []mediaChunk, requireRandomAccess bool) (int, bool) {
+type decoderBootstrap struct {
+	start  int
+	offset int
+	prefix []byte
+}
+
+// decoderBootstrapPlan starts video replay on the exact transport packet that
+// carries the random-access frame. Programme tables are copied into a compact
+// prefix instead of replaying all multiplexed audio and delta-video packets
+// between an older PAT/PMT and the keyframe. That pre-roll could put audio more
+// than a GOP ahead of video and leave strict live-TV clients on a black frame.
+func decoderBootstrapPlan(ring []mediaChunk, requireRandomAccess bool) (decoderBootstrap, bool) {
 	if len(ring) == 0 {
-		return 0, false
+		return decoderBootstrap{}, false
 	}
 	end := len(ring) - 1
 	if requireRandomAccess {
@@ -365,27 +409,53 @@ func decoderBootstrapStart(ring []mediaChunk, requireRandomAccess bool) (int, bo
 			end--
 		}
 		if end < 0 {
-			return 0, false
+			return decoderBootstrap{}, false
 		}
+		keyframeOffset := ring[end].randomAccessOffset
+		var pat []byte
+		var pmt []byte
+		for index := end; index >= 0 && (len(pat) == 0 || len(pmt) == 0); index-- {
+			limit := len(ring[index].data)
+			if index == end {
+				limit = keyframeOffset
+			}
+			if len(pat) == 0 {
+				pat = latestPacketBefore(ring[index].patPackets, limit)
+			}
+			if len(pmt) == 0 {
+				pmt = latestPacketBefore(ring[index].pmtPackets, limit)
+			}
+		}
+		if len(pat) == 0 || len(pmt) == 0 {
+			return decoderBootstrap{}, false
+		}
+		prefix := make([]byte, 0, len(pat)+len(pmt))
+		prefix = append(prefix, pat...)
+		prefix = append(prefix, pmt...)
+		return decoderBootstrap{start: end, offset: keyframeOffset, prefix: prefix}, true
 	}
 	for candidate := end; candidate >= 0; candidate-- {
-		if requireRandomAccess && !ring[candidate].randomAccess {
-			continue
-		}
 		hasPAT := false
 		hasPMT := false
 		for index := candidate; index >= 0; index-- {
 			hasPAT = hasPAT || ring[index].hasPAT
 			hasPMT = hasPMT || ring[index].hasPMT
 			if hasPAT && hasPMT {
-				return index, true
+				return decoderBootstrap{start: index}, true
 			}
 		}
-		if !requireRandomAccess {
-			break
+		break
+	}
+	return decoderBootstrap{}, false
+}
+
+func latestPacketBefore(packets []transportPacket, limit int) []byte {
+	for index := len(packets) - 1; index >= 0; index-- {
+		if packets[index].offset < limit {
+			return packets[index].data
 		}
 	}
-	return 0, false
+	return nil
 }
 
 func (s *Subscription) Next() ([]byte, bool) {

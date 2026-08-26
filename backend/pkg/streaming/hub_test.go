@@ -60,11 +60,40 @@ func TestHubReplaysVideoFromLatestDecoderBootstrap(t *testing.T) {
 
 	subscription := hub.Subscribe()
 	t.Cleanup(subscription.Close)
-	for index, expected := range [][]byte{tables, keyframe, live} {
+	programmeTables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
+	for index, expected := range [][]byte{programmeTables, keyframe, live} {
 		chunk, ok := subscription.Next()
 		if !ok || !bytes.Equal(chunk, expected) {
 			t.Fatalf("bootstrap chunk %d did not match expected decoder-safe replay", index)
 		}
+	}
+}
+
+func TestHubStartsOnExactVideoRandomAccessPacket(t *testing.T) {
+	hub := NewHub(1024 * 1024)
+	pat := tsPacket(0, patSection())
+	pmt := tsPacket(0x0100, pmtSection())
+	delta := tsPacket(0x0101, nil)
+	keyframe := randomAccessPacket(0x0101)
+	afterKeyframe := tsPacket(0x0102, nil)
+	combined := append([]byte{}, pat...)
+	combined = append(combined, pmt...)
+	combined = append(combined, delta...)
+	combined = append(combined, keyframe...)
+	combined = append(combined, afterKeyframe...)
+
+	hub.Publish(combined)
+	subscription := hub.Subscribe()
+	t.Cleanup(subscription.Close)
+
+	prefix, ok := subscription.Next()
+	if !ok || !bytes.Equal(prefix, append(append([]byte{}, pat...), pmt...)) {
+		t.Fatal("video bootstrap did not emit a compact PAT/PMT prefix")
+	}
+	media, ok := subscription.Next()
+	wantMedia := append(append([]byte{}, keyframe...), afterKeyframe...)
+	if !ok || !bytes.Equal(media, wantMedia) {
+		t.Fatal("video bootstrap included multiplexed packets from before the keyframe")
 	}
 }
 
@@ -124,7 +153,8 @@ func TestHubWaitsForNextBootstrapAfterWarmKeyframeRotatesOut(t *testing.T) {
 	}
 	hub.Publish(keyframe)
 
-	for index, expected := range [][]byte{tables, keyframe} {
+	programmeTables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
+	for index, expected := range [][]byte{programmeTables, keyframe} {
 		chunk, ok := subscription.Next()
 		if !ok || !bytes.Equal(chunk, expected) {
 			t.Fatalf("resumed bootstrap chunk %d was not decoder-safe", index)
@@ -166,7 +196,8 @@ func TestHubDiscontinuityRegatesExistingViewer(t *testing.T) {
 	}
 	hub.Publish(tables)
 	hub.Publish(keyframe)
-	if chunk, ok := subscription.Next(); !ok || !bytes.Equal(chunk, tables) {
+	programmeTables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
+	if chunk, ok := subscription.Next(); !ok || !bytes.Equal(chunk, programmeTables) {
 		t.Fatal("viewer did not resume safely after source discontinuity")
 	}
 }

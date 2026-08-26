@@ -563,16 +563,23 @@ func (p *gstProducer) addTransportOutput(tee *gst.Element) error {
 		return fmt.Errorf("create shared transport queue: %w", err)
 	}
 	_ = queue.Set("max-size-time", uint64(2*time.Second))
-	_ = queue.Set("max-size-bytes", uint(0))
+	_ = queue.Set("max-size-bytes", uint(16*1024*1024))
 	_ = queue.Set("max-size-buffers", uint(0))
-	_ = queue.Set("leaky", 2)
+	// Never discard packets after the canonical mux. Even a single dropped TS
+	// packet can corrupt the first keyframe and leave strict tuner clients black.
+	// The downstream Hub is already non-blocking and independently bounds every
+	// viewer, while this queue provides short scheduling backpressure only.
+	_ = queue.Set("leaky", 0)
 
 	sink, err := gstapp.NewAppSink()
 	if err != nil {
 		return fmt.Errorf("create shared transport sink: %w", err)
 	}
-	sink.SetMaxBuffers(8)
-	sink.SetDrop(true)
+	// Eight 1,316-byte samples represented only a few milliseconds at common
+	// channel bitrates. A brief Go scheduling pause could therefore make the
+	// appsink silently drop canonical transport packets during cold startup.
+	sink.SetMaxBuffers(512)
+	sink.SetDrop(false)
 	sink.SetWaitOnEOS(false)
 	sink.SetCallbacks(&gstapp.SinkCallbacks{
 		NewSampleFunc: func(appSink *gstapp.Sink) gst.FlowReturn {
