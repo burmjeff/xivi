@@ -21,12 +21,16 @@ func TestGSTProducerSharesMPEGTSAndCreatesHLS(t *testing.T) {
 	fixture := filepath.Join(temporary, "live.ts")
 	command := exec.Command(
 		"gst-launch-1.0", "-q",
+		"mpegtsmux", "name=mux",
+		"!", "filesink", "location="+fixture,
 		"videotestsrc", "num-buffers=90", "pattern=smpte",
 		"!", "video/x-raw,format=I420,framerate=30/1,width=320,height=180",
 		"!", "x264enc", "tune=zerolatency", "speed-preset=ultrafast", "key-int-max=30",
 		"!", "h264parse", "config-interval=-1",
-		"!", "mpegtsmux",
-		"!", "filesink", "location="+fixture,
+		"!", "mux.",
+		"audiotestsrc", "num-buffers=130", "wave=sine",
+		"!", "audioconvert", "!", "audioresample",
+		"!", "voaacenc", "!", "aacparse", "!", "mux.",
 	)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("generate MPEG-TS fixture: %v\n%s", err, output)
@@ -87,7 +91,8 @@ func TestGSTProducerSharesMPEGTSAndCreatesHLS(t *testing.T) {
 		t.Fatal("producer did not emit valid PAT/PMT media")
 	}
 	status := hub.BootstrapStatus()
-	if !status.Complete || status.VideoCodec != "h264" || !status.ParameterSetsComplete {
+	if !status.Complete || status.VideoCodec != "h264" || !status.ParameterSetsComplete ||
+		!status.HasAudio || status.FirstVideoPTS90K == nil || status.FirstAudioPTS90K == nil {
 		t.Fatalf("producer became ready without a complete H.264 cold bootstrap: %+v", status)
 	}
 
@@ -104,7 +109,7 @@ func TestGSTProducerSharesMPEGTSAndCreatesHLS(t *testing.T) {
 			}
 			downstream.Publish(chunk)
 			status := downstream.BootstrapStatus()
-			if status.Complete {
+			if status.Complete && status.HasAudio && status.FirstVideoPTS90K != nil && status.FirstAudioPTS90K != nil {
 				received <- status
 				return
 			}
@@ -112,7 +117,8 @@ func TestGSTProducerSharesMPEGTSAndCreatesHLS(t *testing.T) {
 	}()
 	select {
 	case replayStatus := <-received:
-		if !replayStatus.Complete || !replayStatus.ParameterSetsComplete {
+		if !replayStatus.Complete || !replayStatus.ParameterSetsComplete || !replayStatus.HasAudio ||
+			replayStatus.FirstVideoPTS90K == nil || replayStatus.FirstAudioPTS90K == nil {
 			t.Fatalf("shared MPEG-TS replay was not independently probeable: %+v", replayStatus)
 		}
 	case <-context.Done():

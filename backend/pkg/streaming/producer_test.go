@@ -1,6 +1,34 @@
 package streaming
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+func TestProducerReadinessRequiresEveryRoutedTrack(t *testing.T) {
+	hub := NewHub(1024 * 1024)
+	producer := &gstProducer{
+		hub:             hub,
+		routed:          map[string]bool{"video": true, "audio": true},
+		lastRouteChange: time.Now().Add(-trackDiscoverySettle),
+	}
+	hub.Publish(append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...))
+	hub.Publish(pcrPacket(0x0101))
+	hub.Publish(randomAccessPacket(0x0101))
+	if producer.decoderReady(time.Now()) {
+		t.Fatal("producer became ready while the canonical PMT omitted routed audio")
+	}
+	hub.Publish(tsPacket(0x0100, audioVideoPMTSection()))
+	hub.Publish(audioPESPacket(0x0102, 90_000))
+	if producer.decoderReady(time.Now()) {
+		t.Fatal("producer reused a video bootstrap from before the complete PMT")
+	}
+	hub.Publish(pcrPacket(0x0101))
+	hub.Publish(randomAccessPacket(0x0101))
+	if !producer.decoderReady(time.Now()) {
+		t.Fatal("producer did not become ready with synchronized audio/video bootstrap data")
+	}
+}
 
 func TestParserForCapsRoutesOnlyNegotiatedMPEGAudioVersions(t *testing.T) {
 	tests := []struct {

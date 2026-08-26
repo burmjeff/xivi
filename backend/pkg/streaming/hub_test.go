@@ -233,6 +233,46 @@ func TestBootstrapStatusReportsFirstAudioVideoPTS(t *testing.T) {
 	}
 }
 
+func TestHubRegatesWhenPMTAddsAudioAfterVideoBootstrap(t *testing.T) {
+	hub := NewHub(1024 * 1024)
+	videoTables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
+	hub.Publish(videoTables)
+	hub.Publish(pcrPacket(0x0101))
+	hub.Publish(randomAccessPacket(0x0101))
+	if !hub.HasDecoderBootstrap(true) {
+		t.Fatal("initial video programme did not become ready")
+	}
+
+	// mpegtsmux can publish this expanded map after its audio pad is attached.
+	// The old keyframe must no longer be replayable because its preceding PMT
+	// did not tell a cold decoder that an audio PID exists.
+	avPMT := tsPacket(0x0100, audioVideoPMTSection())
+	hub.Publish(avPMT)
+	hub.Publish(audioPESPacket(0x0102, 90_000))
+	if hub.HasDecoderBootstrap(true) {
+		t.Fatal("video-only bootstrap remained usable after the PMT added audio")
+	}
+	status := hub.BootstrapStatus()
+	if !status.HasAudio || len(status.AudioPIDs) != 1 || status.AudioPIDs[0] != 0x0102 {
+		t.Fatalf("expanded audio programme was not tracked: %+v", status)
+	}
+
+	subscription := hub.Subscribe()
+	t.Cleanup(subscription.Close)
+	if pending := subscriptionPending(subscription); pending != 0 {
+		t.Fatalf("cold subscriber received an incomplete programme: %d bytes", pending)
+	}
+	hub.Publish(pcrPacket(0x0101))
+	hub.Publish(randomAccessPacket(0x0101))
+
+	prefix, ok := subscription.Next()
+	wantPrefix := append(tsPacket(0, patSection()), avPMT...)
+	wantPrefix = append(wantPrefix, bootstrapPCRPacket(pcrPacket(0x0101))...)
+	if !ok || !bytes.Equal(prefix, wantPrefix) {
+		t.Fatal("subscriber did not restart with the complete audio/video PMT")
+	}
+}
+
 func TestBootstrapPCRPacketStripsMediaPayload(t *testing.T) {
 	source := pcrPacket(0x0101)
 	source[12] = 0x12

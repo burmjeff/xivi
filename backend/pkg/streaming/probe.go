@@ -5,35 +5,30 @@ package streaming
 // because an upstream server returned an HTML error body or partial bytes.
 type tsProbe struct {
 	buffer []byte
-	offset int
 	pmtPID uint16
 	pat    bool
 	pmt    bool
 	video  bool
+	audio  bool
 }
 
 func (p *tsProbe) Push(data []byte) bool {
-	if p.pat && p.pmt {
-		return true
-	}
-	if len(p.buffer) < 2*1024*1024 {
-		remaining := 2*1024*1024 - len(p.buffer)
-		if len(data) > remaining {
-			data = data[:remaining]
+	p.buffer = append(p.buffer, data...)
+	offset := findTSSync(p.buffer)
+	if offset < 0 {
+		// Retain enough tail bytes to recognize a packet boundary when the next
+		// appsink sample arrives, without turning the readiness probe into an
+		// ever-growing recording of the stream.
+		if len(p.buffer) > 2*188 {
+			p.buffer = append([]byte(nil), p.buffer[len(p.buffer)-2*188:]...)
 		}
-		p.buffer = append(p.buffer, data...)
+		return p.pat && p.pmt
 	}
-	if p.offset == 0 {
-		p.offset = findTSSync(p.buffer)
-		if p.offset < 0 {
-			p.offset = 0
-			return false
-		}
-	}
-	for index := p.offset; index+188 <= len(p.buffer); index += 188 {
+	index := offset
+	for ; index+188 <= len(p.buffer); index += 188 {
 		packet := p.buffer[index : index+188]
 		if packet[0] != 0x47 {
-			continue
+			break
 		}
 		pid := uint16(packet[1]&0x1f)<<8 | uint16(packet[2])
 		payloadStart := packet[1]&0x40 != 0
@@ -64,14 +59,24 @@ func (p *tsProbe) Push(data []byte) bool {
 		}
 		if p.pat && pid == p.pmtPID && payloadStart && len(section) >= 3 && section[0] == 0x02 {
 			p.pmt = true
-			p.video = pmtHasVideo(section)
+			streams := pmtElementaryStreams(section)
+			p.video = len(videoPIDsFromStreams(streams)) > 0
+			p.audio = false
+			for _, stream := range streams {
+				p.audio = p.audio || stream.audio
+			}
 		}
 	}
+	p.buffer = append([]byte(nil), p.buffer[index:]...)
 	return p.pat && p.pmt
 }
 
 func (p *tsProbe) HasVideo() bool {
 	return p.video
+}
+
+func (p *tsProbe) HasAudio() bool {
+	return p.audio
 }
 
 func findTSSync(data []byte) int {

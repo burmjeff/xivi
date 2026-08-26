@@ -1,6 +1,7 @@
 package streaming
 
 import (
+	"slices"
 	"sync"
 	"sync/atomic"
 )
@@ -79,7 +80,9 @@ type BootstrapStatus struct {
 	PMT                   bool     `json:"pmt"`
 	PCR                   bool     `json:"pcr"`
 	HasVideo              bool     `json:"has_video"`
+	HasAudio              bool     `json:"has_audio"`
 	VideoPID              uint16   `json:"video_pid,omitempty"`
+	AudioPIDs             []uint16 `json:"audio_pids,omitempty"`
 	VideoCodec            string   `json:"video_codec,omitempty"`
 	RandomAccess          bool     `json:"random_access"`
 	RequiredParameterSets []string `json:"required_parameter_sets,omitempty"`
@@ -182,38 +185,25 @@ func (h *Hub) publish(data []byte, ownedData bool) {
 	h.pmtSeen = h.pmtSeen || metadata.hasPMT
 	if metadata.programmeKnown {
 		h.programmeKnown = true
-		h.hasVideo = h.hasVideo || metadata.hasVideo
-		if len(metadata.videoPIDs) > 0 {
-			if h.videoPIDs == nil {
-				h.videoPIDs = make(map[uint16]bool)
+		// The latest PMT is authoritative. Keeping a union of historical PIDs
+		// makes a late audio/video pad look available even when the programme
+		// map used to bootstrap a new decoder does not advertise it yet.
+		h.hasVideo = metadata.hasVideo
+		h.videoPIDs = make(map[uint16]bool, len(metadata.videoPIDs))
+		h.videoCodecs = make(map[uint16]videoCodec, len(metadata.videoPIDs))
+		h.audioPIDs = make(map[uint16]bool)
+		h.pcrPIDs = make(map[uint16]bool, len(metadata.pcrPIDs))
+		for _, stream := range metadata.streams {
+			if stream.video {
+				h.videoPIDs[stream.pid] = true
+				h.videoCodecs[stream.pid] = stream.codec
 			}
-			for _, pid := range metadata.videoPIDs {
-				h.videoPIDs[pid] = true
-			}
-		}
-		if len(metadata.streams) > 0 {
-			if h.videoCodecs == nil {
-				h.videoCodecs = make(map[uint16]videoCodec)
-			}
-			if h.audioPIDs == nil {
-				h.audioPIDs = make(map[uint16]bool)
-			}
-			for _, stream := range metadata.streams {
-				if stream.video {
-					h.videoCodecs[stream.pid] = stream.codec
-				}
-				if stream.audio {
-					h.audioPIDs[stream.pid] = true
-				}
+			if stream.audio {
+				h.audioPIDs[stream.pid] = true
 			}
 		}
-		if len(metadata.pcrPIDs) > 0 {
-			if h.pcrPIDs == nil {
-				h.pcrPIDs = make(map[uint16]bool)
-			}
-			for _, pid := range metadata.pcrPIDs {
-				h.pcrPIDs[pid] = true
-			}
+		for _, pid := range metadata.pcrPIDs {
+			h.pcrPIDs[pid] = true
 		}
 	}
 	pcrPackets := make([]transportPacket, 0, len(metadata.pcrPackets))
@@ -269,7 +259,7 @@ func (h *Hub) releaseWaitingLocked(id uint64, sub *subscriber, current mediaChun
 	if !h.programmeKnown {
 		return
 	}
-	plan, ok := decoderBootstrapPlan(h.ring, h.hasVideo)
+	plan, ok := h.decoderBootstrapPlanLocked(h.hasVideo)
 	if !ok {
 		return
 	}
@@ -373,7 +363,7 @@ func (h *Hub) Subscribe() *Subscription {
 	plan := decoderBootstrap{start: 0}
 	bootstrapReady := false
 	if h.programmeKnown {
-		plan, bootstrapReady = decoderBootstrapPlan(h.ring, h.hasVideo)
+		plan, bootstrapReady = h.decoderBootstrapPlanLocked(h.hasVideo)
 	}
 	if (h.transportSeen && !bootstrapReady) || len(h.ring) == 0 {
 		// Never fall back to an arbitrary mid-GOP replay. A late video viewer
@@ -413,7 +403,7 @@ func (h *Hub) Subscribe() *Subscription {
 func (h *Hub) HasDecoderBootstrap(requireRandomAccess bool) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	_, ok := decoderBootstrapPlan(h.ring, requireRandomAccess)
+	_, ok := h.decoderBootstrapPlanLocked(requireRandomAccess)
 	return ok
 }
 
@@ -426,6 +416,7 @@ func (h *Hub) BootstrapStatus() BootstrapStatus {
 		PMT:          h.pmtSeen,
 		PCR:          h.pcrSeen,
 		HasVideo:     h.hasVideo,
+		HasAudio:     len(h.audioPIDs) > 0,
 		RandomAccess: h.randomSeen,
 	}
 	var selectedPID uint16
@@ -434,6 +425,10 @@ func (h *Hub) BootstrapStatus() BootstrapStatus {
 			selectedPID = pid
 		}
 	}
+	for pid := range h.audioPIDs {
+		status.AudioPIDs = append(status.AudioPIDs, pid)
+	}
+	slices.Sort(status.AudioPIDs)
 	if selectedPID != 0 {
 		codec := h.videoCodecs[selectedPID]
 		status.VideoPID = selectedPID
@@ -449,7 +444,7 @@ func (h *Hub) BootstrapStatus() BootstrapStatus {
 	} else {
 		status.ParameterSetsComplete = true
 	}
-	_, status.Complete = decoderBootstrapPlan(h.ring, h.hasVideo)
+	_, status.Complete = h.decoderBootstrapPlanLocked(h.hasVideo)
 	if !status.Transport {
 		status.Missing = append(status.Missing, "transport")
 	}
@@ -840,79 +835,86 @@ type decoderBootstrap struct {
 	prefix []byte
 }
 
-// decoderBootstrapPlan starts video replay at the PES/access-unit boundary that
+// decoderBootstrapPlanLocked starts video replay at the PES/access-unit boundary that
 // contains fresh codec initialization headers and a random-access frame.
 // Programme tables and a payload-free program clock reference are copied into
 // a compact prefix. This gives strict tuner probes SPS/PPS (or their codec
-// equivalent) without restoring an old GOP or putting audio seconds ahead.
-func decoderBootstrapPlan(ring []mediaChunk, requireRandomAccess bool) (decoderBootstrap, bool) {
+// equivalent) without restoring an old GOP or putting audio seconds ahead. The
+// PMT must describe the current complete set of audio/video PIDs; this prevents
+// a mux's temporary audio-only or video-only startup map from being replayed.
+func (h *Hub) decoderBootstrapPlanLocked(requireRandomAccess bool) (decoderBootstrap, bool) {
+	ring := h.ring
 	if len(ring) == 0 {
 		return decoderBootstrap{}, false
 	}
-	end := len(ring) - 1
 	if requireRandomAccess {
-		for end >= 0 && !ring[end].decoderAccess {
-			end--
-		}
-		if end < 0 {
-			return decoderBootstrap{}, false
-		}
-		start := -1
-		for index := end; index >= 0; index-- {
-			if ring[index].sequence == ring[end].bootstrapSequence {
-				start = index
-				break
-			}
-		}
-		if start < 0 {
-			return decoderBootstrap{}, false
-		}
-		bootstrapOffset := ring[end].bootstrapOffset
-		var pat []byte
-		var pmt []byte
-		var pcr []byte
-		for index := start; index >= 0 && (len(pat) == 0 || len(pmt) == 0); index-- {
-			limit := len(ring[index].data)
-			if index == start {
-				limit = bootstrapOffset
-			}
-			if len(pat) == 0 {
-				pat = latestPacketBefore(ring[index].patPackets, limit)
-			}
-			if len(pmt) == 0 {
-				pmt = latestPacketBefore(ring[index].pmtPackets, limit)
-			}
-		}
-		for index := end; index >= 0 && len(pcr) == 0; index-- {
-			limit := len(ring[index].data)
-			if ring[index].sequence == ring[end].accessSequence {
-				// A PCR on the random-access packet is safe to copy as an
-				// adaptation-only discontinuity immediately before the AU.
-				limit = ring[end].accessOffset + 1
-			} else if ring[index].sequence > ring[end].accessSequence {
+		for end := len(ring) - 1; end >= 0; end-- {
+			if !ring[end].decoderAccess {
 				continue
 			}
-			pcr = latestPacketBefore(ring[index].pcrPackets, limit)
+			start := -1
+			for index := end; index >= 0; index-- {
+				if ring[index].sequence == ring[end].bootstrapSequence {
+					start = index
+					break
+				}
+			}
+			if start < 0 {
+				continue
+			}
+			bootstrapOffset := ring[end].bootstrapOffset
+			var pat []byte
+			var pmt []byte
+			var pcr []byte
+			for index := start; index >= 0 && (len(pat) == 0 || len(pmt) == 0); index-- {
+				limit := len(ring[index].data)
+				if index == start {
+					limit = bootstrapOffset
+				}
+				if len(pat) == 0 {
+					pat = latestPacketBefore(ring[index].patPackets, limit)
+				}
+				if len(pmt) == 0 {
+					pmt = latestMatchingPMTBefore(ring[index].pmtPackets, limit, h.videoCodecs, h.audioPIDs)
+				}
+			}
+			for index := end; index >= 0 && len(pcr) == 0; index-- {
+				limit := len(ring[index].data)
+				if ring[index].sequence == ring[end].accessSequence {
+					// A PCR on the random-access packet is safe to copy as an
+					// adaptation-only discontinuity immediately before the AU.
+					limit = ring[end].accessOffset + 1
+				} else if ring[index].sequence > ring[end].accessSequence {
+					continue
+				}
+				pcr = latestPacketBeforePIDs(ring[index].pcrPackets, limit, h.pcrPIDs)
+			}
+			if len(pat) == 0 || len(pmt) == 0 || len(pcr) == 0 {
+				continue
+			}
+			clock := bootstrapPCRPacket(pcr)
+			if len(clock) == 0 {
+				continue
+			}
+			prefix := make([]byte, 0, len(pat)+len(pmt)+len(clock))
+			prefix = append(prefix, pat...)
+			prefix = append(prefix, pmt...)
+			prefix = append(prefix, clock...)
+			return decoderBootstrap{start: start, offset: bootstrapOffset, prefix: prefix}, true
 		}
-		if len(pat) == 0 || len(pmt) == 0 || len(pcr) == 0 {
-			return decoderBootstrap{}, false
-		}
-		clock := bootstrapPCRPacket(pcr)
-		if len(clock) == 0 {
-			return decoderBootstrap{}, false
-		}
-		prefix := make([]byte, 0, len(pat)+len(pmt)+len(clock))
-		prefix = append(prefix, pat...)
-		prefix = append(prefix, pmt...)
-		prefix = append(prefix, clock...)
-		return decoderBootstrap{start: start, offset: bootstrapOffset, prefix: prefix}, true
+		return decoderBootstrap{}, false
 	}
+	end := len(ring) - 1
 	for candidate := end; candidate >= 0; candidate-- {
 		hasPAT := false
 		hasPMT := false
 		for index := candidate; index >= 0; index-- {
 			hasPAT = hasPAT || ring[index].hasPAT
-			hasPMT = hasPMT || ring[index].hasPMT
+			if !hasPMT {
+				hasPMT = len(latestMatchingPMTBefore(
+					ring[index].pmtPackets, len(ring[index].data), h.videoCodecs, h.audioPIDs,
+				)) > 0
+			}
 			if hasPAT && hasPMT {
 				return decoderBootstrap{start: index}, true
 			}
@@ -920,6 +922,67 @@ func decoderBootstrapPlan(ring []mediaChunk, requireRandomAccess bool) (decoderB
 		break
 	}
 	return decoderBootstrap{}, false
+}
+
+func latestMatchingPMTBefore(packets []transportPacket, limit int, videoCodecs map[uint16]videoCodec, audioPIDs map[uint16]bool) []byte {
+	for index := len(packets) - 1; index >= 0; index-- {
+		packet := packets[index]
+		if packet.offset < limit && pmtPacketMatches(packet.data, videoCodecs, audioPIDs) {
+			return packet.data
+		}
+	}
+	return nil
+}
+
+func pmtPacketMatches(packet []byte, videoCodecs map[uint16]videoCodec, audioPIDs map[uint16]bool) bool {
+	section := transportPSISection(packet)
+	if len(section) == 0 || section[0] != 0x02 {
+		return false
+	}
+	streams := pmtElementaryStreams(section)
+	matchedVideo := 0
+	matchedAudio := 0
+	for _, stream := range streams {
+		if stream.video {
+			codec, expected := videoCodecs[stream.pid]
+			if !expected || codec != stream.codec {
+				return false
+			}
+			matchedVideo++
+		}
+		if stream.audio {
+			if !audioPIDs[stream.pid] {
+				return false
+			}
+			matchedAudio++
+		}
+	}
+	return matchedVideo == len(videoCodecs) && matchedAudio == len(audioPIDs)
+}
+
+func transportPSISection(packet []byte) []byte {
+	if len(packet) != 188 || packet[0] != 0x47 || packet[1]&0x40 == 0 {
+		return nil
+	}
+	payload := transportPayload(packet)
+	if len(payload) == 0 {
+		return nil
+	}
+	pointer := int(payload[0])
+	if 1+pointer >= len(payload) {
+		return nil
+	}
+	return payload[1+pointer:]
+}
+
+func latestPacketBeforePIDs(packets []transportPacket, limit int, pids map[uint16]bool) []byte {
+	for index := len(packets) - 1; index >= 0; index-- {
+		packet := packets[index]
+		if packet.offset < limit && pids[packet.pid] {
+			return packet.data
+		}
+	}
+	return nil
 }
 
 // bootstrapPCRPacket copies only the clock from a source packet. Replaying the

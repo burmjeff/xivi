@@ -18,6 +18,11 @@ import (
 
 var gstInit sync.Once
 
+// Dynamic demuxers may announce audio and video a few callbacks apart. Give
+// track discovery a short quiet window before declaring the canonical mux
+// ready so its initial decoder bootstrap cannot expose a one-track PMT.
+const trackDiscoverySettle = 250 * time.Millisecond
+
 type gstProducer struct {
 	id         string
 	source     string
@@ -46,6 +51,8 @@ type gstProducer struct {
 	inputTSOnce          sync.Once
 	routeMu              sync.Mutex
 	routed               map[string]bool
+	expectedMedia        map[string]bool
+	lastRouteChange      time.Time
 	mediaMu              sync.RWMutex
 	mediaTracks          []string
 	compatibilityActions []string
@@ -53,16 +60,17 @@ type gstProducer struct {
 
 func newGSTProducer(id, source string, generation uint64, config Config, hub *Hub) Producer {
 	return &gstProducer{
-		id:         id,
-		source:     source,
-		generation: generation,
-		config:     config,
-		hub:        hub,
-		ready:      make(chan struct{}),
-		hlsReady:   make(chan struct{}),
-		errors:     make(chan error, 1),
-		busDone:    make(chan struct{}),
-		routed:     make(map[string]bool),
+		id:            id,
+		source:        source,
+		generation:    generation,
+		config:        config,
+		hub:           hub,
+		ready:         make(chan struct{}),
+		hlsReady:      make(chan struct{}),
+		errors:        make(chan error, 1),
+		busDone:       make(chan struct{}),
+		routed:        make(map[string]bool),
+		expectedMedia: make(map[string]bool),
 	}
 }
 
@@ -316,6 +324,13 @@ func (p *gstProducer) routeTransportPad(pad *gst.Pad, mux *gst.Element) error {
 		if p.stopping.Load() {
 			return
 		}
+		name := strings.ToLower(elementary.GetName())
+		switch {
+		case strings.HasPrefix(name, "video_"):
+			p.expectMedia("video")
+		case strings.HasPrefix(name, "audio_"):
+			p.expectMedia("audio")
+		}
 		p.routeElementaryPadWhenNegotiated(elementary, mux)
 	})
 	p.graphMu.Unlock()
@@ -374,6 +389,7 @@ func (p *gstProducer) routeElementaryPad(pad *gst.Pad, capsString string, mux *g
 		log.Warn().Str("stream_id", p.id).Str("caps", capsString).Msg("Ignoring unsupported source media track")
 		return nil
 	}
+	p.expectMedia(media)
 	p.routeMu.Lock()
 	if p.routed[media] {
 		p.routeMu.Unlock()
@@ -381,6 +397,7 @@ func (p *gstProducer) routeElementaryPad(pad *gst.Pad, capsString string, mux *g
 		return nil
 	}
 	p.routed[media] = true
+	p.lastRouteChange = time.Now()
 	p.routeMu.Unlock()
 	elements, err := p.routePadToMux(pad, parserName, capsString, media, mux)
 	if err != nil {
@@ -401,6 +418,46 @@ func (p *gstProducer) routeElementaryPad(pad *gst.Pad, capsString string, mux *g
 		element.SyncStateWithParent()
 	}
 	return nil
+}
+
+func (p *gstProducer) expectMedia(media string) {
+	p.routeMu.Lock()
+	defer p.routeMu.Unlock()
+	if p.expectedMedia == nil {
+		p.expectedMedia = make(map[string]bool)
+	}
+	if p.expectedMedia[media] {
+		return
+	}
+	p.expectedMedia[media] = true
+	p.lastRouteChange = time.Now()
+}
+
+func (p *gstProducer) decoderReady(now time.Time) bool {
+	p.routeMu.Lock()
+	expectsVideo := p.expectedMedia["video"] || p.routed["video"]
+	expectsAudio := p.expectedMedia["audio"] || p.routed["audio"]
+	routedVideo := p.routed["video"]
+	routedAudio := p.routed["audio"]
+	lastRouteChange := p.lastRouteChange
+	p.routeMu.Unlock()
+	if (!expectsVideo && !expectsAudio) || lastRouteChange.IsZero() || now.Sub(lastRouteChange) < trackDiscoverySettle {
+		return false
+	}
+	if (expectsVideo && !routedVideo) || (expectsAudio && !routedAudio) {
+		return false
+	}
+	status := p.hub.BootstrapStatus()
+	if !status.Complete {
+		return false
+	}
+	if expectsVideo && (!status.HasVideo || status.FirstVideoPTS90K == nil) {
+		return false
+	}
+	if expectsAudio && (!status.HasAudio || status.FirstAudioPTS90K == nil) {
+		return false
+	}
+	return true
 }
 
 func (p *gstProducer) routePadToMux(pad *gst.Pad, parserName, capsString, media string, mux *gst.Element) ([]*gst.Element, error) {
@@ -602,7 +659,7 @@ func (p *gstProducer) addTransportOutput(tee *gst.Element) error {
 			p.lastDataNS.Store(time.Now().UnixNano())
 			hasTables := p.probe.Push(data)
 			p.hub.Publish(data)
-			if hasTables && p.hub.HasDecoderBootstrap(p.probe.HasVideo()) {
+			if hasTables && p.decoderReady(time.Now()) {
 				p.readyOnce.Do(func() {
 					close(p.ready)
 					go p.enableSteadyBuffering()

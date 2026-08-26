@@ -28,6 +28,23 @@ func TestTSProbeRecognizesAudioOnlyPMT(t *testing.T) {
 	if probe.HasVideo() {
 		t.Fatal("audio-only PMT was classified as video")
 	}
+	if !probe.HasAudio() {
+		t.Fatal("audio-only PMT was not classified as audio")
+	}
+}
+
+func TestTSProbeTracksExpandedProgrammeMap(t *testing.T) {
+	probe := &tsProbe{}
+	video := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
+	video = append(video, tsPacket(0x1fff, nil)...)
+	if !probe.Push(video) || !probe.HasVideo() || probe.HasAudio() {
+		t.Fatal("probe did not recognize the initial video-only programme")
+	}
+	expanded := append(tsPacket(0, patSection()), tsPacket(0x0100, audioVideoPMTSection())...)
+	expanded = append(expanded, tsPacket(0x1fff, nil)...)
+	if !probe.Push(expanded) || !probe.HasVideo() || !probe.HasAudio() {
+		t.Fatal("probe froze on the first PMT instead of tracking the added audio track")
+	}
 }
 
 func TestTSProbeRejectsNonTransportResponse(t *testing.T) {
