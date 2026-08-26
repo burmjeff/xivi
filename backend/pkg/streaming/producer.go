@@ -171,6 +171,10 @@ func (p *gstProducer) Start() error {
 	setOptional(source, "ring-buffer-max-size", uint64(8*1024*1024))
 	p.sourceBin = source
 	setOptional(mux, "alignment", 7)
+	// Repeat programme tables frequently so every decoder-safe warm replay can
+	// begin close to its keyframe instead of inheriting a long delta-frame run.
+	setOptional(mux, "pat-interval", uint(9000))
+	setOptional(mux, "pmt-interval", uint(9000))
 	if _, err := source.Connect("source-setup", func(self *gst.Element, child *gst.Element) {
 		setOptional(child, "user-agent", p.config.UserAgent)
 		setOptional(child, "is-live", true)
@@ -589,13 +593,14 @@ func (p *gstProducer) addTransportOutput(tee *gst.Element) error {
 			}
 			data := buffer.Extract(0, buffer.GetSize())
 			p.lastDataNS.Store(time.Now().UnixNano())
-			if p.probe.Push(data) {
+			hasTables := p.probe.Push(data)
+			p.hub.Publish(data)
+			if hasTables && p.hub.HasDecoderBootstrap(p.probe.HasVideo()) {
 				p.readyOnce.Do(func() {
 					close(p.ready)
 					go p.enableSteadyBuffering()
 				})
 			}
-			p.hub.Publish(data)
 			return gst.FlowOK
 		},
 		EOSFunc: func(appSink *gstapp.Sink) {

@@ -347,14 +347,21 @@ func (m *Manager) Acquire(ctx context.Context, id string, sources []string) (*Se
 }
 
 func (m *Manager) AcquireSources(ctx context.Context, id string, sources []Source) (*Session, error) {
-	return m.acquireSources(ctx, id, sources, false)
+	return m.acquireSources(ctx, id, sources, false, true)
+}
+
+// StartSources creates or reuses a session without holding the downstream
+// MPEG-TS request until upstream validation completes. Subscribers may attach
+// immediately and receive the decoder-safe warm bootstrap when it is ready.
+func (m *Manager) StartSources(ctx context.Context, id string, sources []Source) (*Session, error) {
+	return m.acquireSources(ctx, id, sources, false, false)
 }
 
 func (m *Manager) PrewarmSources(ctx context.Context, id string, sources []Source) (*Session, error) {
-	return m.acquireSources(ctx, id, sources, true)
+	return m.acquireSources(ctx, id, sources, true, true)
 }
 
-func (m *Manager) acquireSources(ctx context.Context, id string, sources []Source, prewarm bool) (*Session, error) {
+func (m *Manager) acquireSources(ctx context.Context, id string, sources []Source, prewarm, waitReady bool) (*Session, error) {
 	cleanSources, err := validateSources(id, sources)
 	if err != nil {
 		return nil, err
@@ -387,8 +394,10 @@ func (m *Manager) acquireSources(ctx context.Context, id string, sources []Sourc
 			existing.mu.Unlock()
 		}
 		m.mu.Unlock()
-		if err := existing.WaitReady(ctx); err != nil {
-			return nil, err
+		if waitReady {
+			if err := existing.WaitReady(ctx); err != nil {
+				return nil, err
+			}
 		}
 		return existing, nil
 	}
@@ -463,8 +472,10 @@ func (m *Manager) acquireSources(ctx context.Context, id string, sources []Sourc
 	session.emitEvent("info", "session_started", "Shared stream session started.", "")
 	go session.run()
 
-	if err := session.WaitReady(ctx); err != nil {
-		return session, err
+	if waitReady {
+		if err := session.WaitReady(ctx); err != nil {
+			return session, err
+		}
 	}
 	return session, nil
 }

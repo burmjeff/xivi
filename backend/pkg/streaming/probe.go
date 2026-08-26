@@ -9,6 +9,7 @@ type tsProbe struct {
 	pmtPID uint16
 	pat    bool
 	pmt    bool
+	video  bool
 }
 
 func (p *tsProbe) Push(data []byte) bool {
@@ -63,9 +64,14 @@ func (p *tsProbe) Push(data []byte) bool {
 		}
 		if p.pat && pid == p.pmtPID && payloadStart && len(section) >= 3 && section[0] == 0x02 {
 			p.pmt = true
+			p.video = pmtHasVideo(section)
 		}
 	}
 	return p.pat && p.pmt
+}
+
+func (p *tsProbe) HasVideo() bool {
+	return p.video
 }
 
 func findTSSync(data []byte) int {
@@ -95,4 +101,26 @@ func parsePAT(section []byte) (uint16, bool) {
 		return pid, true
 	}
 	return 0, false
+}
+
+func pmtHasVideo(section []byte) bool {
+	if len(section) < 12 || section[0] != 0x02 {
+		return false
+	}
+	sectionLength := int(section[1]&0x0f)<<8 | int(section[2])
+	end := 3 + sectionLength - 4
+	if end > len(section) {
+		end = len(section)
+	}
+	programInfoLength := int(section[10]&0x0f)<<8 | int(section[11])
+	for index := 12 + programInfoLength; index+5 <= end; {
+		streamType := section[index]
+		switch streamType {
+		case 0x01, 0x02, 0x10, 0x1b, 0x24, 0x42:
+			return true
+		}
+		esInfoLength := int(section[index+3]&0x0f)<<8 | int(section[index+4])
+		index += 5 + esInfoLength
+	}
+	return false
 }

@@ -48,10 +48,22 @@ func acquireStreamSession(ctx context.Context, streamID, playbackID, protocol st
 		return nil, *channels, "", nil
 	}
 	if playbackID != "" {
-		session, handle, acquireErr := streaming.DefaultManager.AcquirePlaybackSources(ctx, playbackID, streamID, protocol, streamSources(*channels))
+		var session *streaming.Session
+		var handle streaming.PlaybackHandle
+		var acquireErr error
+		if protocol == "mpegts" {
+			session, handle, acquireErr = streaming.DefaultManager.StartPlaybackSources(ctx, playbackID, streamID, protocol, streamSources(*channels))
+		} else {
+			session, handle, acquireErr = streaming.DefaultManager.AcquirePlaybackSources(ctx, playbackID, streamID, protocol, streamSources(*channels))
+		}
 		return session, *channels, handle.ClientID, acquireErr
 	}
-	session, err := streaming.DefaultManager.AcquireSources(ctx, streamID, streamSources(*channels))
+	var session *streaming.Session
+	if protocol == "mpegts" {
+		session, err = streaming.DefaultManager.StartSources(ctx, streamID, streamSources(*channels))
+	} else {
+		session, err = streaming.DefaultManager.AcquireSources(ctx, streamID, streamSources(*channels))
+	}
 	if err != nil {
 		return nil, *channels, "", err
 	}
@@ -189,6 +201,10 @@ func GetStream(c *fiber.Ctx) error {
 	c.Set(fiber.HeaderContentType, "video/MP2T")
 	c.Set(fiber.HeaderCacheControl, "no-store")
 	c.Set(fiber.HeaderConnection, "keep-alive")
+	// fasthttp otherwise buffers the response headers until the body reader
+	// yields its first media bytes. Flush them as soon as the handler returns so
+	// a cold client is attached while upstream validation is still in progress.
+	c.Context().Response.ImmediateHeaderFlush = true
 	c.Context().Response.SetBodyStreamWriter(func(writer *bufio.Writer) {
 		defer subscription.Close()
 		reason := "client_disconnected"
@@ -196,6 +212,13 @@ func GetStream(c *fiber.Ctx) error {
 		buffered := 0
 		firstChunk := true
 		lastFlush := time.Now()
+		// Commit the successful streaming response immediately. Plex and other
+		// strict clients can establish their demuxer while the cold producer is
+		// still finding its first decoder-safe transport boundary.
+		if err := writer.Flush(); err != nil {
+			reason = "client_flush_failed"
+			return
+		}
 		for {
 			chunk, ok := subscription.Next()
 			if !ok {

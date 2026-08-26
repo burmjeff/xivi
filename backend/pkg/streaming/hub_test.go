@@ -34,6 +34,55 @@ func TestHubFansOutAndReplaysWarmData(t *testing.T) {
 	}
 }
 
+func TestHubReplaysVideoFromLatestDecoderBootstrap(t *testing.T) {
+	hub := NewHub(1024 * 1024)
+	oldDelta := append(tsPacket(0x0101, nil), tsPacket(0x0101, nil)...)
+	oldDelta = append(oldDelta, tsPacket(0x0101, nil)...)
+	tables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
+	tables = append(tables, tsPacket(0x1fff, nil)...)
+	keyframe := randomAccessPacket(0x0101)
+	live := append(tsPacket(0x0101, nil), tsPacket(0x0101, nil)...)
+	live = append(live, tsPacket(0x0101, nil)...)
+
+	hub.Publish(oldDelta)
+	hub.Publish(tables)
+	if hub.HasDecoderBootstrap(true) {
+		t.Fatal("video bootstrap became ready without a random-access packet")
+	}
+	if !hub.HasDecoderBootstrap(false) {
+		t.Fatal("audio bootstrap did not accept valid programme tables")
+	}
+	hub.Publish(keyframe)
+	hub.Publish(live)
+	if !hub.HasDecoderBootstrap(true) {
+		t.Fatal("video bootstrap did not recognize programme tables and keyframe")
+	}
+
+	subscription := hub.Subscribe()
+	t.Cleanup(subscription.Close)
+	for index, expected := range [][]byte{tables, keyframe, live} {
+		chunk, ok := subscription.Next()
+		if !ok || !bytes.Equal(chunk, expected) {
+			t.Fatalf("bootstrap chunk %d did not match expected decoder-safe replay", index)
+		}
+	}
+}
+
+func TestInspectTransportChunkFindsRandomAccessFlag(t *testing.T) {
+	metadata := inspectTransportChunk(randomAccessPacket(0x0101))
+	if !metadata.randomAccess {
+		t.Fatal("transport random-access indicator was not detected")
+	}
+}
+
+func randomAccessPacket(pid uint16) []byte {
+	packet := tsPacket(pid, nil)
+	packet[3] = 0x30
+	packet[4] = 1
+	packet[5] = 0x40
+	return packet
+}
+
 func TestHubDropsOnlySlowSubscriber(t *testing.T) {
 	hub := NewHub(1024 * 1024)
 	slow := hub.Subscribe()

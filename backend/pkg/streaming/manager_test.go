@@ -143,6 +143,34 @@ func TestManagerDeduplicatesConcurrentStarts(t *testing.T) {
 	}
 }
 
+func TestManagerStartSourcesReturnsBeforeProducerReady(t *testing.T) {
+	producer := &fakeProducer{ready: make(chan struct{}), hlsReady: make(chan struct{}), errors: make(chan error, 1)}
+	config := testConfig(t.TempDir())
+	manager := NewManager(func(id, source string, generation uint64, config Config, hub *Hub) Producer {
+		return producer
+	}, func() Config { return config })
+	t.Cleanup(manager.Close)
+
+	started := time.Now()
+	session, err := manager.StartSources(context.Background(), "cold-channel", []Source{{URL: "https://example.com/live.ts"}})
+	if err != nil {
+		t.Fatalf("non-blocking start failed: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 250*time.Millisecond {
+		t.Fatalf("non-blocking start waited %s for producer readiness", elapsed)
+	}
+	if state := session.Snapshot().State; state != StateStarting {
+		t.Fatalf("new session state = %s, want %s before producer readiness", state, StateStarting)
+	}
+
+	close(producer.ready)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := session.WaitReady(ctx); err != nil {
+		t.Fatalf("session did not become ready after producer validation: %v", err)
+	}
+}
+
 func TestManagerFailsOverAndKeepsSession(t *testing.T) {
 	var mu sync.Mutex
 	created := []*fakeProducer{}

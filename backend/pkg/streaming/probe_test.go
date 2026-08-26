@@ -13,6 +13,21 @@ func TestTSProbeRequiresPATAndPMT(t *testing.T) {
 	if !probe.Push(transport[200:]) {
 		t.Fatal("probe did not recognize valid PAT and PMT")
 	}
+	if !probe.HasVideo() {
+		t.Fatal("probe did not recognize the H.264 PMT as video")
+	}
+}
+
+func TestTSProbeRecognizesAudioOnlyPMT(t *testing.T) {
+	probe := &tsProbe{}
+	transport := append(tsPacket(0, patSection()), tsPacket(0x0100, audioPMTSection())...)
+	transport = append(transport, tsPacket(0x1fff, nil)...)
+	if !probe.Push(transport) {
+		t.Fatal("probe did not recognize audio-only PAT and PMT")
+	}
+	if probe.HasVideo() {
+		t.Fatal("audio-only PMT was classified as video")
+	}
 }
 
 func TestTSProbeRejectsNonTransportResponse(t *testing.T) {
@@ -54,6 +69,16 @@ func pmtSection() []byte {
 		0x00, 0x01, 0xc1, 0x00, 0x00,
 		0xe1, 0x01, 0xf0, 0x00,
 		0x1b, 0xe1, 0x01, 0xf0, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+func audioPMTSection() []byte {
+	return []byte{
+		0x02, 0xb0, 0x12,
+		0x00, 0x01, 0xc1, 0x00, 0x00,
+		0xe1, 0x01, 0xf0, 0x00,
+		0x0f, 0xe1, 0x01, 0xf0, 0x00,
 		0x00, 0x00, 0x00, 0x00,
 	}
 }

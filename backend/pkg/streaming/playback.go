@@ -38,8 +38,20 @@ func (m *Manager) playbackStripe(id string) *sync.Mutex {
 // session can actually free a constrained source slot. This method applies to
 // both HLS and MPEG-TS entry requests.
 func (m *Manager) AcquirePlaybackSources(ctx context.Context, playbackID, streamID, protocol string, sources []Source) (*Session, PlaybackHandle, error) {
+	return m.acquirePlaybackSources(ctx, playbackID, streamID, protocol, sources, true)
+}
+
+// StartPlaybackSources is the non-blocking MPEG-TS counterpart to
+// AcquirePlaybackSources. Capacity-aware channel handoff still completes
+// before it returns, but media validation proceeds while the client is already
+// attached to the session.
+func (m *Manager) StartPlaybackSources(ctx context.Context, playbackID, streamID, protocol string, sources []Source) (*Session, PlaybackHandle, error) {
+	return m.acquirePlaybackSources(ctx, playbackID, streamID, protocol, sources, false)
+}
+
+func (m *Manager) acquirePlaybackSources(ctx context.Context, playbackID, streamID, protocol string, sources []Source, waitReady bool) (*Session, PlaybackHandle, error) {
 	if playbackID == "" {
-		session, err := m.AcquireSources(ctx, streamID, sources)
+		session, err := m.acquirePlaybackSession(ctx, streamID, sources, waitReady)
 		return session, PlaybackHandle{}, err
 	}
 	stripe := m.playbackStripe(playbackID)
@@ -54,7 +66,7 @@ func (m *Manager) AcquirePlaybackSources(ctx context.Context, playbackID, stream
 	// same tune generation. MPEG-TS reconnects get a fresh generation so an old
 	// response writer cannot close the replacement connection by ID.
 	if hasPrevious && previous.StreamID == streamID && previous.Protocol == protocol && protocol == "hls" {
-		session, err := m.AcquireSources(ctx, streamID, sources)
+		session, err := m.acquirePlaybackSession(ctx, streamID, sources, waitReady)
 		if err != nil {
 			return session, PlaybackHandle{}, err
 		}
@@ -64,7 +76,7 @@ func (m *Manager) AcquirePlaybackSources(ctx context.Context, playbackID, stream
 
 	next := playbackLease{StreamID: streamID, ClientID: randomIdentifier("con_"), Protocol: protocol, LastSeen: time.Now()}
 	if !hasPrevious {
-		session, err := m.AcquireSources(ctx, streamID, sources)
+		session, err := m.acquirePlaybackSession(ctx, streamID, sources, waitReady)
 		if err != nil {
 			return session, PlaybackHandle{}, err
 		}
@@ -76,7 +88,7 @@ func (m *Manager) AcquirePlaybackSources(ctx context.Context, playbackID, stream
 	// connection. Otherwise make-before-break is safe only with free capacity.
 	_, targetExists := m.Get(streamID)
 	if targetExists || m.connections.hasCapacityAny(sources) {
-		session, err := m.AcquireSources(ctx, streamID, sources)
+		session, err := m.acquirePlaybackSession(ctx, streamID, sources, waitReady)
 		if err == nil {
 			m.storePlayback(playbackID, next)
 			m.detachPlayback(ctx, previous, previous.StreamID != streamID, false, playbackEndReason(previous, next))
@@ -90,7 +102,7 @@ func (m *Manager) AcquirePlaybackSources(ctx context.Context, playbackID, stream
 	// Do not sacrifice a working channel when it cannot free any capacity used
 	// by the target. This also protects multiple viewers sharing one old stream.
 	if !m.playbackCanFreeSources(previous, sources) {
-		session, err := m.AcquireSources(ctx, streamID, sources)
+		session, err := m.acquirePlaybackSession(ctx, streamID, sources, waitReady)
 		if err != nil {
 			return session, PlaybackHandle{}, err
 		}
@@ -103,12 +115,19 @@ func (m *Manager) AcquirePlaybackSources(ctx context.Context, playbackID, stream
 	// then fail resolution instead of resurrecting the previous session.
 	m.storePlayback(playbackID, next)
 	m.detachPlayback(ctx, previous, true, true, "channel_switched")
-	session, err := m.AcquireSources(ctx, streamID, sources)
+	session, err := m.acquirePlaybackSession(ctx, streamID, sources, waitReady)
 	if err != nil {
 		m.deletePlaybackIfCurrent(playbackID, next)
 		return session, PlaybackHandle{}, err
 	}
 	return session, PlaybackHandle{ClientID: next.ClientID}, nil
+}
+
+func (m *Manager) acquirePlaybackSession(ctx context.Context, streamID string, sources []Source, waitReady bool) (*Session, error) {
+	if waitReady {
+		return m.AcquireSources(ctx, streamID, sources)
+	}
+	return m.StartSources(ctx, streamID, sources)
 }
 
 func (m *Manager) ResolvePlayback(playbackID, streamID string) (PlaybackHandle, bool) {
