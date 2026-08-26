@@ -108,6 +108,20 @@ func pmtHasVideo(section []byte) bool {
 }
 
 func pmtVideoPIDs(section []byte) []uint16 {
+	return videoPIDsFromStreams(pmtElementaryStreams(section))
+}
+
+func videoPIDsFromStreams(streams []elementaryStream) []uint16 {
+	videoPIDs := make([]uint16, 0, 1)
+	for _, stream := range streams {
+		if stream.video {
+			videoPIDs = append(videoPIDs, stream.pid)
+		}
+	}
+	return videoPIDs
+}
+
+func pmtElementaryStreams(section []byte) []elementaryStream {
 	if len(section) < 12 || section[0] != 0x02 {
 		return nil
 	}
@@ -117,16 +131,34 @@ func pmtVideoPIDs(section []byte) []uint16 {
 		end = len(section)
 	}
 	programInfoLength := int(section[10]&0x0f)<<8 | int(section[11])
-	videoPIDs := make([]uint16, 0, 1)
+	streams := make([]elementaryStream, 0, 2)
 	for index := 12 + programInfoLength; index+5 <= end; {
 		streamType := section[index]
-		switch streamType {
-		case 0x01, 0x02, 0x10, 0x1b, 0x24, 0x42:
-			pid := uint16(section[index+1]&0x1f)<<8 | uint16(section[index+2])
-			videoPIDs = append(videoPIDs, pid)
+		stream := elementaryStream{
+			pid: uint16(section[index+1]&0x1f)<<8 | uint16(section[index+2]),
 		}
+		switch streamType {
+		case 0x01, 0x02:
+			stream.video = true
+			stream.codec = videoCodecMPEG2
+		case 0x10:
+			stream.video = true
+			stream.codec = videoCodecMPEG4
+		case 0x1b:
+			stream.video = true
+			stream.codec = videoCodecH264
+		case 0x24:
+			stream.video = true
+			stream.codec = videoCodecH265
+		case 0x42:
+			stream.video = true
+			stream.codec = videoCodecAVS
+		case 0x03, 0x04, 0x0f, 0x11, 0x81, 0x87:
+			stream.audio = true
+		}
+		streams = append(streams, stream)
 		esInfoLength := int(section[index+3]&0x0f)<<8 | int(section[index+4])
 		index += 5 + esInfoLength
 	}
-	return videoPIDs
+	return streams
 }

@@ -2,6 +2,7 @@ package streaming
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -883,9 +884,14 @@ func (s *Session) startManagedProducer(source Source, sourceIndex, sourceCount i
 		if s.recordSourceResult != nil {
 			s.recordSourceResult(source, time.Since(managed.startedAt), context.DeadlineExceeded)
 		}
+		status := localHub.BootstrapStatus()
+		missing := "decoder bootstrap"
+		if len(status.Missing) > 0 {
+			missing = strings.Join(status.Missing, ", ")
+		}
 		cleanupErr := s.stopManagedProducer(managed)
 		return nil, errors.Join(
-			fmt.Errorf("source produced no valid MPEG-TS programme within %s", s.config.StartupTimeout),
+			fmt.Errorf("source produced no decoder-ready MPEG-TS within %s (missing: %s)", s.config.StartupTimeout, missing),
 			cleanupErr,
 		)
 	case <-s.ctx.Done():
@@ -915,8 +921,19 @@ func (s *Session) promoteProducer(next, previous *managedProducer) {
 		s.onReconnect()
 	}
 	s.initialOnce.Do(func() { close(s.initialDone) })
-	s.emitEvent("info", "media_ready", "Valid media is flowing from the selected source.",
-		fmt.Sprintf("{\"generation\":%d,\"startup_ms\":%d}", next.generation, next.readyAt.Sub(next.startedAt).Milliseconds()))
+	details, err := json.Marshal(struct {
+		Generation uint64          `json:"generation"`
+		StartupMS  int64           `json:"startup_ms"`
+		Bootstrap  BootstrapStatus `json:"bootstrap"`
+	}{
+		Generation: next.generation,
+		StartupMS:  next.readyAt.Sub(next.startedAt).Milliseconds(),
+		Bootstrap:  next.hub.BootstrapStatus(),
+	})
+	if err != nil {
+		details = []byte(fmt.Sprintf("{\"generation\":%d,\"startup_ms\":%d}", next.generation, next.readyAt.Sub(next.startedAt).Milliseconds()))
+	}
+	s.emitEvent("info", "media_ready", "Valid media is flowing from the selected source.", string(details))
 	s.observeSession(nil, "")
 	if previous != nil {
 		s.stopManagedProducer(previous)

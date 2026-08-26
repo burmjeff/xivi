@@ -86,18 +86,34 @@ func TestGSTProducerSharesMPEGTSAndCreatesHLS(t *testing.T) {
 	case <-context.Done():
 		t.Fatal("producer did not emit valid PAT/PMT media")
 	}
+	status := hub.BootstrapStatus()
+	if !status.Complete || status.VideoCodec != "h264" || !status.ParameterSetsComplete {
+		t.Fatalf("producer became ready without a complete H.264 cold bootstrap: %+v", status)
+	}
 
 	subscription := hub.Subscribe()
 	defer subscription.Close()
-	received := make(chan bool, 1)
+	downstream := NewHub(config.ClientBufferBytes)
+	received := make(chan BootstrapStatus, 1)
 	go func() {
-		chunk, ok := subscription.Next()
-		received <- ok && len(chunk) > 0
+		for {
+			chunk, ok := subscription.Next()
+			if !ok {
+				received <- BootstrapStatus{}
+				return
+			}
+			downstream.Publish(chunk)
+			status := downstream.BootstrapStatus()
+			if status.Complete {
+				received <- status
+				return
+			}
+		}
 	}()
 	select {
-	case ok := <-received:
-		if !ok {
-			t.Fatal("shared MPEG-TS subscriber received no media")
+	case replayStatus := <-received:
+		if !replayStatus.Complete || !replayStatus.ParameterSetsComplete {
+			t.Fatalf("shared MPEG-TS replay was not independently probeable: %+v", replayStatus)
 		}
 	case <-context.Done():
 		t.Fatal("shared MPEG-TS subscriber timed out")
@@ -238,13 +254,21 @@ func TestGSTProducerNormalizesH265ForBrowserHLS(t *testing.T) {
 	config.HLSCompatibility = true
 	config.StartupTimeout = 12 * time.Second
 	config.StallTimeout = 5 * time.Second
-	producer := newGSTProducer("h265-compatibility", server.URL, 1, config, NewHub(config.ClientBufferBytes))
+	hub := NewHub(config.ClientBufferBytes)
+	producer := newGSTProducer("h265-compatibility", server.URL, 1, config, hub)
 	if err := producer.Start(); err != nil {
 		t.Fatalf("start H.265 producer: %v", err)
 	}
 	defer producer.Stop()
 	timeout := time.NewTimer(15 * time.Second)
 	defer timeout.Stop()
+	select {
+	case <-producer.Ready():
+	case err := <-producer.Errors():
+		t.Fatalf("H.265 transport pipeline failed: %v", err)
+	case <-timeout.C:
+		t.Fatal("H.265 transport pipeline did not produce a decoder bootstrap")
+	}
 	select {
 	case <-producer.HLSReady():
 	case err := <-producer.Errors():
@@ -255,5 +279,9 @@ func TestGSTProducerNormalizesH265ForBrowserHLS(t *testing.T) {
 	actions := producer.(*gstProducer).HLSCompatibilityActions()
 	if len(actions) != 1 || !strings.Contains(actions[0], "H.265") {
 		t.Fatalf("H.265 normalization was not reported: %#v", actions)
+	}
+	status := hub.BootstrapStatus()
+	if !status.Complete || status.VideoCodec != "h265" || !status.ParameterSetsComplete {
+		t.Fatalf("producer became ready without a complete H.265 cold bootstrap: %+v", status)
 	}
 }

@@ -129,6 +129,110 @@ func TestHubRequiresProgramClockForVideoBootstrap(t *testing.T) {
 	}
 }
 
+func TestHubRequiresFreshH264ParameterSets(t *testing.T) {
+	hub := NewHub(1024 * 1024)
+	hub.Publish(append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...))
+	hub.Publish(pcrPacket(0x0101))
+	hub.Publish(randomAccessPacketForCodec(0x0101, videoCodecH264, false))
+	if hub.HasDecoderBootstrap(true) {
+		t.Fatal("H.264 bootstrap became ready without SPS and PPS")
+	}
+	incomplete := hub.BootstrapStatus()
+	if !containsAll(incomplete.Missing, "sps", "pps") {
+		t.Fatalf("missing H.264 initialization was not diagnosed: %+v", incomplete)
+	}
+	hub.Publish(randomAccessPacket(0x0101))
+	if !hub.HasDecoderBootstrap(true) {
+		t.Fatal("H.264 bootstrap did not become ready with SPS, PPS, and IDR")
+	}
+	status := hub.BootstrapStatus()
+	if status.VideoCodec != "h264" || !status.ParameterSetsComplete || !status.Complete {
+		t.Fatalf("unexpected H.264 bootstrap status: %+v", status)
+	}
+}
+
+func containsAll(values []string, expected ...string) bool {
+	found := make(map[string]bool, len(values))
+	for _, value := range values {
+		found[value] = true
+	}
+	for _, value := range expected {
+		if !found[value] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestHubReplaysParameterOnlyPESBeforeRandomAccessPES(t *testing.T) {
+	hub := NewHub(1024 * 1024)
+	tables := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
+	clock := pcrPacket(0x0101)
+	parameters := parameterOnlyPacket(0x0101, videoCodecH264)
+	keyframe := randomAccessPacketForCodec(0x0101, videoCodecH264, false)
+	hub.Publish(tables)
+	hub.Publish(clock)
+	hub.Publish(parameters)
+	hub.Publish(keyframe)
+
+	subscription := hub.Subscribe()
+	t.Cleanup(subscription.Close)
+	prefix, ok := subscription.Next()
+	wantPrefix := append(append([]byte{}, tables...), bootstrapPCRPacket(clock)...)
+	if !ok || !bytes.Equal(prefix, wantPrefix) {
+		t.Fatal("split-parameter bootstrap did not emit programme prefix")
+	}
+	for index, expected := range [][]byte{parameters, keyframe} {
+		chunk, next := subscription.Next()
+		if !next || !bytes.Equal(chunk, expected) {
+			t.Fatalf("split-parameter bootstrap chunk %d was not replayed", index)
+		}
+	}
+}
+
+func TestHubRecognizesH265AndMPEG2Initialization(t *testing.T) {
+	for name, test := range map[string]struct {
+		streamType byte
+		codec      videoCodec
+	}{
+		"h265":  {streamType: 0x24, codec: videoCodecH265},
+		"mpeg2": {streamType: 0x02, codec: videoCodecMPEG2},
+	} {
+		t.Run(name, func(t *testing.T) {
+			hub := NewHub(1024 * 1024)
+			hub.Publish(append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSectionForType(test.streamType))...))
+			hub.Publish(pcrPacket(0x0101))
+			hub.Publish(randomAccessPacketForCodec(0x0101, test.codec, true))
+			if !hub.HasDecoderBootstrap(true) {
+				t.Fatalf("%s bootstrap did not recognize codec initialization", name)
+			}
+			status := hub.BootstrapStatus()
+			if status.VideoCodec != string(test.codec) || !status.ParameterSetsComplete {
+				t.Fatalf("unexpected %s bootstrap status: %+v", name, status)
+			}
+		})
+	}
+}
+
+func TestBootstrapStatusReportsFirstAudioVideoPTS(t *testing.T) {
+	hub := NewHub(1024 * 1024)
+	tables := append(tsPacket(0, patSection()), tsPacket(0x0100, audioVideoPMTSection())...)
+	hub.Publish(tables)
+	hub.Publish(pcrPacket(0x0101))
+	hub.Publish(audioPESPacket(0x0102, 89_550))
+	hub.Publish(randomAccessPacket(0x0101))
+	status := hub.BootstrapStatus()
+	if status.FirstVideoPTS90K == nil || *status.FirstVideoPTS90K != 90_000 {
+		t.Fatalf("first video PTS was not reported: %+v", status.FirstVideoPTS90K)
+	}
+	if status.FirstAudioPTS90K == nil || *status.FirstAudioPTS90K != 89_550 {
+		t.Fatalf("first audio PTS was not reported: %+v", status.FirstAudioPTS90K)
+	}
+	if status.AVStartDeltaMS == nil || *status.AVStartDeltaMS != 5 {
+		t.Fatalf("A/V start delta = %v, want 5ms", status.AVStartDeltaMS)
+	}
+}
+
 func TestBootstrapPCRPacketStripsMediaPayload(t *testing.T) {
 	source := pcrPacket(0x0101)
 	source[12] = 0x12
@@ -269,11 +373,93 @@ func transportPackets(pid uint16, count int) []byte {
 }
 
 func randomAccessPacket(pid uint16) []byte {
+	return randomAccessPacketForCodec(pid, videoCodecH264, true)
+}
+
+func randomAccessPacketForCodec(pid uint16, codec videoCodec, includeParameters bool) []byte {
 	packet := tsPacket(pid, nil)
+	packet[1] |= 0x40
 	packet[3] = 0x30
 	packet[4] = 1
 	packet[5] = 0x40
+	payload := pesHeader(90_000)
+	if includeParameters {
+		switch codec {
+		case videoCodecH264:
+			payload = append(payload,
+				0, 0, 0, 1, 0x67, 0x64, 0, 0x28,
+				0, 0, 0, 1, 0x68, 0xee, 0x3c, 0x80)
+		case videoCodecH265:
+			payload = append(payload,
+				0, 0, 0, 1, 32<<1, 1,
+				0, 0, 0, 1, 33<<1, 1,
+				0, 0, 0, 1, 34<<1, 1)
+		case videoCodecMPEG2:
+			payload = append(payload, 0, 0, 1, 0xb3, 0x2d, 0x01)
+		}
+	}
+	if codec == videoCodecH264 {
+		payload = append(payload, 0, 0, 0, 1, 0x65, 0x88)
+	} else if codec == videoCodecH265 {
+		payload = append(payload, 0, 0, 0, 1, 19<<1, 1, 0x88)
+	} else {
+		payload = append(payload, 0, 0, 1, 0x00, 0x88)
+	}
+	copy(packet[6:], payload)
 	return packet
+}
+
+func parameterOnlyPacket(pid uint16, codec videoCodec) []byte {
+	packet := tsPacket(pid, nil)
+	packet[1] |= 0x40
+	payload := pesHeader(90_000)
+	switch codec {
+	case videoCodecH264:
+		payload = append(payload,
+			0, 0, 0, 1, 0x67, 0x64, 0, 0x28,
+			0, 0, 0, 1, 0x68, 0xee, 0x3c, 0x80)
+	case videoCodecH265:
+		payload = append(payload,
+			0, 0, 0, 1, 32<<1, 1,
+			0, 0, 0, 1, 33<<1, 1,
+			0, 0, 0, 1, 34<<1, 1)
+	case videoCodecMPEG2:
+		payload = append(payload, 0, 0, 1, 0xb3, 0x2d, 0x01)
+	}
+	copy(packet[4:], payload)
+	return packet
+}
+
+func audioPESPacket(pid uint16, pts uint64) []byte {
+	packet := tsPacket(pid, nil)
+	packet[1] |= 0x40
+	payload := pesHeader(pts)
+	payload[3] = 0xc0
+	payload = append(payload, 0xff, 0xf1, 0x50, 0x80)
+	copy(packet[4:], payload)
+	return packet
+}
+
+func audioVideoPMTSection() []byte {
+	return []byte{
+		0x02, 0xb0, 0x17,
+		0x00, 0x01, 0xc1, 0x00, 0x00,
+		0xe1, 0x01, 0xf0, 0x00,
+		0x1b, 0xe1, 0x01, 0xf0, 0x00,
+		0x0f, 0xe1, 0x02, 0xf0, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+func pesHeader(pts uint64) []byte {
+	return []byte{
+		0x00, 0x00, 0x01, 0xe0, 0x00, 0x00, 0x80, 0x80, 0x05,
+		byte(0x21 | (pts>>29)&0x0e),
+		byte(pts >> 22),
+		byte(0x01 | (pts>>14)&0xfe),
+		byte(pts >> 7),
+		byte(0x01 | (pts<<1)&0xfe),
+	}
 }
 
 func pcrPacket(pid uint16) []byte {
