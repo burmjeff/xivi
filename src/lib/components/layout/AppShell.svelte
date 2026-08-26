@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import type { Component } from 'svelte';
 	import {
 		House,
 		ListVideo,
@@ -19,6 +20,21 @@
 	import ThemeSwitcher from '$lib/components/ui/ThemeSwitcher.svelte';
 	import { preferences, setStudioNavCollapsed } from '$lib/state/preferences.svelte';
 	let { children } = $props();
+	let playerComponent = $state<Component | null>(null);
+	let playerLoading = false;
+	$effect(() => {
+		if (playerComponent || playerLoading || !page.url.pathname.startsWith('/watch/channel/'))
+			return;
+		playerLoading = true;
+		void import('$lib/components/watch/PersistentPlayer.svelte')
+			.then(({ default: component }) => {
+				playerComponent = component;
+				playerLoading = false;
+			})
+			.catch(() => {
+				playerLoading = false;
+			});
+	});
 	let studio = $derived(page.url.pathname.startsWith('/studio'));
 	const watchNav = [
 		{ href: '/', label: 'Home', icon: House },
@@ -102,6 +118,7 @@
 		class:studio-nav-collapsed={studio && preferences.studioNavCollapsed}
 		class:watch-main={!studio}
 	>
+		{#if playerComponent}{@const Player = playerComponent}<Player />{/if}
 		{@render children?.()}
 	</main>
 
