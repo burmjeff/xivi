@@ -503,15 +503,82 @@ func V2StudioGroupChannels(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The group id is invalid.", false)
 	}
 	matchHealth := strings.TrimSpace(c.Query("match"))
-	if matchHealth != "" && matchHealth != "unmatched" && matchHealth != "low-confidence" {
-		return v2Error(c, fiber.StatusBadRequest, "invalid_match_filter", "Choose unmatched or low-confidence match health.", false)
+	if matchHealth != "" && matchHealth != "unmatched" && matchHealth != "low-confidence" && matchHealth != "duplicate-tvg-id" {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_match_filter", "Choose unmatched, low-confidence, or duplicate guide-ID review.", false)
+	}
+	lineupID, err := optionalIntQuery(c, "lineup_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
+	}
+	if matchHealth == "duplicate-tvg-id" && lineupID == nil {
+		return v2Error(c, fiber.StatusBadRequest, "lineup_required", "Choose a lineup for duplicate guide-ID review.", false)
 	}
 	limit, offset := pageParams(c)
-	items, total, err := database.Db.GetWorkspaceChannels(c.UserContext(), id, strings.TrimSpace(c.Query("q")), matchHealth, limit, offset)
+	items, total, err := database.Db.GetWorkspaceChannels(c.UserContext(), id, lineupID, strings.TrimSpace(c.Query("q")), matchHealth, limit, offset)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "workspace_unavailable", "Lineup channels could not be loaded.", true)
 	}
 	return c.JSON(models.Paginated[models.WorkspaceChannel]{Items: items, NextCursor: nextCursor(offset, len(items), total), Total: total})
+}
+
+func V2StudioDuplicateTVGIDs(c *fiber.Ctx) error {
+	lineupID, err := parseID(c, "lineup_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
+	}
+	includeAcknowledged, err := optionalBoolQuery(c, "include_acknowledged")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_filter", "The acknowledgement filter is invalid.", false)
+	}
+	limit, offset := pageParams(c)
+	items, total, err := database.Db.GetDuplicateTVGIDReviews(c.UserContext(), lineupID, includeAcknowledged, limit, offset)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "duplicate_review_unavailable", "Duplicate guide IDs could not be loaded.", true)
+	}
+	return c.JSON(models.Paginated[models.DuplicateTVGIDReview]{Items: items, NextCursor: nextCursor(offset, len(items), total), Total: total})
+}
+
+func V2SetStudioDuplicateTVGIDReview(c *fiber.Ctx) error {
+	lineupID, err := parseID(c, "lineup_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
+	}
+	request := models.DuplicateTVGIDReviewRequest{}
+	if err := c.BodyParser(&request); err != nil || strings.TrimSpace(request.TVGID) == "" {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_duplicate_review", "Choose a duplicate guide ID to review.", false)
+	}
+	err = database.Db.SetDuplicateTVGIDReviewAcknowledged(c.UserContext(), lineupID, request.TVGID, request.Acknowledged)
+	if errors.Is(err, queries.ErrDuplicateTVGIDNotFound) {
+		return v2Error(c, fiber.StatusNotFound, "duplicate_review_not_found", "That duplicate guide-ID issue is no longer active.", false)
+	}
+	if err != nil {
+		return v2Error(c, fiber.StatusUnprocessableEntity, "duplicate_review_failed", "The duplicate guide-ID review could not be saved.", false)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func V2MergeStudioDuplicateTVGID(c *fiber.Ctx) error {
+	lineupID, err := parseID(c, "lineup_id")
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
+	}
+	request := models.DuplicateTVGIDMergeRequest{}
+	if err := c.BodyParser(&request); err != nil || strings.TrimSpace(request.TVGID) == "" || request.KeepChannelID < 1 {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_duplicate_merge", "Choose which duplicate channel to keep.", false)
+	}
+	result, err := database.Db.MergeDuplicateTVGIDChannels(c.UserContext(), lineupID, request.TVGID, request.KeepChannelID)
+	switch {
+	case errors.Is(err, queries.ErrDuplicateTVGIDNotFound):
+		return v2Error(c, fiber.StatusNotFound, "duplicate_review_not_found", "That duplicate guide-ID issue is no longer active.", false)
+	case errors.Is(err, queries.ErrDuplicateTVGIDManaged):
+		return v2Error(c, fiber.StatusConflict, "duplicate_source_managed", "Disconnect the source-managed group before merging these channels, or allow the shared guide.", false)
+	case errors.Is(err, queries.ErrDuplicateMergeTarget):
+		return v2Error(c, fiber.StatusBadRequest, "invalid_merge_target", "The channel to keep is not part of this duplicate set.", false)
+	case err != nil:
+		return v2Error(c, fiber.StatusUnprocessableEntity, "duplicate_merge_failed", "The duplicate channels could not be merged.", false)
+	default:
+		return c.JSON(result)
+	}
 }
 
 func V2StudioSourceChannels(c *fiber.Ctx) error {

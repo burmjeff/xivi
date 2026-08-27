@@ -4,11 +4,12 @@ import "time"
 
 // LineupSummary is the compact representation used by Watch and Studio.
 type LineupSummary struct {
-	ID           int64   `db:"id" json:"id"`
-	Name         string  `db:"name" json:"name"`
-	GroupCount   int64   `db:"group_count" json:"group_count"`
-	ChannelCount int64   `db:"channel_count" json:"channel_count"`
-	EPGCoverage  float64 `db:"epg_coverage" json:"epg_coverage"`
+	ID                  int64   `db:"id" json:"id"`
+	Name                string  `db:"name" json:"name"`
+	GroupCount          int64   `db:"group_count" json:"group_count"`
+	ChannelCount        int64   `db:"channel_count" json:"channel_count"`
+	EPGCoverage         float64 `db:"epg_coverage" json:"epg_coverage"`
+	DuplicateTVGIDCount int64   `json:"duplicate_tvg_id_count"`
 }
 
 type StudioGroupSummary struct {
@@ -196,17 +197,64 @@ type MatchRejection struct {
 	LogoURL         *string   `json:"logo_url,omitempty"`
 }
 
+// DuplicateTVGIDReview represents separate canonical channels in one lineup
+// that map to the same normalized guide identity.
+type DuplicateTVGIDReview struct {
+	LineupID        int64                   `json:"lineup_id"`
+	LineupName      string                  `json:"lineup_name"`
+	TVGID           string                  `json:"tvg_id"`
+	Acknowledged    bool                    `json:"acknowledged"`
+	MergeAllowed    bool                    `json:"merge_allowed"`
+	Channels        []DuplicateTVGIDChannel `json:"channels"`
+	AffectedLineups []DuplicateTVGIDLineup  `json:"affected_lineups"`
+}
+
+type DuplicateTVGIDChannel struct {
+	ID          int64    `json:"id"`
+	Name        string   `json:"name"`
+	UUID        string   `json:"uuid"`
+	SourceCount int64    `json:"source_count"`
+	SourceNames []string `json:"source_names"`
+	Managed     bool     `json:"managed"`
+	GroupIDs    []int64  `json:"group_ids"`
+	GroupNames  []string `json:"group_names"`
+}
+
+type DuplicateTVGIDLineup struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+type DuplicateTVGIDReviewRequest struct {
+	TVGID        string `json:"tvg_id"`
+	Acknowledged bool   `json:"acknowledged"`
+}
+
+type DuplicateTVGIDMergeRequest struct {
+	TVGID         string `json:"tvg_id"`
+	KeepChannelID int64  `json:"keep_channel_id"`
+}
+
+type DuplicateTVGIDMergeResult struct {
+	KeptChannelID   int64 `json:"kept_channel_id"`
+	MergedChannels  int64 `json:"merged_channels"`
+	MovedSources    int64 `json:"moved_sources"`
+	AffectedLineups int64 `json:"affected_lineups"`
+}
+
 type StudioOverview struct {
-	LineupCount        int64   `db:"lineup_count" json:"lineup_count"`
-	SourceCount        int64   `db:"source_count" json:"source_count"`
-	SourceChannelCount int64   `db:"source_channel_count" json:"source_channel_count"`
-	LineupChannelCount int64   `db:"lineup_channel_count" json:"lineup_channel_count"`
-	MappedChannelCount int64   `db:"mapped_channel_count" json:"mapped_channel_count"`
-	ReviewCount        int64   `db:"review_count" json:"review_count"`
-	LowConfidenceCount int64   `db:"low_confidence_count" json:"low_confidence_count"`
-	UnmatchedCount     int64   `db:"unmatched_count" json:"unmatched_count"`
-	EPGCoverage        float64 `db:"epg_coverage" json:"epg_coverage"`
-	LogoCount          int64   `db:"logo_count" json:"logo_count"`
+	LineupCount                int64   `db:"lineup_count" json:"lineup_count"`
+	SourceCount                int64   `db:"source_count" json:"source_count"`
+	SourceChannelCount         int64   `db:"source_channel_count" json:"source_channel_count"`
+	LineupChannelCount         int64   `db:"lineup_channel_count" json:"lineup_channel_count"`
+	MappedChannelCount         int64   `db:"mapped_channel_count" json:"mapped_channel_count"`
+	ReviewCount                int64   `db:"review_count" json:"review_count"`
+	LowConfidenceCount         int64   `db:"low_confidence_count" json:"low_confidence_count"`
+	UnmatchedCount             int64   `db:"unmatched_count" json:"unmatched_count"`
+	DuplicateTVGIDCount        int64   `json:"duplicate_tvg_id_count"`
+	DuplicateTVGIDChannelCount int64   `json:"duplicate_tvg_id_channel_count"`
+	EPGCoverage                float64 `db:"epg_coverage" json:"epg_coverage"`
+	LogoCount                  int64   `db:"logo_count" json:"logo_count"`
 }
 
 type CoverageSummary struct {

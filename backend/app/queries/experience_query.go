@@ -43,7 +43,21 @@ func (q *ExperienceQueries) GetLineupSummaries(ctx context.Context) ([]models.Li
 		LEFT JOIN templatechannel tc ON tc.id = tgc.channel_id
 		GROUP BY t.id, t.name
 		ORDER BY LOWER(t.name), t.id`
-	return rows, q.SelectContext(ctx, &rows, query)
+	if err := q.SelectContext(ctx, &rows, query); err != nil {
+		return nil, err
+	}
+	duplicates, err := q.loadDuplicateTVGIDReviews(ctx, nil, false)
+	if err != nil {
+		return nil, err
+	}
+	counts := map[int64]int64{}
+	for _, duplicate := range duplicates {
+		counts[duplicate.LineupID]++
+	}
+	for index := range rows {
+		rows[index].DuplicateTVGIDCount = counts[rows[index].ID]
+	}
+	return rows, nil
 }
 
 func (q *ExperienceQueries) GetLineupGroups(ctx context.Context, lineupID int64) ([]models.StudioGroupSummary, error) {
@@ -307,7 +321,7 @@ func (q *ExperienceQueries) GetWatchChannelNeighbors(ctx context.Context, lineup
 	return result, nil
 }
 
-func (q *ExperienceQueries) GetWorkspaceChannels(ctx context.Context, groupID int64, search, matchHealth string, limit, offset int) ([]models.WorkspaceChannel, int64, error) {
+func (q *ExperienceQueries) GetWorkspaceChannels(ctx context.Context, groupID int64, lineupID *int64, search, matchHealth string, limit, offset int) ([]models.WorkspaceChannel, int64, error) {
 	where, args := "tgc.group_id = ?", []any{groupID}
 	switch matchHealth {
 	case "":
@@ -316,6 +330,29 @@ func (q *ExperienceQueries) GetWorkspaceChannels(ctx context.Context, groupID in
 	case "low-confidence":
 		where += ` AND NOT EXISTS (SELECT 1 FROM templatechannelitem locked_item WHERE locked_item.channel_id = tc.id AND locked_item.manual_locked = 1)
 			AND EXISTS (SELECT 1 FROM templatechannelitem review_item WHERE review_item.channel_id = tc.id AND review_item.manual_locked = 0 AND review_item.match_score IS NOT NULL AND review_item.match_score < 0.82)`
+	case "duplicate-tvg-id":
+		if lineupID == nil {
+			return nil, 0, fmt.Errorf("lineup_id is required for duplicate TVG ID review")
+		}
+		duplicates, err := q.loadDuplicateTVGIDReviews(ctx, lineupID, false)
+		if err != nil {
+			return nil, 0, err
+		}
+		channelIDs := []int64{}
+		seen := map[int64]bool{}
+		for _, duplicate := range duplicates {
+			for _, channel := range duplicate.Channels {
+				if !seen[channel.ID] {
+					seen[channel.ID] = true
+					channelIDs = append(channelIDs, channel.ID)
+				}
+			}
+		}
+		if len(channelIDs) == 0 {
+			return []models.WorkspaceChannel{}, 0, nil
+		}
+		where += " AND tc.id IN (?)"
+		args = append(args, channelIDs)
 	default:
 		return nil, 0, fmt.Errorf("unsupported match health filter %q", matchHealth)
 	}
@@ -325,7 +362,11 @@ func (q *ExperienceQueries) GetWorkspaceChannels(ctx context.Context, groupID in
 		args = append(args, term, term)
 	}
 	var total int64
-	if err := q.GetContext(ctx, &total, `SELECT COUNT(*) FROM template_group_channel tgc JOIN templatechannel tc ON tc.id = tgc.channel_id WHERE `+where, args...); err != nil {
+	countQuery, countArgs, err := sqlx.In(`SELECT COUNT(*) FROM template_group_channel tgc JOIN templatechannel tc ON tc.id = tgc.channel_id WHERE `+where, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := q.GetContext(ctx, &total, q.Rebind(countQuery), countArgs...); err != nil {
 		return nil, 0, err
 	}
 	query := `SELECT tc.id, tc.name, tc.tvgid, tc.uuid, tc.logoid AS logo_id, COALESCE(l.name, '') AS logo, tgc.orderr,
@@ -338,8 +379,12 @@ func (q *ExperienceQueries) GetWorkspaceChannels(ctx context.Context, groupID in
 		LEFT JOIN logo l ON l.id = tc.logoid
 		WHERE ` + where + ` GROUP BY tc.id, tc.name, tc.tvgid, tc.uuid, tc.logoid, l.name, tgc.orderr
 		ORDER BY tgc.orderr, tc.id LIMIT ? OFFSET ?`
+	query, queryArgs, err := sqlx.In(query, append(args, limit, offset)...)
+	if err != nil {
+		return nil, 0, err
+	}
 	rows := []models.WorkspaceChannel{}
-	if err := q.SelectContext(ctx, &rows, query, append(args, limit, offset)...); err != nil {
+	if err := q.SelectContext(ctx, &rows, q.Rebind(query), queryArgs...); err != nil {
 		return nil, 0, err
 	}
 	for i := range rows {
@@ -808,6 +853,35 @@ func (q *ExperienceQueries) GetStudioOverview(ctx context.Context) (*models.Stud
 	if err := q.GetContext(ctx, row, query); err != nil {
 		return nil, err
 	}
+	duplicates, err := q.loadDuplicateTVGIDReviews(ctx, nil, false)
+	if err != nil {
+		return nil, err
+	}
+	reviewChannelIDs := []int64{}
+	if err := q.SelectContext(ctx, &reviewChannelIDs, `SELECT tc.id FROM templatechannel tc WHERE
+		NOT EXISTS (SELECT 1 FROM templatechannelitem health_item WHERE health_item.channel_id = tc.id)
+		OR (NOT EXISTS (SELECT 1 FROM templatechannelitem locked_item WHERE locked_item.channel_id = tc.id AND locked_item.manual_locked = 1)
+			AND EXISTS (SELECT 1 FROM templatechannelitem review_item WHERE review_item.channel_id = tc.id AND review_item.manual_locked = 0
+				AND review_item.match_score IS NOT NULL AND review_item.match_score < 0.82))`); err != nil {
+		return nil, err
+	}
+	reviewSet := map[int64]bool{}
+	for _, id := range reviewChannelIDs {
+		reviewSet[id] = true
+	}
+	duplicateSet := map[int64]bool{}
+	duplicateIssues := map[string]bool{}
+	for _, duplicate := range duplicates {
+		issueKey := channelmatch.NormalizeTvgID(duplicate.TVGID) + "\x00" + duplicateTVGSignature(duplicate.Channels)
+		duplicateIssues[issueKey] = true
+		for _, channel := range duplicate.Channels {
+			reviewSet[channel.ID] = true
+			duplicateSet[channel.ID] = true
+		}
+	}
+	row.DuplicateTVGIDCount = int64(len(duplicateIssues))
+	row.DuplicateTVGIDChannelCount = int64(len(duplicateSet))
+	row.ReviewCount = int64(len(reviewSet))
 	return row, nil
 }
 

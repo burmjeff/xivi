@@ -213,9 +213,13 @@
 					><b class="tabular">{overviewQuery.data.summary.low_confidence_count}</b><span
 						>Low confidence</span
 					></a
+				><a href="/studio/lineups?match=duplicate-tvg-id"
+					><b class="tabular">{overviewQuery.data.summary.duplicate_tvg_id_count}</b><span
+						>Duplicate guide IDs</span
+					></a
 				>
 			</div>
-			<a href="/studio/lineups">Review matches <ExternalLink size={14} /></a>
+			<a href="/studio/lineups">Review issues <ExternalLink size={14} /></a>
 		</section>
 
 		<section class="panel output-panel">
@@ -446,7 +450,7 @@
 	.metric > .review-breakdown {
 		display: grid;
 		grid-column: 1/3;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: 0.45rem;
 		margin-top: 0.25rem;
 	}

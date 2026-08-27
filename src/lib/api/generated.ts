@@ -391,6 +391,54 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/studio/lineups/{lineup_id}/duplicate-tvg-ids': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listDuplicateTVGIDReviews'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/lineups/{lineup_id}/duplicate-tvg-ids/review': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['setDuplicateTVGIDReview'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/lineups/{lineup_id}/duplicate-tvg-ids/merge': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['mergeDuplicateTVGIDChannels'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/studio/source-groups': {
 		parameters: {
 			query?: never;
@@ -922,6 +970,8 @@ export interface components {
 			channel_count: number;
 			/** Format: double */
 			epg_coverage: number;
+			/** Format: int64 */
+			duplicate_tvg_id_count: number;
 		};
 		WatchGroupSummary: {
 			/** Format: int64 */
@@ -1165,6 +1215,52 @@ export interface components {
 			source_name?: string;
 			logo_url?: string;
 		};
+		DuplicateTVGIDReview: {
+			/** Format: int64 */
+			lineup_id: number;
+			lineup_name: string;
+			tvg_id: string;
+			acknowledged: boolean;
+			merge_allowed: boolean;
+			channels: components['schemas']['DuplicateTVGIDChannel'][];
+			affected_lineups: components['schemas']['DuplicateTVGIDLineup'][];
+		};
+		DuplicateTVGIDChannel: {
+			/** Format: int64 */
+			id: number;
+			name: string;
+			uuid: string;
+			/** Format: int64 */
+			source_count: number;
+			source_names: string[];
+			managed: boolean;
+			group_ids: number[];
+			group_names: string[];
+		};
+		DuplicateTVGIDLineup: {
+			/** Format: int64 */
+			id: number;
+			name: string;
+		};
+		DuplicateTVGIDReviewRequest: {
+			tvg_id: string;
+			acknowledged: boolean;
+		};
+		DuplicateTVGIDMergeRequest: {
+			tvg_id: string;
+			/** Format: int64 */
+			keep_channel_id: number;
+		};
+		DuplicateTVGIDMergeResult: {
+			/** Format: int64 */
+			kept_channel_id: number;
+			/** Format: int64 */
+			merged_channels: number;
+			/** Format: int64 */
+			moved_sources: number;
+			/** Format: int64 */
+			affected_lineups: number;
+		};
 		StudioOverview: {
 			/** Format: int64 */
 			lineup_count: number;
@@ -1182,6 +1278,10 @@ export interface components {
 			low_confidence_count: number;
 			/** Format: int64 */
 			unmatched_count: number;
+			/** Format: int64 */
+			duplicate_tvg_id_count: number;
+			/** Format: int64 */
+			duplicate_tvg_id_channel_count: number;
 			/** Format: double */
 			epg_coverage: number;
 			/** Format: int64 */
@@ -1410,6 +1510,9 @@ export interface components {
 		MatchRejectionPage: components['schemas']['PageMetadata'] & {
 			items?: components['schemas']['MatchRejection'][];
 		};
+		DuplicateTVGIDReviewPage: components['schemas']['PageMetadata'] & {
+			items?: components['schemas']['DuplicateTVGIDReview'][];
+		};
 		OperationJobPage: components['schemas']['PageMetadata'] & {
 			items?: components['schemas']['OperationJob'][];
 		};
@@ -1476,7 +1579,7 @@ export interface components {
 		GroupId: number;
 		Search: string;
 		/** @description Restrict lineup channels to a match-health state. */
-		MatchHealth: 'unmatched' | 'low-confidence';
+		MatchHealth: 'unmatched' | 'low-confidence' | 'duplicate-tvg-id';
 		Cursor: string;
 		Limit: number;
 	};
@@ -2075,6 +2178,86 @@ export interface operations {
 			default: components['responses']['Error'];
 		};
 	};
+	listDuplicateTVGIDReviews: {
+		parameters: {
+			query?: {
+				/** @description Include intentionally shared guide identities that have been reviewed. */
+				include_acknowledged?: boolean;
+				cursor?: components['parameters']['Cursor'];
+				limit?: components['parameters']['Limit'];
+			};
+			header?: never;
+			path: {
+				lineup_id: components['parameters']['LineupId'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Separate lineup channels grouped by their duplicate normalized TVG ID. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['DuplicateTVGIDReviewPage'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	setDuplicateTVGIDReview: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				lineup_id: components['parameters']['LineupId'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['DuplicateTVGIDReviewRequest'];
+			};
+		};
+		responses: {
+			/** @description Review acknowledgement updated for the current channel set. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	mergeDuplicateTVGIDChannels: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				lineup_id: components['parameters']['LineupId'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['DuplicateTVGIDMergeRequest'];
+			};
+		};
+		responses: {
+			/** @description Duplicate canonical channels merged into one ordered source stack. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['DuplicateTVGIDMergeResult'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
 	listSourceGroups: {
 		parameters: {
 			query?: {
@@ -2306,6 +2489,8 @@ export interface operations {
 	listWorkspaceChannels: {
 		parameters: {
 			query?: {
+				/** @description Required when filtering duplicate guide IDs because conflicts are lineup scoped. */
+				lineup_id?: number;
 				q?: components['parameters']['Search'];
 				/** @description Restrict lineup channels to a match-health state. */
 				match?: components['parameters']['MatchHealth'];

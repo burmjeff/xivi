@@ -22,11 +22,15 @@
 		CircleAlert,
 		PauseCircle,
 		ArrowUp,
-		ArrowDown
+		ArrowDown,
+		GitMerge,
+		ShieldCheck
 	} from '@lucide/svelte';
 	import { api, params, XiviAPIError } from '$lib/api/client';
 	import type {
 		LineupSummary,
+		DuplicateTVGIDMergeResult,
+		DuplicateTVGIDReview,
 		MatchRejection,
 		MatchReview,
 		MatchSuggestion,
@@ -44,13 +48,19 @@
 
 	const lineupId = Number(page.params.id),
 		client = useQueryClient();
-	type MatchFilter = '' | 'unmatched' | 'low-confidence';
+	type MatchFilter = '' | 'unmatched' | 'low-confidence' | 'duplicate-tvg-id';
 	function readMatchFilter(value: string | null): MatchFilter {
-		return value === 'unmatched' || value === 'low-confidence' ? value : '';
+		return value === 'unmatched' || value === 'low-confidence' || value === 'duplicate-tvg-id'
+			? value
+			: '';
 	}
 	let matchFilter = $derived(readMatchFilter(page.url.searchParams.get('match')));
 	let matchFilterLabel = $derived(
-		matchFilter === 'unmatched' ? 'Unmatched channels' : 'Low-confidence matches'
+		matchFilter === 'unmatched'
+			? 'Unmatched channels'
+			: matchFilter === 'duplicate-tvg-id'
+				? 'Duplicate guide IDs'
+				: 'Low-confidence matches'
 	);
 	const groupsKey = ['studio', 'lineup-groups', lineupId] as const;
 	const lineupsQuery = createQuery(() => ({
@@ -62,6 +72,30 @@
 		queryFn: () => api<Paginated<StudioGroup>>(`/api/v2/studio/lineups/${lineupId}/groups`),
 		refetchInterval: 5000
 	}));
+	async function loadAllDuplicateTVGReviews() {
+		const items: DuplicateTVGIDReview[] = [];
+		let cursor: string | null = null;
+		let total = 0;
+		do {
+			const response: Paginated<DuplicateTVGIDReview> = await api(
+				`/api/v2/studio/lineups/${lineupId}/duplicate-tvg-ids${params({ include_acknowledged: true, limit: 500, cursor })}`
+			);
+			items.push(...response.items);
+			total = response.total;
+			cursor = response.next_cursor;
+		} while (cursor);
+		return { items, next_cursor: null, total } satisfies Paginated<DuplicateTVGIDReview>;
+	}
+	const duplicateTVGQuery = createQuery(() => ({
+		queryKey: ['studio', 'duplicate-tvg-ids', lineupId],
+		queryFn: loadAllDuplicateTVGReviews
+	}));
+	let activeDuplicateTVGReviews = $derived(
+		(duplicateTVGQuery.data?.items ?? []).filter((review) => !review.acknowledged)
+	);
+	let acknowledgedDuplicateTVGReviews = $derived(
+		(duplicateTVGQuery.data?.items ?? []).filter((review) => review.acknowledged)
+	);
 	let lineup = $derived(lineupsQuery.data?.items.find((item) => item.id === lineupId));
 	let selectedGroupId = $state<number | null>(Number(page.url.searchParams.get('group')) || null),
 		selectedChannelId = $state<number | null>(null),
@@ -81,6 +115,12 @@
 		followChannelNames = $state(true),
 		syncSaving = $state(false),
 		sourceGroupAction = $state<string | null>(null),
+		duplicateTVGAction = $state<string | null>(null),
+		duplicateMergeOpen = $state(false),
+		pendingDuplicateMerge = $state<{
+			review: DuplicateTVGIDReview;
+			keepChannelID: number;
+		} | null>(null),
 		publishDirty = $state(false),
 		undo = $state<{
 			kind: 'channel' | 'group';
@@ -110,7 +150,7 @@
 		enabled: !!selectedGroupId,
 		queryFn: () =>
 			api<Paginated<WorkspaceChannel>>(
-				`/api/v2/studio/groups/${selectedGroupId}/channels${params({ q: channelSearch, match: matchFilter, limit: 500 })}`
+				`/api/v2/studio/groups/${selectedGroupId}/channels${params({ lineup_id: lineupId, q: channelSearch, match: matchFilter, limit: 500 })}`
 			)
 	}));
 	const sourceGroupsQuery = createQuery(() => ({
@@ -287,11 +327,71 @@
 
 	async function refreshWorkspace() {
 		await Promise.all([
+			client.invalidateQueries({ queryKey: ['studio', 'overview'] }),
+			client.invalidateQueries({ queryKey: ['studio', 'lineups'] }),
 			client.invalidateQueries({ queryKey: ['studio', 'lineup-groups', lineupId] }),
 			client.invalidateQueries({ queryKey: ['studio', 'group-channels'] }),
+			client.invalidateQueries({ queryKey: ['studio', 'duplicate-tvg-ids', lineupId] }),
 			client.invalidateQueries({ queryKey: ['studio', 'source-browser'] }),
 			client.invalidateQueries({ queryKey: ['studio', 'source-groups'] })
 		]);
+	}
+	function inspectDuplicateChannel(review: DuplicateTVGIDReview, channelID: number) {
+		const channel = review.channels.find((item) => item.id === channelID);
+		if (!channel?.group_ids[0]) return;
+		selectedGroupId = channel.group_ids[0];
+		selectedChannelId = channel.id;
+		inspectorOpen = true;
+	}
+	async function setDuplicateTVGReviewed(review: DuplicateTVGIDReview, acknowledged: boolean) {
+		if (duplicateTVGAction) return;
+		duplicateTVGAction = `review:${review.tvg_id}`;
+		try {
+			await api(`/api/v2/studio/lineups/${lineupId}/duplicate-tvg-ids/review`, {
+				method: 'PUT',
+				body: JSON.stringify({ tvg_id: review.tvg_id, acknowledged })
+			});
+			await refreshWorkspace();
+			message = acknowledged
+				? `“${review.tvg_id}” is allowed to share guide data for this channel set.`
+				: `“${review.tvg_id}” has returned to Needs Review.`;
+		} catch (error) {
+			message = requestError(error, 'The duplicate guide-ID review could not be saved.');
+		} finally {
+			duplicateTVGAction = null;
+		}
+	}
+	function requestDuplicateTVGMerge(review: DuplicateTVGIDReview, keepChannelID: number) {
+		if (duplicateTVGAction || !review.merge_allowed) return;
+		pendingDuplicateMerge = { review, keepChannelID };
+		duplicateMergeOpen = true;
+	}
+	async function mergeDuplicateTVGChannels() {
+		if (duplicateTVGAction || !pendingDuplicateMerge) return;
+		const { review, keepChannelID } = pendingDuplicateMerge;
+		const keep = review.channels.find((channel) => channel.id === keepChannelID);
+		if (!keep) return;
+		duplicateTVGAction = `merge:${review.tvg_id}`;
+		try {
+			const result = await api<DuplicateTVGIDMergeResult>(
+				`/api/v2/studio/lineups/${lineupId}/duplicate-tvg-ids/merge`,
+				{
+					method: 'POST',
+					body: JSON.stringify({ tvg_id: review.tvg_id, keep_channel_id: keepChannelID })
+				}
+			);
+			selectedGroupId = keep.group_ids[0] ?? selectedGroupId;
+			selectedChannelId = keepChannelID;
+			publishDirty = true;
+			await refreshWorkspace();
+			message = `${result.merged_channels} duplicate channel${result.merged_channels === 1 ? '' : 's'} merged into “${keep.name}”; ${result.moved_sources} source variant${result.moved_sources === 1 ? '' : 's'} moved. Publish to update outputs.`;
+		} catch (error) {
+			message = requestError(error, 'The duplicate channels could not be merged.');
+		} finally {
+			duplicateTVGAction = null;
+			duplicateMergeOpen = false;
+			pendingDuplicateMerge = null;
+		}
 	}
 	async function move(
 		sourceId: number,
@@ -831,6 +931,139 @@
 					<button onclick={() => openSyncSettings(selectedGroup)}>Settings</button>
 				</div>
 			{/if}
+			{#if matchFilter === 'duplicate-tvg-id'}
+				<section class="duplicate-review" aria-labelledby="duplicate-review-title">
+					<header>
+						<div>
+							<p class="eyebrow">Guide identity review</p>
+							<h3 id="duplicate-review-title">Duplicate TVG IDs</h3>
+							<p>
+								Separate channels sharing an ID receive the same schedule. Merge true backups,
+								correct the mapping in Inspector, or explicitly allow an intentional shared guide.
+							</p>
+						</div>
+						<span class="duplicate-review-count">{activeDuplicateTVGReviews.length} open</span>
+					</header>
+					{#if duplicateTVGQuery.isPending}
+						<div class="duplicate-review-loading skeleton"></div>
+					{:else if duplicateTVGQuery.isError}
+						<p class="duplicate-review-state">
+							Duplicate guide-ID review could not be loaded.
+							<button onclick={() => duplicateTVGQuery.refetch()}>Try again</button>
+						</p>
+					{:else if activeDuplicateTVGReviews.length}
+						<div class="duplicate-review-list">
+							{#each activeDuplicateTVGReviews as review (review.tvg_id)}
+								<article class="duplicate-review-card">
+									<header>
+										<span><small>Shared TVG ID</small><code>{review.tvg_id}</code></span>
+										<strong>{review.channels.length} channels</strong>
+									</header>
+									<div class="duplicate-channel-list">
+										{#each review.channels as channel}
+											<div class="duplicate-channel">
+												<span>
+													<strong>{channel.name}</strong>
+													<small title={channel.uuid}
+														>{channel.group_names.join(', ')} · Identity {channel.uuid.slice(
+															0,
+															8
+														)}{channel.managed ? ' · Synced' : ''}</small
+													>
+													<small class="duplicate-source-names">
+														{channel.source_names.length
+															? channel.source_names.join(' · ')
+															: `${channel.source_count} source${channel.source_count === 1 ? '' : 's'} attached`}
+													</small>
+												</span>
+												<div>
+													<button
+														type="button"
+														onclick={() => inspectDuplicateChannel(review, channel.id)}
+														>Inspect</button
+													>
+													<button
+														type="button"
+														class="merge-channel"
+														disabled={!review.merge_allowed || duplicateTVGAction !== null}
+														title={review.merge_allowed
+															? `Keep ${channel.name} and append the other sources`
+															: 'Disconnect the synced group before merging canonical channels'}
+														onclick={() => requestDuplicateTVGMerge(review, channel.id)}
+														><GitMerge size={14} />Keep this one</button
+													>
+												</div>
+											</div>
+										{/each}
+									</div>
+									<footer>
+										<span>
+											{#if review.merge_allowed}
+												Merging affects {review.affected_lineups
+													.map((item) => item.name)
+													.join(', ')}.
+											{:else}
+												A synced group owns at least one channel. Adjust its connection before
+												merging.
+											{/if}
+										</span>
+										<button
+											type="button"
+											disabled={duplicateTVGAction !== null}
+											onclick={() => setDuplicateTVGReviewed(review, true)}
+											><ShieldCheck size={14} />Allow shared guide</button
+										>
+									</footer>
+								</article>
+							{/each}
+						</div>
+					{:else}
+						<p class="duplicate-review-state resolved">
+							<ShieldCheck size={18} />No unreviewed duplicate guide IDs remain in this lineup.
+						</p>
+					{/if}
+					{#if acknowledgedDuplicateTVGReviews.length}
+						<details class="acknowledged-duplicates">
+							<summary
+								>{acknowledgedDuplicateTVGReviews.length} allowed shared guide {acknowledgedDuplicateTVGReviews.length ===
+								1
+									? 'ID'
+									: 'IDs'}</summary
+							>
+							{#each acknowledgedDuplicateTVGReviews as review (review.tvg_id)}
+								<div>
+									<span
+										><code>{review.tvg_id}</code><small
+											>{review.channels.map((channel) => channel.name).join(' · ')}</small
+										></span
+									><button
+										type="button"
+										disabled={duplicateTVGAction !== null}
+										onclick={() => setDuplicateTVGReviewed(review, false)}>Return to review</button
+									>
+								</div>
+							{/each}
+						</details>
+					{/if}
+				</section>
+			{:else if activeDuplicateTVGReviews.length}
+				<a
+					class="duplicate-review-banner"
+					href={`/studio/lineups/${lineupId}?match=duplicate-tvg-id${selectedGroupId ? `&group=${selectedGroupId}` : ''}`}
+				>
+					<CircleAlert size={17} />
+					<span
+						><strong
+							>{activeDuplicateTVGReviews.length} duplicate guide {activeDuplicateTVGReviews.length ===
+							1
+								? 'ID needs'
+								: 'IDs need'} review</strong
+						><small
+							>Merge duplicate channels or confirm that they intentionally share a schedule.</small
+						></span
+					><ChevronRight size={17} />
+				</a>
+			{/if}
 			<div class="canvas-tools">
 				<label
 					><Search size={16} /><input
@@ -1351,6 +1584,73 @@
 	</Dialog.Portal>
 </Dialog.Root>
 
+<Dialog.Root bind:open={duplicateMergeOpen}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="sync-overlay" />
+		<Dialog.Content class="sync-dialog merge-dialog" aria-describedby="duplicate-merge-description">
+			{#if pendingDuplicateMerge}
+				{@const mergeReview = pendingDuplicateMerge.review}
+				{@const keepChannel = mergeReview.channels.find(
+					(channel) => channel.id === pendingDuplicateMerge?.keepChannelID
+				)}
+				{@const removedChannels = mergeReview.channels.filter(
+					(channel) => channel.id !== pendingDuplicateMerge?.keepChannelID
+				)}
+				<header class="sync-dialog-header">
+					<div>
+						<p class="eyebrow">Canonical channel merge</p>
+						<Dialog.Title class="sync-title">Merge duplicate channels?</Dialog.Title>
+					</div>
+					<Dialog.Close class="sync-close" aria-label="Cancel duplicate channel merge"
+						><X size={20} /></Dialog.Close
+					>
+				</header>
+				<Dialog.Description id="duplicate-merge-description" class="sync-description">
+					This keeps one channel identity and appends every unique source from the others to its
+					failover stack. Published outputs change only after you publish.
+				</Dialog.Description>
+				<div class="duplicate-merge-body">
+					<div class="duplicate-merge-keep">
+						<GitMerge size={20} />
+						<span
+							><small>Keep</small><strong>{keepChannel?.name}</strong><code
+								>{mergeReview.tvg_id}</code
+							></span
+						>
+					</div>
+					<div class="duplicate-merge-remove">
+						<small>Merge into it</small>
+						{#each removedChannels as channel}
+							<strong
+								>{channel.name} · {channel.source_count} source{channel.source_count === 1
+									? ''
+									: 's'}</strong
+							>
+						{/each}
+					</div>
+					<p class="duplicate-merge-impact">
+						<CircleAlert size={17} />This changes {mergeReview.affected_lineups
+							.map((affectedLineup) => affectedLineup.name)
+							.join(', ')}. The merge cannot be undone after confirmation.
+					</p>
+				</div>
+				<footer class="sync-dialog-footer">
+					<span></span>
+					<Dialog.Close class="app-button app-button--secondary">Cancel</Dialog.Close>
+					<button
+						class="app-button app-button--primary"
+						disabled={duplicateTVGAction !== null || !keepChannel}
+						onclick={mergeDuplicateTVGChannels}
+						>{duplicateTVGAction
+							? 'Merging…'
+							: `Merge ${removedChannels.length} channel${removedChannels.length === 1 ? '' : 's'}`}</button
+					>
+				</footer>
+			{/if}
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
+
 <style>
 	.workbench {
 		display: flex;
@@ -1451,6 +1751,215 @@
 		overflow: hidden;
 		margin: 0;
 		font-size: 1.2rem;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.duplicate-review-banner {
+		display: grid;
+		min-height: 3.6rem;
+		grid-template-columns: auto 1fr auto;
+		flex: none;
+		align-items: center;
+		gap: 0.65rem;
+		border-bottom: 1px solid color-mix(in oklch, var(--sun) 45%, var(--line));
+		background: color-mix(in oklch, var(--sun) 10%, var(--surface));
+		padding: 0.55rem 0.8rem;
+		color: var(--text);
+		text-decoration: none;
+	}
+	.duplicate-review-banner span {
+		display: grid;
+		gap: 0.08rem;
+	}
+	.duplicate-review-banner small {
+		color: var(--muted);
+		font-size: 0.64rem;
+	}
+	.duplicate-review {
+		max-height: min(22rem, 44dvh);
+		flex: none;
+		overflow: auto;
+		border-bottom: 1px solid var(--line);
+		background: color-mix(in oklch, var(--sun) 5%, var(--surface));
+		padding: 0.85rem;
+	}
+	.duplicate-review > header,
+	.duplicate-review-card > header,
+	.duplicate-review-card > footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+	.duplicate-review > header h3 {
+		margin: 0.08rem 0 0.15rem;
+		font-size: 1rem;
+	}
+	.duplicate-review > header p:last-child {
+		max-width: 47rem;
+		margin: 0;
+		color: var(--muted);
+		font-size: 0.68rem;
+		line-height: 1.45;
+	}
+	.duplicate-review-count {
+		flex: none;
+		border-radius: 999px;
+		background: var(--sun);
+		padding: 0.3rem 0.55rem;
+		color: var(--ink);
+		font-size: 0.65rem;
+		font-weight: 850;
+	}
+	.duplicate-review-list {
+		display: grid;
+		gap: 0.65rem;
+		margin-top: 0.7rem;
+	}
+	.duplicate-review-card {
+		border: 1px solid color-mix(in oklch, var(--sun) 38%, var(--line));
+		border-radius: 0.85rem;
+		background: var(--surface-raised);
+		padding: 0.7rem;
+	}
+	.duplicate-review-card > header span,
+	.acknowledged-duplicates span {
+		display: grid;
+		gap: 0.12rem;
+	}
+	.duplicate-review-card > header small {
+		color: var(--muted);
+		font-size: 0.58rem;
+		font-weight: 750;
+		text-transform: uppercase;
+	}
+	.duplicate-review-card code,
+	.acknowledged-duplicates code {
+		font-size: 0.72rem;
+		font-weight: 780;
+	}
+	.duplicate-review-card > header > strong {
+		font-size: 0.67rem;
+	}
+	.duplicate-channel-list {
+		display: grid;
+		gap: 0.4rem;
+		margin: 0.6rem 0;
+	}
+	.duplicate-channel {
+		display: flex;
+		min-width: 0;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.6rem;
+		border-radius: 0.65rem;
+		background: color-mix(in oklch, var(--surface) 74%, transparent);
+		padding: 0.48rem 0.55rem;
+	}
+	.duplicate-channel > span {
+		display: grid;
+		min-width: 0;
+		gap: 0.08rem;
+	}
+	.duplicate-channel > span strong,
+	.duplicate-channel > span small {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.duplicate-channel > span strong {
+		font-size: 0.72rem;
+	}
+	.duplicate-channel > span small,
+	.duplicate-review-card > footer span {
+		color: var(--muted);
+		font-size: 0.61rem;
+	}
+	.duplicate-channel > span small.duplicate-source-names {
+		color: color-mix(in oklch, var(--text) 78%, var(--muted));
+		font-weight: 720;
+	}
+	.duplicate-channel > div {
+		display: flex;
+		flex: none;
+		gap: 0.3rem;
+	}
+	.duplicate-channel button,
+	.duplicate-review-card > footer button,
+	.acknowledged-duplicates button,
+	.duplicate-review-state button {
+		display: inline-flex;
+		min-height: 2rem;
+		align-items: center;
+		gap: 0.3rem;
+		border: 1px solid var(--line);
+		border-radius: 0.55rem;
+		background: var(--surface);
+		padding: 0.35rem 0.5rem;
+		color: var(--text);
+		font-size: 0.62rem;
+		font-weight: 780;
+		cursor: pointer;
+	}
+	.duplicate-channel button.merge-channel {
+		border-color: color-mix(in oklch, var(--aqua) 55%, var(--line));
+		background: color-mix(in oklch, var(--aqua) 12%, var(--surface));
+	}
+	.duplicate-channel button:disabled,
+	.duplicate-review-card > footer button:disabled,
+	.acknowledged-duplicates button:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+	.duplicate-review-card > footer {
+		border-top: 1px solid var(--line);
+		padding-top: 0.55rem;
+	}
+	.duplicate-review-card > footer button {
+		flex: none;
+		border-color: color-mix(in oklch, var(--periwinkle) 50%, var(--line));
+	}
+	.duplicate-review-state {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		margin: 0.7rem 0 0;
+		color: var(--muted);
+		font-size: 0.7rem;
+	}
+	.duplicate-review-state.resolved {
+		color: var(--aqua);
+		font-weight: 750;
+	}
+	.duplicate-review-loading {
+		height: 7rem;
+		margin-top: 0.7rem;
+		border-radius: 0.8rem;
+	}
+	.acknowledged-duplicates {
+		margin-top: 0.65rem;
+		border-top: 1px solid var(--line);
+		padding-top: 0.55rem;
+	}
+	.acknowledged-duplicates summary {
+		font-size: 0.66rem;
+		font-weight: 780;
+		cursor: pointer;
+	}
+	.acknowledged-duplicates > div {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.7rem;
+		padding: 0.45rem 0;
+	}
+	.acknowledged-duplicates span {
+		min-width: 0;
+	}
+	.acknowledged-duplicates small {
+		overflow: hidden;
+		color: var(--muted);
+		font-size: 0.6rem;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
@@ -2269,6 +2778,69 @@
 		color: var(--muted);
 		font-size: 0.72rem;
 		line-height: 1.5;
+	}
+	:global(.merge-dialog) {
+		width: min(34rem, calc(100vw - 2rem));
+	}
+	.duplicate-merge-body {
+		display: grid;
+		gap: 0.65rem;
+		padding: 0.85rem 1rem 1rem;
+	}
+	.duplicate-merge-keep,
+	.duplicate-merge-remove {
+		display: flex;
+		gap: 0.65rem;
+		border: 1px solid var(--line);
+		border-radius: 0.8rem;
+		background: var(--surface);
+		padding: 0.75rem;
+	}
+	.duplicate-merge-keep {
+		align-items: center;
+		color: var(--aqua);
+	}
+	.duplicate-merge-keep span,
+	.duplicate-merge-remove {
+		min-width: 0;
+		flex-direction: column;
+	}
+	.duplicate-merge-keep span {
+		display: grid;
+	}
+	.duplicate-merge-keep small,
+	.duplicate-merge-remove small {
+		color: var(--muted);
+		font-size: 0.62rem;
+		font-weight: 800;
+		text-transform: uppercase;
+	}
+	.duplicate-merge-keep strong,
+	.duplicate-merge-remove strong {
+		color: var(--text);
+		font-size: 0.78rem;
+	}
+	.duplicate-merge-keep code {
+		overflow: hidden;
+		color: var(--muted);
+		font-size: 0.64rem;
+		text-overflow: ellipsis;
+	}
+	.duplicate-merge-impact {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.5rem;
+		margin: 0;
+		border-radius: 0.7rem;
+		background: color-mix(in oklch, var(--sun) 14%, var(--surface));
+		padding: 0.65rem 0.75rem;
+		color: var(--text);
+		font-size: 0.68rem;
+		line-height: 1.45;
+	}
+	.duplicate-merge-impact :global(svg) {
+		flex: none;
+		color: color-mix(in oklch, var(--sun) 75%, var(--text));
 	}
 	.sync-current {
 		display: flex;

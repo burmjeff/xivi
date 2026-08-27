@@ -7,18 +7,29 @@
 	import StudioHeader from '$lib/components/studio/StudioHeader.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	const client = useQueryClient();
-	type MatchFilter = '' | 'unmatched' | 'low-confidence';
+	type MatchFilter = '' | 'unmatched' | 'low-confidence' | 'duplicate-tvg-id';
 	function readMatchFilter(value: string | null): MatchFilter {
-		return value === 'unmatched' || value === 'low-confidence' ? value : '';
+		return value === 'unmatched' || value === 'low-confidence' || value === 'duplicate-tvg-id'
+			? value
+			: '';
 	}
 	let matchFilter = $derived(readMatchFilter(page.url.searchParams.get('match')));
 	let matchFilterLabel = $derived(
-		matchFilter === 'unmatched' ? 'unmatched channels' : 'low-confidence matches'
+		matchFilter === 'unmatched'
+			? 'unmatched channels'
+			: matchFilter === 'duplicate-tvg-id'
+				? 'duplicate guide IDs'
+				: 'low-confidence matches'
 	);
 	const query = createQuery(() => ({
 		queryKey: ['studio', 'lineups'],
 		queryFn: () => api<Paginated<LineupSummary>>('/api/v2/studio/lineups')
 	}));
+	let visibleLineups = $derived(
+		matchFilter === 'duplicate-tvg-id'
+			? (query.data?.items ?? []).filter((lineup) => lineup.duplicate_tvg_id_count > 0)
+			: (query.data?.items ?? [])
+	);
 	let creating = $state(false),
 		name = $state(''),
 		message = $state('');
@@ -95,12 +106,23 @@
 		action="Focus name field"
 		href="/studio/lineups"
 	/>
+{:else if matchFilter === 'duplicate-tvg-id' && !visibleLineups.length}<EmptyState
+		title="No duplicate guide IDs"
+		message="Every lineup currently has one canonical channel per guide identity."
+		action="Clear review filter"
+		href="/studio/lineups"
+	/>
 {:else}<div class="lineup-grid">
-		{#each query.data.items as lineup}<article>
+		{#each visibleLineups as lineup}<article>
 				<div class="lineup-icon"><Rows3 size={26} /></div>
 				<div class="lineup-main">
 					<span class="eyebrow">Lineup</span>
 					<h2>{lineup.name}</h2>
+					{#if lineup.duplicate_tvg_id_count}<span class="duplicate-count"
+							>{lineup.duplicate_tvg_id_count} duplicate guide {lineup.duplicate_tvg_id_count === 1
+								? 'ID'
+								: 'IDs'}</span
+						>{/if}
 					<dl>
 						<div>
 							<dt>Groups</dt>
@@ -205,6 +227,16 @@
 	.lineup-main h2 {
 		margin: 0.1rem 0 1.4rem;
 		font-size: 1.7rem;
+	}
+	.duplicate-count {
+		display: inline-flex;
+		margin: -1rem 0 1rem;
+		border-radius: 999px;
+		background: color-mix(in oklch, var(--sun) 28%, var(--surface));
+		padding: 0.25rem 0.55rem;
+		color: var(--text);
+		font-size: 0.68rem;
+		font-weight: 800;
 	}
 	.lineup-main dl {
 		display: flex;

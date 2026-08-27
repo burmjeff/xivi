@@ -327,6 +327,52 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/StudioGroupCreateResult' }
         default: { $ref: '#/components/responses/Error' }
+  /studio/lineups/{lineup_id}/duplicate-tvg-ids:
+    get:
+      operationId: listDuplicateTVGIDReviews
+      parameters:
+        - { $ref: '#/components/parameters/LineupId' }
+        - name: include_acknowledged
+          in: query
+          description: Include intentionally shared guide identities that have been reviewed.
+          schema: { type: boolean, default: false }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Separate lineup channels grouped by their duplicate normalized TVG ID.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DuplicateTVGIDReviewPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/lineups/{lineup_id}/duplicate-tvg-ids/review:
+    put:
+      operationId: setDuplicateTVGIDReview
+      parameters: [{ $ref: '#/components/parameters/LineupId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DuplicateTVGIDReviewRequest' }
+      responses:
+        '204': { description: Review acknowledgement updated for the current channel set. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/lineups/{lineup_id}/duplicate-tvg-ids/merge:
+    post:
+      operationId: mergeDuplicateTVGIDChannels
+      parameters: [{ $ref: '#/components/parameters/LineupId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DuplicateTVGIDMergeRequest' }
+      responses:
+        '200':
+          description: Duplicate canonical channels merged into one ordered source stack.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DuplicateTVGIDMergeResult' }
+        default: { $ref: '#/components/responses/Error' }
   /studio/source-groups:
     get:
       operationId: listSourceGroups
@@ -459,6 +505,10 @@ paths:
       operationId: listWorkspaceChannels
       parameters:
         - { $ref: '#/components/parameters/GroupIdPath' }
+        - name: lineup_id
+          in: query
+          description: Required when filtering duplicate guide IDs because conflicts are lineup scoped.
+          schema: { type: integer, format: int64 }
         - $ref: '#/components/parameters/Search'
         - $ref: '#/components/parameters/MatchHealth'
         - $ref: '#/components/parameters/Cursor'
@@ -770,7 +820,7 @@ components:
       name: match
       in: query
       description: Restrict lineup channels to a match-health state.
-      schema: { type: string, enum: [unmatched, low-confidence] }
+      schema: { type: string, enum: [unmatched, low-confidence, duplicate-tvg-id] }
     Cursor: { name: cursor, in: query, schema: { type: string } }
     Limit:
       { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
@@ -850,13 +900,14 @@ components:
         total: { type: integer, format: int64 }
     LineupSummary:
       type: object
-      required: [id, name, group_count, channel_count, epg_coverage]
+      required: [id, name, group_count, channel_count, epg_coverage, duplicate_tvg_id_count]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
         group_count: { type: integer, format: int64 }
         channel_count: { type: integer, format: int64 }
         epg_coverage: { type: number, format: double }
+        duplicate_tvg_id_count: { type: integer, format: int64 }
     WatchGroupSummary:
       type: object
       required: [id, name, order, channel_count]
@@ -1127,6 +1178,61 @@ components:
           description: Current eligible source when the stable rejection identity resolves uniquely.
         source_name: { type: string }
         logo_url: { type: string }
+    DuplicateTVGIDReview:
+      type: object
+      required:
+        [lineup_id, lineup_name, tvg_id, acknowledged, merge_allowed, channels, affected_lineups]
+      properties:
+        lineup_id: { type: integer, format: int64 }
+        lineup_name: { type: string }
+        tvg_id: { type: string }
+        acknowledged: { type: boolean }
+        merge_allowed: { type: boolean }
+        channels:
+          type: array
+          minItems: 2
+          items: { $ref: '#/components/schemas/DuplicateTVGIDChannel' }
+        affected_lineups:
+          type: array
+          items: { $ref: '#/components/schemas/DuplicateTVGIDLineup' }
+    DuplicateTVGIDChannel:
+      type: object
+      required: [id, name, uuid, source_count, source_names, managed, group_ids, group_names]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        uuid: { type: string }
+        source_count: { type: integer, format: int64 }
+        source_names: { type: array, items: { type: string } }
+        managed: { type: boolean }
+        group_ids: { type: array, items: { type: integer, format: int64 } }
+        group_names: { type: array, items: { type: string } }
+    DuplicateTVGIDLineup:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+    DuplicateTVGIDReviewRequest:
+      type: object
+      required: [tvg_id, acknowledged]
+      properties:
+        tvg_id: { type: string, minLength: 1 }
+        acknowledged: { type: boolean }
+    DuplicateTVGIDMergeRequest:
+      type: object
+      required: [tvg_id, keep_channel_id]
+      properties:
+        tvg_id: { type: string, minLength: 1 }
+        keep_channel_id: { type: integer, format: int64 }
+    DuplicateTVGIDMergeResult:
+      type: object
+      required: [kept_channel_id, merged_channels, moved_sources, affected_lineups]
+      properties:
+        kept_channel_id: { type: integer, format: int64 }
+        merged_channels: { type: integer, format: int64 }
+        moved_sources: { type: integer, format: int64 }
+        affected_lineups: { type: integer, format: int64 }
     StudioOverview:
       type: object
       required:
@@ -1139,6 +1245,8 @@ components:
           review_count,
           low_confidence_count,
           unmatched_count,
+          duplicate_tvg_id_count,
+          duplicate_tvg_id_channel_count,
           epg_coverage,
           logo_count
         ]
@@ -1151,6 +1259,8 @@ components:
         review_count: { type: integer, format: int64 }
         low_confidence_count: { type: integer, format: int64 }
         unmatched_count: { type: integer, format: int64 }
+        duplicate_tvg_id_count: { type: integer, format: int64 }
+        duplicate_tvg_id_channel_count: { type: integer, format: int64 }
         epg_coverage: { type: number, format: double }
         logo_count: { type: integer, format: int64 }
     StreamingStatus:
@@ -1451,6 +1561,16 @@ components:
             type: object,
             properties:
               { items: { type: array, items: { $ref: '#/components/schemas/MatchRejection' } } }
+          }
+    DuplicateTVGIDReviewPage:
+      allOf:
+        - { $ref: '#/components/schemas/PageMetadata' }
+        - {
+            type: object,
+            properties:
+              {
+                items: { type: array, items: { $ref: '#/components/schemas/DuplicateTVGIDReview' } }
+              }
           }
     OperationJobPage:
       allOf:

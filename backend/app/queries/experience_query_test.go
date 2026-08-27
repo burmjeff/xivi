@@ -39,6 +39,7 @@ func newExperienceTestDB(t *testing.T) *sqlx.DB {
 		`CREATE TABLE operation_job (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, resource TEXT, resource_id INTEGER, status TEXT DEFAULT 'queued', progress INTEGER DEFAULT 0, message TEXT DEFAULT '', error_code TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, finished_at DATETIME)`,
 		`CREATE TABLE lineup_group_source_link (group_id INTEGER PRIMARY KEY, playlist_id INTEGER NOT NULL, source_group_id INTEGER, source_group_name TEXT NOT NULL, follow_group_name BOOLEAN NOT NULL DEFAULT 1, follow_channel_names BOOLEAN NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'pending', last_synced_at DATETIME, last_error TEXT NOT NULL DEFAULT '', added_count INTEGER NOT NULL DEFAULT 0, updated_count INTEGER NOT NULL DEFAULT 0, removed_count INTEGER NOT NULL DEFAULT 0, FOREIGN KEY (group_id) REFERENCES templategroup(id) ON DELETE CASCADE, FOREIGN KEY (playlist_id) REFERENCES playlist(id) ON DELETE CASCADE, FOREIGN KEY (source_group_id) REFERENCES playlistgroup(id) ON DELETE SET NULL)`,
 		`CREATE TABLE lineup_group_source_member (group_id INTEGER NOT NULL, template_channel_id INTEGER NOT NULL, source_channel_id INTEGER, source_identity TEXT NOT NULL, last_source_name TEXT NOT NULL DEFAULT '', PRIMARY KEY (group_id, template_channel_id), UNIQUE (group_id, source_identity), FOREIGN KEY (group_id) REFERENCES lineup_group_source_link(group_id) ON DELETE CASCADE, FOREIGN KEY (template_channel_id) REFERENCES templatechannel(id) ON DELETE CASCADE, FOREIGN KEY (source_channel_id) REFERENCES playlistchannel(id) ON DELETE SET NULL)`,
+		`CREATE TABLE lineup_tvgid_review_ack (lineup_id INTEGER NOT NULL, tvg_id_norm TEXT NOT NULL, channel_signature TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (lineup_id, tvg_id_norm), FOREIGN KEY (lineup_id) REFERENCES template(id) ON DELETE CASCADE)`,
 	}
 	for _, statement := range schema {
 		db.MustExec(statement)
@@ -261,13 +262,161 @@ func TestStudioOverviewSeparatesUnmatchedAndLowConfidenceChannels(t *testing.T) 
 		t.Fatalf("unexpected match-health summary: %#v", overview)
 	}
 
-	unmatched, unmatchedTotal, err := query.GetWorkspaceChannels(context.Background(), 10, "", "unmatched", 100, 0)
+	unmatched, unmatchedTotal, err := query.GetWorkspaceChannels(context.Background(), 10, nil, "", "unmatched", 100, 0)
 	if err != nil || unmatchedTotal != 1 || len(unmatched) != 1 || unmatched[0].Name != "Unmatched" {
 		t.Fatalf("unexpected unmatched filter: total=%d rows=%#v err=%v", unmatchedTotal, unmatched, err)
 	}
-	low, lowTotal, err := query.GetWorkspaceChannels(context.Background(), 10, "", "low-confidence", 100, 0)
+	low, lowTotal, err := query.GetWorkspaceChannels(context.Background(), 10, nil, "", "low-confidence", 100, 0)
 	if err != nil || lowTotal != 1 || len(low) != 1 || low[0].Name != "Low confidence" {
 		t.Fatalf("unexpected low-confidence filter: total=%d rows=%#v err=%v", lowTotal, low, err)
+	}
+}
+
+func TestDuplicateTVGIDReviewCountsAcknowledgesAndReopensForChangedMembership(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO playlist VALUES (7, 'Provider', '', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES (70, 'Provider News', 7, 1)`)
+	db.MustExec(`INSERT INTO playlistchannel VALUES
+		(101, 'spectrum.news.us', 'Primary Feed', '', 'Primary Feed', 70, 1),
+		(102, 'spectrum.news.us', 'Backup Feed', '', 'Backup Feed', 70, 1)`)
+	db.MustExec(`INSERT INTO template VALUES (1, 'Main'), (2, 'Backup')`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'News', 0, NULL), (20, 'Simulcasts', 0, NULL)`)
+	db.MustExec(`INSERT INTO template_group_item VALUES (1, 10, 1), (2, 20, 1)`)
+	db.MustExec(`INSERT INTO logo VALUES (0, 'xivi_channel')`)
+	db.MustExec(`INSERT INTO templatechannel VALUES
+		(1, 'Spectrum primary', ' Spectrum.News.US ', 0, 'primary'),
+		(2, 'Spectrum backup', 'spectrum.news.us', 0, 'backup'),
+		(3, 'Unique channel', 'unique.us', 0, 'unique')`)
+	db.MustExec(`INSERT INTO template_group_channel VALUES
+		(10, 1, 1), (10, 2, 2), (10, 3, 3), (20, 1, 1), (20, 2, 2)`)
+	db.MustExec(`INSERT INTO templatechannelitem VALUES
+		(1, 1, 101, 1, 'manual', 1, NULL, 2, 1),
+		(2, 2, 102, 1, 'manual', 1, NULL, 2, 1),
+		(3, 3, 103, 1, 'manual', 1, NULL, 2, 1)`)
+
+	query := NewExperienceQueries(db)
+	reviews, total, err := query.GetDuplicateTVGIDReviews(context.Background(), 1, false, 100, 0)
+	if err != nil || total != 1 || len(reviews) != 1 {
+		t.Fatalf("unexpected duplicate review: total=%d rows=%#v err=%v", total, reviews, err)
+	}
+	review := reviews[0]
+	if review.TVGID != "Spectrum.News.US" || len(review.Channels) != 2 || !review.MergeAllowed {
+		t.Fatalf("unexpected duplicate details: %#v", review)
+	}
+	if len(review.Channels[0].SourceNames) != 1 || !strings.HasPrefix(review.Channels[0].SourceNames[0], "Provider · ") {
+		t.Fatalf("expected review channel source labels, got %#v", review.Channels)
+	}
+	if len(review.AffectedLineups) != 2 {
+		t.Fatalf("expected merge impact to include both lineups, got %#v", review.AffectedLineups)
+	}
+
+	lineups, err := query.GetLineupSummaries(context.Background())
+	if err != nil || len(lineups) != 2 || lineups[0].DuplicateTVGIDCount != 1 || lineups[1].DuplicateTVGIDCount != 1 {
+		t.Fatalf("unexpected lineup duplicate counts: %#v err=%v", lineups, err)
+	}
+	lineupID := int64(1)
+	duplicateChannels, duplicateTotal, err := query.GetWorkspaceChannels(context.Background(), 10, &lineupID, "", "duplicate-tvg-id", 100, 0)
+	if err != nil || duplicateTotal != 2 || len(duplicateChannels) != 2 {
+		t.Fatalf("unexpected duplicate channel filter: total=%d rows=%#v err=%v", duplicateTotal, duplicateChannels, err)
+	}
+	overview, err := query.GetStudioOverview(context.Background())
+	if err != nil || overview.DuplicateTVGIDCount != 1 || overview.DuplicateTVGIDChannelCount != 2 || overview.ReviewCount != 2 {
+		t.Fatalf("unexpected duplicate overview: %#v err=%v", overview, err)
+	}
+
+	if err := query.SetDuplicateTVGIDReviewAcknowledged(context.Background(), 1, "SPECTRUM.NEWS.US", true); err != nil {
+		t.Fatalf("acknowledge duplicate review: %v", err)
+	}
+	active, total, err := query.GetDuplicateTVGIDReviews(context.Background(), 1, false, 100, 0)
+	if err != nil || total != 0 || len(active) != 0 {
+		t.Fatalf("acknowledged review remained active: total=%d rows=%#v err=%v", total, active, err)
+	}
+	active, total, err = query.GetDuplicateTVGIDReviews(context.Background(), 2, false, 100, 0)
+	if err != nil || total != 0 || len(active) != 0 {
+		t.Fatalf("same channel set remained active in another lineup: total=%d rows=%#v err=%v", total, active, err)
+	}
+	acknowledged, total, err := query.GetDuplicateTVGIDReviews(context.Background(), 1, true, 100, 0)
+	if err != nil || total != 1 || !acknowledged[0].Acknowledged {
+		t.Fatalf("acknowledged review was not retained: total=%d rows=%#v err=%v", total, acknowledged, err)
+	}
+
+	db.MustExec(`INSERT INTO templatechannel VALUES (4, 'Spectrum tertiary', 'spectrum.news.us', 0, 'tertiary')`)
+	db.MustExec(`INSERT INTO template_group_channel VALUES (10, 4, 4)`)
+	db.MustExec(`INSERT INTO templatechannelitem VALUES (4, 4, 104, 1, 'manual', 1, NULL, 2, 1)`)
+	reopened, total, err := query.GetDuplicateTVGIDReviews(context.Background(), 1, false, 100, 0)
+	if err != nil || total != 1 || len(reopened[0].Channels) != 3 || reopened[0].Acknowledged {
+		t.Fatalf("changed channel membership did not reopen review: total=%d rows=%#v err=%v", total, reopened, err)
+	}
+}
+
+func TestMergeDuplicateTVGIDChannelsPreservesSourcesMembershipsAndRejections(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO template VALUES (1, 'Main'), (2, 'Secondary')`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'News', 0, NULL), (20, 'Shared', 0, NULL)`)
+	db.MustExec(`INSERT INTO template_group_item VALUES (1, 10, 1), (2, 20, 1)`)
+	db.MustExec(`INSERT INTO templatechannel VALUES
+		(1, 'Channel to keep', 'news.us', 0, 'keep'),
+		(2, 'Channel to merge', 'NEWS.US', 0, 'merge')`)
+	db.MustExec(`INSERT INTO template_group_channel VALUES (10, 1, 1), (10, 2, 2), (20, 2, 1)`)
+	db.MustExec(`INSERT INTO templatechannelitem VALUES
+		(1, 1, 101, 1, 'manual', 1, NULL, 2, 1),
+		(2, 2, 102, 1, 'name', 0.9, 0.8, 2, 0)`)
+	db.MustExec(`INSERT INTO channelmatchrejection (id, channel_id, playlist_id, tvg_id_norm, name_norm)
+		VALUES (1, 2, 7, 'blocked.us', 'blocked')`)
+
+	query := NewExperienceQueries(db)
+	result, err := query.MergeDuplicateTVGIDChannels(context.Background(), 1, "news.us", 1)
+	if err != nil {
+		t.Fatalf("MergeDuplicateTVGIDChannels failed: %v", err)
+	}
+	if result.KeptChannelID != 1 || result.MergedChannels != 1 || result.MovedSources != 1 || result.AffectedLineups != 2 {
+		t.Fatalf("unexpected merge result: %#v", result)
+	}
+	var channelCount, sourceCount, membershipCount, rejectionCount int
+	db.Get(&channelCount, `SELECT COUNT(*) FROM templatechannel WHERE id IN (1, 2)`)
+	db.Get(&sourceCount, `SELECT COUNT(*) FROM templatechannelitem WHERE channel_id = 1`)
+	db.Get(&membershipCount, `SELECT COUNT(*) FROM template_group_channel WHERE channel_id = 1`)
+	db.Get(&rejectionCount, `SELECT COUNT(*) FROM channelmatchrejection WHERE channel_id = 1 AND playlist_id = 7`)
+	if channelCount != 1 || sourceCount != 2 || membershipCount != 2 || rejectionCount != 1 {
+		t.Fatalf("merge lost data: channels=%d sources=%d memberships=%d rejections=%d", channelCount, sourceCount, membershipCount, rejectionCount)
+	}
+	for _, groupID := range []int64{10, 20} {
+		var order int64
+		if err := db.Get(&order, `SELECT orderr FROM template_group_channel WHERE group_id = ? AND channel_id = 1`, groupID); err != nil || order != 1 {
+			t.Fatalf("group %d was not reindexed: order=%d err=%v", groupID, order, err)
+		}
+	}
+	reviews, total, err := query.GetDuplicateTVGIDReviews(context.Background(), 1, true, 100, 0)
+	if err != nil || total != 0 || len(reviews) != 0 {
+		t.Fatalf("merged duplicate remained in review: total=%d rows=%#v err=%v", total, reviews, err)
+	}
+}
+
+func TestMergeDuplicateTVGIDChannelsBlocksSourceManagedChannels(t *testing.T) {
+	db := newExperienceTestDB(t)
+	db.MustExec(`INSERT INTO playlist VALUES (1, 'Provider', '', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO playlistgroup VALUES (50, 'News', 1, 1)`)
+	db.MustExec(`INSERT INTO template VALUES (1, 'Main')`)
+	db.MustExec(`INSERT INTO templategroup VALUES (10, 'News', 0, NULL)`)
+	db.MustExec(`INSERT INTO template_group_item VALUES (1, 10, 1)`)
+	db.MustExec(`INSERT INTO templatechannel VALUES
+		(1, 'Managed channel', 'news.us', 0, 'managed'),
+		(2, 'Manual channel', 'news.us', 0, 'manual')`)
+	db.MustExec(`INSERT INTO template_group_channel VALUES (10, 1, 1), (10, 2, 2)`)
+	db.MustExec(`INSERT INTO lineup_group_source_link (group_id, playlist_id, source_group_id, source_group_name)
+		VALUES (10, 1, 50, 'News')`)
+	db.MustExec(`INSERT INTO lineup_group_source_member (group_id, template_channel_id, source_identity)
+		VALUES (10, 1, 'provider-news')`)
+
+	query := NewExperienceQueries(db)
+	_, err := query.MergeDuplicateTVGIDChannels(context.Background(), 1, "news.us", 1)
+	if !errors.Is(err, ErrDuplicateTVGIDManaged) {
+		t.Fatalf("expected managed duplicate merge to be blocked, got %v", err)
+	}
+	var channels int
+	db.Get(&channels, `SELECT COUNT(*) FROM templatechannel`)
+	if channels != 2 {
+		t.Fatalf("blocked merge mutated channels: %d", channels)
 	}
 }
 
