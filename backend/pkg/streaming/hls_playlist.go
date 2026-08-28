@@ -29,6 +29,18 @@ type HLSSegment struct {
 	Duration time.Duration
 }
 
+// hlsMediaExpectation is the stable track layout discovered by the canonical
+// producer before HLS is exposed to clients. A live playlist must not begin
+// with a temporary one-track fragment when the canonical stream contains both
+// audio and video: HLS.js creates SourceBuffers from that first fragment and
+// cannot append a track that appears later.
+type hlsMediaExpectation struct {
+	Video bool
+	Audio bool
+}
+
+type hlsSegmentInspector func(string) (BootstrapStatus, error)
+
 // ReadHLSPlaylist rejects partial rewrites and unsafe segment references. HLS
 // playlists are tiny, so serving a validated in-memory snapshot is cheaper and
 // safer than streaming a file that is being replaced continuously.
@@ -110,4 +122,71 @@ func (s *HLSPlaylistSnapshot) ValidateSegments(directory string) error {
 		}
 	}
 	return nil
+}
+
+// decoderReadySuffix returns the newest contiguous run of segments that each
+// satisfy the producer's stable track layout. Leading fragments emitted while
+// GStreamer's dynamic pads are still settling are deliberately omitted.
+//
+// Content is intentionally not copied: the session timeline rebuilds a
+// monotonic client-facing manifest from Media after this validation.
+func (s *HLSPlaylistSnapshot) decoderReadySuffix(
+	directory string,
+	expected hlsMediaExpectation,
+	inspect hlsSegmentInspector,
+) (*HLSPlaylistSnapshot, error) {
+	if !expected.Video && !expected.Audio {
+		return nil, fmt.Errorf("%w: expected media tracks are unknown", ErrHLSPlaylistNotReady)
+	}
+	if inspect == nil {
+		inspect = inspectHLSSegment
+	}
+	result := &HLSPlaylistSnapshot{}
+	for _, media := range s.Media {
+		status, err := inspect(filepath.Join(directory, media.Name))
+		if err != nil || !hlsSegmentMatches(status, expected) {
+			// Retain only a contiguous suffix. If an incomplete fragment appears
+			// between healthy fragments, starting after it is safer than asking a
+			// player to bridge an undeclared track-layout change.
+			result = &HLSPlaylistSnapshot{}
+			continue
+		}
+		result.Media = append(result.Media, media)
+		result.Segments = append(result.Segments, media.Name)
+		result.Duration += media.Duration
+	}
+	if len(result.Media) == 0 {
+		return nil, fmt.Errorf("%w: no segment has the complete media track layout", ErrHLSPlaylistNotReady)
+	}
+	return result, nil
+}
+
+func inspectHLSSegment(path string) (BootstrapStatus, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return BootstrapStatus{}, err
+	}
+	if len(content) == 0 {
+		return BootstrapStatus{}, fmt.Errorf("segment is empty")
+	}
+	// A temporary Hub reuses the canonical MPEG-TS inspection contract: PAT,
+	// PMT, PCR, codec initialization, random access, and first audio/video PTS.
+	// Keep the complete fragment in its ring even when a segment is unusually
+	// large so decoder-bootstrap validation can inspect it as one unit.
+	hub := NewHub(max(2*len(content), 1024*1024))
+	hub.PublishOwned(content)
+	return hub.BootstrapStatus(), nil
+}
+
+func hlsSegmentMatches(status BootstrapStatus, expected hlsMediaExpectation) bool {
+	if !status.Transport || !status.PAT || !status.PMT {
+		return false
+	}
+	if expected.Video && (!status.HasVideo || status.FirstVideoPTS90K == nil || !status.Complete) {
+		return false
+	}
+	if expected.Audio && (!status.HasAudio || status.FirstAudioPTS90K == nil) {
+		return false
+	}
+	return true
 }

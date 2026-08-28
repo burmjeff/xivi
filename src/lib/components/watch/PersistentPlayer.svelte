@@ -53,6 +53,9 @@
 		attachedUrl = '',
 		networkRetries = 0,
 		mediaRecoveries = 0,
+		hlsRebuilds = 0,
+		attachmentGeneration = 0,
+		hlsRebuilding = false,
 		playbackReady = $state(false),
 		viewerId = '',
 		incidentId = $state(''),
@@ -143,6 +146,8 @@
 	});
 
 	function cleanup() {
+		attachmentGeneration += 1;
+		hlsRebuilding = false;
 		if (retryTimer) clearTimeout(retryTimer);
 		if (stallTimer) clearTimeout(stallTimer);
 		retryTimer = undefined;
@@ -199,6 +204,7 @@
 		playbackPaused = false;
 		networkRetries = 0;
 		mediaRecoveries = 0;
+		hlsRebuilds = 0;
 		playbackReady = true;
 		if (stallTimer) clearTimeout(stallTimer);
 	}
@@ -267,9 +273,87 @@
 			if (hls && attachedUrl === url) hls.startLoad(-1);
 		}, delay);
 	}
-	async function attach(url: string) {
-		if (!video || !url || attachedUrl === url) return;
+	function isMissingSourceBufferError(data: { details?: string; error?: unknown }) {
+		const message = data.error instanceof Error ? data.error.message : '';
+		return (
+			data.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR &&
+			/SourceBuffer.*does not exist|append to the .*SourceBuffer/i.test(message)
+		);
+	}
+	function rebuildHlsInstance(
+		url: string,
+		instance: Hls,
+		generation: number,
+		details: Record<string, unknown>
+	) {
+		if (hls !== instance || attachmentGeneration !== generation || hlsRebuilds >= 2) return false;
+		hlsRebuilds += 1;
+		loading = true;
+		error = 'The player is rebuilding the live signal…';
+		// recoverMediaError() retains the existing SourceBuffer topology. When a
+		// startup fragment omitted video, only a fresh MediaSource/Hls instance
+		// can create both buffers from the corrected playlist.
+		attachmentGeneration += 1;
+		hlsRebuilding = true;
+		hls = null;
+		instance.destroy();
+		if (video) {
+			video.pause();
+			video.removeAttribute('src');
+			video.load();
+		}
+		void reportPlayerEvent(
+			url,
+			'warning',
+			'hls_source_buffer_rebuild',
+			'HLS.js is rebuilding a missing media SourceBuffer.',
+			{ ...details, rebuild: hlsRebuilds }
+		);
+		if (retryTimer) clearTimeout(retryTimer);
+		retryTimer = setTimeout(
+			() => {
+				retryTimer = undefined;
+				if (attachedUrl === url && (playerRoute || pipActive)) {
+					void attach(url, { force: true, recovery: true });
+				}
+			},
+			300 * hlsRebuilds
+		);
+		return true;
+	}
+	function onVideoError() {
+		const details = {
+			media_error_code: video?.error?.code,
+			media_error_message: video?.error?.message
+		};
+		if (hls || hlsRebuilding) {
+			if (attachedUrl)
+				void reportPlayerEvent(
+					attachedUrl,
+					'warning',
+					'native_media_error_during_hls',
+					'The browser media element reported an HLS playback error.',
+					details,
+					true
+				);
+			return;
+		}
+		loading = false;
+		error = 'The native player lost the live signal. Retry to reconnect.';
+		if (attachedUrl)
+			void reportPlayerEvent(attachedUrl, 'error', 'native_media_error', error, details);
+	}
+	async function attach(
+		url: string,
+		options: { force?: boolean; recovery?: boolean } = {}
+	) {
+		if (!video || !url || (!options.force && attachedUrl === url)) return;
 		cleanup();
+		if (!options.recovery) {
+			networkRetries = 0;
+			mediaRecoveries = 0;
+			hlsRebuilds = 0;
+		}
 		attachedUrl = url;
 		incidentId = '';
 		loading = true;
@@ -277,7 +361,8 @@
 		playbackPaused = true;
 		playbackReady = false;
 		if (Hls.isSupported()) {
-			hls = new Hls({
+			const generation = attachmentGeneration;
+			const instance = new Hls({
 				enableWorker: true,
 				lowLatencyMode: false,
 				initialLiveManifestSize: 1,
@@ -348,10 +433,14 @@
 					}
 				}
 			});
-			hls.on(Hls.Events.MANIFEST_PARSED, () => {
+			hlsRebuilding = false;
+			hls = instance;
+			instance.on(Hls.Events.MANIFEST_PARSED, () => {
+				if (hls !== instance || attachmentGeneration !== generation) return;
 				void startPlayback();
 			});
-			hls.on(Hls.Events.ERROR, (_event, data) => {
+			instance.on(Hls.Events.ERROR, (_event, data) => {
+				if (hls !== instance || attachmentGeneration !== generation) return;
 				const hlsDetails = {
 					type: data.type,
 					detail: data.details,
@@ -390,12 +479,19 @@
 					scheduleNetworkRecovery(url);
 					return;
 				}
+				if (
+					data.type === Hls.ErrorTypes.MEDIA_ERROR &&
+					isMissingSourceBufferError(data) &&
+					rebuildHlsInstance(url, instance, generation, hlsDetails)
+				) {
+					return;
+				}
 				if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 2) {
 					mediaRecoveries += 1;
 					loading = true;
 					error = 'The player is repairing the live signal…';
-					if (mediaRecoveries === 2) hls?.swapAudioCodec();
-					hls?.recoverMediaError();
+					if (mediaRecoveries === 2) instance.swapAudioCodec();
+					instance.recoverMediaError();
 					void reportPlayerEvent(
 						url,
 						'warning',
@@ -409,8 +505,8 @@
 				error = 'This stream could not be decoded by the browser.';
 				void reportPlayerEvent(url, 'error', 'hls_fatal_error', error, hlsDetails);
 			});
-			hls.attachMedia(video);
-			hls.loadSource(viewerUrl(url));
+			instance.attachMedia(video);
+			instance.loadSource(viewerUrl(url));
 		} else if (video.canPlayType('application/vnd.apple.mpegurl')) {
 			video.src = viewerUrl(url);
 			video.load();
@@ -473,16 +569,7 @@
 					onpause={() => (playbackPaused = true)}
 					onwaiting={onWaiting}
 					onstalled={onWaiting}
-					onerror={() => {
-						if (!hls) {
-							loading = false;
-							error = 'The native player lost the live signal. Retry to reconnect.';
-							if (attachedUrl)
-								void reportPlayerEvent(attachedUrl, 'error', 'native_media_error', error, {
-									media_error_code: video?.error?.code
-								});
-						}
-					}}
+					onerror={onVideoError}
 					aria-label={`${activeChannel?.name ?? 'Xivi'} live stream`}
 				></video>
 				<media-control-bar

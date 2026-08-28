@@ -58,3 +58,74 @@ func TestHLSPlaylistValidationRejectsMissingSegment(t *testing.T) {
 		t.Fatalf("expected missing segment to be rejected, got %v", err)
 	}
 }
+
+func TestDecoderReadySuffixDropsLeadingAudioOnlySegmentFromAVStream(t *testing.T) {
+	directory := t.TempDir()
+	audioOnly := append(tsPacket(0, patSection()), tsPacket(0x0100, audioPMTSection())...)
+	audioOnly = append(audioOnly, audioPESPacket(0x0101, 90_000)...)
+	completeAV := append(tsPacket(0, patSection()), tsPacket(0x0100, audioVideoPMTSection())...)
+	completeAV = append(completeAV, pcrPacket(0x0101)...)
+	completeAV = append(completeAV, randomAccessPacket(0x0101)...)
+	completeAV = append(completeAV, audioPESPacket(0x0102, 90_000)...)
+	writeHLSSegment(t, directory, "audio-only.ts", audioOnly)
+	writeHLSSegment(t, directory, "complete-av.ts", completeAV)
+
+	snapshot := &HLSPlaylistSnapshot{Media: []HLSSegment{
+		{Name: "audio-only.ts", Duration: 2 * time.Second},
+		{Name: "complete-av.ts", Duration: 2 * time.Second},
+	}}
+	ready, err := snapshot.decoderReadySuffix(directory, hlsMediaExpectation{Video: true, Audio: true}, nil)
+	if err != nil {
+		t.Fatalf("find decoder-ready suffix: %v", err)
+	}
+	if len(ready.Media) != 1 || ready.Media[0].Name != "complete-av.ts" {
+		t.Fatalf("unexpected decoder-ready suffix: %#v", ready.Media)
+	}
+}
+
+func TestDecoderReadySuffixRequiresExpectedAudioPayload(t *testing.T) {
+	directory := t.TempDir()
+	videoOnly := append(tsPacket(0, patSection()), tsPacket(0x0100, audioVideoPMTSection())...)
+	videoOnly = append(videoOnly, pcrPacket(0x0101)...)
+	videoOnly = append(videoOnly, randomAccessPacket(0x0101)...)
+	writeHLSSegment(t, directory, "missing-audio.ts", videoOnly)
+
+	snapshot := &HLSPlaylistSnapshot{Media: []HLSSegment{{Name: "missing-audio.ts", Duration: 2 * time.Second}}}
+	if _, err := snapshot.decoderReadySuffix(directory, hlsMediaExpectation{Video: true, Audio: true}, nil); !errors.Is(err, ErrHLSPlaylistNotReady) {
+		t.Fatalf("expected missing audio payload to delay HLS readiness, got %v", err)
+	}
+}
+
+func TestDecoderReadySuffixAcceptsGenuineAudioOnlyStream(t *testing.T) {
+	directory := t.TempDir()
+	audio := append(tsPacket(0, patSection()), tsPacket(0x0100, audioPMTSection())...)
+	audio = append(audio, audioPESPacket(0x0101, 90_000)...)
+	writeHLSSegment(t, directory, "audio.ts", audio)
+
+	snapshot := &HLSPlaylistSnapshot{Media: []HLSSegment{{Name: "audio.ts", Duration: 2 * time.Second}}}
+	ready, err := snapshot.decoderReadySuffix(directory, hlsMediaExpectation{Audio: true}, nil)
+	if err != nil || len(ready.Media) != 1 {
+		t.Fatalf("genuine audio-only segment was rejected: ready=%#v err=%v", ready, err)
+	}
+}
+
+func TestDecoderReadySuffixAcceptsGenuineVideoOnlyStream(t *testing.T) {
+	directory := t.TempDir()
+	video := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
+	video = append(video, pcrPacket(0x0101)...)
+	video = append(video, randomAccessPacket(0x0101)...)
+	writeHLSSegment(t, directory, "video.ts", video)
+
+	snapshot := &HLSPlaylistSnapshot{Media: []HLSSegment{{Name: "video.ts", Duration: 2 * time.Second}}}
+	ready, err := snapshot.decoderReadySuffix(directory, hlsMediaExpectation{Video: true}, nil)
+	if err != nil || len(ready.Media) != 1 {
+		t.Fatalf("genuine video-only segment was rejected: ready=%#v err=%v", ready, err)
+	}
+}
+
+func writeHLSSegment(t *testing.T, directory, name string, content []byte) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(directory, name), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -56,6 +56,14 @@ type gstProducer struct {
 	mediaMu              sync.RWMutex
 	mediaTracks          []string
 	compatibilityActions []string
+	hlsMediaMu           sync.Mutex
+	hlsMediaInspections  map[string]cachedHLSSegmentInspection
+}
+
+type cachedHLSSegmentInspection struct {
+	size       int64
+	modifiedNS int64
+	status     BootstrapStatus
 }
 
 func newGSTProducer(id, source string, generation uint64, config Config, hub *Hub) Producer {
@@ -101,7 +109,48 @@ func (p *gstProducer) HLSCompatibilityActions() []string {
 func (p *gstProducer) HLSGeneration() uint64 { return p.generation }
 
 func (p *gstProducer) HLSPlaylistSnapshot() (*HLSPlaylistSnapshot, error) {
-	return ReadHLSPlaylist(p.playlist)
+	select {
+	case <-p.ready:
+	default:
+		return nil, fmt.Errorf("%w: canonical media layout is not ready", ErrHLSPlaylistNotReady)
+	}
+	snapshot, err := ReadHLSPlaylist(p.playlist)
+	if err != nil {
+		return nil, err
+	}
+	directory := filepath.Dir(p.playlist)
+	if err := snapshot.ValidateSegments(directory); err != nil {
+		return nil, err
+	}
+	status := p.hub.BootstrapStatus()
+	return snapshot.decoderReadySuffix(directory, hlsMediaExpectation{
+		Video: status.HasVideo,
+		Audio: status.HasAudio,
+	}, p.inspectHLSSegment)
+}
+
+func (p *gstProducer) inspectHLSSegment(path string) (BootstrapStatus, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return BootstrapStatus{}, err
+	}
+	p.hlsMediaMu.Lock()
+	defer p.hlsMediaMu.Unlock()
+	if cached, ok := p.hlsMediaInspections[path]; ok && cached.size == info.Size() &&
+		cached.modifiedNS == info.ModTime().UnixNano() {
+		return cached.status, nil
+	}
+	status, err := inspectHLSSegment(path)
+	if err != nil {
+		return BootstrapStatus{}, err
+	}
+	if p.hlsMediaInspections == nil {
+		p.hlsMediaInspections = make(map[string]cachedHLSSegmentInspection)
+	}
+	p.hlsMediaInspections[path] = cachedHLSSegmentInspection{
+		size: info.Size(), modifiedNS: info.ModTime().UnixNano(), status: status,
+	}
+	return status, nil
 }
 
 func (p *gstProducer) rememberMediaTrack(caps string) {
@@ -840,14 +889,11 @@ func (p *gstProducer) playlistLoop() {
 	defer ticker.Stop()
 	for !p.stopping.Load() {
 		<-ticker.C
-		snapshot, err := ReadHLSPlaylist(p.playlist)
-		// One validated, non-empty segment is enough to start. Waiting for three
-		// makes startup depend on the upstream keyframe cadence and can turn a
-		// healthy transport stream into a 30-second HLS timeout.
+		snapshot, err := p.HLSPlaylistSnapshot()
+		// One independently decodable segment with the canonical audio/video
+		// layout is enough to start. Waiting for three makes startup depend on
+		// upstream keyframe cadence and can turn a healthy stream into a timeout.
 		if err != nil || len(snapshot.Segments) < 1 || snapshot.Duration <= 0 {
-			continue
-		}
-		if err := snapshot.ValidateSegments(filepath.Dir(p.playlist)); err != nil {
 			continue
 		}
 		p.hlsOnce.Do(func() { close(p.hlsReady) })
