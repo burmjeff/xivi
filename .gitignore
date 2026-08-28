@@ -17,6 +17,7 @@ tmp/
 xivi.exe
 /models/
 /docs/*
+!/docs/openapi.go
 !/docs/openapi-v2.yaml
 !/docs/security-deployment.md
 xivi

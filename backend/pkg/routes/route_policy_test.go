@@ -25,7 +25,7 @@ func TestEveryRegisteredRouteDeclaresAnAuthorizationPolicy(t *testing.T) {
 	app := fiber.New()
 	app.Use(recover.New())
 	SvelteRoutes(app)
-	SwaggerRoutes(app)
+	APIDocumentationRoutes(app)
 	V2Routes(app)
 	PublicRoutes(app)
 	MediaRoutes(app)
@@ -61,6 +61,7 @@ func TestAnonymousRequestsCannotReachProtectedSurfaces(t *testing.T) {
 	V2Routes(app)
 	PublicRoutes(app)
 	MediaRoutes(app)
+	APIDocumentationRoutes(app)
 
 	cases := []struct {
 		method string
@@ -74,6 +75,10 @@ func TestAnonymousRequestsCannotReachProtectedSurfaces(t *testing.T) {
 		{fiber.MethodGet, "/stream/channel-uuid", fiber.StatusUnauthorized},
 		{fiber.MethodGet, "/media/v1/lineups/1/playlist.m3u", fiber.StatusUnauthorized},
 		{fiber.MethodGet, "/images/channel.png?lineup_id=1", fiber.StatusUnauthorized},
+		{fiber.MethodGet, "/docs/", fiber.StatusUnauthorized},
+		{fiber.MethodGet, "/docs/openapi.yaml", fiber.StatusUnauthorized},
+		{fiber.MethodGet, "/docs/legacy/", fiber.StatusUnauthorized},
+		{fiber.MethodGet, "/swagger/index.html", fiber.StatusUnauthorized},
 	}
 	for _, test := range cases {
 		request := httptest.NewRequest(test.method, test.path, nil)

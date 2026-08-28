@@ -1325,7 +1325,7 @@ components:
       type: apiKey
       in: cookie
       name: __Host-xivi_session
-      description: Opaque public HTTPS session. Trusted direct-LAN HTTP uses the separate xivi_lan_session cookie.
+      description: Opaque public HTTPS session, supplied automatically after signing in through Xivi. Trusted direct-LAN HTTP uses the separate xivi_lan_session cookie; HttpOnly session cookies cannot be entered through the documentation's Authorize dialog.
     csrfToken:
       type: apiKey
       in: header

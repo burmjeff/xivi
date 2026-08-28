@@ -15,7 +15,8 @@
 		PanelLeftClose,
 		PanelLeftOpen,
 		Users,
-		CircleUserRound
+		CircleUserRound,
+		FileJson2
 	} from '@lucide/svelte';
 	import { auth } from '$lib/state/auth.svelte';
 	import SignalMark from '$lib/components/brand/SignalMark.svelte';
@@ -51,7 +52,8 @@
 		{ href: '/studio/guide-data', label: 'Guide Data', icon: BookOpen },
 		{ href: '/studio/streams', label: 'Streams', icon: Activity },
 		{ href: '/studio/users', label: 'Users', icon: Users },
-		{ href: '/studio/settings', label: 'Settings', icon: Settings }
+		{ href: '/studio/settings', label: 'Settings', icon: Settings },
+		{ href: '/docs/', label: 'API Docs', icon: FileJson2 }
 	];
 	function active(href: string) {
 		return href === '/' || href === '/studio'
@@ -84,6 +86,7 @@
 			<nav id="studio-navigation" aria-label="Studio">
 				<span class="nav-label">Studio</span>{#each studioNav as item}{@const Icon = item.icon}<a
 						href={item.href}
+						data-sveltekit-reload={item.href.startsWith('/docs/') ? true : undefined}
 						class:active={active(item.href)}
 						aria-label={preferences.studioNavCollapsed ? item.label : undefined}
 						title={preferences.studioNavCollapsed ? item.label : undefined}

@@ -24,7 +24,7 @@ There is no public registration. On the first server start Xivi creates a tempor
    continue to use the defaults in `config.yaml.example`.
 4. Build it: npm run build-all
 5. Run it: npm run serve
-6. Go to your API Docs page: [127.0.0.1:3000/swagger/index.html](http://127.0.0.1:3000/swagger/index.html)
+6. Sign in as an administrator and open the current API documentation at [127.0.0.1:3000/docs/](http://127.0.0.1:3000/docs/). The deprecated administrator API remains labeled separately at `/docs/legacy/`.
 
 ### Shared streaming and source limits
 

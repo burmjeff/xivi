@@ -12,7 +12,6 @@ import (
 	"xivi/backend/pkg/routes"
 	"xivi/backend/pkg/security"
 	"xivi/backend/platform/settings"
-	_ "xivi/docs" // load API Docs files (Swagger)
 
 	"github.com/gofiber/fiber/v2"
 	_ "github.com/joho/godotenv/autoload" // load .env file automatically
@@ -82,11 +81,11 @@ func main() {
 
 	// Routes.
 	routes.SvelteRoutes(a)
-	routes.SwaggerRoutes(a) // Register a route for API Docs (Swagger).
-	routes.V2Routes(a)      // Register the additive product-interface API.
-	routes.PublicRoutes(a)  // Register legacy administrator routes and public media paths.
-	routes.MediaRoutes(a)   // Authenticated M3U and XMLTV outputs.
-	routes.NotFoundRoute(a) // Register route for 404 Error.
+	routes.APIDocumentationRoutes(a) // Register protected current and legacy API documentation.
+	routes.V2Routes(a)               // Register the additive product-interface API.
+	routes.PublicRoutes(a)           // Register legacy administrator routes and public media paths.
+	routes.MediaRoutes(a)            // Authenticated M3U and XMLTV outputs.
+	routes.NotFoundRoute(a)          // Register route for 404 Error.
 
 	app.StartServer(a)
 }

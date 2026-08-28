@@ -4,7 +4,6 @@ go 1.25.13
 
 require (
 	github.com/anush008/fastembed-go v1.0.0
-	github.com/arsmn/fiber-swagger/v2 v2.31.1
 	github.com/davidbyttow/govips/v2 v2.16.0
 	github.com/go-co-op/gocron v1.37.0
 	github.com/go-gst/go-gst v1.4.0
@@ -76,7 +75,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.19.0
 	github.com/klauspost/compress v1.19.2 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
-	github.com/swaggo/files v1.0.1 // indirect
+	github.com/swaggo/files v1.0.1
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.68.0 // indirect
 	golang.org/x/crypto v0.55.0

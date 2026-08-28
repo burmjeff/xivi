@@ -15,6 +15,18 @@ export default defineConfig({
 			overlay: true
 		},
 		proxy: {
+			'/docs': {
+				target: backend,
+				changeOrigin: false,
+				secure: false,
+				timeout: 30_000
+			},
+			'/swagger': {
+				target: backend,
+				changeOrigin: false,
+				secure: false,
+				timeout: 30_000
+			},
 			'/media': {
 				target: backend,
 				changeOrigin: true,
