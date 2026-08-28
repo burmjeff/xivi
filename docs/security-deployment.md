@@ -12,24 +12,18 @@ up both `/srv/xivi/config` and `/srv/xivi/serve` to access-controlled storage.
 The authentication key must be backed up separately after it is created. Losing
 that key makes encrypted provider URLs and TOTP seeds unrecoverable.
 
-Create the writable directories and a separate secret directory for Xivi's
-dedicated UID, then restrict access:
+Create the writable directories for Xivi's dedicated UID, then restrict access:
 
 ```sh
-sudo install -d -m 0700 -o 10001 -g 10001 /srv/xivi/config /srv/xivi/serve /srv/xivi/secrets
+sudo install -d -m 0700 -o 10001 -g 10001 /srv/xivi/config /srv/xivi/serve
 sudo install -m 0600 -o root -g root /dev/null /srv/xivi/xivi.env
 ```
 
-Generate the 256-bit root key through Xivi. The command refuses to overwrite an
-existing key:
-
-```sh
-docker run --rm --user 10001:10001 \
-  -v /srv/xivi/secrets:/run/xivi-secrets \
-  xivi auth generate-key --output /run/xivi-secrets/auth.key
-sudo chmod 0400 /srv/xivi/secrets/auth.key
-sudo chown 10001:10001 /srv/xivi/secrets/auth.key
-```
+On first startup Xivi atomically creates a 256-bit root key at
+`/xivi/config/auth.key` with mode `0600`. It never replaces an existing key, so
+every restart reuses the same value from the persistent config volume. Set
+`XIVI_AUTH_KEY_FILE` only when an externally managed key path is required; a
+missing configured path is created when its parent is writable.
 
 Never store the key in the image, Compose file, Git, SQLite database, logs, or a
 support bundle. A restore requires the matching database and authentication key.
@@ -40,7 +34,6 @@ Put these values in `/srv/xivi/xivi.env`, replacing every example address:
 
 ```dotenv
 XIVI_PRODUCTION=true
-XIVI_AUTH_KEY_FILE=/run/secrets/xivi-auth.key
 PUBLIC_BASE_URL=https://tv.example.com
 LOCAL_BASE_URL=http://192.168.1.10:3000
 TRUSTED_PROXY_CIDRS=192.168.1.20/32
@@ -83,7 +76,6 @@ docker run --name xivi --network host \
   --tmpfs /tmp:rw,noexec,nosuid,size=64m \
   --log-driver local --log-opt max-size=10m --log-opt max-file=3 \
   --env-file /srv/xivi/xivi.env \
-  --mount type=bind,src=/srv/xivi/secrets/auth.key,dst=/run/secrets/xivi-auth.key,readonly \
   -v /srv/xivi/serve:/xivi/serve \
   -v /srv/xivi/config:/xivi/config xivi
 ```
@@ -93,8 +85,9 @@ not required, publish the application port only on the selected LAN address.
 Do not publish the container directly on a public interface.
 
 On first startup Xivi applies additive migrations and encrypts stored provider
-URLs. It fails closed in production when the key, public URL, proxy CIDR, or
-required LAN CIDR is missing or invalid.
+URLs. It fails closed in production when the authentication key cannot be
+created or read, or when the public URL, proxy CIDR, or required LAN CIDR is
+missing or invalid.
 
 ## 4. Complete the first-run password change and verify access
 

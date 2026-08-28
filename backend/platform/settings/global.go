@@ -113,7 +113,7 @@ type VirtualTuner struct {
 }
 
 // Security contains only non-secret deployment policy. The authentication
-// root key is supplied through XIVI_AUTH_KEY_FILE and is never serialized.
+// root key is stored outside the database and is never serialized in settings.
 type Security struct {
 	PublicBaseURL      string   `yaml:"public_base_url" json:"public_base_url"`
 	LocalBaseURL       string   `yaml:"local_base_url" json:"local_base_url"`

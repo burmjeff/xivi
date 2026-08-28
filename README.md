@@ -11,7 +11,7 @@
 
 ### Secure production cutover
 
-Internet-facing installations require authentication, HTTPS through a trusted reverse proxy, an externally mounted authentication key, explicit trusted-network CIDRs, and replacement media-key URLs for players. Follow [the secure deployment and recovery guide](docs/security-deployment.md) before upgrading a populated instance.
+Internet-facing installations require authentication, HTTPS through a trusted reverse proxy, a persistent authentication key, explicit trusted-network CIDRs, and replacement media-key URLs for players. Xivi creates `/xivi/config/auth.key` on first startup and reuses it from the config volume. Follow [the secure deployment and recovery guide](docs/security-deployment.md) before upgrading a populated instance.
 
 There is no public registration. On the first server start Xivi creates a temporary `xivi` / `xivi` administrator. It is accepted through any normally permitted Xivi transport, including public HTTPS, and opens only the required password-change screen; Watch, Studio, streams, images, MFA, sessions, and device access remain locked until it is replaced. Change it immediately. Administrators manage viewers and lineup grants in Studio → Users. Users create revocable, reusable M3U/XMLTV links in Account → Device access.
 
@@ -57,7 +57,6 @@ docker run --network host \
   --tmpfs /tmp:rw,noexec,nosuid,size=64m \
   --log-driver local --log-opt max-size=10m --log-opt max-file=3 \
   --env-file /srv/xivi/xivi.env \
-  --mount type=bind,src=/srv/xivi/secrets/auth.key,dst=/run/secrets/xivi-auth.key,readonly \
   -v /srv/xivi/serve:/xivi/serve \
   -v /srv/xivi/config:/xivi/config xivi
 ```

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"xivi/backend/platform/settings"
 )
 
 func initializeTestKey(t *testing.T) {
@@ -23,11 +24,55 @@ func initializeTestKey(t *testing.T) {
 	}
 }
 
-func TestProductionRequiresExplicitAuthKeyFile(t *testing.T) {
+func TestProductionCreatesAndReusesDefaultAuthKeyFile(t *testing.T) {
+	originalConfigPath := settings.CONFIG_PATH
+	settings.CONFIG_PATH = t.TempDir()
+	t.Cleanup(func() { settings.CONFIG_PATH = originalConfigPath })
 	t.Setenv("XIVI_PRODUCTION", "true")
 	t.Setenv("XIVI_AUTH_KEY_FILE", "")
-	if err := InitializeKey(); err == nil || !strings.Contains(err.Error(), "XIVI_AUTH_KEY_FILE") {
-		t.Fatalf("got %v, want explicit production key-file requirement", err)
+	if err := InitializeKey(); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(settings.CONFIG_PATH, "auth.key")
+	first, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(path); err != nil {
+		t.Fatal(err)
+	} else if info.Mode().Perm() != 0o600 {
+		t.Fatalf("authentication key permissions are %o, want 600", info.Mode().Perm())
+	}
+	if err := InitializeKey(); err != nil {
+		t.Fatal(err)
+	}
+	second, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Fatal("authentication key changed on restart")
+	}
+}
+
+func TestGenerateKeyFileDoesNotOverwriteExistingKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.key")
+	if err := GenerateKeyFile(path); err != nil {
+		t.Fatal(err)
+	}
+	first, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := GenerateKeyFile(path); !errors.Is(err, os.ErrExist) {
+		t.Fatalf("got %v, want existing-key error", err)
+	}
+	second, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Fatal("existing authentication key was overwritten")
 	}
 }
 

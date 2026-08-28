@@ -31,13 +31,9 @@ func AuthKeyPath() string {
 }
 
 func GenerateKeyFile(path string) error {
-	if strings.TrimSpace(path) == "" {
+	path = strings.TrimSpace(path)
+	if path == "" {
 		return errors.New("authentication key path is empty")
-	}
-	if _, err := os.Stat(path); err == nil {
-		return fmt.Errorf("authentication key already exists at %s", path)
-	} else if !os.IsNotExist(err) {
-		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
@@ -46,28 +42,53 @@ func GenerateKeyFile(path string) error {
 	if _, err := rand.Read(key); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(base64.RawURLEncoding.EncodeToString(key)+"\n"), 0o600)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("authentication key already exists at %s: %w", path, os.ErrExist)
+		}
+		return err
+	}
+	complete := false
+	defer func() {
+		if complete {
+			return
+		}
+		_ = file.Close()
+		_ = os.Remove(path)
+	}()
+	if _, err := file.WriteString(base64.RawURLEncoding.EncodeToString(key) + "\n"); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	complete = true
+	return nil
 }
 
 func InitializeKey() error {
 	production := strings.EqualFold(strings.TrimSpace(os.Getenv("XIVI_PRODUCTION")), "true")
-	if production && strings.TrimSpace(os.Getenv("XIVI_AUTH_KEY_FILE")) == "" {
-		return errors.New("XIVI_AUTH_KEY_FILE is required in production")
-	}
 	path := AuthKeyPath()
-	info, statErr := os.Stat(path)
-	if production && runtime.GOOS != "windows" && statErr == nil && info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("authentication key permissions at %s are too broad; use mode 0400 or 0600", path)
-	}
 	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) && !production {
-		if err := GenerateKeyFile(path); err != nil {
-			return err
+	if os.IsNotExist(err) {
+		if generateErr := GenerateKeyFile(path); generateErr != nil && !errors.Is(generateErr, os.ErrExist) {
+			return fmt.Errorf("create authentication key at %s: %w", path, generateErr)
 		}
 		data, err = os.ReadFile(path)
 	}
 	if err != nil {
-		return fmt.Errorf("authentication key unavailable at %s; run `xivi auth generate-key`: %w", path, err)
+		return fmt.Errorf("authentication key unavailable at %s: %w", path, err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("inspect authentication key at %s: %w", path, err)
+	}
+	if production && runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("authentication key permissions at %s are too broad; use mode 0400 or 0600", path)
 	}
 	key, err := decodeKey(data)
 	if err != nil {

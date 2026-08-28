@@ -51,8 +51,8 @@ maintenance:
 virtual_tuner:
   tuner_count: 6
 
-# The authentication key is not stored here. Mount a root key at the path in
-# XIVI_AUTH_KEY_FILE (normally /xivi/config/auth.key).
+# The authentication key is not stored in YAML or SQLite. Xivi creates it at
+# /xivi/config/auth.key on first startup unless XIVI_AUTH_KEY_FILE overrides it.
 security:
   public_base_url: https://tv.example.com
   local_base_url: http://192.168.1.10:3000
