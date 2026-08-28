@@ -482,7 +482,9 @@ func (q *SecurityQueries) CreateMediaKey(ctx context.Context, key *models.MediaA
 func (q *SecurityQueries) ListMediaKeys(ctx context.Context, userID int64) ([]models.MediaAccessKey, error) {
 	keys := []models.MediaAccessKey{}
 	if err := q.SelectContext(ctx, &keys, `SELECT k.*, u.username FROM media_access_key k
-		JOIN app_user u ON u.id = k.user_id WHERE k.user_id = ? ORDER BY k.created_at DESC, k.id DESC`, userID); err != nil {
+		JOIN app_user u ON u.id = k.user_id WHERE k.user_id = ?
+		ORDER BY CASE WHEN k.revoked_at IS NULL THEN 0 ELSE 1 END,
+			k.created_at DESC, k.id DESC`, userID); err != nil {
 		return nil, err
 	}
 	for i := range keys {

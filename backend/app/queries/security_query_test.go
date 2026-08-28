@@ -123,6 +123,53 @@ func TestMediaKeyRetainsEncryptedCredentialForReusableLinks(t *testing.T) {
 	}
 }
 
+func TestListMediaKeysGroupsActiveKeysBeforeRevokedKeys(t *testing.T) {
+	ctx := context.Background()
+	q := securityTestQueries(t)
+	userID, err := q.CreateUser(ctx, "ordered-device-owner", "hash", "viewer", false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now().UTC().Add(-time.Hour)
+	items := []struct {
+		name      string
+		createdAt time.Time
+		revoke    bool
+	}{
+		{name: "active-older", createdAt: base},
+		{name: "revoked-newest", createdAt: base.Add(2 * time.Minute), revoke: true},
+		{name: "active-newer", createdAt: base.Add(time.Minute)},
+	}
+	for _, item := range items {
+		key := &models.MediaAccessKey{
+			UserID: userID, Name: item.name, TokenPrefix: "prefix-" + item.name,
+			TokenHash: []byte("hash-" + item.name), NetworkScope: "lan", CreatedAt: item.createdAt,
+		}
+		if err := q.CreateMediaKey(ctx, key, nil); err != nil {
+			t.Fatal(err)
+		}
+		if item.revoke {
+			if revoked, err := q.RevokeMediaKey(ctx, key.ID, userID); err != nil || !revoked {
+				t.Fatalf("revoke media key: revoked=%v err=%v", revoked, err)
+			}
+		}
+	}
+
+	keys, err := q.ListMediaKeys(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"active-newer", "active-older", "revoked-newest"}
+	if len(keys) != len(want) {
+		t.Fatalf("unexpected key count: %d", len(keys))
+	}
+	for index, name := range want {
+		if keys[index].Name != name {
+			t.Fatalf("device access order[%d]=%q, want %q", index, keys[index].Name, name)
+		}
+	}
+}
+
 func TestSecurityRetentionDeletesOldDeviceKeysAndLineupGrants(t *testing.T) {
 	ctx := context.Background()
 	q := securityTestQueries(t)
