@@ -15,6 +15,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/rs/zerolog v1.34.0
 	github.com/shirou/gopsutil/v4 v4.25.10
+	github.com/swaggo/files/v2 v2.0.2
 	github.com/swaggo/swag v1.16.6
 	golang.org/x/term v0.45.0
 	gopkg.in/yaml.v2 v2.4.0
@@ -75,7 +76,6 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.19.0
 	github.com/klauspost/compress v1.19.2 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
-	github.com/swaggo/files v1.0.1
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.68.0 // indirect
 	golang.org/x/crypto v0.55.0

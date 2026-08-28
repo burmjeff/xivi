@@ -2,6 +2,7 @@ package routes
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 
 	"xivi/backend/pkg/middleware"
@@ -9,7 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
-	swaggerFiles "github.com/swaggo/files"
+	swaggerFiles "github.com/swaggo/files/v2"
 	"github.com/swaggo/swag"
 )
 
@@ -27,8 +28,8 @@ const documentationHTML = `<!doctype html>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>%s</title>
-		<link rel="icon" type="image/png" href="/docs/assets/favicon-32x32.png" />
-		<link rel="stylesheet" href="/docs/assets/swagger-ui.css" />
+		<link rel="icon" type="image/png" href="/docs/assets/favicon-32x32.png?v=swaggo-files-2.0.2" />
+		<link rel="stylesheet" href="/docs/assets/swagger-ui.css?v=swaggo-files-2.0.2" />
 		<link rel="stylesheet" href="/docs/assets/xivi-docs.css" />
 	</head>
 	<body data-spec-url="%s">
@@ -37,8 +38,8 @@ const documentationHTML = `<!doctype html>
 			<nav><a href="%s">%s</a><a href="/studio">Back to Studio</a></nav>
 		</header>
 		<div id="swagger-ui"></div>
-		<script src="/docs/assets/swagger-ui-bundle.js" defer></script>
-		<script src="/docs/assets/swagger-ui-standalone-preset.js" defer></script>
+		<script src="/docs/assets/swagger-ui-bundle.js?v=swaggo-files-2.0.2" defer></script>
+		<script src="/docs/assets/swagger-ui-standalone-preset.js?v=swaggo-files-2.0.2" defer></script>
 		<script src="/docs/assets/xivi-docs.js" defer></script>
 	</body>
 </html>`
@@ -158,7 +159,7 @@ func serveDocumentationAsset(c *fiber.Ctx) error {
 		return fiber.ErrNotFound
 	}
 	c.Set(fiber.HeaderCacheControl, "private, max-age=86400")
-	return filesystem.SendFile(c, swaggerFiles.HTTP, "/"+asset)
+	return filesystem.SendFile(c, http.FS(swaggerFiles.FS), "/"+asset)
 }
 
 func redirectUnauthenticatedDocumentationPage(destination string) fiber.Handler {

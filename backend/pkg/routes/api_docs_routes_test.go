@@ -50,6 +50,9 @@ func TestDocumentationPagesClearlySeparateCurrentAndLegacyContracts(t *testing.T
 	if !strings.Contains(currentBody, "Current Watch and Studio API · OpenAPI 3.1") || !strings.Contains(currentBody, "/docs/openapi.yaml") {
 		t.Fatal("current documentation page is not clearly labeled")
 	}
+	if !strings.Contains(currentBody, "swagger-ui-bundle.js?v=swaggo-files-2.0.2") {
+		t.Fatal("documentation page does not cache-bust the embedded Swagger UI version")
+	}
 	if strings.Contains(currentBody, "<script>") {
 		t.Fatal("documentation page contains an inline script blocked by CSP")
 	}
@@ -129,7 +132,7 @@ func TestAuthenticatedAdministratorCanLoadDocumentationRoutes(t *testing.T) {
 		{path: "/docs/", contains: "Current Watch and Studio API", statusCode: fiber.StatusOK},
 		{path: "/docs", contains: "Current Watch and Studio API", statusCode: fiber.StatusOK},
 		{path: "/docs/openapi.yaml", contains: "openapi: 3.1.0", statusCode: fiber.StatusOK},
-		{path: "/docs/assets/swagger-ui-bundle.js", contains: "SwaggerUIBundle", statusCode: fiber.StatusOK},
+		{path: "/docs/assets/swagger-ui-bundle.js", contains: "isOAS31", statusCode: fiber.StatusOK},
 		{path: "/docs/legacy/", contains: "Legacy administrator API", statusCode: fiber.StatusOK},
 	}
 	for _, test := range tests {
