@@ -16,10 +16,15 @@ FROM golang:${GO_VERSION}-bookworm AS go-toolchain
 FROM node-toolchain AS app-builder
 
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
-COPY . /app
-RUN npm run build
+COPY .npmrc package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    npm ci --ignore-scripts
+
+# Keep backend-only changes from invalidating the frontend build.
+COPY svelte.config.js tsconfig.json vite.config.ts ./
+COPY src/ /app/src
+COPY static/ /app/static
+RUN npx svelte-kit sync && npm run build
 
 #
 # shared native runtime
@@ -92,16 +97,16 @@ FROM native-builder AS server-builder
 
 WORKDIR /build
 
+COPY go.* ./
+RUN go mod download && go mod verify
+
+# Copy application code only after the module layer has been populated.
 COPY backend/ /build/backend
 COPY docs/ /build/docs
-COPY go.* ./
 COPY *.go ./
-RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod download && go mod verify
 
 ENV CGO_ENABLED=1 GOOS=linux GOARCH=amd64 GOFLAGS=-mod=readonly GOTOOLCHAIN=local
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
+RUN --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     go build -trimpath -ldflags "-linkmode 'external' -extldflags '-lstdc++ -lssl -lcrypto' -s -w" -buildvcs=false -o xivi .
 
 #
@@ -128,6 +133,41 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 USER ubuntu
+
+#
+# security verification
+#
+
+# Dependencies and pinned analysis tools live in their own stage so GitHub's
+# external BuildKit cache can restore them without caching security results.
+FROM development AS security-dependencies
+
+WORKDIR /workspace
+
+COPY --chown=ubuntu:ubuntu .npmrc package.json package-lock.json ./
+RUN --mount=type=cache,target=/home/ubuntu/.npm,uid=1000,gid=1000,sharing=locked \
+    npm ci --ignore-scripts
+
+COPY --chown=ubuntu:ubuntu go.mod go.sum ./
+RUN go mod download && go mod verify
+RUN go install golang.org/x/vuln/cmd/govulncheck@v1.1.4 \
+    && go install github.com/securego/gosec/v2/cmd/gosec@v2.22.11
+
+FROM security-dependencies AS security-tests
+
+COPY --chown=ubuntu:ubuntu . ./
+
+# The workflow marks this stage as no-cache so audits and tests always run.
+# Dependency downloads and pinned tool installation remain cached above.
+RUN --mount=type=cache,target=/home/ubuntu/.npm,uid=1000,gid=1000,sharing=locked \
+    npm audit --audit-level=low \
+    && npm run check \
+    && npm run build
+RUN --mount=type=cache,target=/home/ubuntu/.cache/go-build,uid=1000,gid=1000,sharing=locked \
+    packages="$(go list ./... | grep -v '/node_modules/')" \
+    && go test ${packages} \
+    && govulncheck ${packages} \
+    && gosec -include=G201,G202 . ./backend/... ./docs ./tests/...
 
 #
 # deployment
