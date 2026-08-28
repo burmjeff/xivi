@@ -2,16 +2,29 @@
 .dockerignore
 .editorconfig
 .gitignore
-.env.example
+.env*
 Dockerfile
 Makefile
 LICENSE
 **/*.md
 **/*_test.go
+**/auth.key
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.log
+xivi
+xivi.exe
 
 # Folders
 .git/
 .github/
+.svelte-kit/
+.vite/
 build/
+config/
 lib_build/
+local_cache/
 node_modules/
+serve/
+vector_cache/

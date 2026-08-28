@@ -136,14 +136,12 @@ USER ubuntu
 FROM native-runtime AS deployment
 
 # environment variables
-ENV APP_NAME="Xivi" \
-    APP_VERSION="1.0" \
-    TZ="America/New_York" \
+ENV APP_VERSION="1.0" \
+    XDG_CACHE_HOME="/xivi/serve/cache" \
     SERVER_HOST="0.0.0.0" \
     SERVER_PORT=3000 \
     SERVER_READ_TIMEOUT=60 \
-    XIVI_PRODUCTION="true" \
-    LOG_LEVEL=3
+    XIVI_PRODUCTION="true"
 
 RUN rm -f /usr/bin/pebble \
     && groupadd --system --gid 10001 xivi \

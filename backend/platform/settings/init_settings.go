@@ -305,9 +305,6 @@ func ValidateSecuritySettings(security Security) error {
 	if production && publicHTTPSConfigured && len(security.TrustedProxyCIDRs) == 0 {
 		return fmt.Errorf("TRUSTED_PROXY_CIDRS is required when public HTTPS is configured in production")
 	}
-	if security.AllowLANHTTP && production && len(security.TrustedLANCIDRs) == 0 {
-		return fmt.Errorf("TRUSTED_LAN_CIDRS is required when LAN HTTP is enabled in production")
-	}
 	return nil
 }
 

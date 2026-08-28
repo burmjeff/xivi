@@ -24,6 +24,7 @@ func RequestNetworkInfo(c *fiber.Ctx) RequestNetwork {
 func requestNetworkInfo(c *fiber.Ctx, policy settings.Security) RequestNetwork {
 	direct := c.Context().RemoteIP()
 	trustedProxy := ipInCIDRs(direct, policy.TrustedProxyCIDRs)
+	forwardedRequest := hasForwardingHeaders(c)
 	clientIP := direct
 	// Derive the direct transport from the socket, never from request headers.
 	// Forwarded scheme and client IP are considered only after the direct peer
@@ -42,8 +43,22 @@ func requestNetworkInfo(c *fiber.Ctx, policy settings.Security) RequestNetwork {
 			scheme = forwardedProto
 		}
 	}
-	trustedLAN := !trustedProxy && isTrustedLAN(clientIP, policy.TrustedLANCIDRs)
+	// A reverse proxy commonly connects from an RFC1918 Docker or LAN address.
+	// Without this check an unconfigured public proxy could inherit the automatic
+	// direct-LAN exception merely because its socket peer is private. Direct LAN
+	// clients remain automatic; proxy-shaped requests require an explicit trusted
+	// proxy CIDR before either forwarded metadata or HTTPS scope is accepted.
+	trustedLAN := !trustedProxy && !forwardedRequest && trustedLANForPolicy(clientIP, policy)
 	return RequestNetwork{IP: clientIP, Scheme: scheme, TrustedProxy: trustedProxy, DirectTrustedLAN: trustedLAN}
+}
+
+func hasForwardingHeaders(c *fiber.Ctx) bool {
+	for _, name := range []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto"} {
+		if strings.TrimSpace(c.Get(name)) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // The configured edge proxy appends or overwrites the value it observed. The
@@ -60,7 +75,18 @@ func lastForwardedValue(value string) string {
 }
 
 func IsTrustedLAN(ip net.IP) bool {
-	return isTrustedLAN(ip, settings.Current().Security.TrustedLANCIDRs)
+	return trustedLANForPolicy(ip, settings.Current().Security)
+}
+
+// trustedLANForPolicy uses an explicit allowlist whenever one is configured.
+// Without one, directly connected loopback, RFC1918, and IPv6 ULA clients are
+// treated as local. Reverse-proxy classification happens first, so a trusted
+// proxy peer is never reclassified as a LAN client.
+func trustedLANForPolicy(ip net.IP, policy settings.Security) bool {
+	if len(policy.TrustedLANCIDRs) > 0 {
+		return isTrustedLAN(ip, policy.TrustedLANCIDRs)
+	}
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate())
 }
 
 func isTrustedLAN(ip net.IP, trustedCIDRs []string) bool {

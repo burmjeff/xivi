@@ -66,9 +66,8 @@ func TestWriteSettingsAtomicallyReplacesExistingConfig(t *testing.T) {
 func TestProductionSecurityAllowsLocalOnlyDeployment(t *testing.T) {
 	t.Setenv("XIVI_PRODUCTION", "true")
 	security := Security{
-		LocalBaseURL:    "http://192.168.1.10:3000",
-		AllowLANHTTP:    true,
-		TrustedLANCIDRs: []string{"192.168.1.0/24"},
+		LocalBaseURL: "http://192.168.1.10:3000",
+		AllowLANHTTP: true,
 	}
 	if err := ValidateSecuritySettings(security); err != nil {
 		t.Fatalf("local-only production deployment was rejected: %v", err)

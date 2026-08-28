@@ -19,6 +19,23 @@ sudo install -d -m 0700 -o 10001 -g 10001 /srv/xivi/config /srv/xivi/serve
 sudo install -m 0600 -o root -g root /dev/null /srv/xivi/xivi.env
 ```
 
+Older Xivi images ran as root. Before reusing storage from one of those images,
+stop the old container and transfer both mounted trees to the new runtime UID:
+
+```sh
+sudo chown -R 10001:10001 /srv/xivi/config /srv/xivi/serve
+sudo chmod 0700 /srv/xivi/config /srv/xivi/serve
+```
+
+For Docker named volumes, run the equivalent one-time ownership migration with
+the new image (replace the volume names when necessary):
+
+```sh
+docker run --rm --user 0 --entrypoint /bin/chown \
+  -v config:/xivi/config -v serve:/xivi/serve xivi \
+  -R 10001:10001 /xivi/config /xivi/serve
+```
+
 On first startup Xivi atomically creates a 256-bit root key at
 `/xivi/config/auth.key` with mode `0600`. It never replaces an existing key, so
 every restart reuses the same value from the persistent config volume. Set
@@ -49,14 +66,18 @@ SERVER_PORT=3000
 for a local-only production container; Xivi will use `LOCAL_BASE_URL` and does
 not require a reverse proxy in that mode. When either public URL is configured,
 `TRUSTED_PROXY_CIDRS` is required so forwarded HTTPS and client-address headers
-can only be accepted from the actual proxy. Trusted LAN CIDRs remain required
-when full application access over local HTTP is enabled.
+can only be accepted from the actual proxy. `TRUSTED_LAN_CIDRS` is optional. If
+it is empty, directly connected loopback, RFC1918, and IPv6 ULA clients are
+trusted automatically. Adding any LAN CIDR replaces that automatic behavior
+with the explicit allowlist.
 
 `TRUSTED_PROXY_CIDRS` contains only the direct IP/CIDR of Caddy, not client
 networks. Xivi ignores forwarded scheme and client-IP headers from any other
-peer. `TRUSTED_LAN_CIDRS` contains only networks permitted to use LAN sessions,
-LAN media keys, and tuner discovery. Set `ALLOW_LAN_HTTP=false` when local HTTPS
-is available.
+peer. A request carrying proxy-forwarding headers is never granted automatic
+LAN trust, even when its direct Docker or LAN peer address is private. Every
+reverse proxy must therefore be listed explicitly. `TRUSTED_LAN_CIDRS` contains
+only networks permitted to use LAN sessions, LAN media keys, and tuner discovery.
+Set `ALLOW_LAN_HTTP=false` when local HTTPS is available.
 
 Bind the direct port only to the LAN interface and block it at the public
 firewall. Public traffic must reach Xivi through the configured Caddy proxy and
@@ -117,7 +138,7 @@ Do not publish the container directly on a public interface.
 On first startup Xivi applies additive migrations and encrypts stored provider
 URLs. It fails closed in production when the authentication key cannot be
 created or read, when a configured public deployment has no trusted proxy
-CIDR, or when a required LAN CIDR is missing or invalid.
+CIDR, or when a configured network CIDR is invalid.
 
 ## 4. Complete the first-run password change and verify access
 

@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"math"
-	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +28,6 @@ var (
 	embeddingCache          = make(map[string][]float64)
 	embeddingCacheMux       sync.RWMutex
 	vectorizationQueue      = make(chan vectorizationRequest, 200)
-	cachePath               = "./vector_cache" // Path for persistent cache
 	cacheInitialized        = false
 	cacheInitMux            sync.Mutex
 	batchProcessorStarted   = false
@@ -85,9 +84,11 @@ func dbOperationProcessor() {
 func getEmbeddingModel() (*fastembed.FlagEmbedding, error) {
 	var initErr error
 	embeddingModelOnce.Do(func() {
-		// Initialize with default options (using AllMiniLML6V2 model)
+		// Keep the model under the persistent writable serve volume so matching
+		// works when the production root filesystem is read-only.
 		model, err := fastembed.NewFlagEmbedding(&fastembed.InitOptions{
-			Model: fastembed.BGESmallENV15,
+			Model:    fastembed.BGESmallENV15,
+			CacheDir: filepath.Join(settings.SERVE_PATH, "model_cache"),
 		})
 		if err != nil {
 			initErr = err
@@ -129,12 +130,9 @@ func InitializeCache() {
 		return
 	}
 
-	// Ensure cache directory exists
-	if err := os.MkdirAll(cachePath, 0755); err != nil {
-		log.Error().Msgf("Failed to create vector cache directory: %v", err)
-	}
-
-	// Try to load cache from database only if database is already initialized
+	// Vectors are persisted in SQLite; the process-local map is only a hot cache.
+	// Keeping it database-backed avoids an obsolete writable directory outside
+	// the mounted config volume when the production root filesystem is read-only.
 	if database.Db != nil {
 		// Get top used vectors from database to pre-populate cache
 		channelVectors, err := database.Db.GetFrequentlyUsedVectors(context.Background(), 200) // Get top 200 vectors

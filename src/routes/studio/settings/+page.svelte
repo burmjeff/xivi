@@ -335,13 +335,15 @@
 							>{/if}</label
 					>
 					<label
-						>Trusted LAN CIDRs<textarea
+						>Trusted LAN CIDRs <small>(optional)</small><textarea
 							rows="3"
 							value={settings.security.trusted_lan_cidrs.join('\n')}
 							oninput={(event) =>
 								updateSecurityCIDRs('trusted_lan_cidrs', event.currentTarget.value)}
-						></textarea>{#if errors.trusted_lan_cidrs}<em>{errors.trusted_lan_cidrs}</em
-							>{/if}</label
+						></textarea>{#if errors.trusted_lan_cidrs}<em>{errors.trusted_lan_cidrs}</em>{/if}<small
+							>Leave blank to trust direct loopback and private-network clients. Add CIDRs to
+							replace that automatic trust with an explicit allowlist.</small
+						></label
 					>
 					<label
 						>Audit retention days<input

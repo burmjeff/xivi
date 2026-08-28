@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -103,10 +102,9 @@ func StartServer(app *fiber.App) {
 	vips.Startup(nil)
 	defer vips.Shutdown()
 
-	//config values
-	host := flag.String("host", settings.Current().Host, "Server Host")
-	port := flag.Int("port", settings.Current().Port, "Server Port")
-	settings.SERVER_PATH = fmt.Sprintf("%s:%d", *host, *port)
+	// The bind address is deployment-managed. The container defaults to
+	// 0.0.0.0, while a direct process defaults to loopback.
+	settings.SERVER_PATH = fmt.Sprintf("%s:%d", settings.Current().Host, settings.Current().Port)
 
 	//Start Cronjobs
 	if err := cron.RunCronJobs(); err != nil {
@@ -140,7 +138,7 @@ func StartServer(app *fiber.App) {
 
 	// Run server.
 	log.Printf("Server starting at http://%s ...\n", settings.SERVER_PATH)
-	if err := app.Listen(fmt.Sprintf("0.0.0.0:%d", *port)); err != nil {
+	if err := app.Listen(settings.SERVER_PATH); err != nil {
 		log.Printf("Oops... Server is not running! Reason: %v", err)
 	}
 }

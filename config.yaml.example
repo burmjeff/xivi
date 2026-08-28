@@ -65,8 +65,8 @@ security:
   local_base_url: http://192.168.1.10:3000
   trusted_proxy_cidrs:
     - 192.168.1.20/32
-  trusted_lan_cidrs:
-    - 192.168.1.0/24
+  # Optional. When empty, direct loopback and private-network clients are trusted.
+  trusted_lan_cidrs: []
   allow_lan_http: true
   audit_retention_days: 90
   maximum_audit_events: 100000
