@@ -2,9 +2,10 @@ package settings
 
 import (
 	"fmt"
+	"sync/atomic"
 )
 
-var APP_SETTINGS = &AppSettings{
+var initialSettings = &AppSettings{
 	Application:  Application{},
 	Server:       Server{},
 	Playlist:     Playlist{},
@@ -14,6 +15,22 @@ var APP_SETTINGS = &AppSettings{
 	VirtualTuner: VirtualTuner{},
 	Security:     Security{},
 }
+
+var currentSettings atomic.Pointer[AppSettings]
+
+func init() {
+	currentSettings.Store(initialSettings)
+}
+
+// Current returns the immutable settings snapshot currently used by Xivi.
+func Current() *AppSettings {
+	return currentSettings.Load()
+}
+
+func publish(next *AppSettings) {
+	currentSettings.Store(next)
+}
+
 var SERVER_PATH = ""
 var CONFIG_PATH = "./config"
 var SERVE_PATH = "./serve"

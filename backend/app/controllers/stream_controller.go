@@ -39,7 +39,7 @@ func streamSources(channels []models.ChannelUrl) []streaming.Source {
 }
 
 func acquireStreamSession(ctx context.Context, streamID, playbackID, protocol string) (*streaming.Session, []models.ChannelUrl, string, error) {
-	if !settings.APP_SETTINGS.Streaming.Proxy {
+	if !settings.Current().Streaming.Proxy {
 		return nil, nil, "", errors.New("secure playback requires stream proxying")
 	}
 	channels, err := database.Db.GetChannelsbyUuid(ctx, streamID)
@@ -240,7 +240,7 @@ func GetStream(c *fiber.Ctx) error {
 	if streamID == "" {
 		return streamError(c, fiber.StatusBadRequest, "A stream id is required.", nil)
 	}
-	if !settings.APP_SETTINGS.Streaming.Proxy {
+	if !settings.Current().Streaming.Proxy {
 		return streamErrorForSession(c, fiber.StatusServiceUnavailable,
 			"Secure playback requires stream proxying to be enabled.", errors.New("stream proxy is disabled"), "")
 	}
@@ -337,7 +337,7 @@ func GetHlsStream(c *fiber.Ctx) error {
 	if streamID == "" {
 		return streamError(c, fiber.StatusBadRequest, "A stream id is required.", nil)
 	}
-	if !settings.APP_SETTINGS.Streaming.Proxy {
+	if !settings.Current().Streaming.Proxy {
 		return streamErrorForSession(c, fiber.StatusServiceUnavailable,
 			"Secure playback requires stream proxying to be enabled.", errors.New("stream proxy is disabled"), "")
 	}
@@ -581,7 +581,7 @@ func V2StudioStreams(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusInternalServerError, "stream_events_failed", "Stream events could not be loaded.", true)
 	}
 	return c.JSON(fiber.Map{"summary": streaming.DefaultManager.Summary(), "items": items,
-		"history": history, "recent_events": events, "proxy_enabled": settings.APP_SETTINGS.Streaming.Proxy,
+		"history": history, "recent_events": events, "proxy_enabled": settings.Current().Streaming.Proxy,
 		"source_connections": streaming.DefaultManager.ConnectionUsage()})
 }
 
@@ -622,7 +622,7 @@ func V2RestartStream(c *fiber.Ctx) error {
 }
 
 func V2PrewarmStream(c *fiber.Ctx) error {
-	if settings.APP_SETTINGS.Streaming.PrewarmChannels <= 0 {
+	if settings.Current().Streaming.PrewarmChannels <= 0 {
 		return c.SendStatus(fiber.StatusNoContent)
 	}
 	streamID := strings.Clone(c.Params("stream_id"))
@@ -814,7 +814,7 @@ func GetHlsChannels(c *fiber.Ctx) error {
 		if logo, logoErr := database.Db.GetLogo(ctx, templateChannel.LogoId); logoErr == nil {
 			channel.Logo = utils.GetLogoUrl(logo.Name)
 		}
-		channel.Stream = fmt.Sprintf("http://%s:%d/stream/hls/%s", settings.APP_SETTINGS.Server.Host, settings.APP_SETTINGS.Server.Port, templateChannel.Uuid)
+		channel.Stream = fmt.Sprintf("http://%s:%d/stream/hls/%s", settings.Current().Server.Host, settings.Current().Server.Port, templateChannel.Uuid)
 		if templateChannel.TvgID != nil {
 			if programme, programmeErr := database.Db.GetCurrentProgramme(ctx, *templateChannel.TvgID, time.Now()); programmeErr == nil {
 				channel.Programme = programme.Title.Value

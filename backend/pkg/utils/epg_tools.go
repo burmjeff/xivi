@@ -93,8 +93,8 @@ func CreateEpgXMLWithProgress(lineup models.Template, reporter ProgressReporter)
 	}
 
 	epg := models.EpgItem{
-		GeneratorInfo:  settings.APP_SETTINGS.Application.AppName,
-		SourceInfoName: fmt.Sprintf("%s - %s", settings.APP_SETTINGS.Application.AppName, settings.APP_SETTINGS.Application.AppVersion),
+		GeneratorInfo:  settings.Current().Application.AppName,
+		SourceInfoName: fmt.Sprintf("%s - %s", settings.Current().Application.AppName, settings.Current().Application.AppVersion),
 		Channels:       make([]models.EpgChannel, 0, len(exportChannels)),
 		Programmes:     make([]models.EpgProgramme, 0, len(realProgrammes)),
 	}
@@ -168,7 +168,7 @@ func LineupXMLTVPath(lineupID int64) string {
 }
 
 func xmlTVExportWindow(now time.Time) (time.Time, time.Time) {
-	location, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+	location, err := time.LoadLocation(settings.Current().Application.TZ)
 	if err != nil {
 		location = time.UTC
 	}

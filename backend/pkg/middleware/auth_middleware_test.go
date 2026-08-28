@@ -93,11 +93,11 @@ func TestSessionMiddlewareRejectsRevocationAndExpiry(t *testing.T) {
 	if err := security.InitializeKey(); err != nil {
 		t.Fatal(err)
 	}
-	originalSecurity := settings.APP_SETTINGS.Security
-	settings.APP_SETTINGS.Security.AllowLANHTTP = true
-	settings.APP_SETTINGS.Security.TrustedLANCIDRs = []string{"0.0.0.0/0"}
-	settings.APP_SETTINGS.Security.LocalBaseURL = "http://xivi.test"
-	t.Cleanup(func() { settings.APP_SETTINGS.Security = originalSecurity })
+	originalSecurity := settings.Current().Security
+	settings.Current().Security.AllowLANHTTP = true
+	settings.Current().Security.TrustedLANCIDRs = []string{"0.0.0.0/0"}
+	settings.Current().Security.LocalBaseURL = "http://xivi.test"
+	t.Cleanup(func() { settings.Current().Security = originalSecurity })
 
 	db := sqlx.MustOpen("sqlite3", ":memory:?_foreign_keys=on&_txlock=immediate")
 	db.SetMaxOpenConns(1)
@@ -184,9 +184,9 @@ func TestSessionMiddlewareRejectsRevocationAndExpiry(t *testing.T) {
 }
 
 func TestMediaKeyNetworkScopes(t *testing.T) {
-	original := settings.APP_SETTINGS.Security.AllowLANHTTP
-	settings.APP_SETTINGS.Security.AllowLANHTTP = true
-	t.Cleanup(func() { settings.APP_SETTINGS.Security.AllowLANHTTP = original })
+	original := settings.Current().Security.AllowLANHTTP
+	settings.Current().Security.AllowLANHTTP = true
+	t.Cleanup(func() { settings.Current().Security.AllowLANHTTP = original })
 	https := security.RequestNetwork{Scheme: "https", IP: net.ParseIP("203.0.113.10")}
 	trustedLAN := security.RequestNetwork{Scheme: "http", IP: net.ParseIP("192.168.1.20"), DirectTrustedLAN: true}
 	trustedLANTLS := security.RequestNetwork{Scheme: "https", IP: net.ParseIP("192.168.1.20"), DirectTrustedLAN: true}
@@ -204,7 +204,7 @@ func TestMediaKeyNetworkScopes(t *testing.T) {
 	if mediaKeyNetworkAllowed("unknown", trustedLAN) {
 		t.Fatal("unknown key scopes must fail closed")
 	}
-	settings.APP_SETTINGS.Security.AllowLANHTTP = false
+	settings.Current().Security.AllowLANHTTP = false
 	if mediaKeyNetworkAllowed("lan", trustedLAN) || mediaKeyNetworkAllowed("public", trustedLAN) {
 		t.Fatal("cleartext LAN keys must honor the disabled LAN HTTP exception")
 	}
@@ -223,9 +223,9 @@ func TestCSRFRequiresSessionTokenAndSameOrigin(t *testing.T) {
 	if err := security.InitializeKey(); err != nil {
 		t.Fatal(err)
 	}
-	original := settings.APP_SETTINGS.Security
-	settings.APP_SETTINGS.Security.LocalBaseURL = "http://xivi.test"
-	t.Cleanup(func() { settings.APP_SETTINGS.Security = original })
+	original := settings.Current().Security
+	settings.Current().Security.LocalBaseURL = "http://xivi.test"
+	t.Cleanup(func() { settings.Current().Security = original })
 
 	const sessionToken = "test-session-token"
 	csrf, err := security.CSRFToken(sessionToken)
@@ -269,8 +269,8 @@ func TestCSRFRequiresSessionTokenAndSameOrigin(t *testing.T) {
 		_ = response.Body.Close()
 	}
 
-	settings.APP_SETTINGS.Security.LocalBaseURL = "http://127.0.0.1:5173"
-	settings.APP_SETTINGS.Security.TrustedLANCIDRs = []string{"0.0.0.0/0", "::/0"}
+	settings.Current().Security.LocalBaseURL = "http://127.0.0.1:5173"
+	settings.Current().Security.TrustedLANCIDRs = []string{"0.0.0.0/0", "::/0"}
 	request = httptest.NewRequest(fiber.MethodPost, "http://localhost:5173/change", nil)
 	request.RemoteAddr = "127.0.0.1:41000"
 	request.Header.Set("Origin", "http://localhost:5173")
@@ -293,8 +293,8 @@ func TestCSRFRequiresSessionTokenAndSameOrigin(t *testing.T) {
 	}
 	_ = response.Body.Close()
 
-	settings.APP_SETTINGS.Security.PublicBaseURL = "https://tv.example.com"
-	settings.APP_SETTINGS.Security.TrustedProxyCIDRs = []string{"0.0.0.0/0", "::/0"}
+	settings.Current().Security.PublicBaseURL = "https://tv.example.com"
+	settings.Current().Security.TrustedProxyCIDRs = []string{"0.0.0.0/0", "::/0"}
 	request = httptest.NewRequest(fiber.MethodPost, "http://backend.internal/change", nil)
 	request.Header.Set("Origin", "https://tv.example.com")
 	request.Header.Set("X-Forwarded-Proto", "https")

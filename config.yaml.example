@@ -3,6 +3,7 @@ application:
   appversion: 1.0
   tz: America/New_York
   loglevel: 3
+  # App-owned and hot-reloaded from Studio; there is no environment override.
   updatecron: "0 0 * * *"
 
 server:
@@ -40,6 +41,7 @@ vector:
   cache_size: 500
 
 maintenance:
+  # App-owned and hot-reloaded from Studio; there is no environment override.
   cleanup_interval_hours: 6
   operation_job_retention_days: 30
   stream_diagnostics_days: 14

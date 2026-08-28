@@ -193,9 +193,9 @@ func TestWatchGroupsAndNeighborsUsePlayableSavedOrder(t *testing.T) {
 }
 
 func TestGetGuideChannelsUsesConfiguredTimezoneForProgrammeWindow(t *testing.T) {
-	originalTZ := settings.APP_SETTINGS.Application.TZ
-	settings.APP_SETTINGS.Application.TZ = "America/New_York"
-	t.Cleanup(func() { settings.APP_SETTINGS.Application.TZ = originalTZ })
+	originalTZ := settings.Current().Application.TZ
+	settings.Current().Application.TZ = "America/New_York"
+	t.Cleanup(func() { settings.Current().Application.TZ = originalTZ })
 
 	db := newExperienceTestDB(t)
 	db.MustExec(`INSERT INTO template VALUES (1, 'Main')`)
@@ -206,7 +206,7 @@ func TestGetGuideChannelsUsesConfiguredTimezoneForProgrammeWindow(t *testing.T) 
 	db.MustExec(`INSERT INTO template_group_channel VALUES (10, 100, 1)`)
 	db.MustExec(`INSERT INTO templatechannelitem VALUES (1, 100, 1000, 0, 'manual', 1, NULL, 2, 1)`)
 
-	location, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+	location, err := time.LoadLocation(settings.Current().Application.TZ)
 	if err != nil {
 		t.Fatalf("load test timezone: %v", err)
 	}

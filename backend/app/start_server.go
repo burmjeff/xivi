@@ -104,12 +104,15 @@ func StartServer(app *fiber.App) {
 	defer vips.Shutdown()
 
 	//config values
-	host := flag.String("host", settings.APP_SETTINGS.Host, "Server Host")
-	port := flag.Int("port", settings.APP_SETTINGS.Port, "Server Port")
+	host := flag.String("host", settings.Current().Host, "Server Host")
+	port := flag.Int("port", settings.Current().Port, "Server Port")
 	settings.SERVER_PATH = fmt.Sprintf("%s:%d", *host, *port)
 
 	//Start Cronjobs
-	cron.RunCronJobs()
+	if err := cron.RunCronJobs(); err != nil {
+		log.Fatal().Err(err).Msg("Failed to configure background schedules")
+	}
+	defer cron.StopCronJobs()
 
 	if err := virtualtuner.Reconfigure(); err != nil {
 		log.Error().Err(err).Msg("Failed to configure virtual tuner discovery")

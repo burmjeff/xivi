@@ -10,9 +10,9 @@ import (
 )
 
 func TestForwardedHeadersRequireTrustedDirectPeer(t *testing.T) {
-	original := settings.APP_SETTINGS.Security
-	t.Cleanup(func() { settings.APP_SETTINGS.Security = original })
-	settings.APP_SETTINGS.Security.TrustedProxyCIDRs = nil
+	original := settings.Current().Security
+	t.Cleanup(func() { settings.Current().Security = original })
+	settings.Current().Security.TrustedProxyCIDRs = nil
 
 	var observed RequestNetwork
 	app := fiber.New()
@@ -34,9 +34,9 @@ func TestForwardedHeadersRequireTrustedDirectPeer(t *testing.T) {
 }
 
 func TestTrustedProxyUsesItsRightMostForwardedValues(t *testing.T) {
-	original := settings.APP_SETTINGS.Security
-	t.Cleanup(func() { settings.APP_SETTINGS.Security = original })
-	settings.APP_SETTINGS.Security.TrustedProxyCIDRs = []string{"0.0.0.0/0", "::/0"}
+	original := settings.Current().Security
+	t.Cleanup(func() { settings.Current().Security = original })
+	settings.Current().Security.TrustedProxyCIDRs = []string{"0.0.0.0/0", "::/0"}
 
 	var observed RequestNetwork
 	app := fiber.New()
@@ -58,9 +58,9 @@ func TestTrustedProxyUsesItsRightMostForwardedValues(t *testing.T) {
 }
 
 func TestPublicHTTPSProxyIsAnAllowedSessionTransport(t *testing.T) {
-	original := settings.APP_SETTINGS.Security
-	t.Cleanup(func() { settings.APP_SETTINGS.Security = original })
-	settings.APP_SETTINGS.Security.TrustedProxyCIDRs = []string{"0.0.0.0/0", "::/0"}
+	original := settings.Current().Security
+	t.Cleanup(func() { settings.Current().Security = original })
+	settings.Current().Security.TrustedProxyCIDRs = []string{"0.0.0.0/0", "::/0"}
 
 	var scope string
 	var allowed bool

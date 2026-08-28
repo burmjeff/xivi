@@ -260,7 +260,7 @@ func (q *ExperienceQueries) enrichGuideChannels(ctx context.Context, channels []
 // Keep query bounds in that same location so SQLite's DATETIME comparisons do
 // not compare UTC and local wall-clock representations as plain text.
 func epgQueryTime(value time.Time) time.Time {
-	location, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+	location, err := time.LoadLocation(settings.Current().Application.TZ)
 	if err != nil {
 		location = time.UTC
 	}

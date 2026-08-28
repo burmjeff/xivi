@@ -3,8 +3,10 @@ package cron
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 	"xivi/backend/app/models"
@@ -23,33 +25,81 @@ var (
 	updateMutex      sync.Mutex
 	isUpdating       bool
 	maintenanceMutex sync.Mutex
+	schedulerMutex   sync.Mutex
+	activeScheduler  *gocron.Scheduler
 )
 
 // TODO DISPLAY RUN COUNT AND NEXT UPDATE TIME IN GUI
-// TODO DYNAMICALLY UPDATE CRON ON SETTINGS CHANGE
-func RunCronJobs() {
-	localTime, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+func buildScheduler(config *settings.AppSettings) (*gocron.Scheduler, *gocron.Job, error) {
+	localTime, err := time.LoadLocation(strings.TrimSpace(config.Application.TZ))
 	if err != nil {
-		localTime = time.UTC
+		return nil, nil, fmt.Errorf("invalid display timezone: %w", err)
 	}
 
 	s := gocron.NewScheduler(localTime)
-
-	// Schedule the update process that runs all updates
-	updateJob, _ := s.Cron(settings.APP_SETTINGS.UpdateCron).Do(RunUpdates)
-	log.Log().Msgf("Full update scheduled at: %s", updateJob.ScheduledAtTime())
-
-	maintenanceInterval := settings.APP_SETTINGS.Maintenance.CleanupIntervalHours
-	// Startup already performs a maintenance pass after migrations. Waiting for
-	// the first interval avoids racing that pass and any manual refresh.
-	if _, err := s.Every(maintenanceInterval).Hours().StartAt(time.Now().Add(time.Duration(maintenanceInterval) * time.Hour)).Do(RunMaintenance); err != nil {
-		log.Error().Err(err).Msg("Failed to schedule storage maintenance")
-	} else {
-		log.Info().Int("interval_hours", maintenanceInterval).Msg("Storage maintenance scheduled")
+	expression := strings.TrimSpace(config.Application.UpdateCron)
+	var updateJob *gocron.Job
+	switch len(strings.Fields(expression)) {
+	case 5:
+		updateJob, err = s.Cron(expression).Do(RunUpdates)
+	case 6:
+		updateJob, err = s.CronWithSeconds(expression).Do(RunUpdates)
+	default:
+		err = fmt.Errorf("expected a five- or six-field cron expression")
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid automatic refresh schedule: %w", err)
 	}
 
-	s.StartAsync()
-	log.Info().Msg("Cron scheduler started successfully")
+	maintenanceInterval := config.Maintenance.CleanupIntervalHours
+	if maintenanceInterval < 1 || maintenanceInterval > 168 {
+		return nil, nil, fmt.Errorf("cleanup interval must be between 1 and 168 hours")
+	}
+	// Startup already performs a maintenance pass after migrations. Waiting for
+	// the first interval avoids racing that pass and any manual refresh.
+	if _, err := s.Every(maintenanceInterval).Hours().StartAt(time.Now().In(localTime).Add(time.Duration(maintenanceInterval) * time.Hour)).Do(RunMaintenance); err != nil {
+		return nil, nil, fmt.Errorf("invalid storage maintenance schedule: %w", err)
+	}
+	return s, updateJob, nil
+}
+
+// ValidateConfiguration checks every setting captured by the managed scheduler
+// without modifying the running schedule.
+func ValidateConfiguration(config *settings.AppSettings) error {
+	_, _, err := buildScheduler(config)
+	return err
+}
+
+// Reconfigure atomically replaces future schedules. Already-running refresh or
+// maintenance work is protected by its own mutex and is not duplicated.
+func Reconfigure() error {
+	next, updateJob, err := buildScheduler(settings.Current())
+	if err != nil {
+		return err
+	}
+
+	schedulerMutex.Lock()
+	defer schedulerMutex.Unlock()
+	if activeScheduler != nil {
+		activeScheduler.Stop()
+	}
+	next.StartAsync()
+	activeScheduler = next
+	log.Info().Str("next_update", updateJob.ScheduledAtTime()).Int("cleanup_interval_hours", settings.Current().Maintenance.CleanupIntervalHours).Msg("Background schedules applied")
+	return nil
+}
+
+func RunCronJobs() error {
+	return Reconfigure()
+}
+
+func StopCronJobs() {
+	schedulerMutex.Lock()
+	defer schedulerMutex.Unlock()
+	if activeScheduler != nil {
+		activeScheduler.Stop()
+		activeScheduler = nil
+	}
 }
 
 func UpdatePlaylists() {
@@ -289,7 +339,7 @@ func RunMaintenance() {
 		return
 	}
 
-	configured := settings.APP_SETTINGS.Maintenance
+	configured := settings.Current().Maintenance
 	now := time.Now().UTC()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
@@ -308,7 +358,7 @@ func RunMaintenance() {
 	if databaseErr != nil {
 		log.Error().Err(databaseErr).Msg("Storage maintenance completed with database errors")
 	}
-	securityPolicy := settings.APP_SETTINGS.Security
+	securityPolicy := settings.Current().Security
 	if err := database.Db.PruneSecurityData(ctx, now, now.AddDate(0, 0, -securityPolicy.AuditRetentionDays), securityPolicy.MaximumAuditEvents); err != nil {
 		log.Error().Err(err).Msg("Security audit and session retention cleanup failed")
 	}

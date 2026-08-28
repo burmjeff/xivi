@@ -794,7 +794,7 @@ func (q *EpgQueries) GetCurrentProgramme(ctx context.Context, tvgid string, epgT
 	// for the same programme using a key like: tvgid + "_" + epgTime.Format(time.RFC3339)
 
 	// Convert the input time to the application's configured timezone
-	localTime, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+	localTime, err := time.LoadLocation(settings.Current().Application.TZ)
 	if err != nil {
 		localTime = time.UTC
 		log.Warn().Err(err).Msg("Failed to load timezone, using UTC")
@@ -950,7 +950,7 @@ func (q *EpgQueries) GetCurrentProgramme(ctx context.Context, tvgid string, epgT
 
 func (q *EpgQueries) GetProgrammeByExactTime(ctx context.Context, tvgid string, epgStartTime time.Time, epgEndTime time.Time) (*models.EpgProgramme, error) {
 	// Convert the input time to the application's configured timezone
-	localTime, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+	localTime, err := time.LoadLocation(settings.Current().Application.TZ)
 	if err != nil {
 		localTime = time.UTC
 		log.Warn().Err(err).Msg("Failed to load timezone, using UTC")

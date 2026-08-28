@@ -96,7 +96,7 @@ func (t *Time) UnmarshalXMLAttr(attr xml.Attr) error {
 
 func (t Time) Value() (driver.Value, error) {
 	var localTime *time.Location
-	localTime, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+	localTime, err := time.LoadLocation(settings.Current().Application.TZ)
 	if err != nil {
 		localTime = time.UTC
 	}
@@ -114,7 +114,7 @@ func (t *Time) Scan(value interface{}) error {
 	}
 
 	// Convert the time to the application's configured timezone when reading from DB
-	localTime, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+	localTime, err := time.LoadLocation(settings.Current().Application.TZ)
 	if err != nil {
 		localTime = time.UTC
 	}
@@ -129,7 +129,7 @@ func (t *Time) Scan(value interface{}) error {
 // and formats it with the correct timezone offset
 func (t Time) String() string {
 	// Get the application's configured timezone
-	localTime, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+	localTime, err := time.LoadLocation(settings.Current().Application.TZ)
 	if err != nil {
 		localTime = time.UTC
 	}

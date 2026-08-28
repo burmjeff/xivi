@@ -52,7 +52,7 @@ type Config struct {
 }
 
 func CurrentConfig() Config {
-	configured := settings.APP_SETTINGS.Streaming
+	configured := settings.Current().Streaming
 	return Config{
 		IngestBuffer:      time.Duration(configured.IngestBufferMS) * time.Millisecond,
 		StartupTimeout:    time.Duration(configured.StartupTimeoutSeconds) * time.Second,

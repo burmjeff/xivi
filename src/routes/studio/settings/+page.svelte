@@ -188,7 +188,7 @@
 			if (section === 'devices') {
 				await client.invalidateQueries({ queryKey: ['studio', 'device-outputs'] });
 			}
-			message = `${section[0].toUpperCase()}${section.slice(1)} settings saved.${section === 'server' || section === 'maintenance' || section === 'security' ? ' Restart Xivi to apply these changes.' : ''}`;
+			message = `${section[0].toUpperCase()}${section.slice(1)} settings saved.${section === 'streaming' ? ' New streams will use the updated pipeline; active streams continue uninterrupted.' : ' Changes are active now.'}`;
 		} catch {
 			message = 'Settings could not be saved.';
 		} finally {
@@ -209,7 +209,7 @@
 <svelte:head><title>Settings · Xivi Studio</title></svelte:head>
 <StudioHeader
 	title="Settings"
-	description="Change one area at a time. Xivi marks options that need a server restart."
+	description="Change one area at a time. Editable settings apply without restarting Xivi."
 	><button class="app-button app-button--secondary" onclick={reset}
 		><RotateCcw size={17} />Reset unsaved</button
 	></StudioHeader
@@ -243,9 +243,9 @@
 						placeholder="America/New_York"
 					/></label
 				><label
-					>Serve path <span class="restart">Restart</span><input
-						bind:value={settings.application.servepath}
-					/></label
+					>Serve path<input value={settings.application.servepath} disabled /><small
+						>Managed by the container volume or process working directory.</small
+					></label
 				><label
 					>Log level<input
 						type="number"
@@ -268,7 +268,7 @@
 				<ShieldCheck />
 				<div>
 					<p class="eyebrow">Security</p>
-					<h2>Internet boundary <span class="restart">Restart</span></h2>
+					<h2>Internet boundary</h2>
 				</div>
 			</header>
 			<div class="fields">
@@ -389,6 +389,10 @@
 				</div>
 			</header>
 			<div class="fields">
+				<p class="section-note">
+					Pipeline changes apply to new streams. Existing viewers keep their current pipeline so a
+					settings save never interrupts playback.
+				</p>
 				<label class="switch-row"
 					><span
 						><strong>Share proxied streams</strong><small
@@ -520,35 +524,30 @@
 				<Server />
 				<div>
 					<p class="eyebrow">Server</p>
-					<h2>Network <span class="restart">Restart</span></h2>
+					<h2>Network</h2>
 				</div>
 			</header>
 			<div class="fields two">
+				<p class="section-note">
+					Managed by the Xivi process, Docker port mapping, and reverse proxy. Change these values in
+					your deployment configuration.
+				</p>
 				<label
-					>Host<input bind:value={settings.server.host} />{#if errors.host}<em>{errors.host}</em
-						>{/if}</label
+					>Host<input value={settings.server.host} disabled /></label
 				><label
 					>Port<input
 						type="number"
-						min="1"
-						max="65535"
-						bind:value={settings.server.port}
-					/>{#if errors.port}<em>{errors.port}</em>{/if}</label
+						value={settings.server.port}
+						disabled
+					/></label
 				><label
 					>Read timeout<input
 						type="number"
-						min="1"
-						bind:value={settings.server.readtimeout}
-					/>{#if errors.readtimeout}<em>{errors.readtimeout}</em>{/if}</label
+						value={settings.server.readtimeout}
+						disabled
+					/></label
 				>
 			</div>
-			<footer>
-				<button
-					class="app-button app-button--primary"
-					onclick={() => save('server')}
-					disabled={saving === 'server'}><Save size={16} />Save Server</button
-				>
-			</footer>
 		</section>
 		<section class="settings-card">
 			<header>
@@ -593,7 +592,7 @@
 				</p>
 				<div class="field-pair">
 					<label
-						>Cleanup interval (hours) <span class="restart">Restart</span><input
+						>Cleanup interval (hours)<input
 							type="number"
 							min="1"
 							max="168"
@@ -759,18 +758,6 @@
 		margin: 0;
 		font-size: 1.3rem;
 	}
-	.restart {
-		display: inline-flex;
-		border-radius: 99px;
-		background: color-mix(in oklch, var(--sun) 20%, transparent);
-		padding: 0.18rem 0.4rem;
-		color: var(--sun);
-		font-family: var(--font-sans);
-		font-size: 0.55rem;
-		font-weight: 800;
-		letter-spacing: 0.04em;
-		vertical-align: middle;
-	}
 	.fields {
 		display: grid;
 		gap: 0.8rem;
@@ -791,6 +778,9 @@
 	}
 	.fields.two {
 		grid-template-columns: 1fr 1fr;
+	}
+	.fields.two .section-note {
+		grid-column: 1 / -1;
 	}
 	.field-pair {
 		display: grid;

@@ -169,7 +169,7 @@ type vectorizationResult struct {
 func batchProcessor() {
 	for {
 		// Get batch size from settings
-		batchSize := settings.APP_SETTINGS.Vector.BatchSize
+		batchSize := settings.Current().Vector.BatchSize
 		if batchSize <= 0 {
 			batchSize = 25
 		}
@@ -505,12 +505,12 @@ func VectorizeStringBatch(texts []string) ([][]float64, error) {
 	}
 
 	// Get batch configuration from settings
-	batchSize := settings.APP_SETTINGS.Vector.BatchSize
+	batchSize := settings.Current().Vector.BatchSize
 	if batchSize <= 0 {
 		batchSize = 25
 	}
 
-	parallelBatches := settings.APP_SETTINGS.Vector.ParallelBatches
+	parallelBatches := settings.Current().Vector.ParallelBatches
 	if parallelBatches <= 0 {
 		parallelBatches = 4
 	}

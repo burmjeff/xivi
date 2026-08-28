@@ -764,21 +764,22 @@ func mediaKeyOutputLinks(key *models.MediaAccessKey) (map[string]map[string]stri
 		return nil, errors.New("encrypted media credential does not match its authentication hash")
 	}
 
-	localBase, _ := url.Parse(settings.APP_SETTINGS.Security.LocalBaseURL)
+	policy := settings.Current().Security
+	localBase, _ := url.Parse(policy.LocalBaseURL)
 	localTransportAvailable := localBase != nil &&
-		(localBase.Scheme == "https" || settings.APP_SETTINGS.Security.AllowLANHTTP)
+		(localBase.Scheme == "https" || policy.AllowLANHTTP)
 	links := make(map[string]map[string]string, len(key.LineupIDs))
 	for _, lineupID := range key.LineupIDs {
 		id := strconv.FormatInt(lineupID, 10)
 		suffix := "?access_token=" + url.QueryEscape(token)
 		values := map[string]string{}
-		if key.NetworkScope == "public" && settings.APP_SETTINGS.Security.PublicBaseURL != "" {
-			values["public_m3u"] = settings.APP_SETTINGS.Security.PublicBaseURL + "/media/v1/lineups/" + id + "/playlist.m3u" + suffix
-			values["public_xmltv"] = settings.APP_SETTINGS.Security.PublicBaseURL + "/media/v1/lineups/" + id + "/guide.xml" + suffix
+		if key.NetworkScope == "public" && policy.PublicBaseURL != "" {
+			values["public_m3u"] = policy.PublicBaseURL + "/media/v1/lineups/" + id + "/playlist.m3u" + suffix
+			values["public_xmltv"] = policy.PublicBaseURL + "/media/v1/lineups/" + id + "/guide.xml" + suffix
 		}
 		if localTransportAvailable {
-			values["local_m3u"] = settings.APP_SETTINGS.Security.LocalBaseURL + "/media/v1/lineups/" + id + "/playlist.m3u" + suffix
-			values["local_xmltv"] = settings.APP_SETTINGS.Security.LocalBaseURL + "/media/v1/lineups/" + id + "/guide.xml" + suffix
+			values["local_m3u"] = policy.LocalBaseURL + "/media/v1/lineups/" + id + "/playlist.m3u" + suffix
+			values["local_xmltv"] = policy.LocalBaseURL + "/media/v1/lineups/" + id + "/guide.xml" + suffix
 		}
 		links[id] = values
 	}
@@ -815,10 +816,11 @@ func V2AccountMediaKeys(c *fiber.Ctx) error {
 			return v2Error(c, 500, "media_key_links_unavailable", "Device output links could not be loaded.", true)
 		}
 	}
+	policy := settings.Current().Security
 	return c.JSON(fiber.Map{
 		"items":                  keys,
-		"public_https_available": settings.APP_SETTINGS.Security.PublicBaseURL != "",
-		"retention_days":         settings.APP_SETTINGS.Security.AuditRetentionDays,
+		"public_https_available": policy.PublicBaseURL != "",
+		"retention_days":         policy.AuditRetentionDays,
 	})
 }
 
@@ -833,9 +835,10 @@ func V2CreateAccountMediaKey(c *fiber.Ctx) error {
 		return v2Error(c, 400, "invalid_media_key", "The media key details were invalid.", false)
 	}
 	request.Name = strings.TrimSpace(request.Name)
-	localBase, _ := url.Parse(settings.APP_SETTINGS.Security.LocalBaseURL)
+	policy := settings.Current().Security
+	localBase, _ := url.Parse(policy.LocalBaseURL)
 	localTransportAvailable := localBase != nil &&
-		(localBase.Scheme == "https" || settings.APP_SETTINGS.Security.AllowLANHTTP)
+		(localBase.Scheme == "https" || policy.AllowLANHTTP)
 	if len(request.Name) < 1 || len(request.Name) > 80 || strings.IndexFunc(request.Name, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 ||
 		(request.NetworkScope != "public" && request.NetworkScope != "lan") || len(request.LineupIDs) == 0 ||
 		(request.ExpiresAt != nil && !request.ExpiresAt.After(time.Now().UTC())) ||

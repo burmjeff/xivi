@@ -47,7 +47,7 @@ func matchWorker() {
 		if req.playlistCh != nil {
 			// Handle playlist channel matching
 			if req.playlistCh.Enabled {
-				if settings.APP_SETTINGS.Playlist.Tvgid_match {
+				if settings.Current().Playlist.Tvgid_match {
 					var matched bool
 					matched, err = matchPlaylistTvgid(*req.playlistCh)
 					if err == nil && matched {
@@ -59,20 +59,20 @@ func matchWorker() {
 					}
 				}
 
-				if err == nil && settings.APP_SETTINGS.Playlist.Name_match {
+				if err == nil && settings.Current().Playlist.Name_match {
 					_, err = matchPlaylistChannelName(*req.playlistCh)
 				}
 			}
 		} else if req.templateCh != nil {
 			// Handle template channel matching
-			if settings.APP_SETTINGS.Playlist.Tvgid_match {
+			if settings.Current().Playlist.Tvgid_match {
 				_, err = matchTemplateTvgid(req.templateCh)
 			}
 
 			// A template spans many playlists. Name matching still needs to run for
 			// playlists where an exact ID was absent or ambiguous; it skips any
 			// source already committed by the ID pass.
-			if err == nil && settings.APP_SETTINGS.Playlist.Name_match {
+			if err == nil && settings.Current().Playlist.Name_match {
 				_, err = matchTemplateChannelName(req.templateCh)
 			}
 		}
@@ -440,7 +440,7 @@ func retryPlaylistMatch(name string, operation func() (bool, error)) (bool, erro
 }
 
 func automaticResults(results []channelmatch.Result) []channelmatch.Result {
-	threshold := settings.APP_SETTINGS.Playlist.Name_score
+	threshold := settings.Current().Playlist.Name_score
 	if threshold <= 0 || threshold > 1 {
 		threshold = 0.96
 	}

@@ -280,7 +280,7 @@ func ValidRequestOrigin(c *fiber.Ctx) bool {
 	if ip := net.ParseIP(hostname); ip != nil {
 		return security.IsTrustedLAN(ip)
 	}
-	local, localErr := url.Parse(settings.APP_SETTINGS.Security.LocalBaseURL)
+	local, localErr := url.Parse(settings.Current().Security.LocalBaseURL)
 	return localErr == nil && strings.EqualFold(got.Host, local.Host)
 }
 
@@ -329,7 +329,7 @@ func authenticateMediaToken(c *fiber.Ctx) (MediaCredential, error) {
 
 func mediaKeyNetworkAllowed(scope string, network security.RequestNetwork) bool {
 	trustedLANTransport := network.DirectTrustedLAN &&
-		(network.Scheme == "https" || settings.APP_SETTINGS.Security.AllowLANHTTP)
+		(network.Scheme == "https" || settings.Current().Security.AllowLANHTTP)
 	switch scope {
 	case "lan":
 		return trustedLANTransport

@@ -16,7 +16,7 @@ func FiberConfig() fiber.Config {
 
 	// Return Fiber configuration.
 	return fiber.Config{
-		ReadTimeout:           time.Second * time.Duration(settings.APP_SETTINGS.Server.ReadTimeout),
+		ReadTimeout:           time.Second * time.Duration(settings.Current().Server.ReadTimeout),
 		BodyLimit:             8 * 1024 * 1024,
 		ReadBufferSize:        16 * 1024,
 		ServerHeader:          "",

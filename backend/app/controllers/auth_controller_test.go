@@ -30,11 +30,11 @@ func TestMediaKeyOutputLinksRemainAvailableWithoutStandaloneKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	originalSecurity := settings.APP_SETTINGS.Security
-	settings.APP_SETTINGS.Security.PublicBaseURL = "https://tv.example.com"
-	settings.APP_SETTINGS.Security.LocalBaseURL = "http://192.168.1.10:3000"
-	settings.APP_SETTINGS.Security.AllowLANHTTP = true
-	t.Cleanup(func() { settings.APP_SETTINGS.Security = originalSecurity })
+	originalSecurity := settings.Current().Security
+	settings.Current().Security.PublicBaseURL = "https://tv.example.com"
+	settings.Current().Security.LocalBaseURL = "http://192.168.1.10:3000"
+	settings.Current().Security.AllowLANHTTP = true
+	t.Cleanup(func() { settings.Current().Security = originalSecurity })
 
 	token := "xmk_persistent.example-secret"
 	hash, err := security.HashToken("media", token)

@@ -42,7 +42,7 @@ func CustomMapper(column string) string {
 }
 
 func ConvertTime(timeStr string) (time.Time, error) {
-	localTime, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+	localTime, err := time.LoadLocation(settings.Current().Application.TZ)
 	if err != nil {
 		localTime, err = time.LoadLocation("Etc/UTC")
 		if err != nil {

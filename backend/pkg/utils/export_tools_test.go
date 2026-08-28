@@ -153,18 +153,18 @@ func setupXMLTVExportTest(t *testing.T) *sqlx.DB {
 		2, time.Now().Add(time.Hour), time.Now().Add(2*time.Hour))
 
 	originalPath := settings.EPG_FILEPATH
-	originalHost := settings.APP_SETTINGS.Server.Host
-	originalPort := settings.APP_SETTINGS.Server.Port
-	originalTZ := settings.APP_SETTINGS.Application.TZ
+	originalHost := settings.Current().Server.Host
+	originalPort := settings.Current().Server.Port
+	originalTZ := settings.Current().Application.TZ
 	settings.EPG_FILEPATH = t.TempDir()
-	settings.APP_SETTINGS.Server.Host = "xivi.test"
-	settings.APP_SETTINGS.Server.Port = 3000
-	settings.APP_SETTINGS.Application.TZ = "UTC"
+	settings.Current().Server.Host = "xivi.test"
+	settings.Current().Server.Port = 3000
+	settings.Current().Application.TZ = "UTC"
 	t.Cleanup(func() {
 		settings.EPG_FILEPATH = originalPath
-		settings.APP_SETTINGS.Server.Host = originalHost
-		settings.APP_SETTINGS.Server.Port = originalPort
-		settings.APP_SETTINGS.Application.TZ = originalTZ
+		settings.Current().Server.Host = originalHost
+		settings.Current().Server.Port = originalPort
+		settings.Current().Application.TZ = originalTZ
 	})
 	return db
 }

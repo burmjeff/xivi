@@ -35,15 +35,15 @@ func internalM3UPath(lineupName string) string {
 // NewM3uTools creates a new instance with initialized cache
 func NewM3uTools() *M3uTools {
 	return &M3uTools{
-		host:      settings.APP_SETTINGS.Server.Host,
-		port:      settings.APP_SETTINGS.Server.Port,
+		host:      settings.Current().Server.Host,
+		port:      settings.Current().Server.Port,
 		fileCache: make(map[string][]string),
 	}
 }
 
 func (m *M3uTools) CreateM3u(template models.Template) error {
-	m.host = settings.APP_SETTINGS.Server.Host
-	m.port = settings.APP_SETTINGS.Server.Port
+	m.host = settings.Current().Server.Host
+	m.port = settings.Current().Server.Port
 	m.template = template
 
 	reader, err := m.marshall()

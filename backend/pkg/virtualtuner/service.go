@@ -143,7 +143,8 @@ func (service *Service) serve(conn *net.UDPConn) {
 }
 
 func advertisedOrigin(remote *net.UDPAddr) string {
-	host := strings.TrimSpace(settings.APP_SETTINGS.Server.Host)
+	server := settings.Current().Server
+	host := strings.TrimSpace(server.Host)
 	ip := net.ParseIP(strings.Trim(host, "[]"))
 	if host == "" || strings.EqualFold(host, "localhost") || host == "0.0.0.0" || host == "::" || (ip != nil && ip.IsLoopback() && !remote.IP.IsLoopback()) {
 		if conn, err := net.DialUDP("udp4", nil, remote); err == nil {
@@ -153,5 +154,5 @@ func advertisedOrigin(remote *net.UDPAddr) string {
 			_ = conn.Close()
 		}
 	}
-	return Origin(host, settings.APP_SETTINGS.Server.Port)
+	return Origin(host, server.Port)
 }

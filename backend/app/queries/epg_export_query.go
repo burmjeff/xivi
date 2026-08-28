@@ -58,7 +58,7 @@ func (q *EpgQueries) GetProgrammesByTVGIDsWindow(ctx context.Context, tvgIDs []s
 		return []models.EpgProgramme{}, nil
 	}
 
-	location, err := time.LoadLocation(settings.APP_SETTINGS.Application.TZ)
+	location, err := time.LoadLocation(settings.Current().Application.TZ)
 	if err != nil {
 		location = time.UTC
 	}

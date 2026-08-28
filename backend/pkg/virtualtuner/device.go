@@ -85,7 +85,7 @@ func AllDevices(origin string) ([]Device, error) {
 	}
 	devices := make([]Device, 0, len(*templates))
 	for _, template := range *templates {
-		devices = append(devices, NewDevice(template, origin, settings.APP_SETTINGS.VirtualTuner.TunerCount))
+		devices = append(devices, NewDevice(template, origin, settings.Current().VirtualTuner.TunerCount))
 	}
 	return devices, nil
 }

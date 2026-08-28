@@ -17,8 +17,13 @@ type RequestNetwork struct {
 }
 
 func RequestNetworkInfo(c *fiber.Ctx) RequestNetwork {
+	policy := settings.Current().Security
+	return requestNetworkInfo(c, policy)
+}
+
+func requestNetworkInfo(c *fiber.Ctx, policy settings.Security) RequestNetwork {
 	direct := c.Context().RemoteIP()
-	trustedProxy := ipInCIDRs(direct, settings.APP_SETTINGS.Security.TrustedProxyCIDRs)
+	trustedProxy := ipInCIDRs(direct, policy.TrustedProxyCIDRs)
 	clientIP := direct
 	// Derive the direct transport from the socket, never from request headers.
 	// Forwarded scheme and client IP are considered only after the direct peer
@@ -37,7 +42,7 @@ func RequestNetworkInfo(c *fiber.Ctx) RequestNetwork {
 			scheme = forwardedProto
 		}
 	}
-	trustedLAN := !trustedProxy && IsTrustedLAN(clientIP)
+	trustedLAN := !trustedProxy && isTrustedLAN(clientIP, policy.TrustedLANCIDRs)
 	return RequestNetwork{IP: clientIP, Scheme: scheme, TrustedProxy: trustedProxy, DirectTrustedLAN: trustedLAN}
 }
 
@@ -55,13 +60,17 @@ func lastForwardedValue(value string) string {
 }
 
 func IsTrustedLAN(ip net.IP) bool {
+	return isTrustedLAN(ip, settings.Current().Security.TrustedLANCIDRs)
+}
+
+func isTrustedLAN(ip net.IP, trustedCIDRs []string) bool {
 	if ip == nil {
 		return false
 	}
 	if ip.IsLoopback() {
 		return true
 	}
-	return ipInCIDRs(ip, settings.APP_SETTINGS.Security.TrustedLANCIDRs)
+	return ipInCIDRs(ip, trustedCIDRs)
 }
 
 func ipInCIDRs(ip net.IP, cidrs []string) bool {
@@ -78,22 +87,24 @@ func ipInCIDRs(ip net.IP, cidrs []string) bool {
 }
 
 func TransportScope(c *fiber.Ctx) (string, bool) {
-	network := RequestNetworkInfo(c)
+	policy := settings.Current().Security
+	network := requestNetworkInfo(c, policy)
 	if network.Scheme == "https" {
 		return "https", true
 	}
-	if settings.APP_SETTINGS.Security.AllowLANHTTP && network.DirectTrustedLAN {
+	if policy.AllowLANHTTP && network.DirectTrustedLAN {
 		return "lan_http", true
 	}
 	return "", false
 }
 
 func BaseURLForRequest(c *fiber.Ctx) string {
-	network := RequestNetworkInfo(c)
-	if network.Scheme == "https" && settings.APP_SETTINGS.Security.PublicBaseURL != "" {
-		return settings.APP_SETTINGS.Security.PublicBaseURL
+	policy := settings.Current().Security
+	network := requestNetworkInfo(c, policy)
+	if network.Scheme == "https" && policy.PublicBaseURL != "" {
+		return policy.PublicBaseURL
 	}
-	return settings.APP_SETTINGS.Security.LocalBaseURL
+	return policy.LocalBaseURL
 }
 
 func ValidBaseURL(value string, requireHTTPS bool) bool {

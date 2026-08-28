@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"xivi/backend/pkg/utils"
+	"xivi/backend/pkg/virtualtuner"
+	"xivi/backend/platform/cron"
 	"xivi/backend/platform/settings"
 
 	"github.com/gofiber/fiber/v2"
@@ -21,7 +23,13 @@ func GetSettings(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"error":    false,
 		"msg":      nil,
-		"settings": settings.APP_SETTINGS,
+		"settings": settings.Current(),
+		"deployment_managed": []string{
+			"application.servepath",
+			"server.host",
+			"server.port",
+			"server.readtimeout",
+		},
 	})
 }
 
@@ -47,6 +55,7 @@ func UpdateSettings(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
+	settings.PreserveDeploymentSettings(newSettings)
 
 	// Create a new validator for a Settings model.
 	validate := utils.NewValidator()
@@ -59,13 +68,38 @@ func UpdateSettings(c *fiber.Ctx) error {
 			"msg":   utils.ValidatorErrors(err),
 		})
 	}
+	if err := cron.ValidateConfiguration(newSettings); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
 
-	// Update settings
+	previous := settings.Current()
 	if err := settings.WriteSettings(newSettings); err != nil {
 		// Return status 500 and error message.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
+		})
+	}
+	rollback := func() {
+		_ = settings.WriteSettings(previous)
+		_ = cron.Reconfigure()
+		_ = virtualtuner.Reconfigure()
+	}
+	if err := cron.Reconfigure(); err != nil {
+		rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "The background schedule could not be applied.",
+		})
+	}
+	if err := virtualtuner.Reconfigure(); err != nil {
+		rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Virtual tuner discovery could not be reconfigured.",
 		})
 	}
 	// Return status 201.

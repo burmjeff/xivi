@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -98,6 +99,9 @@ func InitSettings() error {
 	if appSettings.Streaming.HedgeTimeoutSeconds == 0 {
 		appSettings.Streaming.HedgeTimeoutSeconds = 3
 	}
+	// The serve root is fixed by the process working directory and mounted
+	// volume. A historical config value must not imply that it can move live.
+	appSettings.Application.ServePath = SERVE_PATH
 	if err := WriteSettings(appSettings); err != nil {
 		return err
 	}
@@ -180,33 +184,72 @@ func SetDefaults() (*AppSettings, error) {
 	return &defaults, nil
 }
 
-func WriteSettings(settings *AppSettings) error {
-	normalizeMaintenance(&settings.Maintenance)
-	normalizeSecurity(&settings.Security)
-	if err := ValidateSecuritySettings(settings.Security); err != nil {
+func WriteSettings(next *AppSettings) error {
+	normalizeMaintenance(&next.Maintenance)
+	normalizeSecurity(&next.Security)
+	if err := ValidateSecuritySettings(next.Security); err != nil {
 		return err
 	}
 	config := fmt.Sprintf("%s/config.yaml", CONFIG_PATH)
-	yamlData, err := yaml.Marshal(&settings)
+	yamlData, err := yaml.Marshal(&next)
 	if err != nil {
 		return fmt.Errorf("error while marshaling. %v", err)
 	}
-	err = os.WriteFile(config, yamlData, 0600)
+	if err := writeConfigAtomically(config, yamlData); err != nil {
+		return err
+	}
+
+	// Update log level if it changed
+	previous := Current()
+	if next.Application.LogLevel != previous.Application.LogLevel {
+		zerolog.SetGlobalLevel(zerolog.Level(next.Application.LogLevel))
+		log.Debug().Msgf("Log level changed to: %d", next.Application.LogLevel)
+	}
+
+	publish(next)
+	return nil
+}
+
+func writeConfigAtomically(config string, data []byte) error {
+	directory := filepath.Dir(config)
+	temporary, err := os.CreateTemp(directory, ".config-*.yaml.tmp")
 	if err != nil {
-		return fmt.Errorf("unable to write data into the settings file: %v", err)
+		return fmt.Errorf("unable to create temporary settings file: %v", err)
+	}
+	temporaryName := temporary.Name()
+	defer os.Remove(temporaryName)
+
+	if err := temporary.Chmod(0600); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("unable to secure temporary settings file: %v", err)
+	}
+	if _, err := temporary.Write(data); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("unable to write temporary settings file: %v", err)
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("unable to sync temporary settings file: %v", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("unable to close temporary settings file: %v", err)
+	}
+	if err := os.Rename(temporaryName, config); err != nil {
+		return fmt.Errorf("unable to replace the settings file: %v", err)
 	}
 	if err := os.Chmod(config, 0600); err != nil {
 		return fmt.Errorf("unable to secure the settings file: %v", err)
 	}
-
-	// Update log level if it changed
-	if settings.Application.LogLevel != APP_SETTINGS.Application.LogLevel {
-		zerolog.SetGlobalLevel(zerolog.Level(settings.Application.LogLevel))
-		log.Debug().Msgf("Log level changed to: %d", settings.Application.LogLevel)
-	}
-
-	APP_SETTINGS = settings
 	return nil
+}
+
+// PreserveDeploymentSettings prevents a settings API request from changing
+// values that are captured by the process, container, reverse proxy, or volume
+// layout. These values remain configurable through deployment configuration.
+func PreserveDeploymentSettings(next *AppSettings) {
+	current := Current()
+	next.Application.ServePath = current.Application.ServePath
+	next.Server = current.Server
 }
 
 func ValidateSecuritySettings(security Security) error {

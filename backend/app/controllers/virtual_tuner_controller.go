@@ -25,7 +25,7 @@ func loadVirtualTunerDevice(c *fiber.Ctx) (virtualtuner.Device, error) {
 	if !lineup.VirtualTunerEnabled {
 		return virtualtuner.Device{}, fiber.NewError(fiber.StatusNotFound, "The virtual tuner is disabled for this lineup.")
 	}
-	return virtualtuner.NewDevice(*lineup, settings.APP_SETTINGS.Security.LocalBaseURL, settings.APP_SETTINGS.VirtualTuner.TunerCount), nil
+	return virtualtuner.NewDevice(*lineup, settings.Current().Security.LocalBaseURL, settings.Current().VirtualTuner.TunerCount), nil
 }
 
 func GetVirtualTunerDiscover(c *fiber.Ctx) error {
@@ -53,7 +53,7 @@ func GetVirtualTunerLineup(c *fiber.Ctx) error {
 		log.Error().Err(err).Int64("lineup_id", device.LineupID).Msg("Virtual tuner lineup could not be loaded")
 		return fiber.NewError(fiber.StatusInternalServerError, "The tuner lineup could not be loaded.")
 	}
-	return c.JSON(virtualtuner.Lineup(settings.APP_SETTINGS.Security.LocalBaseURL, channels, device.MediaToken))
+	return c.JSON(virtualtuner.Lineup(settings.Current().Security.LocalBaseURL, channels, device.MediaToken))
 }
 
 func PostVirtualTunerLineup(c *fiber.Ctx) error {
@@ -77,7 +77,7 @@ func GetVirtualTunerDeviceDescription(c *fiber.Ctx) error {
 }
 
 func V2DeviceOutputs(c *fiber.Ctx) error {
-	devices, err := virtualtuner.AllDevices(settings.APP_SETTINGS.Security.LocalBaseURL)
+	devices, err := virtualtuner.AllDevices(settings.Current().Security.LocalBaseURL)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "device_outputs_unavailable", "Device outputs could not be loaded.", true)
 	}
