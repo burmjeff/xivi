@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sync/atomic"
 	"time"
 	"xivi/backend/app/models"
 
@@ -16,6 +17,7 @@ type SecurityQueries struct{ BaseQueries }
 var (
 	ErrLastEnabledAdmin = errors.New("the final enabled administrator cannot be changed")
 	ErrUsernameInUse    = errors.New("the username is already in use")
+	authThrottleWrites  atomic.Uint64
 )
 
 func NewSecurityQueries(db *sqlx.DB) *SecurityQueries {
@@ -720,6 +722,298 @@ func (q *SecurityQueries) VirtualTunerCredentialValid(ctx context.Context, lineu
 	return allowed, err
 }
 
+const authThrottleSelect = `SELECT b.*, COALESCE(u.username, '') AS username,
+	COALESCE(u.display_name, '') AS display_name
+	FROM auth_throttle_bucket b LEFT JOIN app_user u ON u.id = b.user_id`
+
+func authCooldown(subjectType string, failures int) time.Duration {
+	switch subjectType {
+	case "account", "pair":
+		if failures < 5 {
+			return 0
+		}
+		shift := min(failures-5, 5)
+		return min(30*time.Second*time.Duration(1<<shift), 15*time.Minute)
+	case "address":
+		if failures >= 30 {
+			return 15 * time.Minute
+		}
+	case "network":
+		if failures >= 100 {
+			return 15 * time.Minute
+		}
+	}
+	return 0
+}
+
+// CheckAuthThrottle evaluates durable, independent account, address, network,
+// and pair buckets. The bot challenge starts before the hard cooldown so a
+// legitimate user gets one more protected opportunity to authenticate.
+func (q *SecurityQueries) CheckAuthThrottle(ctx context.Context, hashes [][]byte, now time.Time) (models.AuthThrottleDecision, error) {
+	decision := models.AuthThrottleDecision{}
+	if len(hashes) == 0 {
+		return decision, nil
+	}
+	query, args, err := sqlx.In(authThrottleSelect+` WHERE b.bucket_hash IN (?)`, hashes)
+	if err != nil {
+		return decision, err
+	}
+	rows := []models.AuthThrottleBucket{}
+	if err := q.SelectContext(ctx, &rows, q.Rebind(query), args...); err != nil {
+		return decision, err
+	}
+	for _, row := range rows {
+		if row.BlockedUntil != nil && row.BlockedUntil.After(now) {
+			decision.Blocked = true
+			if retry := row.BlockedUntil.Sub(now); retry > decision.RetryAfter {
+				decision.RetryAfter = retry
+			}
+		}
+		if now.Sub(row.LastFailedAt) <= 15*time.Minute {
+			switch row.SubjectType {
+			case "account", "pair":
+				decision.ChallengeRequired = decision.ChallengeRequired || row.ConsecutiveFailures >= 3
+			case "address":
+				decision.ChallengeRequired = decision.ChallengeRequired || row.ConsecutiveFailures >= 10
+			case "network":
+				decision.ChallengeRequired = decision.ChallengeRequired || row.ConsecutiveFailures >= 25
+			}
+		}
+	}
+	return decision, nil
+}
+
+func (q *SecurityQueries) RecordAuthFailure(ctx context.Context, inputs []models.AuthThrottleInput, factor string, now time.Time) (models.AuthThrottleDecision, error) {
+	decision := models.AuthThrottleDecision{}
+	err := q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		for _, input := range inputs {
+			var existing models.AuthThrottleBucket
+			err := tx.GetContext(ctx, &existing, `SELECT * FROM auth_throttle_bucket WHERE bucket_hash = ?`, input.BucketHash)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+			failures := 1
+			windowStarted := now
+			createdAt := now
+			passwordFailures, mfaFailures, pendingMFA := 0, 0, 0
+			denied := 0
+			var oldBlocked *time.Time
+			if err == nil {
+				createdAt = existing.CreatedAt
+				windowStarted = existing.WindowStartedAt
+				failures = existing.ConsecutiveFailures + 1
+				if now.Sub(existing.LastFailedAt) > 15*time.Minute {
+					failures = 1
+					windowStarted = now
+				}
+				passwordFailures = existing.PasswordFailures
+				mfaFailures = existing.MFAFailures
+				pendingMFA = existing.PendingMFANotice
+				denied = existing.DeniedRequests
+				oldBlocked = existing.BlockedUntil
+			}
+			if factor == "mfa" {
+				mfaFailures++
+				if input.SubjectType == "account" {
+					pendingMFA++
+				}
+			} else {
+				passwordFailures++
+			}
+			cooldown := authCooldown(input.SubjectType, failures)
+			if input.SubjectType == "account" {
+				decision.FailureCount = failures
+			}
+			var blockedUntil *time.Time
+			if cooldown > 0 {
+				value := now.Add(cooldown)
+				blockedUntil = &value
+				decision.Blocked = true
+				if cooldown > decision.RetryAfter {
+					decision.RetryAfter = cooldown
+				}
+				if oldBlocked == nil || !oldBlocked.After(now) {
+					decision.NewlyBlocked = true
+				}
+			} else if oldBlocked != nil && oldBlocked.After(now) {
+				blockedUntil = oldBlocked
+				decision.Blocked = true
+				if retry := oldBlocked.Sub(now); retry > decision.RetryAfter {
+					decision.RetryAfter = retry
+				}
+			}
+			_, err = tx.ExecContext(ctx, `INSERT INTO auth_throttle_bucket
+				(bucket_hash, subject_type, user_id, client_ip, network_prefix, consecutive_failures,
+				 password_failures, mfa_failures, pending_mfa_notice, denied_requests, window_started_at,
+				 last_failed_at, blocked_until, last_factor, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(bucket_hash) DO UPDATE SET
+				 user_id = COALESCE(excluded.user_id, auth_throttle_bucket.user_id),
+				 client_ip = excluded.client_ip, network_prefix = excluded.network_prefix,
+				 consecutive_failures = excluded.consecutive_failures,
+				 password_failures = excluded.password_failures, mfa_failures = excluded.mfa_failures,
+				 pending_mfa_notice = excluded.pending_mfa_notice, denied_requests = excluded.denied_requests,
+				 window_started_at = excluded.window_started_at, last_failed_at = excluded.last_failed_at,
+				 blocked_until = excluded.blocked_until, last_factor = excluded.last_factor,
+				 updated_at = excluded.updated_at`, input.BucketHash, input.SubjectType, input.UserID,
+				input.ClientIP, input.NetworkPrefix, failures, passwordFailures, mfaFailures, pendingMFA,
+				denied, windowStarted, now, blockedUntil, factor, createdAt, now)
+			if err != nil {
+				return err
+			}
+		}
+		if authThrottleWrites.Add(1)%256 == 0 {
+			// Attacker-selected usernames and addresses must not create unbounded
+			// durable state between maintenance passes. Run the comparatively
+			// expensive ceiling check only periodically, and retain active
+			// cooldowns plus known account buckets preferentially.
+			_, err := tx.ExecContext(ctx, `DELETE FROM auth_throttle_bucket WHERE id IN (
+				SELECT id FROM auth_throttle_bucket
+				WHERE blocked_until IS NULL OR blocked_until <= ?
+				ORDER BY CASE
+					WHEN user_id IS NULL THEN 0
+					WHEN subject_type <> 'account' THEN 1
+					ELSE 2 END,
+					updated_at ASC, id ASC
+				LIMIT (SELECT MAX(COUNT(*) - 100000, 0) FROM auth_throttle_bucket))`, now)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return decision, err
+}
+
+func (q *SecurityQueries) RecordAuthThrottleDenial(ctx context.Context, hashes [][]byte, now time.Time) error {
+	if len(hashes) == 0 {
+		return nil
+	}
+	query, args, err := sqlx.In(`UPDATE auth_throttle_bucket
+		SET denied_requests = denied_requests + 1, updated_at = ?
+		WHERE id = (SELECT id FROM auth_throttle_bucket
+			WHERE bucket_hash IN (?) AND blocked_until > ?
+			ORDER BY CASE subject_type WHEN 'account' THEN 1 WHEN 'pair' THEN 2 WHEN 'address' THEN 3 ELSE 4 END
+			LIMIT 1)`, now, hashes, now)
+	if err != nil {
+		return err
+	}
+	_, err = q.ExecContext(ctx, q.Rebind(query), args...)
+	return err
+}
+
+func (q *SecurityQueries) ResetAuthThrottle(ctx context.Context, hashes [][]byte, now time.Time) error {
+	if len(hashes) == 0 {
+		return nil
+	}
+	query, args, err := sqlx.In(`UPDATE auth_throttle_bucket SET consecutive_failures = 0,
+		pending_mfa_notice = 0, blocked_until = NULL, window_started_at = ?, updated_at = ?
+		WHERE bucket_hash IN (?)`, now, now, hashes)
+	if err != nil {
+		return err
+	}
+	_, err = q.ExecContext(ctx, q.Rebind(query), args...)
+	return err
+}
+
+func (q *SecurityQueries) AccountMFANotice(ctx context.Context, accountHash []byte) (*models.AuthenticationNotice, error) {
+	var row models.AuthThrottleBucket
+	if err := q.GetContext(ctx, &row, `SELECT * FROM auth_throttle_bucket WHERE bucket_hash = ?`, accountHash); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if row.PendingMFANotice == 0 {
+		return nil, nil
+	}
+	return &models.AuthenticationNotice{Kind: "failed_mfa", Count: row.PendingMFANotice,
+		LastAt: row.LastFailedAt, LastIP: row.ClientIP,
+		Message: "A verification code was rejected before this sign-in succeeded."}, nil
+}
+
+func (q *SecurityQueries) ListAuthThrottleBuckets(ctx context.Context, now, since time.Time) ([]models.AuthThrottleBucket, error) {
+	items := []models.AuthThrottleBucket{}
+	err := q.SelectContext(ctx, &items, authThrottleSelect+`
+		WHERE b.last_failed_at >= ? OR b.blocked_until > ?
+		ORDER BY (b.blocked_until > ?) DESC, b.last_failed_at DESC, b.id DESC LIMIT 500`, since, now, now)
+	return items, err
+}
+
+func (q *SecurityQueries) ClearAuthThrottleBucket(ctx context.Context, id int64) (bool, error) {
+	cleared := false
+	err := q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		var item models.AuthThrottleBucket
+		if err := tx.GetContext(ctx, &item, `SELECT * FROM auth_throttle_bucket WHERE id = ?`, id); err != nil {
+			return err
+		}
+		var result sql.Result
+		var err error
+		switch {
+		case item.UserID != nil && (item.SubjectType == "account" || item.SubjectType == "pair"):
+			// Account and pair cooldowns start together. Clearing either one as
+			// an administrator must actually restore that account's ability to
+			// authenticate, while independent abusive address/network signals stay.
+			result, err = tx.ExecContext(ctx, `DELETE FROM auth_throttle_bucket
+				WHERE user_id = ? AND subject_type IN ('account', 'pair')`, *item.UserID)
+		case item.SubjectType == "address":
+			result, err = tx.ExecContext(ctx, `DELETE FROM auth_throttle_bucket
+				WHERE id = ? OR (subject_type = 'pair' AND client_ip = ?)`, id, item.ClientIP)
+		case item.SubjectType == "network":
+			result, err = tx.ExecContext(ctx, `DELETE FROM auth_throttle_bucket
+				WHERE id = ? OR (subject_type IN ('address', 'pair') AND network_prefix = ?)`, id, item.NetworkPrefix)
+		default:
+			result, err = tx.ExecContext(ctx, `DELETE FROM auth_throttle_bucket WHERE id = ?`, id)
+		}
+		if err != nil {
+			return err
+		}
+		rows, err := result.RowsAffected()
+		cleared = rows > 0
+		return err
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return cleared, err
+}
+
+func (q *SecurityQueries) CreateBotChallenge(ctx context.Context, challenge *models.BotChallenge) error {
+	return q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM auth_bot_challenge
+			WHERE expires_at < ? OR used_at IS NOT NULL`, challenge.CreatedAt); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO auth_bot_challenge
+			(token_hash, account_hash, address_hash, difficulty, created_at, expires_at)
+			VALUES (?, ?, ?, ?, ?, ?)`, challenge.TokenHash, challenge.AccountHash, challenge.AddressHash,
+			challenge.Difficulty, challenge.CreatedAt, challenge.ExpiresAt); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `DELETE FROM auth_bot_challenge WHERE id IN (
+			SELECT id FROM auth_bot_challenge ORDER BY created_at DESC, id DESC LIMIT -1 OFFSET 50000)`)
+		return err
+	})
+}
+
+func (q *SecurityQueries) GetBotChallenge(ctx context.Context, tokenHash []byte) (*models.BotChallenge, error) {
+	challenge := &models.BotChallenge{}
+	if err := q.GetContext(ctx, challenge, `SELECT * FROM auth_bot_challenge WHERE token_hash = ?`, tokenHash); err != nil {
+		return nil, err
+	}
+	return challenge, nil
+}
+
+func (q *SecurityQueries) ConsumeBotChallenge(ctx context.Context, id int64, now time.Time) (bool, error) {
+	result, err := q.ExecContext(ctx, `UPDATE auth_bot_challenge SET used_at = ?
+		WHERE id = ? AND used_at IS NULL AND expires_at > ?`, now, id, now)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
+
 func (q *SecurityQueries) Audit(ctx context.Context, event models.SecurityAuditEvent) error {
 	_, err := q.ExecContext(ctx, `INSERT INTO security_audit_event
 		(actor_user_id, actor_username, actor_display_name, target_user_id, target_username,
@@ -761,6 +1055,14 @@ func (q *SecurityQueries) PruneSecurityData(ctx context.Context, sessionBefore, 
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM auth_login_challenge
 			WHERE expires_at < ? OR consumed_at IS NOT NULL`, sessionBefore); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM auth_bot_challenge
+			WHERE expires_at < ? OR used_at IS NOT NULL`, sessionBefore); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM auth_throttle_bucket
+			WHERE updated_at < ? AND (blocked_until IS NULL OR blocked_until < ?)`, auditBefore, sessionBefore); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM trusted_browser

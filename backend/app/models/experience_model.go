@@ -288,10 +288,17 @@ type Paginated[T any] struct {
 }
 
 type APIError struct {
-	Code        string            `json:"code"`
-	Message     string            `json:"message"`
-	FieldErrors map[string]string `json:"field_errors,omitempty"`
-	Retryable   bool              `json:"retryable"`
+	Code        string                `json:"code"`
+	Message     string                `json:"message"`
+	FieldErrors map[string]string     `json:"field_errors,omitempty"`
+	Retryable   bool                  `json:"retryable"`
+	Challenge   *BotChallengeResponse `json:"challenge,omitempty"`
+}
+
+type BotChallengeResponse struct {
+	Token      string    `json:"token"`
+	Difficulty int       `json:"difficulty"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
 type WorkspaceChannelUpdate struct {

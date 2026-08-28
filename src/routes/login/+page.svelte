@@ -5,6 +5,7 @@
 	import SignalMark from '$lib/components/brand/SignalMark.svelte';
 	import { api, XiviAPIError } from '$lib/api/client';
 	import { auth, setSession, type SessionPrincipal } from '$lib/state/auth.svelte';
+	import { solveLoginChallenge } from '$lib/security/proof-of-work';
 
 	let username = $state('');
 	let password = $state('');
@@ -13,6 +14,7 @@
 	let challengeToken = $state('');
 	let trustBrowser = $state(false);
 	let submitting = $state(false);
+	let checkingBrowser = $state(false);
 	let error = $state('');
 	$effect(() => {
 		if (auth.initialPasswordChangeRequired && !username) username = 'xivi';
@@ -20,6 +22,8 @@
 
 	type LoginChallenge = { mfa_required: true; challenge_token: string; expires_at: string };
 	type LoginResponse = SessionPrincipal | LoginChallenge;
+	type BotChallenge = { token: string; difficulty: number; expires_at: string };
+	type ProtectedRequest = Record<string, string | boolean>;
 
 	function isChallenge(response: LoginResponse): response is LoginChallenge {
 		return 'mfa_required' in response && 'challenge_token' in response;
@@ -48,14 +52,39 @@
 		await goto(next, { replaceState: true });
 	}
 
+	async function protectedLogin<T>(path: string, body: ProtectedRequest): Promise<T> {
+		try {
+			return await api<T>(path, { method: 'POST', body: JSON.stringify(body) });
+		} catch (caught) {
+			const challenge =
+				caught instanceof XiviAPIError && caught.detail.code === 'bot_challenge_required'
+					? ((caught.detail as typeof caught.detail & { challenge?: BotChallenge }).challenge ??
+						null)
+					: null;
+			if (!challenge) throw caught;
+			checkingBrowser = true;
+			const nonce = await solveLoginChallenge(challenge.token, challenge.difficulty);
+			return api<T>(path, {
+				method: 'POST',
+				body: JSON.stringify({
+					...body,
+					bot_challenge_token: challenge.token,
+					bot_challenge_nonce: nonce
+				})
+			});
+		} finally {
+			checkingBrowser = false;
+		}
+	}
+
 	async function login(event: SubmitEvent) {
 		event.preventDefault();
 		submitting = true;
 		error = '';
 		try {
-			const response = await api<LoginResponse>('/api/v2/auth/login', {
-				method: 'POST',
-				body: JSON.stringify({ username, password })
+			const response = await protectedLogin<LoginResponse>('/api/v2/auth/login', {
+				username,
+				password
 			});
 			if (isChallenge(response)) {
 				challengeToken = response.challenge_token;
@@ -81,13 +110,10 @@
 		submitting = true;
 		error = '';
 		try {
-			const principal = await api<SessionPrincipal>('/api/v2/auth/login/mfa', {
-				method: 'POST',
-				body: JSON.stringify({
-					challenge_token: challengeToken,
-					code: mfaCode,
-					trust_browser: trustBrowser
-				})
+			const principal = await protectedLogin<SessionPrincipal>('/api/v2/auth/login/mfa', {
+				challenge_token: challengeToken,
+				code: mfaCode,
+				trust_browser: trustBrowser
 			});
 			await finishLogin(principal);
 		} catch (caught) {
@@ -202,13 +228,15 @@
 				disabled={submitting ||
 					auth.bootstrapRequired ||
 					(auth.initialPasswordChangeRequired && !auth.initialLoginAllowed)}
-				>{submitting
-					? step === 'password'
-						? 'Signing in…'
-						: 'Verifying…'
-					: step === 'password'
-						? 'Sign in'
-						: 'Verify and continue'}</button
+				>{checkingBrowser
+					? 'Please wait…'
+					: submitting
+						? step === 'password'
+							? 'Signing in…'
+							: 'Verifying…'
+						: step === 'password'
+							? 'Sign in'
+							: 'Verify and continue'}</button
 			>
 			{#if step === 'mfa'}<button class="back" type="button" onclick={restartLogin}
 					>Back to password</button

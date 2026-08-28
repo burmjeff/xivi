@@ -24,15 +24,24 @@ type User struct {
 }
 
 type SessionPrincipal struct {
-	UserID             int64   `json:"user_id"`
-	Username           string  `json:"username"`
-	DisplayName        string  `json:"display_name"`
-	Role               string  `json:"role"`
-	MustChangePassword bool    `json:"must_change_password"`
-	MFAEnabled         bool    `json:"mfa_enabled"`
-	MFARequired        bool    `json:"mfa_required"`
-	LineupIDs          []int64 `json:"lineup_ids"`
-	CSRFToken          string  `json:"csrf_token,omitempty"`
+	UserID             int64                 `json:"user_id"`
+	Username           string                `json:"username"`
+	DisplayName        string                `json:"display_name"`
+	Role               string                `json:"role"`
+	MustChangePassword bool                  `json:"must_change_password"`
+	MFAEnabled         bool                  `json:"mfa_enabled"`
+	MFARequired        bool                  `json:"mfa_required"`
+	LineupIDs          []int64               `json:"lineup_ids"`
+	CSRFToken          string                `json:"csrf_token,omitempty"`
+	SecurityNotice     *AuthenticationNotice `json:"security_notice,omitempty"`
+}
+
+type AuthenticationNotice struct {
+	Kind    string    `json:"kind"`
+	Count   int       `json:"count"`
+	LastAt  time.Time `json:"last_at"`
+	LastIP  string    `json:"last_ip,omitempty"`
+	Message string    `json:"message"`
 }
 
 func (p SessionPrincipal) IsAdmin() bool { return p.Role == RoleAdmin }
@@ -100,6 +109,55 @@ type TrustedBrowser struct {
 	UserAgent      string     `db:"user_agent" json:"user_agent"`
 	UserAgentHash  []byte     `db:"user_agent_hash" json:"-"`
 	Current        bool       `db:"-" json:"current"`
+}
+
+type AuthThrottleBucket struct {
+	ID                  int64      `db:"id" json:"id"`
+	BucketHash          []byte     `db:"bucket_hash" json:"-"`
+	SubjectType         string     `db:"subject_type" json:"subject_type"`
+	UserID              *int64     `db:"user_id" json:"user_id,omitempty"`
+	Username            string     `db:"username" json:"username,omitempty"`
+	DisplayName         string     `db:"display_name" json:"display_name,omitempty"`
+	ClientIP            string     `db:"client_ip" json:"client_ip,omitempty"`
+	NetworkPrefix       string     `db:"network_prefix" json:"network_prefix,omitempty"`
+	ConsecutiveFailures int        `db:"consecutive_failures" json:"consecutive_failures"`
+	PasswordFailures    int        `db:"password_failures" json:"password_failures"`
+	MFAFailures         int        `db:"mfa_failures" json:"mfa_failures"`
+	PendingMFANotice    int        `db:"pending_mfa_notice" json:"-"`
+	DeniedRequests      int        `db:"denied_requests" json:"denied_requests"`
+	WindowStartedAt     time.Time  `db:"window_started_at" json:"window_started_at"`
+	LastFailedAt        time.Time  `db:"last_failed_at" json:"last_failed_at"`
+	BlockedUntil        *time.Time `db:"blocked_until" json:"blocked_until,omitempty"`
+	LastFactor          string     `db:"last_factor" json:"last_factor"`
+	CreatedAt           time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt           time.Time  `db:"updated_at" json:"updated_at"`
+}
+
+type AuthThrottleInput struct {
+	BucketHash    []byte
+	SubjectType   string
+	UserID        *int64
+	ClientIP      string
+	NetworkPrefix string
+}
+
+type AuthThrottleDecision struct {
+	Blocked           bool
+	RetryAfter        time.Duration
+	ChallengeRequired bool
+	NewlyBlocked      bool
+	FailureCount      int
+}
+
+type BotChallenge struct {
+	ID          int64      `db:"id"`
+	TokenHash   []byte     `db:"token_hash"`
+	AccountHash []byte     `db:"account_hash"`
+	AddressHash []byte     `db:"address_hash"`
+	Difficulty  int        `db:"difficulty"`
+	CreatedAt   time.Time  `db:"created_at"`
+	ExpiresAt   time.Time  `db:"expires_at"`
+	UsedAt      *time.Time `db:"used_at"`
 }
 
 type LineupGrant struct {

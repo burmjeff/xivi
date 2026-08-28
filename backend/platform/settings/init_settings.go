@@ -174,10 +174,11 @@ func SetDefaults() (*AppSettings, error) {
 			TunerCount: 6,
 		},
 		Security: Security{
-			LocalBaseURL:       "http://127.0.0.1:3000",
-			AllowLANHTTP:       true,
-			AuditRetentionDays: 90,
-			MaximumAuditEvents: 100000,
+			LocalBaseURL:           "http://127.0.0.1:3000",
+			AllowLANHTTP:           true,
+			AuditRetentionDays:     90,
+			MaximumAuditEvents:     100000,
+			AdaptiveLoginChallenge: true,
 		},
 	}
 

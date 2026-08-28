@@ -115,11 +115,12 @@ type VirtualTuner struct {
 // Security contains only non-secret deployment policy. The authentication
 // root key is stored outside the database and is never serialized in settings.
 type Security struct {
-	PublicBaseURL      string   `yaml:"public_base_url" json:"public_base_url"`
-	LocalBaseURL       string   `yaml:"local_base_url" json:"local_base_url"`
-	TrustedProxyCIDRs  []string `yaml:"trusted_proxy_cidrs" json:"trusted_proxy_cidrs"`
-	TrustedLANCIDRs    []string `yaml:"trusted_lan_cidrs" json:"trusted_lan_cidrs"`
-	AllowLANHTTP       bool     `yaml:"allow_lan_http" json:"allow_lan_http"`
-	AuditRetentionDays int      `yaml:"audit_retention_days" json:"audit_retention_days"`
-	MaximumAuditEvents int      `yaml:"maximum_audit_events" json:"maximum_audit_events"`
+	PublicBaseURL          string   `yaml:"public_base_url" json:"public_base_url"`
+	LocalBaseURL           string   `yaml:"local_base_url" json:"local_base_url"`
+	TrustedProxyCIDRs      []string `yaml:"trusted_proxy_cidrs" json:"trusted_proxy_cidrs"`
+	TrustedLANCIDRs        []string `yaml:"trusted_lan_cidrs" json:"trusted_lan_cidrs"`
+	AllowLANHTTP           bool     `yaml:"allow_lan_http" json:"allow_lan_http"`
+	AuditRetentionDays     int      `yaml:"audit_retention_days" json:"audit_retention_days"`
+	MaximumAuditEvents     int      `yaml:"maximum_audit_events" json:"maximum_audit_events"`
+	AdaptiveLoginChallenge bool     `yaml:"adaptive_login_challenge" json:"adaptive_login_challenge"`
 }

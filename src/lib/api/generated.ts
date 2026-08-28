@@ -436,6 +436,38 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/studio/security/auth-protection': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getAuthenticationProtection'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/security/auth-protection/{bucket_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['clearAuthenticationThrottle'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/media/v1/lineups/{lineup_id}/playlist.m3u': {
 		parameters: {
 			query?: never;
@@ -1458,6 +1490,16 @@ export interface components {
 			lineup_ids: number[];
 			/** @description Required on cookie-authenticated mutations. */
 			csrf_token?: string;
+			security_notice?: components['schemas']['AuthenticationNotice'];
+		};
+		AuthenticationNotice: {
+			/** @enum {string} */
+			kind: 'failed_mfa';
+			count: number;
+			/** Format: date-time */
+			last_at: string;
+			last_ip?: string;
+			message: string;
 		};
 		LoginChallenge: {
 			/** @constant */
@@ -1616,6 +1658,37 @@ export interface components {
 		SecurityAuditPage: components['schemas']['PageMetadata'] & {
 			items?: components['schemas']['SecurityAuditEvent'][];
 		};
+		AuthThrottleBucket: {
+			/** Format: int64 */
+			id: number;
+			/** @enum {string} */
+			subject_type: 'account' | 'address' | 'network' | 'pair';
+			subject: string;
+			/** Format: int64 */
+			user_id?: number;
+			client_ip?: string;
+			network_prefix?: string;
+			consecutive_failures: number;
+			password_failures: number;
+			mfa_failures: number;
+			denied_requests: number;
+			/** @enum {string} */
+			last_factor: 'password' | 'mfa';
+			/** Format: date-time */
+			last_failed_at: string;
+			/** Format: date-time */
+			blocked_until?: string;
+		};
+		AuthProtectionResponse: {
+			summary: {
+				active_throttles: number;
+				password_failures: number;
+				mfa_failures: number;
+				denied_requests: number;
+			};
+			items: components['schemas']['AuthThrottleBucket'][];
+			retention_days: number;
+		};
 		APIError: {
 			code: string;
 			message: string;
@@ -1623,6 +1696,12 @@ export interface components {
 				[key: string]: string;
 			};
 			retryable: boolean;
+			challenge?: {
+				token: string;
+				difficulty: number;
+				/** Format: date-time */
+				expires_at: string;
+			};
 		};
 		PageMetadata: {
 			next_cursor?: string | null;
@@ -2297,6 +2376,10 @@ export interface operations {
 					username: string;
 					/** Format: password */
 					password: string;
+					/** @description Opaque adaptive browser-challenge token returned by a prior throttled response. */
+					bot_challenge_token?: string;
+					/** @description Proof-of-work nonce for the adaptive browser challenge. */
+					bot_challenge_nonce?: string;
 				};
 			};
 		};
@@ -2336,6 +2419,8 @@ export interface operations {
 					code: string;
 					/** @description Store a separate revocable browser approval for 30 days. A password is still required at future sign-ins. */
 					trust_browser: boolean;
+					bot_challenge_token?: string;
+					bot_challenge_nonce?: string;
 				};
 			};
 		};
@@ -3021,6 +3106,48 @@ export interface operations {
 				content: {
 					'application/json': components['schemas']['SecurityAuditPage'];
 				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	getAuthenticationProtection: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Aggregated recent authentication failures and active adaptive throttles. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['AuthProtectionResponse'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	clearAuthenticationThrottle: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				bucket_id: number;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Selected adaptive throttle cleared. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
 			};
 			default: components['responses']['Error'];
 		};

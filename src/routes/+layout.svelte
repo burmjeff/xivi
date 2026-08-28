@@ -11,6 +11,10 @@
 	const queryClient = new QueryClient({
 		defaultOptions: { queries: { staleTime: 20_000, retry: 1, refetchOnWindowFocus: false } }
 	});
+	let dismissedSecurityNotice = $state(false);
+	$effect(() => {
+		if (auth.principal?.security_notice) dismissedSecurityNotice = false;
+	});
 	onMount(() => {
 		loadPreferences();
 		void loadSession();
@@ -61,7 +65,24 @@
 	{:else if auth.principal?.must_change_password && page.url.pathname === '/account'}
 		{@render children?.()}
 	{:else if auth.principal && (!page.url.pathname.startsWith('/studio') || auth.principal.role === 'admin')}
-		<AppShell>{@render children?.()}</AppShell>
+		<AppShell>
+			{#if auth.principal.security_notice && !dismissedSecurityNotice}
+				<div class="security-notice" role="alert">
+					<div>
+						<strong>Verification attempts detected</strong>
+						<span
+							>{auth.principal.security_notice.count} rejected MFA
+							{auth.principal.security_notice.count === 1 ? 'attempt was' : 'attempts were'} recorded
+							before this sign-in{auth.principal.security_notice.last_ip
+								? ` from ${auth.principal.security_notice.last_ip}`
+								: ''}.</span
+						>
+					</div>
+					<button type="button" onclick={() => (dismissedSecurityNotice = true)}>Dismiss</button>
+				</div>
+			{/if}
+			{@render children?.()}
+		</AppShell>
 	{/if}
 </QueryClientProvider>
 
@@ -83,6 +104,37 @@
 		background: var(--aqua);
 		box-shadow: -0.8rem 0.8rem 0 var(--coral);
 		animation: pulse 1.1s ease-in-out infinite alternate;
+	}
+	.security-notice {
+		position: relative;
+		z-index: 20;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		margin: 0.8rem clamp(1rem, 3vw, 2.4rem) 0;
+		border: 1px solid color-mix(in oklch, var(--sun) 62%, var(--line));
+		border-radius: 0.9rem;
+		background: color-mix(in oklch, var(--sun) 16%, var(--surface));
+		padding: 0.75rem 0.9rem;
+		color: var(--text);
+		font-size: 0.78rem;
+	}
+	.security-notice div {
+		display: grid;
+		gap: 0.18rem;
+	}
+	.security-notice span {
+		color: var(--muted);
+	}
+	.security-notice button {
+		min-height: 2rem;
+		border: 1px solid var(--line);
+		border-radius: 0.65rem;
+		background: var(--surface-raised);
+		color: var(--text);
+		padding: 0.3rem 0.65rem;
+		font-weight: 750;
 	}
 	@keyframes pulse {
 		to {

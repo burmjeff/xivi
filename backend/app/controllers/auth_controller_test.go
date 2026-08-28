@@ -33,6 +33,7 @@ func TestMFALoginUsesSecondStepAndRevocableTrustedBrowser(t *testing.T) {
 	}
 	originalSecurity := settings.Current().Security
 	settings.Current().Security.AllowLANHTTP = true
+	settings.Current().Security.AdaptiveLoginChallenge = true
 	settings.Current().Security.TrustedLANCIDRs = []string{"0.0.0.0/0", "::/0"}
 	settings.Current().Security.LocalBaseURL = "http://xivi.test"
 	settings.Current().Security.PublicBaseURL = ""
@@ -69,6 +70,18 @@ func TestMFALoginUsesSecondStepAndRevocableTrustedBrowser(t *testing.T) {
 		auth_version INTEGER NOT NULL, transport_scope TEXT NOT NULL, created_at TIMESTAMP NOT NULL,
 		last_used_at TIMESTAMP NOT NULL, expires_at TIMESTAMP NOT NULL, revoked_at TIMESTAMP NULL,
 		created_ip TEXT NOT NULL, last_used_ip TEXT NOT NULL, user_agent TEXT NOT NULL, user_agent_hash BLOB NOT NULL)`)
+	db.MustExec(`CREATE TABLE auth_throttle_bucket (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, bucket_hash BLOB NOT NULL UNIQUE, subject_type TEXT NOT NULL,
+		user_id INTEGER NULL, client_ip TEXT NOT NULL DEFAULT '', network_prefix TEXT NOT NULL DEFAULT '',
+		consecutive_failures INTEGER NOT NULL DEFAULT 0, password_failures INTEGER NOT NULL DEFAULT 0,
+		mfa_failures INTEGER NOT NULL DEFAULT 0, pending_mfa_notice INTEGER NOT NULL DEFAULT 0,
+		denied_requests INTEGER NOT NULL DEFAULT 0, window_started_at TIMESTAMP NOT NULL,
+		last_failed_at TIMESTAMP NOT NULL, blocked_until TIMESTAMP NULL, last_factor TEXT NOT NULL DEFAULT '',
+		created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL)`)
+	db.MustExec(`CREATE TABLE auth_bot_challenge (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, token_hash BLOB NOT NULL UNIQUE, account_hash BLOB NOT NULL,
+		address_hash BLOB NOT NULL, difficulty INTEGER NOT NULL, created_at TIMESTAMP NOT NULL,
+		expires_at TIMESTAMP NOT NULL, used_at TIMESTAMP NULL)`)
 	db.MustExec(`CREATE TABLE security_audit_event (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, actor_user_id INTEGER, actor_username TEXT NOT NULL DEFAULT '',
 		actor_display_name TEXT NOT NULL DEFAULT '', target_user_id INTEGER,
@@ -161,9 +174,39 @@ func TestMFALoginUsesSecondStepAndRevocableTrustedBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
 	if response.StatusCode != fiber.StatusOK {
 		t.Fatalf("trusted browser did not skip only the MFA step: status=%d", response.StatusCode)
+	}
+	_ = response.Body.Close()
+
+	// The first suspicious attempts still return a generic credential failure.
+	// The next request is stopped before Argon2 and receives a one-time browser
+	// proof rather than an account-enumerating response.
+	for attempt := 0; attempt < 3; attempt++ {
+		response, err = app.Test(request("/login", `{"username":"viewer","password":"definitely incorrect"}`), -1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response.StatusCode != fiber.StatusUnauthorized {
+			t.Fatalf("suspicious attempt %d returned %d", attempt+1, response.StatusCode)
+		}
+		_ = response.Body.Close()
+	}
+	response, err = app.Test(request("/login", `{"username":"viewer","password":"definitely incorrect"}`), -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != fiber.StatusTooManyRequests {
+		t.Fatalf("adaptive browser challenge returned %d", response.StatusCode)
+	}
+	var protection models.APIError
+	if err := json.NewDecoder(response.Body).Decode(&protection); err != nil {
+		t.Fatal(err)
+	}
+	if protection.Code != "bot_challenge_required" || protection.Challenge == nil ||
+		!strings.HasPrefix(protection.Challenge.Token, "xbc_") || protection.Challenge.Difficulty != botChallengeDifficulty {
+		t.Fatalf("unexpected adaptive browser challenge: %+v", protection)
 	}
 }
 

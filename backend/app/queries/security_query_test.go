@@ -52,6 +52,19 @@ func securityTestQueries(t *testing.T) *SecurityQueries {
 		expires_at TIMESTAMP NOT NULL, revoked_at TIMESTAMP NULL,
 		created_ip TEXT NOT NULL, last_used_ip TEXT NOT NULL,
 		user_agent TEXT NOT NULL, user_agent_hash BLOB NOT NULL)`)
+	db.MustExec(`CREATE TABLE auth_throttle_bucket (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, bucket_hash BLOB NOT NULL UNIQUE, subject_type TEXT NOT NULL,
+		user_id INTEGER NULL REFERENCES app_user(id) ON DELETE SET NULL, client_ip TEXT NOT NULL DEFAULT '',
+		network_prefix TEXT NOT NULL DEFAULT '', consecutive_failures INTEGER NOT NULL DEFAULT 0,
+		password_failures INTEGER NOT NULL DEFAULT 0, mfa_failures INTEGER NOT NULL DEFAULT 0,
+		pending_mfa_notice INTEGER NOT NULL DEFAULT 0, denied_requests INTEGER NOT NULL DEFAULT 0,
+		window_started_at TIMESTAMP NOT NULL, last_failed_at TIMESTAMP NOT NULL,
+		blocked_until TIMESTAMP NULL, last_factor TEXT NOT NULL DEFAULT '', created_at TIMESTAMP NOT NULL,
+		updated_at TIMESTAMP NOT NULL)`)
+	db.MustExec(`CREATE TABLE auth_bot_challenge (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, token_hash BLOB NOT NULL UNIQUE, account_hash BLOB NOT NULL,
+		address_hash BLOB NOT NULL, difficulty INTEGER NOT NULL, created_at TIMESTAMP NOT NULL,
+		expires_at TIMESTAMP NOT NULL, used_at TIMESTAMP NULL)`)
 	db.MustExec(`CREATE TABLE security_audit_event (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		actor_user_id INTEGER NULL REFERENCES app_user(id) ON DELETE SET NULL,
@@ -75,6 +88,68 @@ func securityTestQueries(t *testing.T) *SecurityQueries {
 		lineup_id INTEGER NOT NULL REFERENCES template(id) ON DELETE CASCADE,
 		PRIMARY KEY(media_key_id, lineup_id))`)
 	return NewSecurityQueries(db)
+}
+
+func TestAdaptiveAuthThrottlePersistsAccountCooldownAndResetsOnlyActiveCounters(t *testing.T) {
+	ctx := context.Background()
+	q := securityTestQueries(t)
+	authThrottleWrites.Store(255) // exercise the periodic hard-ceiling query
+	userID, err := q.CreateUser(ctx, "protected-user", "Protected User", "hash", "viewer", false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	inputs := []models.AuthThrottleInput{
+		{BucketHash: []byte("account"), SubjectType: "account", UserID: &userID, ClientIP: "203.0.113.8", NetworkPrefix: "203.0.113.0/24"},
+		{BucketHash: []byte("address"), SubjectType: "address", ClientIP: "203.0.113.8", NetworkPrefix: "203.0.113.0/24"},
+		{BucketHash: []byte("network"), SubjectType: "network", ClientIP: "203.0.113.8", NetworkPrefix: "203.0.113.0/24"},
+		{BucketHash: []byte("pair"), SubjectType: "pair", UserID: &userID, ClientIP: "203.0.113.8", NetworkPrefix: "203.0.113.0/24"},
+	}
+	for attempt := 1; attempt <= 5; attempt++ {
+		decision, err := q.RecordAuthFailure(ctx, inputs, "password", now.Add(time.Duration(attempt)*time.Second))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if attempt == 3 && decision.Blocked {
+			t.Fatal("challenge threshold incorrectly hard-blocked the account")
+		}
+		if attempt == 5 && (!decision.Blocked || decision.RetryAfter != 30*time.Second) {
+			t.Fatalf("fifth failure did not start the 30-second cooldown: %+v", decision)
+		}
+	}
+	decision, err := q.CheckAuthThrottle(ctx, [][]byte{[]byte("account"), []byte("address"), []byte("network"), []byte("pair")}, now.Add(6*time.Second))
+	if err != nil || !decision.Blocked || !decision.ChallengeRequired {
+		t.Fatalf("persistent throttle was not enforced: decision=%+v err=%v", decision, err)
+	}
+	if err := q.ResetAuthThrottle(ctx, [][]byte{[]byte("account"), []byte("pair")}, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	items, err := q.ListAuthThrottleBuckets(ctx, now.Add(time.Minute), now.Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var account models.AuthThrottleBucket
+	for _, item := range items {
+		if item.SubjectType == "account" {
+			account = item
+		}
+	}
+	if account.ConsecutiveFailures != 0 || account.PasswordFailures != 5 || account.BlockedUntil != nil {
+		t.Fatalf("success did not preserve aggregate history while clearing active state: %+v", account)
+	}
+	cleared, err := q.ClearAuthThrottleBucket(ctx, account.ID)
+	if err != nil || !cleared {
+		t.Fatalf("account throttle could not be cleared: cleared=%v err=%v", cleared, err)
+	}
+	items, err = q.ListAuthThrottleBuckets(ctx, now.Add(time.Minute), now.Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range items {
+		if item.UserID != nil && *item.UserID == userID && (item.SubjectType == "account" || item.SubjectType == "pair") {
+			t.Fatalf("account clear left a correlated %s bucket behind", item.SubjectType)
+		}
+	}
 }
 
 func TestSecurityAuditPreservesActorAndTargetUsernames(t *testing.T) {

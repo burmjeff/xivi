@@ -15,8 +15,8 @@ func V2Routes(a *fiber.App) {
 
 	// Explicitly anonymous security bootstrap and login surface.
 	v2.Get("/auth/bootstrap-status", middleware.DeclareRoutePolicy("anonymous"), middleware.BoundedRateLimit(60, time.Minute, false), controllers.V2BootstrapStatus)
-	v2.Post("/auth/login", middleware.DeclareRoutePolicy("anonymous"), controllers.V2Login)
-	v2.Post("/auth/login/mfa", middleware.DeclareRoutePolicy("anonymous"), middleware.BoundedRateLimit(30, 15*time.Minute, false), controllers.V2CompleteMFALogin)
+	v2.Post("/auth/login", middleware.DeclareRoutePolicy("anonymous"), middleware.LoginIngressRateLimit(), controllers.V2Login)
+	v2.Post("/auth/login/mfa", middleware.DeclareRoutePolicy("anonymous"), middleware.LoginIngressRateLimit(), controllers.V2CompleteMFALogin)
 
 	auth := v2.Group("", middleware.DeclareRoutePolicy("authenticated"), middleware.RequireAuthenticated())
 	auth.Get("/auth/session", controllers.V2Session)
@@ -56,6 +56,8 @@ func V2Routes(a *fiber.App) {
 	studio := v2.Group("/studio", middleware.DeclareRoutePolicy("admin"), middleware.RequireAdmin(), middleware.RequirePasswordChanged(), middleware.BoundedRateLimit(240, time.Minute, true), middleware.CSRFProtected())
 	studio.Get("/users", controllers.V2StudioUsers)
 	studio.Get("/security/audit", controllers.V2StudioSecurityAudit)
+	studio.Get("/security/auth-protection", controllers.V2StudioAuthProtection)
+	studio.Delete("/security/auth-protection/:bucket_id", middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2ClearStudioAuthProtection)
 	studio.Post("/users", middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2CreateStudioUser)
 	studio.Patch("/users/:user_id", middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2UpdateStudioUser)
 	studio.Patch("/users/:user_id/profile", middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2UpdateStudioUserProfile)

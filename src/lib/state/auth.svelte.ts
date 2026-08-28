@@ -10,6 +10,13 @@ export interface SessionPrincipal {
 	mfa_required: boolean;
 	lineup_ids: number[];
 	csrf_token: string;
+	security_notice?: {
+		kind: string;
+		count: number;
+		last_at: string;
+		last_ip?: string;
+		message: string;
+	};
 }
 
 type AuthStatus = 'loading' | 'authenticated' | 'anonymous';

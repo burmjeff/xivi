@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { KeyRound, ShieldCheck, Trash2, UserPlus, Users } from '@lucide/svelte';
+	import { KeyRound, ShieldAlert, ShieldCheck, Trash2, UserPlus, Users } from '@lucide/svelte';
 	import { api, XiviAPIError } from '$lib/api/client';
 	import ConfirmationDialog from '$lib/components/security/ConfirmationDialog.svelte';
 	import ReauthenticationDialog from '$lib/components/security/ReauthenticationDialog.svelte';
@@ -37,6 +37,30 @@
 		created_at: string;
 	};
 	type AuditResponse = { items: AuditEvent[]; next_cursor?: string; total: number };
+	type AuthProtectionItem = {
+		id: number;
+		subject_type: 'account' | 'address' | 'network' | 'pair';
+		subject: string;
+		client_ip?: string;
+		network_prefix?: string;
+		consecutive_failures: number;
+		password_failures: number;
+		mfa_failures: number;
+		denied_requests: number;
+		last_factor: 'password' | 'mfa';
+		last_failed_at: string;
+		blocked_until?: string;
+	};
+	type AuthProtectionResponse = {
+		summary: {
+			active_throttles: number;
+			password_failures: number;
+			mfa_failures: number;
+			denied_requests: number;
+		};
+		items: AuthProtectionItem[];
+		retention_days: number;
+	};
 	type MediaKey = {
 		id: number;
 		name: string;
@@ -62,6 +86,11 @@
 	const auditQuery = createQuery(() => ({
 		queryKey: ['studio', 'security-audit'],
 		queryFn: () => api<AuditResponse>('/api/v2/studio/security/audit?limit=50'),
+		refetchInterval: 30_000
+	}));
+	const protectionQuery = createQuery(() => ({
+		queryKey: ['studio', 'auth-protection'],
+		queryFn: () => api<AuthProtectionResponse>('/api/v2/studio/security/auth-protection'),
 		refetchInterval: 30_000
 	}));
 	let username = $state(''),
@@ -161,6 +190,17 @@
 	}
 	function userLabel(user: User) {
 		return user.display_name ? `${user.display_name} (@${user.username})` : user.username;
+	}
+	function isActiveThrottle(item: AuthProtectionItem) {
+		return !!item.blocked_until && new Date(item.blocked_until).getTime() > Date.now();
+	}
+	async function clearThrottle(item: AuthProtectionItem) {
+		await runSensitive(`clear the sign-in throttle for ${item.subject}`, async () => {
+			await api(`/api/v2/studio/security/auth-protection/${item.id}`, { method: 'DELETE' });
+			await client.invalidateQueries({ queryKey: ['studio', 'auth-protection'] });
+			await client.invalidateQueries({ queryKey: ['studio', 'security-audit'] });
+			message = `Sign-in throttle cleared for ${item.subject}.`;
+		});
 	}
 	function toggleCreate(id: number, checked: boolean) {
 		lineupIDs = checked ? [...new Set([...lineupIDs, id])] : lineupIDs.filter((v) => v !== id);
@@ -505,6 +545,64 @@
 						</div>{/if}
 				</article>{/each}{/if}
 	</div>
+	<section class="protection">
+		<div class="directory-title">
+			<ShieldAlert size={20} />
+			<div class="protection-heading">
+				<h2>Sign-in protection</h2>
+				<small>Independent account, address, network, and combined signals · 30-day history</small>
+			</div>
+			<span>{protectionQuery.data?.summary.active_throttles ?? 0} active</span>
+		</div>
+		{#if protectionQuery.data}
+			<div class="protection-summary">
+				<div>
+					<strong>{protectionQuery.data.summary.password_failures}</strong><span
+						>Password failures</span
+					>
+				</div>
+				<div>
+					<strong>{protectionQuery.data.summary.mfa_failures}</strong><span>MFA failures</span>
+				</div>
+				<div>
+					<strong>{protectionQuery.data.summary.denied_requests}</strong><span
+						>Blocked requests</span
+					>
+				</div>
+			</div>
+		{/if}
+		<div class="protection-list">
+			{#if protectionQuery.isPending}
+				<p class="empty">Loading sign-in activity…</p>
+			{:else if !protectionQuery.data?.items.length}
+				<p class="empty">No recent failed sign-in activity.</p>
+			{:else}
+				{#each protectionQuery.data.items as item}
+					<article class:active={isActiveThrottle(item)}>
+						<div class="protection-subject">
+							<strong>{item.subject}</strong>
+							<span>{item.subject_type} signal · last {item.last_factor} failure</span>
+						</div>
+						<div><strong>{item.consecutive_failures}</strong><span>consecutive</span></div>
+						<div>
+							<strong>{new Date(item.last_failed_at).toLocaleString()}</strong>
+							<span>{item.client_ip || item.network_prefix || 'unknown source'}</span>
+						</div>
+						<div class="throttle-state">
+							{#if isActiveThrottle(item)}
+								<strong>Blocked until {new Date(item.blocked_until!).toLocaleTimeString()}</strong>
+							{:else}
+								<span>Observed</span>
+							{/if}
+							<button class="app-button app-button--quiet" onclick={() => clearThrottle(item)}
+								>Clear</button
+							>
+						</div>
+					</article>
+				{/each}
+			{/if}
+		</div>
+	</section>
 	<section class="audit">
 		<div class="directory-title">
 			<ShieldCheck size={20} />
@@ -580,6 +678,7 @@
 	}
 	article,
 	.directory,
+	.protection,
 	.audit {
 		border: 1px solid var(--line);
 		border-radius: 1.1rem;
@@ -763,6 +862,66 @@
 	.audit {
 		gap: 0;
 	}
+	.protection {
+		gap: 0.8rem;
+	}
+	.protection-heading {
+		display: grid;
+		flex: 1;
+		gap: 0.12rem;
+	}
+	.protection-heading small,
+	.protection-list span,
+	.protection-summary span {
+		color: var(--muted);
+		font-size: 0.68rem;
+	}
+	.protection-summary {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0.5rem;
+	}
+	.protection-summary div {
+		display: grid;
+		gap: 0.1rem;
+		border-radius: 0.75rem;
+		background: var(--surface-raised);
+		padding: 0.65rem 0.75rem;
+	}
+	.protection-list {
+		max-height: 26rem;
+		overflow: auto;
+		overscroll-behavior: auto;
+	}
+	.protection-list article {
+		grid-template-columns: minmax(12rem, 1.3fr) 6rem minmax(12rem, 1fr) minmax(10rem, auto);
+		align-items: center;
+		border-width: 1px 0 0;
+		border-radius: 0;
+		background: transparent;
+		padding: 0.65rem 0.2rem;
+		font-size: 0.72rem;
+	}
+	.protection-list article.active {
+		border-left: 3px solid var(--error);
+		padding-left: 0.6rem;
+	}
+	.protection-list article > div {
+		display: grid;
+		gap: 0.12rem;
+		min-width: 0;
+	}
+	.protection-subject strong {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.throttle-state {
+		justify-items: end;
+	}
+	.throttle-state strong {
+		color: var(--error);
+	}
 	.audit-list {
 		max-height: 26rem;
 		overflow: auto;
@@ -827,6 +986,13 @@
 		}
 		.audit-list article {
 			grid-template-columns: 1fr 1fr;
+		}
+		.protection-summary,
+		.protection-list article {
+			grid-template-columns: 1fr;
+		}
+		.throttle-state {
+			justify-items: start;
 		}
 		.audit-list small {
 			grid-column: 1/-1;

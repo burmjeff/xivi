@@ -73,6 +73,26 @@ func BoundedRateLimit(maximum int, window time.Duration, mutationsOnly bool) fib
 
 var invalidMediaAttempts = newBoundedRateLimiter(10_000)
 
+var loginIngressAttempts = newBoundedRateLimiter(10_000)
+
+// LoginIngressRateLimit is deliberately cheap and runs before JSON decoding,
+// database access, or Argon2. Durable account/IP/network cooldowns still make
+// the authorization decision; this layer only sheds obvious request floods.
+func LoginIngressRateLimit() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		ip := security.RequestNetworkInfo(c).IP.String()
+		globalAllowed, globalRetry := loginIngressAttempts.allow("global", 600, time.Minute)
+		addressAllowed, addressRetry := loginIngressAttempts.allow("address:"+ip, 30, time.Minute)
+		if globalAllowed && addressAllowed {
+			return c.Next()
+		}
+		retry := max(globalRetry, addressRetry)
+		c.Set(fiber.HeaderRetryAfter, strconv.Itoa(max(1, int(retry.Seconds()))))
+		return c.Status(fiber.StatusTooManyRequests).JSON(models.APIError{Code: "login_ingress_limited",
+			Message: "Too many sign-in requests. Try again shortly.", Retryable: true})
+	}
+}
+
 func rejectInvalidMediaCredential(c *fiber.Ctx) error {
 	token := c.Query("access_token")
 	if token != "" {

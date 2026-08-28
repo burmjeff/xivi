@@ -8,10 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/app/queries"
@@ -24,21 +24,13 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-type loginAttempt struct {
-	Failures int
-	Window   time.Time
-}
-
-var loginAttempts = struct {
-	sync.Mutex
-	items map[string]loginAttempt
-}{items: map[string]loginAttempt{}}
-
 const (
 	loginChallengeLifetime = 5 * time.Minute
 	loginChallengeFailures = 5
 	trustedBrowserLifetime = 30 * 24 * time.Hour
 	maximumTrustedBrowsers = 20
+	botChallengeLifetime   = 2 * time.Minute
+	botChallengeDifficulty = 12
 )
 
 func decodeStrict(c *fiber.Ctx, target any) error {
@@ -117,60 +109,159 @@ func V2BootstrapStatus(c *fiber.Ctx) error {
 	})
 }
 
-func loginRateKeys(c *fiber.Ctx, username string) (string, string) {
-	ip := security.RequestNetworkInfo(c).IP.String()
-	return "account|" + ip + "|" + username, "address|" + ip
+type loginProtectionFields struct {
+	BotChallengeToken string `json:"bot_challenge_token"`
+	BotChallengeNonce string `json:"bot_challenge_nonce"`
 }
 
-func loginRateLimited(accountKey, addressKey string) bool {
-	loginAttempts.Lock()
-	defer loginAttempts.Unlock()
-	now := time.Now()
-	blocked := false
-	for key, maximum := range map[string]int{accountKey: 5, addressKey: 30} {
-		entry := loginAttempts.items[key]
-		if entry.Window.IsZero() || now.Sub(entry.Window) > 15*time.Minute {
-			delete(loginAttempts.items, key)
+type loginProtectionIdentity struct {
+	Inputs      []models.AuthThrottleInput
+	Hashes      [][]byte
+	AccountHash []byte
+	AddressHash []byte
+}
+
+func loginNetworkPrefix(ip net.IP) string {
+	if ipv4 := ip.To4(); ipv4 != nil {
+		return net.IP(ipv4.Mask(net.CIDRMask(24, 32))).String() + "/24"
+	}
+	if ipv6 := ip.To16(); ipv6 != nil {
+		return net.IP(ipv6.Mask(net.CIDRMask(64, 128))).String() + "/64"
+	}
+	return "unknown"
+}
+
+func loginProtection(c *fiber.Ctx, username string, userID *int64) (loginProtectionIdentity, error) {
+	ipValue := security.RequestNetworkInfo(c).IP
+	ip := ipValue.String()
+	network := loginNetworkPrefix(ipValue)
+	values := []struct {
+		typeName string
+		value    string
+		userID   *int64
+	}{
+		{"account", username, userID},
+		{"address", ip, nil},
+		{"network", network, nil},
+		{"pair", username + "\x00" + ip, userID},
+	}
+	identity := loginProtectionIdentity{Inputs: make([]models.AuthThrottleInput, 0, len(values)), Hashes: make([][]byte, 0, len(values))}
+	for _, value := range values {
+		hash, err := security.HashToken("auth-throttle:"+value.typeName, value.value)
+		if err != nil {
+			return loginProtectionIdentity{}, err
+		}
+		identity.Inputs = append(identity.Inputs, models.AuthThrottleInput{BucketHash: hash,
+			SubjectType: value.typeName, UserID: value.userID, ClientIP: ip, NetworkPrefix: network})
+		identity.Hashes = append(identity.Hashes, hash)
+		switch value.typeName {
+		case "account":
+			identity.AccountHash = hash
+		case "address":
+			identity.AddressHash = hash
+		}
+	}
+	return identity, nil
+}
+
+func loginThrottleResponse(c *fiber.Ctx, retry time.Duration) error {
+	seconds := max(1, int((retry+time.Second-1)/time.Second))
+	c.Set(fiber.HeaderRetryAfter, strconv.Itoa(seconds))
+	return v2Error(c, fiber.StatusTooManyRequests, "login_rate_limited",
+		"Too many sign-in attempts. Try again after the cooldown.", true)
+}
+
+func leadingZeroBits(value [32]byte) int {
+	bits := 0
+	for _, item := range value {
+		if item == 0 {
+			bits += 8
 			continue
 		}
-		blocked = blocked || entry.Failures >= maximum
+		for mask := byte(0x80); mask > 0 && item&mask == 0; mask >>= 1 {
+			bits++
+		}
+		break
 	}
-	return blocked
+	return bits
 }
 
-func recordLoginFailure(accountKey, addressKey string) int {
-	loginAttempts.Lock()
-	defer loginAttempts.Unlock()
-	now := time.Now()
-	accountFailures := 0
-	for _, key := range []string{accountKey, addressKey} {
-		entry := loginAttempts.items[key]
-		if entry.Window.IsZero() || now.Sub(entry.Window) > 15*time.Minute {
-			entry = loginAttempt{Window: now}
-		}
-		entry.Failures++
-		loginAttempts.items[key] = entry
-		if key == accountKey {
-			accountFailures = entry.Failures
-		}
+func verifyBotChallenge(c *fiber.Ctx, identity loginProtectionIdentity, fields loginProtectionFields) bool {
+	if !strings.HasPrefix(fields.BotChallengeToken, "xbc_") || len(fields.BotChallengeToken) > 256 ||
+		fields.BotChallengeNonce == "" || len(fields.BotChallengeNonce) > 32 {
+		return false
 	}
-	if len(loginAttempts.items) > 10000 {
-		for candidate, value := range loginAttempts.items {
-			if now.Sub(value.Window) > 15*time.Minute {
-				delete(loginAttempts.items, candidate)
-			}
-		}
-		if len(loginAttempts.items) > 10000 {
-			// The map is an abuse-control cache, not durable security state. Evict
-			// one arbitrary bucket rather than allowing attacker-selected keys to
-			// consume memory without bound.
-			for candidate := range loginAttempts.items {
-				delete(loginAttempts.items, candidate)
-				break
-			}
-		}
+	tokenHash, err := security.HashToken("bot-challenge", fields.BotChallengeToken)
+	if err != nil {
+		return false
 	}
-	return accountFailures
+	challenge, err := database.Db.GetBotChallenge(c.UserContext(), tokenHash)
+	if err != nil || challenge.UsedAt != nil || time.Now().UTC().After(challenge.ExpiresAt) ||
+		!hmac.Equal(challenge.AccountHash, identity.AccountHash) || !hmac.Equal(challenge.AddressHash, identity.AddressHash) {
+		return false
+	}
+	proof := sha256.Sum256([]byte(fields.BotChallengeToken + ":" + fields.BotChallengeNonce))
+	if leadingZeroBits(proof) < challenge.Difficulty {
+		return false
+	}
+	consumed, err := database.Db.ConsumeBotChallenge(c.UserContext(), challenge.ID, time.Now().UTC())
+	return err == nil && consumed
+}
+
+func issueBotChallenge(c *fiber.Ctx, identity loginProtectionIdentity) error {
+	random, err := security.RandomToken(32)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "login_protection_failed", "Sign-in protection could not be initialized.", true)
+	}
+	token := "xbc_" + random
+	hash, err := security.HashToken("bot-challenge", token)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "login_protection_failed", "Sign-in protection could not be initialized.", true)
+	}
+	now := time.Now().UTC()
+	expires := now.Add(botChallengeLifetime)
+	if err := database.Db.CreateBotChallenge(c.UserContext(), &models.BotChallenge{TokenHash: hash,
+		AccountHash: identity.AccountHash, AddressHash: identity.AddressHash, Difficulty: botChallengeDifficulty,
+		CreatedAt: now, ExpiresAt: expires}); err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "login_protection_failed", "Sign-in protection could not be initialized.", true)
+	}
+	c.Set(fiber.HeaderRetryAfter, "0")
+	return c.Status(fiber.StatusTooManyRequests).JSON(models.APIError{Code: "bot_challenge_required",
+		Message: "Please wait before trying again.", Retryable: true,
+		Challenge: &models.BotChallengeResponse{Token: token, Difficulty: botChallengeDifficulty, ExpiresAt: expires}})
+}
+
+func enforceLoginProtection(c *fiber.Ctx, identity loginProtectionIdentity, fields loginProtectionFields) (bool, error) {
+	now := time.Now().UTC()
+	decision, err := database.Db.CheckAuthThrottle(c.UserContext(), identity.Hashes, now)
+	if err != nil {
+		return false, v2Error(c, fiber.StatusInternalServerError, "login_protection_failed", "Sign-in protection could not be checked.", true)
+	}
+	if decision.Blocked {
+		_ = database.Db.RecordAuthThrottleDenial(c.UserContext(), identity.Hashes, now)
+		return false, loginThrottleResponse(c, decision.RetryAfter)
+	}
+	if settings.Current().Security.AdaptiveLoginChallenge && decision.ChallengeRequired && !verifyBotChallenge(c, identity, fields) {
+		return false, issueBotChallenge(c, identity)
+	}
+	return true, nil
+}
+
+func recordAuthenticationFailure(c *fiber.Ctx, identity loginProtectionIdentity, factor string, targetUserID *int64) (models.AuthThrottleDecision, error) {
+	now := time.Now().UTC()
+	decision, err := database.Db.RecordAuthFailure(c.UserContext(), identity.Inputs, factor, now)
+	if err == nil && decision.NewlyBlocked {
+		detail := factor + "_cooldown_started"
+		auditSecurity(c, "login_throttled", "denied", "user", "", detail, targetUserID)
+	}
+	return decision, err
+}
+
+func finishAuthentication(c *fiber.Ctx, principal models.SessionPrincipal, identity loginProtectionIdentity) models.SessionPrincipal {
+	notice, _ := database.Db.AccountMFANotice(c.UserContext(), identity.AccountHash)
+	_ = database.Db.ResetAuthThrottle(c.UserContext(), [][]byte{identity.AccountHash, identity.Hashes[3]}, time.Now().UTC())
+	principal.SecurityNotice = notice
+	return principal
 }
 
 func createBrowserSession(c *fiber.Ctx, user *models.User, mfaVerified bool) (models.SessionPrincipal, error) {
@@ -320,18 +411,25 @@ func V2Login(c *fiber.Ctx) error {
 	request := struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		loginProtectionFields
 	}{}
 	if err := decodeStrict(c, &request); err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_login", "The login request was invalid.", false)
 	}
 	username, normalizeErr := security.NormalizeUsername(request.Username)
-	accountKey, addressKey := loginRateKeys(c, username)
-	if loginRateLimited(accountKey, addressKey) {
-		c.Set(fiber.HeaderRetryAfter, "900")
-		auditSecurity(c, "login", "denied", "user", "", "rate_limited", nil)
-		return v2Error(c, fiber.StatusTooManyRequests, "login_rate_limited", "Too many attempts. Try again later.", true)
-	}
 	user, lookupErr := database.Db.GetUserByUsername(c.UserContext(), username)
+	var userID *int64
+	if lookupErr == nil {
+		userID = &user.ID
+	}
+	identity, identityErr := loginProtection(c, username, userID)
+	if identityErr != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "login_protection_failed", "Sign-in protection could not be initialized.", true)
+	}
+	allowed, protectionErr := enforceLoginProtection(c, identity, request.loginProtectionFields)
+	if !allowed {
+		return protectionErr
+	}
 	hash := security.DummyPasswordHash()
 	if lookupErr == nil {
 		hash = user.PasswordHash
@@ -339,22 +437,23 @@ func V2Login(c *fiber.Ctx) error {
 	passwordOK, verifyErr := security.VerifyPassword(request.Password, hash)
 	if errors.Is(verifyErr, security.ErrPasswordVerifierBusy) {
 		c.Set(fiber.HeaderRetryAfter, "2")
-		auditSecurity(c, "login", "denied", "user", "", "verification_capacity", nil)
 		return v2Error(c, fiber.StatusTooManyRequests, "login_rate_limited", "Too many attempts. Try again shortly.", true)
 	}
 	valid := normalizeErr == nil && lookupErr == nil && user.DisabledAt == nil && passwordOK
 	if !valid {
-		failures := recordLoginFailure(accountKey, addressKey)
-		auditSecurity(c, "login", "failure", "user", "", "invalid_credentials", nil)
-		// A short bounded delay raises the cost of online guessing while the
-		// request and bucket ceilings prevent attacker-controlled lockout.
-		delay := 100 * time.Millisecond * time.Duration(1<<min(failures-1, 4))
+		decision, recordErr := recordAuthenticationFailure(c, identity, "password", userID)
+		if recordErr != nil {
+			return v2Error(c, fiber.StatusInternalServerError, "login_protection_failed", "The sign-in attempt could not be recorded.", true)
+		}
+		if decision.Blocked {
+			return loginThrottleResponse(c, decision.RetryAfter)
+		}
+		// The delay grows before the persistent cooldown begins. Unknown and
+		// known accounts follow the same hashing and verification path.
+		delay := 125 * time.Millisecond * time.Duration(1<<min(max(decision.FailureCount-1, 0), 3))
 		time.Sleep(delay)
 		return v2Error(c, fiber.StatusUnauthorized, "invalid_credentials", "The username or password was invalid.", false)
 	}
-	loginAttempts.Lock()
-	delete(loginAttempts.items, accountKey)
-	loginAttempts.Unlock()
 	if user.MFAEnabled && !trustedBrowserValid(c, user, scope) {
 		token, expires, challengeErr := createLoginChallenge(c, user, scope)
 		if challengeErr != nil {
@@ -370,6 +469,7 @@ func V2Login(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "session_failed", "The session could not be created.", true)
 	}
+	principal = finishAuthentication(c, principal, identity)
 	target := user.ID
 	auditSecurity(c, "login", "success", "user", strconv.FormatInt(user.ID, 10), "", &target)
 	return c.JSON(principal)
@@ -384,6 +484,7 @@ func V2CompleteMFALogin(c *fiber.Ctx) error {
 		ChallengeToken string `json:"challenge_token"`
 		Code           string `json:"code"`
 		TrustBrowser   bool   `json:"trust_browser"`
+		loginProtectionFields
 	}{}
 	if err := decodeStrict(c, &request); err != nil || len(request.ChallengeToken) > 256 || !strings.HasPrefix(request.ChallengeToken, "xlc_") {
 		return v2Error(c, fiber.StatusUnauthorized, "invalid_mfa_challenge", "Verification expired. Sign in again.", false)
@@ -406,10 +507,23 @@ func V2CompleteMFALogin(c *fiber.Ctx) error {
 	if err != nil || user.DisabledAt != nil || !user.MFAEnabled || user.AuthVersion != challenge.AuthVersion {
 		return v2Error(c, fiber.StatusUnauthorized, "invalid_mfa_challenge", "Verification expired. Sign in again.", false)
 	}
+	identity, identityErr := loginProtection(c, user.Username, &user.ID)
+	if identityErr != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "login_protection_failed", "Sign-in protection could not be initialized.", true)
+	}
+	allowed, protectionErr := enforceLoginProtection(c, identity, request.loginProtectionFields)
+	if !allowed {
+		return protectionErr
+	}
 	if !verifyUserMFA(c, user, request.Code) {
 		_ = database.Db.RecordLoginChallengeFailure(c.UserContext(), challenge.ID)
-		target := user.ID
-		auditSecurity(c, "login_mfa", "failure", "user", strconv.FormatInt(user.ID, 10), "invalid_code", &target)
+		decision, recordErr := recordAuthenticationFailure(c, identity, "mfa", &user.ID)
+		if recordErr != nil {
+			return v2Error(c, fiber.StatusInternalServerError, "login_protection_failed", "The verification attempt could not be recorded.", true)
+		}
+		if decision.Blocked {
+			return loginThrottleResponse(c, decision.RetryAfter)
+		}
 		return v2Error(c, fiber.StatusUnauthorized, "invalid_mfa_code", "The verification or recovery code was invalid.", false)
 	}
 	consumed, err := database.Db.ConsumeLoginChallenge(c.UserContext(), challenge.ID, now, loginChallengeFailures)
@@ -420,6 +534,7 @@ func V2CompleteMFALogin(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "session_failed", "The session could not be created.", true)
 	}
+	principal = finishAuthentication(c, principal, identity)
 	detail := ""
 	if request.TrustBrowser {
 		if err := createTrustedBrowser(c, user, scope); err != nil {
@@ -842,6 +957,75 @@ func V2StudioSecurityAudit(c *fiber.Ctx) error {
 		nextCursor = &value
 	}
 	return c.JSON(fiber.Map{"items": items, "next_cursor": nextCursor, "total": total})
+}
+
+func V2StudioAuthProtection(c *fiber.Ctx) error {
+	now := time.Now().UTC()
+	items, err := database.Db.ListAuthThrottleBuckets(c.UserContext(), now, now.AddDate(0, 0, -30))
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "auth_protection_unavailable", "Sign-in protection activity could not be loaded.", true)
+	}
+	active, passwordFailures, mfaFailures, denied := 0, 0, 0, 0
+	responseItems := make([]fiber.Map, 0, len(items))
+	for _, item := range items {
+		if item.BlockedUntil != nil && item.BlockedUntil.After(now) {
+			active++
+		}
+		// Account buckets are the canonical totals; the other independent
+		// buckets intentionally observe the same attempt from another angle.
+		if item.SubjectType == "account" {
+			passwordFailures += item.PasswordFailures
+			mfaFailures += item.MFAFailures
+		}
+		denied += item.DeniedRequests
+		subject := "Unknown account"
+		switch item.SubjectType {
+		case "account":
+			if item.Username != "" {
+				subject = item.Username
+				if item.DisplayName != "" {
+					subject = item.DisplayName + " (@" + item.Username + ")"
+				}
+			}
+		case "address":
+			subject = item.ClientIP
+		case "network":
+			subject = item.NetworkPrefix
+		case "pair":
+			if item.Username != "" {
+				subject = item.Username + " · " + item.ClientIP
+			} else {
+				subject = "Unknown account · " + item.ClientIP
+			}
+		}
+		responseItems = append(responseItems, fiber.Map{
+			"id": item.ID, "subject_type": item.SubjectType, "subject": subject,
+			"user_id": item.UserID, "client_ip": item.ClientIP, "network_prefix": item.NetworkPrefix,
+			"consecutive_failures": item.ConsecutiveFailures, "password_failures": item.PasswordFailures,
+			"mfa_failures": item.MFAFailures, "denied_requests": item.DeniedRequests,
+			"last_factor": item.LastFactor, "last_failed_at": item.LastFailedAt,
+			"blocked_until": item.BlockedUntil,
+		})
+	}
+	return c.JSON(fiber.Map{"summary": fiber.Map{"active_throttles": active,
+		"password_failures": passwordFailures, "mfa_failures": mfaFailures, "denied_requests": denied},
+		"items": responseItems, "retention_days": 30})
+}
+
+func V2ClearStudioAuthProtection(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("bucket_id"), 10, 64)
+	if err != nil || id < 1 {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_throttle", "The sign-in throttle was invalid.", false)
+	}
+	cleared, err := database.Db.ClearAuthThrottleBucket(c.UserContext(), id)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "throttle_clear_failed", "The sign-in throttle could not be cleared.", true)
+	}
+	if !cleared {
+		return v2Error(c, fiber.StatusNotFound, "throttle_not_found", "The sign-in throttle was not found.", false)
+	}
+	auditSecurity(c, "login_throttle_clear", "success", "auth_throttle", strconv.FormatInt(id, 10), "", nil)
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 type userWriteRequest struct {

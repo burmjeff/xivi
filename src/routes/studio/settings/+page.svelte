@@ -67,6 +67,7 @@
 			allow_lan_http: boolean;
 			audit_retention_days: number;
 			maximum_audit_events: number;
+			adaptive_login_challenge: boolean;
 		};
 	};
 	type Response = { settings: Settings };
@@ -326,6 +327,17 @@
 				</div>
 				<label class="switch-row"
 					><span
+						><strong>Adaptive browser challenge</strong><small
+							>After suspicious failed sign-ins, require a short automatic proof-of-work check
+							before another password or verification attempt.</small
+						></span
+					><input
+						type="checkbox"
+						bind:checked={settings.security.adaptive_login_challenge}
+					/></label
+				>
+				<label class="switch-row"
+					><span
 						><strong>Allow full application over trusted LAN HTTP</strong><small
 							>Sessions are shorter and cannot be replayed through the public proxy, but LAN traffic
 							remains cleartext.</small
@@ -529,23 +541,13 @@
 			</header>
 			<div class="fields two">
 				<p class="section-note">
-					Managed by the Xivi process, Docker port mapping, and reverse proxy. Change these values in
-					your deployment configuration.
+					Managed by the Xivi process, Docker port mapping, and reverse proxy. Change these values
+					in your deployment configuration.
 				</p>
-				<label
-					>Host<input value={settings.server.host} disabled /></label
+				<label>Host<input value={settings.server.host} disabled /></label><label
+					>Port<input type="number" value={settings.server.port} disabled /></label
 				><label
-					>Port<input
-						type="number"
-						value={settings.server.port}
-						disabled
-					/></label
-				><label
-					>Read timeout<input
-						type="number"
-						value={settings.server.readtimeout}
-						disabled
-					/></label
+					>Read timeout<input type="number" value={settings.server.readtimeout} disabled /></label
 				>
 			</div>
 		</section>

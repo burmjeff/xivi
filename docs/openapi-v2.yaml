@@ -58,6 +58,12 @@ paths:
               properties:
                 username: { type: string }
                 password: { type: string, format: password }
+                bot_challenge_token:
+                  type: string
+                  description: Opaque adaptive browser-challenge token returned by a prior throttled response.
+                bot_challenge_nonce:
+                  type: string
+                  description: Proof-of-work nonce for the adaptive browser challenge.
       responses:
         '200':
           {
@@ -90,6 +96,8 @@ paths:
                 trust_browser:
                   type: boolean
                   description: Store a separate revocable browser approval for 30 days. A password is still required at future sign-ins.
+                bot_challenge_token: { type: string }
+                bot_challenge_nonce: { type: string }
       responses:
         '200':
           description: MFA verified and authenticated session created.
@@ -530,6 +538,27 @@ paths:
             content:
               { application/json: { schema: { $ref: '#/components/schemas/SecurityAuditPage' } } }
           }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/security/auth-protection:
+    get:
+      operationId: getAuthenticationProtection
+      responses:
+        '200':
+          description: Aggregated recent authentication failures and active adaptive throttles.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/AuthProtectionResponse' } }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/security/auth-protection/{bucket_id}:
+    delete:
+      operationId: clearAuthenticationThrottle
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      parameters:
+        - name: bucket_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '204': { description: Selected adaptive throttle cleared. }
         default: { $ref: '#/components/responses/Error' }
   /media/v1/lineups/{lineup_id}/playlist.m3u:
     get:
@@ -1511,6 +1540,16 @@ components:
         mfa_required: { type: boolean }
         lineup_ids: { type: array, items: { type: integer, format: int64 } }
         csrf_token: { type: string, description: Required on cookie-authenticated mutations. }
+        security_notice: { $ref: '#/components/schemas/AuthenticationNotice' }
+    AuthenticationNotice:
+      type: object
+      required: [kind, count, last_at, message]
+      properties:
+        kind: { type: string, enum: [failed_mfa] }
+        count: { type: integer, minimum: 1 }
+        last_at: { type: string, format: date-time }
+        last_ip: { type: string }
+        message: { type: string }
     LoginChallenge:
       type: object
       required: [mfa_required, challenge_token, expires_at]
@@ -1707,6 +1746,48 @@ components:
         - type: object
           properties:
             items: { type: array, items: { $ref: '#/components/schemas/SecurityAuditEvent' } }
+    AuthThrottleBucket:
+      type: object
+      required:
+        [
+          id,
+          subject_type,
+          subject,
+          consecutive_failures,
+          password_failures,
+          mfa_failures,
+          denied_requests,
+          last_factor,
+          last_failed_at
+        ]
+      properties:
+        id: { type: integer, format: int64 }
+        subject_type: { type: string, enum: [account, address, network, pair] }
+        subject: { type: string }
+        user_id: { type: integer, format: int64 }
+        client_ip: { type: string }
+        network_prefix: { type: string }
+        consecutive_failures: { type: integer, minimum: 0 }
+        password_failures: { type: integer, minimum: 0 }
+        mfa_failures: { type: integer, minimum: 0 }
+        denied_requests: { type: integer, minimum: 0 }
+        last_factor: { type: string, enum: [password, mfa] }
+        last_failed_at: { type: string, format: date-time }
+        blocked_until: { type: string, format: date-time }
+    AuthProtectionResponse:
+      type: object
+      required: [summary, items, retention_days]
+      properties:
+        summary:
+          type: object
+          required: [active_throttles, password_failures, mfa_failures, denied_requests]
+          properties:
+            active_throttles: { type: integer, minimum: 0 }
+            password_failures: { type: integer, minimum: 0 }
+            mfa_failures: { type: integer, minimum: 0 }
+            denied_requests: { type: integer, minimum: 0 }
+        items: { type: array, items: { $ref: '#/components/schemas/AuthThrottleBucket' } }
+        retention_days: { type: integer, minimum: 1 }
     APIError:
       type: object
       required: [code, message, retryable]
@@ -1715,6 +1796,13 @@ components:
         message: { type: string }
         field_errors: { type: object, additionalProperties: { type: string } }
         retryable: { type: boolean }
+        challenge:
+          type: object
+          required: [token, difficulty, expires_at]
+          properties:
+            token: { type: string }
+            difficulty: { type: integer, minimum: 8, maximum: 24 }
+            expires_at: { type: string, format: date-time }
     PageMetadata:
       type: object
       required: [items, total]
