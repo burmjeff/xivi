@@ -707,14 +707,18 @@
 	}
 	.player-stage {
 		position: relative;
+		z-index: 0;
+		isolation: isolate;
 		width: 100%;
 		aspect-ratio: 16/9;
 		max-height: 70dvh;
+		overflow: hidden;
 		background: #050609;
 	}
 	.media-controller {
-		width: 100%;
-		height: 100%;
+		position: absolute;
+		inset: 0;
+		display: block;
 		--media-control-background: linear-gradient(transparent, rgb(0 0 0/0.8));
 		--media-primary-color: #f7f7f2;
 		--media-secondary-color: #ff6b5e;
@@ -780,6 +784,9 @@
 		text-underline-offset: 0.2rem;
 	}
 	.now-playing {
+		position: relative;
+		z-index: 1;
+		isolation: isolate;
 		display: grid;
 		grid-template-columns: auto minmax(10rem, 0.55fr) minmax(18rem, 1.4fr) auto;
 		align-items: center;
@@ -824,6 +831,8 @@
 		white-space: nowrap;
 	}
 	.channel-skip {
+		position: relative;
+		z-index: 1;
 		display: flex;
 		gap: 0.4rem;
 	}
@@ -873,9 +882,11 @@
 		.player-stage {
 			aspect-ratio: auto;
 			max-height: none;
-			flex: 1;
+			min-height: 0;
+			flex: 1 1 0;
 		}
 		.now-playing {
+			flex: 0 0 auto;
 			grid-template-columns: auto 1fr auto;
 			padding: 1rem;
 		}
