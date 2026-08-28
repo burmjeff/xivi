@@ -1,6 +1,7 @@
 package streaming
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -25,5 +26,28 @@ func TestHLSTimelineKeepsSequenceMonotonicAcrossGenerations(t *testing.T) {
 	}
 	if len(second.Segments) != 3 || second.Segments[2] != "segment.2.00001.ts" {
 		t.Fatalf("unexpected live window: %#v", second.Segments)
+	}
+}
+
+func TestPersistentHLSPlaylistDelayIsRecordedAndRecovers(t *testing.T) {
+	var events []EventRecord
+	session := &Session{
+		incidentID:    "incident-1",
+		id:            "channel-1",
+		hlsIssueSince: time.Now().Add(-3 * time.Second),
+		observer: func(observation Observation) {
+			if observation.Event != nil {
+				events = append(events, *observation.Event)
+			}
+		},
+	}
+	session.recordHLSPlaylistResult(errors.New("HLS segment no-keyframe.ts is missing decoder bootstrap"))
+	if len(events) != 1 || events[0].Code != "hls_playlist_delayed" || !strings.Contains(events[0].Details, "decoder bootstrap") {
+		t.Fatalf("persistent delay event was not recorded with its reason: %#v", events)
+	}
+
+	session.recordHLSPlaylistResult(nil)
+	if len(events) != 2 || events[1].Code != "hls_playlist_recovered" {
+		t.Fatalf("playlist recovery event was not recorded: %#v", events)
 	}
 }

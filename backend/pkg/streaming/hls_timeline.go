@@ -2,6 +2,7 @@ package streaming
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sync"
@@ -100,8 +101,55 @@ func (s *Session) HLSPlaylistSnapshot() (*HLSPlaylistSnapshot, error) {
 	s.mu.RUnlock()
 	if provider, ok := producer.(HLSProducer); ok {
 		if snapshot, err := provider.HLSPlaylistSnapshot(); err == nil {
+			s.recordHLSPlaylistResult(nil)
 			return s.hls.update(provider.HLSGeneration(), snapshot, length), nil
+		} else {
+			s.recordHLSPlaylistResult(err)
+			if current, currentErr := s.hls.current(); currentErr == nil {
+				return current, nil
+			}
+			return nil, err
 		}
 	}
 	return s.hls.current()
+}
+
+// recordHLSPlaylistResult reports only persistent manifest delays. Transient
+// partial rewrites are expected while the sink atomically advances a live
+// playlist and should not flood diagnostics.
+func (s *Session) recordHLSPlaylistResult(result error) {
+	now := time.Now()
+	var severity, code, message string
+	var details []byte
+	s.mu.Lock()
+	if result == nil {
+		if !s.hlsIssueReportedAt.IsZero() {
+			severity, code, message = "info", "hls_playlist_recovered", "HLS playlist publication recovered."
+			details, _ = json.Marshal(struct {
+				DelayedMS int64 `json:"delayed_ms"`
+			}{DelayedMS: now.Sub(s.hlsIssueSince).Milliseconds()})
+		}
+		s.hlsIssueSince = time.Time{}
+		s.hlsIssueReportedAt = time.Time{}
+		s.hlsIssueLast = ""
+	} else {
+		if s.hlsIssueSince.IsZero() {
+			s.hlsIssueSince = now
+		}
+		s.hlsIssueLast = SanitizeDiagnostic(result.Error())
+		if now.Sub(s.hlsIssueSince) >= 2*time.Second &&
+			(s.hlsIssueReportedAt.IsZero() || now.Sub(s.hlsIssueReportedAt) >= 30*time.Second) {
+			severity, code = "warning", "hls_playlist_delayed"
+			message = "HLS playlist publication is delayed; the last playable window is being retained."
+			details, _ = json.Marshal(struct {
+				DelayedMS int64  `json:"delayed_ms"`
+				Reason    string `json:"reason"`
+			}{DelayedMS: now.Sub(s.hlsIssueSince).Milliseconds(), Reason: s.hlsIssueLast})
+			s.hlsIssueReportedAt = now
+		}
+	}
+	s.mu.Unlock()
+	if code != "" {
+		s.emitEvent(severity, code, message, string(details))
+	}
 }

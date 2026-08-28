@@ -124,13 +124,17 @@ func (s *HLSPlaylistSnapshot) ValidateSegments(directory string) error {
 	return nil
 }
 
-// decoderReadySuffix returns the newest contiguous run of segments that each
-// satisfy the producer's stable track layout. Leading fragments emitted while
-// GStreamer's dynamic pads are still settling are deliberately omitted.
+// decoderReadyStartupWindow returns a live window whose first fragment can
+// initialize the producer's stable track layout. Leading fragments emitted
+// while GStreamer's dynamic pads are still settling are deliberately omitted.
+// Once that independently playable fragment has been found, later completed
+// fragments are retained without requiring each one to repeat every codec
+// bootstrap payload. Requiring that in steady state can freeze a valid live
+// playlist whenever a short fragment contains no keyframe or audio payload.
 //
 // Content is intentionally not copied: the session timeline rebuilds a
 // monotonic client-facing manifest from Media after this validation.
-func (s *HLSPlaylistSnapshot) decoderReadySuffix(
+func (s *HLSPlaylistSnapshot) decoderReadyStartupWindow(
 	directory string,
 	expected hlsMediaExpectation,
 	inspect hlsSegmentInspector,
@@ -141,24 +145,76 @@ func (s *HLSPlaylistSnapshot) decoderReadySuffix(
 	if inspect == nil {
 		inspect = inspectHLSSegment
 	}
-	result := &HLSPlaylistSnapshot{}
-	for _, media := range s.Media {
+	start := -1
+	latestName := ""
+	latestMissing := ""
+	for index, media := range s.Media {
 		status, err := inspect(filepath.Join(directory, media.Name))
-		if err != nil || !hlsSegmentMatches(status, expected) {
-			// Retain only a contiguous suffix. If an incomplete fragment appears
-			// between healthy fragments, starting after it is safer than asking a
-			// player to bridge an undeclared track-layout change.
-			result = &HLSPlaylistSnapshot{}
+		if err != nil {
+			latestName = media.Name
+			latestMissing = "inspection failed: " + err.Error()
 			continue
 		}
+		if !hlsSegmentMatches(status, expected) {
+			latestName = media.Name
+			latestMissing = strings.Join(hlsSegmentMissing(status, expected), ", ")
+			continue
+		}
+		// Prefer the newest independently playable fragment. This excludes any
+		// unstable startup layout that appeared after an earlier valid fragment,
+		// while still retaining completed trailing media after the chosen start.
+		start = index
+	}
+	if start < 0 {
+		if latestName != "" && latestMissing != "" {
+			return nil, fmt.Errorf("%w: no decoder-ready startup segment; latest %q is missing %s",
+				ErrHLSPlaylistNotReady, latestName, latestMissing)
+		}
+		return nil, fmt.Errorf("%w: no decoder-ready startup segment", ErrHLSPlaylistNotReady)
+	}
+	result := &HLSPlaylistSnapshot{}
+	for _, media := range s.Media[start:] {
 		result.Media = append(result.Media, media)
 		result.Segments = append(result.Segments, media.Name)
 		result.Duration += media.Duration
 	}
-	if len(result.Media) == 0 {
-		return nil, fmt.Errorf("%w: no segment has the complete media track layout", ErrHLSPlaylistNotReady)
-	}
 	return result, nil
+}
+
+func hlsSegmentMissing(status BootstrapStatus, expected hlsMediaExpectation) []string {
+	missing := make([]string, 0, 8)
+	if !status.Transport {
+		missing = append(missing, "transport sync")
+	}
+	if !status.PAT {
+		missing = append(missing, "PAT")
+	}
+	if !status.PMT {
+		missing = append(missing, "PMT")
+	}
+	if expected.Video {
+		if !status.HasVideo {
+			missing = append(missing, "video track")
+		}
+		if status.FirstVideoPTS90K == nil {
+			missing = append(missing, "video timestamp")
+		}
+		if !status.Complete {
+			missing = append(missing, "decoder bootstrap")
+		}
+	}
+	if expected.Audio {
+		if !status.HasAudio {
+			missing = append(missing, "audio track")
+		}
+		if status.FirstAudioPTS90K == nil {
+			missing = append(missing, "audio timestamp")
+		}
+	}
+	if len(missing) == 0 {
+		missing = append(missing, "expected media layout")
+	}
+	return missing
 }
 
 func inspectHLSSegment(path string) (BootstrapStatus, error) {

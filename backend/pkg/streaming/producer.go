@@ -56,6 +56,9 @@ type gstProducer struct {
 	mediaMu              sync.RWMutex
 	mediaTracks          []string
 	compatibilityActions []string
+	hlsStartupMu         sync.Mutex
+	hlsBootstrapReady    bool
+	hlsSuppressed        map[string]struct{}
 	hlsMediaMu           sync.Mutex
 	hlsMediaInspections  map[string]cachedHLSSegmentInspection
 }
@@ -122,11 +125,70 @@ func (p *gstProducer) HLSPlaylistSnapshot() (*HLSPlaylistSnapshot, error) {
 	if err := snapshot.ValidateSegments(directory); err != nil {
 		return nil, err
 	}
+
+	p.hlsStartupMu.Lock()
+	defer p.hlsStartupMu.Unlock()
+	if p.hlsBootstrapReady {
+		steady := p.steadyHLSWindow(snapshot)
+		if len(steady.Media) == 0 {
+			return nil, fmt.Errorf("%w: no completed segment remains after startup filtering", ErrHLSPlaylistNotReady)
+		}
+		return steady, nil
+	}
+
+	p.pruneHLSSegmentInspections(directory, snapshot.Segments)
 	status := p.hub.BootstrapStatus()
-	return snapshot.decoderReadySuffix(directory, hlsMediaExpectation{
+	ready, err := snapshot.decoderReadyStartupWindow(directory, hlsMediaExpectation{
 		Video: status.HasVideo,
 		Audio: status.HasAudio,
 	}, p.inspectHLSSegment)
+	if err != nil {
+		return nil, err
+	}
+
+	p.hlsSuppressed = make(map[string]struct{})
+	readyNames := make(map[string]struct{}, len(ready.Media))
+	for _, media := range ready.Media {
+		readyNames[media.Name] = struct{}{}
+	}
+	for _, media := range snapshot.Media {
+		if _, retained := readyNames[media.Name]; !retained {
+			p.hlsSuppressed[media.Name] = struct{}{}
+		}
+	}
+	p.hlsBootstrapReady = true
+	p.clearHLSSegmentInspections()
+	log.Debug().Str("stream_id", p.id).Uint64("generation", p.generation).
+		Int("startup_segments_skipped", len(p.hlsSuppressed)).
+		Str("first_segment", ready.Media[0].Name).
+		Msg("HLS startup media layout validated; steady-state segment inspection disabled")
+	return ready, nil
+}
+
+// steadyHLSWindow removes only the fragments rejected before the first safe
+// decoder bootstrap. Every completed fragment created after that point is
+// published monotonically without a per-segment track-payload requirement.
+func (p *gstProducer) steadyHLSWindow(snapshot *HLSPlaylistSnapshot) *HLSPlaylistSnapshot {
+	if len(p.hlsSuppressed) == 0 {
+		return snapshot
+	}
+	current := make(map[string]struct{}, len(snapshot.Media))
+	result := &HLSPlaylistSnapshot{}
+	for _, media := range snapshot.Media {
+		current[media.Name] = struct{}{}
+		if _, suppressed := p.hlsSuppressed[media.Name]; suppressed {
+			continue
+		}
+		result.Media = append(result.Media, media)
+		result.Segments = append(result.Segments, media.Name)
+		result.Duration += media.Duration
+	}
+	for name := range p.hlsSuppressed {
+		if _, advertised := current[name]; !advertised {
+			delete(p.hlsSuppressed, name)
+		}
+	}
+	return result
 }
 
 func (p *gstProducer) inspectHLSSegment(path string) (BootstrapStatus, error) {
@@ -151,6 +213,26 @@ func (p *gstProducer) inspectHLSSegment(path string) (BootstrapStatus, error) {
 		size: info.Size(), modifiedNS: info.ModTime().UnixNano(), status: status,
 	}
 	return status, nil
+}
+
+func (p *gstProducer) pruneHLSSegmentInspections(directory string, segments []string) {
+	retained := make(map[string]struct{}, len(segments))
+	for _, segment := range segments {
+		retained[filepath.Join(directory, segment)] = struct{}{}
+	}
+	p.hlsMediaMu.Lock()
+	defer p.hlsMediaMu.Unlock()
+	for path := range p.hlsMediaInspections {
+		if _, advertised := retained[path]; !advertised {
+			delete(p.hlsMediaInspections, path)
+		}
+	}
+}
+
+func (p *gstProducer) clearHLSSegmentInspections() {
+	p.hlsMediaMu.Lock()
+	p.hlsMediaInspections = nil
+	p.hlsMediaMu.Unlock()
 }
 
 func (p *gstProducer) rememberMediaTrack(caps string) {

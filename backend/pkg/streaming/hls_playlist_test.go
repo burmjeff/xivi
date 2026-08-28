@@ -59,7 +59,7 @@ func TestHLSPlaylistValidationRejectsMissingSegment(t *testing.T) {
 	}
 }
 
-func TestDecoderReadySuffixDropsLeadingAudioOnlySegmentFromAVStream(t *testing.T) {
+func TestDecoderReadyStartupWindowDropsLeadingAudioOnlySegmentFromAVStream(t *testing.T) {
 	directory := t.TempDir()
 	audioOnly := append(tsPacket(0, patSection()), tsPacket(0x0100, audioPMTSection())...)
 	audioOnly = append(audioOnly, audioPESPacket(0x0101, 90_000)...)
@@ -74,16 +74,16 @@ func TestDecoderReadySuffixDropsLeadingAudioOnlySegmentFromAVStream(t *testing.T
 		{Name: "audio-only.ts", Duration: 2 * time.Second},
 		{Name: "complete-av.ts", Duration: 2 * time.Second},
 	}}
-	ready, err := snapshot.decoderReadySuffix(directory, hlsMediaExpectation{Video: true, Audio: true}, nil)
+	ready, err := snapshot.decoderReadyStartupWindow(directory, hlsMediaExpectation{Video: true, Audio: true}, nil)
 	if err != nil {
-		t.Fatalf("find decoder-ready suffix: %v", err)
+		t.Fatalf("find decoder-ready startup window: %v", err)
 	}
 	if len(ready.Media) != 1 || ready.Media[0].Name != "complete-av.ts" {
-		t.Fatalf("unexpected decoder-ready suffix: %#v", ready.Media)
+		t.Fatalf("unexpected decoder-ready startup window: %#v", ready.Media)
 	}
 }
 
-func TestDecoderReadySuffixRequiresExpectedAudioPayload(t *testing.T) {
+func TestDecoderReadyStartupWindowRequiresExpectedAudioPayload(t *testing.T) {
 	directory := t.TempDir()
 	videoOnly := append(tsPacket(0, patSection()), tsPacket(0x0100, audioVideoPMTSection())...)
 	videoOnly = append(videoOnly, pcrPacket(0x0101)...)
@@ -91,25 +91,25 @@ func TestDecoderReadySuffixRequiresExpectedAudioPayload(t *testing.T) {
 	writeHLSSegment(t, directory, "missing-audio.ts", videoOnly)
 
 	snapshot := &HLSPlaylistSnapshot{Media: []HLSSegment{{Name: "missing-audio.ts", Duration: 2 * time.Second}}}
-	if _, err := snapshot.decoderReadySuffix(directory, hlsMediaExpectation{Video: true, Audio: true}, nil); !errors.Is(err, ErrHLSPlaylistNotReady) {
+	if _, err := snapshot.decoderReadyStartupWindow(directory, hlsMediaExpectation{Video: true, Audio: true}, nil); !errors.Is(err, ErrHLSPlaylistNotReady) {
 		t.Fatalf("expected missing audio payload to delay HLS readiness, got %v", err)
 	}
 }
 
-func TestDecoderReadySuffixAcceptsGenuineAudioOnlyStream(t *testing.T) {
+func TestDecoderReadyStartupWindowAcceptsGenuineAudioOnlyStream(t *testing.T) {
 	directory := t.TempDir()
 	audio := append(tsPacket(0, patSection()), tsPacket(0x0100, audioPMTSection())...)
 	audio = append(audio, audioPESPacket(0x0101, 90_000)...)
 	writeHLSSegment(t, directory, "audio.ts", audio)
 
 	snapshot := &HLSPlaylistSnapshot{Media: []HLSSegment{{Name: "audio.ts", Duration: 2 * time.Second}}}
-	ready, err := snapshot.decoderReadySuffix(directory, hlsMediaExpectation{Audio: true}, nil)
+	ready, err := snapshot.decoderReadyStartupWindow(directory, hlsMediaExpectation{Audio: true}, nil)
 	if err != nil || len(ready.Media) != 1 {
 		t.Fatalf("genuine audio-only segment was rejected: ready=%#v err=%v", ready, err)
 	}
 }
 
-func TestDecoderReadySuffixAcceptsGenuineVideoOnlyStream(t *testing.T) {
+func TestDecoderReadyStartupWindowAcceptsGenuineVideoOnlyStream(t *testing.T) {
 	directory := t.TempDir()
 	video := append(tsPacket(0, patSection()), tsPacket(0x0100, pmtSection())...)
 	video = append(video, pcrPacket(0x0101)...)
@@ -117,9 +117,78 @@ func TestDecoderReadySuffixAcceptsGenuineVideoOnlyStream(t *testing.T) {
 	writeHLSSegment(t, directory, "video.ts", video)
 
 	snapshot := &HLSPlaylistSnapshot{Media: []HLSSegment{{Name: "video.ts", Duration: 2 * time.Second}}}
-	ready, err := snapshot.decoderReadySuffix(directory, hlsMediaExpectation{Video: true}, nil)
+	ready, err := snapshot.decoderReadyStartupWindow(directory, hlsMediaExpectation{Video: true}, nil)
 	if err != nil || len(ready.Media) != 1 {
 		t.Fatalf("genuine video-only segment was rejected: ready=%#v err=%v", ready, err)
+	}
+}
+
+func TestDecoderReadyStartupWindowRetainsCompletedTrailingSegments(t *testing.T) {
+	directory := t.TempDir()
+	audioOnly := append(tsPacket(0, patSection()), tsPacket(0x0100, audioPMTSection())...)
+	audioOnly = append(audioOnly, audioPESPacket(0x0101, 90_000)...)
+	completeAV := append(tsPacket(0, patSection()), tsPacket(0x0100, audioVideoPMTSection())...)
+	completeAV = append(completeAV, pcrPacket(0x0101)...)
+	completeAV = append(completeAV, randomAccessPacket(0x0101)...)
+	completeAV = append(completeAV, audioPESPacket(0x0102, 90_000)...)
+	// A normal short steady-state fragment may advertise both tracks without
+	// independently repeating a video keyframe and codec parameter sets.
+	steadyState := append(tsPacket(0, patSection()), tsPacket(0x0100, audioVideoPMTSection())...)
+	steadyState = append(steadyState, audioPESPacket(0x0102, 180_000)...)
+	writeHLSSegment(t, directory, "startup-audio.ts", audioOnly)
+	writeHLSSegment(t, directory, "decoder-ready.ts", completeAV)
+	writeHLSSegment(t, directory, "steady-state.ts", steadyState)
+
+	snapshot := &HLSPlaylistSnapshot{Media: []HLSSegment{
+		{Name: "startup-audio.ts", Duration: time.Second},
+		{Name: "decoder-ready.ts", Duration: time.Second},
+		{Name: "steady-state.ts", Duration: time.Second},
+	}}
+	ready, err := snapshot.decoderReadyStartupWindow(directory, hlsMediaExpectation{Video: true, Audio: true}, nil)
+	if err != nil {
+		t.Fatalf("find decoder-ready startup window: %v", err)
+	}
+	if len(ready.Media) != 2 || ready.Media[0].Name != "decoder-ready.ts" || ready.Media[1].Name != "steady-state.ts" {
+		t.Fatalf("trailing completed segment was withheld: %#v", ready.Media)
+	}
+}
+
+func TestSteadyHLSWindowPublishesSegmentsWithoutTrackReinspection(t *testing.T) {
+	producer := &gstProducer{hlsBootstrapReady: true, hlsSuppressed: map[string]struct{}{
+		"startup-audio.ts": {},
+	}}
+	snapshot := &HLSPlaylistSnapshot{Media: []HLSSegment{
+		{Name: "startup-audio.ts", Duration: time.Second},
+		{Name: "decoder-ready.ts", Duration: time.Second},
+		{Name: "no-keyframe.ts", Duration: time.Second},
+	}}
+	ready := producer.steadyHLSWindow(snapshot)
+	if len(ready.Media) != 2 || ready.Media[0].Name != "decoder-ready.ts" || ready.Media[1].Name != "no-keyframe.ts" {
+		t.Fatalf("steady-state publication was not monotonic: %#v", ready.Media)
+	}
+
+	ready = producer.steadyHLSWindow(&HLSPlaylistSnapshot{Media: []HLSSegment{
+		{Name: "no-keyframe.ts", Duration: time.Second},
+		{Name: "next.ts", Duration: time.Second},
+	}})
+	if len(ready.Media) != 2 || len(producer.hlsSuppressed) != 0 {
+		t.Fatalf("expired startup suppression was retained: media=%#v suppressed=%#v", ready.Media, producer.hlsSuppressed)
+	}
+}
+
+func TestHLSSegmentInspectionCacheIsBoundedToAdvertisedWindow(t *testing.T) {
+	directory := t.TempDir()
+	current := filepath.Join(directory, "current.ts")
+	producer := &gstProducer{hlsMediaInspections: map[string]cachedHLSSegmentInspection{
+		filepath.Join(directory, "expired.ts"): {},
+		current:                                {},
+	}}
+	producer.pruneHLSSegmentInspections(directory, []string{"current.ts"})
+	if len(producer.hlsMediaInspections) != 1 {
+		t.Fatalf("inspection cache size = %d, want 1", len(producer.hlsMediaInspections))
+	}
+	if _, exists := producer.hlsMediaInspections[current]; !exists {
+		t.Fatal("current advertised segment was pruned")
 	}
 }
 

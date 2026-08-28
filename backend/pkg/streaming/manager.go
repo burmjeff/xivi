@@ -205,6 +205,9 @@ type Session struct {
 	observer           func(Observation)
 	connections        *connectionCoordinator
 	hls                hlsTimeline
+	hlsIssueSince      time.Time
+	hlsIssueReportedAt time.Time
+	hlsIssueLast       string
 	sourceAllowed      func(Source, int) bool
 	recordSourceResult func(Source, time.Duration, error)
 	validateSource     func(context.Context, Source) error
