@@ -2,6 +2,7 @@
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { KeyRound, ShieldCheck, Trash2, UserPlus, Users } from '@lucide/svelte';
 	import { api, XiviAPIError } from '$lib/api/client';
+	import ConfirmationDialog from '$lib/components/security/ConfirmationDialog.svelte';
 	import ReauthenticationDialog from '$lib/components/security/ReauthenticationDialog.svelte';
 	import StudioHeader from '$lib/components/studio/StudioHeader.svelte';
 	import { auth } from '$lib/state/auth.svelte';
@@ -46,6 +47,13 @@
 		revoked_at?: string;
 		lineup_ids: number[];
 	};
+	type ConfirmationRequest = {
+		title: string;
+		description: string;
+		confirmLabel: string;
+		tone?: 'danger' | 'warning';
+		action: () => Promise<void>;
+	};
 	const client = useQueryClient();
 	const query = createQuery(() => ({
 		queryKey: ['studio', 'users'],
@@ -66,6 +74,8 @@
 	let reauthOpen = $state(false),
 		reauthReason = $state('make this sensitive change'),
 		pendingSensitiveAction = $state<(() => Promise<void>) | null>(null);
+	let confirmationOpen = $state(false),
+		confirmation = $state<ConfirmationRequest | null>(null);
 	$effect(() => {
 		if (reauthOpen) return;
 		pendingSensitiveAction = null;
@@ -140,6 +150,17 @@
 		const action = pendingSensitiveAction;
 		await action();
 		pendingSensitiveAction = null;
+	}
+	function requestConfirmation(request: ConfirmationRequest) {
+		confirmation = request;
+		confirmationOpen = true;
+	}
+	async function continueConfirmedAction() {
+		if (!confirmation) return;
+		await confirmation.action();
+	}
+	function userLabel(user: User) {
+		return user.display_name ? `${user.display_name} (@${user.username})` : user.username;
 	}
 	function toggleCreate(id: number, checked: boolean) {
 		lineupIDs = checked ? [...new Set([...lineupIDs, id])] : lineupIDs.filter((v) => v !== id);
@@ -249,7 +270,6 @@
 		});
 	}
 	async function deleteUser(user: User) {
-		if (!confirm(`Permanently delete ${user.username}?`)) return;
 		await runSensitive(`delete ${user.username}`, async () => {
 			await api(`/api/v2/studio/users/${user.id}`, { method: 'DELETE' });
 			await client.invalidateQueries({ queryKey: ['studio', 'users'] });
@@ -418,16 +438,46 @@
 								onclick={() => (resetFor = user.id)}><KeyRound size={17} /> Reset password</button
 							>{/if}{#if user.mfa_enabled}<button
 								class="app-button app-button--secondary"
-								onclick={() => resetMFA(user)}>Reset MFA</button
+								onclick={() =>
+									requestConfirmation({
+										title: `Reset MFA for ${userLabel(user)}?`,
+										description:
+											'Their authenticator and recovery codes will stop working, and their signed-in sessions will be revoked. They must enroll MFA again.',
+										confirmLabel: 'Reset MFA',
+										action: () => resetMFA(user)
+									})}>Reset MFA</button
 							>{/if}<button
 							class="app-button app-button--quiet"
-							onclick={() => revokeSessions(user)}>Revoke sessions</button
+							onclick={() =>
+								requestConfirmation({
+									title: `Revoke all sessions for ${userLabel(user)}?`,
+									description:
+										'Every browser session for this account will be signed out immediately. Device access links will remain active.',
+									confirmLabel: 'Revoke sessions',
+									action: () => revokeSessions(user)
+								})}>Revoke sessions</button
 						><button class="app-button app-button--quiet" onclick={() => inspectKeys(user)}
 							>Inspect device access</button
-						><button class="app-button app-button--quiet" onclick={() => revokeKeys(user)}
-							>Revoke all device access</button
-						><button class="app-button danger" onclick={() => deleteUser(user)}
-							><Trash2 size={17} /> Delete</button
+						><button
+							class="app-button app-button--quiet"
+							onclick={() =>
+								requestConfirmation({
+									title: `Revoke all device access for ${userLabel(user)}?`,
+									description:
+										'Every active M3U, XMLTV, and player link for this account will stop working immediately. Connected viewers using those links will be disconnected.',
+									confirmLabel: 'Revoke all device access',
+									action: () => revokeKeys(user)
+								})}>Revoke all device access</button
+						><button
+							class="app-button danger"
+							onclick={() =>
+								requestConfirmation({
+									title: `Permanently delete ${userLabel(user)}?`,
+									description:
+										'This permanently deletes the account and revokes its lineup grants, sessions, and device access. This cannot be undone.',
+									confirmLabel: 'Delete user',
+									action: () => deleteUser(user)
+								})}><Trash2 size={17} /> Delete</button
 						>
 					</div>
 					{#if mediaKeys[user.id]}<div class="key-list">
@@ -443,7 +493,13 @@
 											></span
 										>{#if !key.revoked_at}<button
 												class="app-button app-button--quiet"
-												onclick={() => revokeKey(user, key)}>Revoke</button
+												onclick={() =>
+													requestConfirmation({
+														title: `Revoke ${key.name}?`,
+														description: `This device access link for ${userLabel(user)} will stop working immediately. This cannot be undone.`,
+														confirmLabel: 'Revoke device access',
+														action: () => revokeKey(user, key)
+													})}>Revoke</button
 											>{/if}
 									</div>{/each}{/if}
 						</div>{/if}
@@ -481,6 +537,16 @@
 	</section>
 </section>
 
+{#if confirmation}
+	<ConfirmationDialog
+		bind:open={confirmationOpen}
+		title={confirmation.title}
+		description={confirmation.description}
+		confirmLabel={confirmation.confirmLabel}
+		tone={confirmation.tone}
+		onconfirm={continueConfirmedAction}
+	/>
+{/if}
 <ReauthenticationDialog
 	bind:open={reauthOpen}
 	reason={reauthReason}

@@ -14,11 +14,13 @@
 	import qrcode from 'qrcode-generator';
 	import { api, XiviAPIError } from '$lib/api/client';
 	import type { LineupSummary } from '$lib/api/types';
+	import ConfirmationDialog from '$lib/components/security/ConfirmationDialog.svelte';
 	import ReauthenticationDialog from '$lib/components/security/ReauthenticationDialog.svelte';
 	import {
 		auth,
 		clearSession,
 		loadSession,
+		refreshSession,
 		setSession,
 		type SessionPrincipal
 	} from '$lib/state/auth.svelte';
@@ -49,6 +51,13 @@
 		items: MediaKey[];
 		public_https_available: boolean;
 		retention_days: number;
+	};
+	type ConfirmationRequest = {
+		title: string;
+		description: string;
+		confirmLabel: string;
+		tone?: 'danger' | 'warning';
+		action: () => Promise<void>;
 	};
 
 	const client = useQueryClient();
@@ -85,6 +94,8 @@
 	let reauthOpen = $state(false);
 	let reauthReason = $state('this sensitive change');
 	let pendingSensitiveAction = $state<(() => Promise<void>) | null>(null);
+	let confirmationOpen = $state(false);
+	let confirmation = $state<ConfirmationRequest | null>(null);
 	$effect(() => {
 		if (reauthOpen) return;
 		pendingSensitiveAction = null;
@@ -143,6 +154,14 @@
 		const action = pendingSensitiveAction;
 		await action();
 		pendingSensitiveAction = null;
+	}
+	function requestConfirmation(request: ConfirmationRequest) {
+		confirmation = request;
+		confirmationOpen = true;
+	}
+	async function continueConfirmedAction() {
+		if (!confirmation) return;
+		await confirmation.action();
 	}
 	async function changePassword(event: SubmitEvent) {
 		event.preventDefault();
@@ -214,7 +233,7 @@
 			enrollment = null;
 			enrollmentQRCode = '';
 			confirmCode = '';
-			await loadSession();
+			await refreshSession(true);
 			status = 'Authenticator protection is enabled. Save the recovery codes now.';
 		});
 	}
@@ -238,6 +257,12 @@
 		await perform(async () => {
 			await api(`/api/v2/auth/sessions/${id}`, { method: 'DELETE' });
 			await client.invalidateQueries({ queryKey: ['account', 'sessions'] });
+			await loadSession();
+			if (!auth.principal) {
+				client.clear();
+				await goto('/login', { replaceState: true });
+				return;
+			}
 			status = 'Session revoked.';
 		});
 	}
@@ -485,9 +510,28 @@
 							>Disabling it revokes every session.</span
 						>
 					</div>
-					<button class="app-button app-button--secondary" onclick={regenerateRecoveryCodes}
-						>Replace recovery codes</button
-					><button class="app-button danger" onclick={disableMFA}>Disable MFA</button>
+					<button
+						class="app-button app-button--secondary"
+						onclick={() =>
+							requestConfirmation({
+								title: 'Replace recovery codes?',
+								description:
+									'Every existing recovery code will stop working immediately. Save the replacement codes before leaving this page.',
+								confirmLabel: 'Replace codes',
+								tone: 'warning',
+								action: regenerateRecoveryCodes
+							})}>Replace recovery codes</button
+					><button
+						class="app-button danger"
+						onclick={() =>
+							requestConfirmation({
+								title: 'Disable MFA?',
+								description:
+									'Your account will no longer require an authenticator code. Every signed-in session, including this one, will be revoked.',
+								confirmLabel: 'Disable MFA',
+								action: disableMFA
+							})}>Disable MFA</button
+					>
 				{:else}
 					<button class="app-button app-button--primary" onclick={startMFA}>Start enrollment</button
 					>
@@ -518,7 +562,13 @@
 							</div>
 							{#if !session.revoked_at}<button
 									class="app-button app-button--quiet"
-									onclick={() => revokeSession(session.id)}>Revoke</button
+									onclick={() =>
+										requestConfirmation({
+											title: 'Revoke this session?',
+											description: `The ${session.transport_scope === 'https' ? 'Public HTTPS' : 'Direct LAN'} session from ${session.client_ip} will be signed out immediately.`,
+											confirmLabel: 'Revoke session',
+											action: () => revokeSession(session.id)
+										})}>Revoke</button
 								>{:else}<span>Revoked</span>{/if}
 						</div>{/each}
 				</div>
@@ -592,7 +642,14 @@
 							</div>
 							{#if !key.revoked_at}<button
 									aria-label={`Revoke ${key.name}`}
-									onclick={() => revokeKey(key.id)}><Trash2 size={17} /></button
+									onclick={() =>
+										requestConfirmation({
+											title: `Revoke ${key.name}?`,
+											description:
+												'Players using this device’s M3U or XMLTV links will lose access immediately. This cannot be undone.',
+											confirmLabel: 'Revoke device access',
+											action: () => revokeKey(key.id)
+										})}><Trash2 size={17} /></button
 								>{:else}<span>Revoked</span>{/if}
 							{#if !key.revoked_at && Object.keys(key.links ?? {}).length}
 								<div class="key-links">
@@ -628,6 +685,16 @@
 	</div>
 </section>
 
+{#if confirmation}
+	<ConfirmationDialog
+		bind:open={confirmationOpen}
+		title={confirmation.title}
+		description={confirmation.description}
+		confirmLabel={confirmation.confirmLabel}
+		tone={confirmation.tone}
+		onconfirm={continueConfirmedAction}
+	/>
+{/if}
 <ReauthenticationDialog
 	bind:open={reauthOpen}
 	reason={reauthReason}
