@@ -88,6 +88,7 @@ func TestReauthenticationUsesPasswordOnlyForMFAAccount(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	db.MustExec(`CREATE TABLE app_user (
 		id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL,
+		display_name TEXT NOT NULL DEFAULT '',
 		role TEXT NOT NULL, must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
 		initial_password BOOLEAN NOT NULL DEFAULT FALSE, auth_version INTEGER NOT NULL DEFAULT 1,
 		disabled_at TIMESTAMP, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -99,7 +100,9 @@ func TestReauthenticationUsesPasswordOnlyForMFAAccount(t *testing.T) {
 		mfa_verified BOOLEAN NOT NULL, revoked_at TIMESTAMP)`)
 	db.MustExec(`CREATE TABLE security_audit_event (
 		id INTEGER PRIMARY KEY, actor_user_id INTEGER, actor_username TEXT NOT NULL DEFAULT '',
+		actor_display_name TEXT NOT NULL DEFAULT '',
 		target_user_id INTEGER, target_username TEXT NOT NULL DEFAULT '',
+		target_display_name TEXT NOT NULL DEFAULT '',
 		action TEXT NOT NULL, outcome TEXT NOT NULL, resource_type TEXT NOT NULL,
 		resource_id TEXT NOT NULL, client_ip TEXT NOT NULL, detail TEXT NOT NULL,
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
@@ -153,7 +156,9 @@ func TestLogoutRevokesServerSessionAndExpiresBrowserCookie(t *testing.T) {
 		id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, revoked_at TIMESTAMP NULL)`)
 	db.MustExec(`CREATE TABLE security_audit_event (
 		id INTEGER PRIMARY KEY, actor_user_id INTEGER, actor_username TEXT NOT NULL DEFAULT '',
+		actor_display_name TEXT NOT NULL DEFAULT '',
 		target_user_id INTEGER, target_username TEXT NOT NULL DEFAULT '',
+		target_display_name TEXT NOT NULL DEFAULT '',
 		action TEXT NOT NULL, outcome TEXT NOT NULL, resource_type TEXT NOT NULL,
 		resource_id TEXT NOT NULL, client_ip TEXT NOT NULL, detail TEXT NOT NULL,
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`)

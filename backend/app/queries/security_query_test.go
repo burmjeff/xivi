@@ -19,6 +19,7 @@ func securityTestQueries(t *testing.T) *SecurityQueries {
 	db.MustExec(`CREATE TABLE template (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`)
 	db.MustExec(`CREATE TABLE app_user (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE,
+		display_name TEXT NOT NULL DEFAULT '',
 		password_hash TEXT NOT NULL, role TEXT NOT NULL, must_change_password BOOLEAN NOT NULL,
 		initial_password BOOLEAN NOT NULL DEFAULT FALSE,
 		auth_version INTEGER NOT NULL DEFAULT 1, disabled_at TIMESTAMP,
@@ -39,8 +40,10 @@ func securityTestQueries(t *testing.T) *SecurityQueries {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		actor_user_id INTEGER NULL REFERENCES app_user(id) ON DELETE SET NULL,
 		actor_username TEXT NOT NULL DEFAULT '',
+		actor_display_name TEXT NOT NULL DEFAULT '',
 		target_user_id INTEGER NULL REFERENCES app_user(id) ON DELETE SET NULL,
 		target_username TEXT NOT NULL DEFAULT '',
+		target_display_name TEXT NOT NULL DEFAULT '',
 		action TEXT NOT NULL, outcome TEXT NOT NULL, resource_type TEXT NOT NULL DEFAULT '',
 		resource_id TEXT NOT NULL DEFAULT '', client_ip TEXT NOT NULL DEFAULT '',
 		detail TEXT NOT NULL DEFAULT '', created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
@@ -61,20 +64,26 @@ func securityTestQueries(t *testing.T) *SecurityQueries {
 func TestSecurityAuditPreservesActorAndTargetUsernames(t *testing.T) {
 	ctx := context.Background()
 	q := securityTestQueries(t)
-	actorID, err := q.CreateUser(ctx, "alice-admin", "hash", "admin", false, nil)
+	actorID, err := q.CreateUser(ctx, "alice-admin", "Alice Admin", "hash", "admin", false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	targetID, err := q.CreateUser(ctx, "bob-viewer", "hash", "viewer", false, nil)
+	targetID, err := q.CreateUser(ctx, "bob-viewer", "Bob Viewer", "hash", "viewer", false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := q.Audit(ctx, models.SecurityAuditEvent{
-		ActorUserID: &actorID, ActorUsername: "alice-admin",
-		TargetUserID: &targetID, TargetUsername: "bob-viewer",
+		ActorUserID: &actorID, ActorUsername: "alice-admin", ActorDisplayName: "Alice Admin",
+		TargetUserID: &targetID, TargetUsername: "bob-viewer", TargetDisplayName: "Bob Viewer",
 		Action: "user_update", Outcome: "success", ResourceType: "user",
 		ResourceID: "2",
 	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.UpdateUserIdentity(ctx, actorID, "renamed-admin", "Renamed Admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.UpdateUserIdentity(ctx, targetID, "renamed-viewer", "Renamed Viewer"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := q.ExecContext(ctx, `DELETE FROM app_user WHERE id = ?`, targetID); err != nil {
@@ -90,6 +99,9 @@ func TestSecurityAuditPreservesActorAndTargetUsernames(t *testing.T) {
 	if events[0].ActorUsername != "alice-admin" || events[0].TargetUsername != "bob-viewer" {
 		t.Fatalf("audit usernames were not preserved: %+v", events[0])
 	}
+	if events[0].ActorDisplayName != "Alice Admin" || events[0].TargetDisplayName != "Bob Viewer" {
+		t.Fatalf("audit display names were not preserved: %+v", events[0])
+	}
 	if events[0].TargetUserID != nil {
 		t.Fatalf("deleted target foreign key was not cleared: %+v", events[0].TargetUserID)
 	}
@@ -98,7 +110,7 @@ func TestSecurityAuditPreservesActorAndTargetUsernames(t *testing.T) {
 func TestMediaKeyRetainsEncryptedCredentialForReusableLinks(t *testing.T) {
 	ctx := context.Background()
 	q := securityTestQueries(t)
-	userID, err := q.CreateUser(ctx, "device-owner", "hash", "viewer", false, nil)
+	userID, err := q.CreateUser(ctx, "device-owner", "", "hash", "viewer", false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +138,7 @@ func TestMediaKeyRetainsEncryptedCredentialForReusableLinks(t *testing.T) {
 func TestListMediaKeysGroupsActiveKeysBeforeRevokedKeys(t *testing.T) {
 	ctx := context.Background()
 	q := securityTestQueries(t)
-	userID, err := q.CreateUser(ctx, "ordered-device-owner", "hash", "viewer", false, nil)
+	userID, err := q.CreateUser(ctx, "ordered-device-owner", "", "hash", "viewer", false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +185,7 @@ func TestListMediaKeysGroupsActiveKeysBeforeRevokedKeys(t *testing.T) {
 func TestSecurityRetentionDeletesOldDeviceKeysAndLineupGrants(t *testing.T) {
 	ctx := context.Background()
 	q := securityTestQueries(t)
-	userID, err := q.CreateUser(ctx, "retention-owner", "hash", "viewer", false, nil)
+	userID, err := q.CreateUser(ctx, "retention-owner", "", "hash", "viewer", false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +258,7 @@ func streamAuthorizationTestQueries(t *testing.T) *SecurityQueries {
 func TestFinalEnabledAdministratorIsTransactionalInvariant(t *testing.T) {
 	ctx := context.Background()
 	q := securityTestQueries(t)
-	first, err := q.CreateUser(ctx, "first-admin", "hash", "admin", false, nil)
+	first, err := q.CreateUser(ctx, "first-admin", "", "hash", "admin", false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +268,7 @@ func TestFinalEnabledAdministratorIsTransactionalInvariant(t *testing.T) {
 	if err := q.DeleteUser(ctx, first); !errors.Is(err, ErrLastEnabledAdmin) {
 		t.Fatalf("final admin deletion returned %v", err)
 	}
-	second, err := q.CreateUser(ctx, "second-admin", "hash", "admin", false, nil)
+	second, err := q.CreateUser(ctx, "second-admin", "", "hash", "admin", false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,6 +277,50 @@ func TestFinalEnabledAdministratorIsTransactionalInvariant(t *testing.T) {
 	}
 	if err := q.DeleteUser(ctx, second); !errors.Is(err, ErrLastEnabledAdmin) {
 		t.Fatalf("remaining admin deletion returned %v", err)
+	}
+}
+
+func TestUserIdentityUsesImmutableOwnershipAndRotatesOnlyForUsername(t *testing.T) {
+	ctx := context.Background()
+	q := securityTestQueries(t)
+	userID, err := q.CreateUser(ctx, "profile-owner", "Original Name", "hash", "viewer", false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := &models.MediaAccessKey{
+		UserID: userID, Name: "Television", TokenPrefix: "profile-key",
+		TokenHash: []byte("profile-key-hash"), NetworkScope: "lan", CreatedAt: time.Now().UTC(),
+	}
+	if err := q.CreateMediaKey(ctx, key, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := q.UpdateUserIdentity(ctx, userID, "profile-owner", "Updated Name"); err != nil {
+		t.Fatal(err)
+	}
+	user, err := q.GetUserByID(ctx, userID)
+	if err != nil || user.DisplayName != "Updated Name" || user.AuthVersion != 1 {
+		t.Fatalf("display-name update unexpectedly rotated authentication: user=%+v err=%v", user, err)
+	}
+
+	if err := q.UpdateUserIdentity(ctx, userID, "renamed-owner", "Updated Name"); err != nil {
+		t.Fatal(err)
+	}
+	user, err = q.GetUserByID(ctx, userID)
+	if err != nil || user.Username != "renamed-owner" || user.AuthVersion != 2 {
+		t.Fatalf("username update did not rotate authentication: user=%+v err=%v", user, err)
+	}
+	keys, err := q.ListMediaKeys(ctx, userID)
+	if err != nil || len(keys) != 1 || keys[0].ID != key.ID || keys[0].RevokedAt != nil {
+		t.Fatalf("identity update changed immutable device-key ownership: keys=%+v err=%v", keys, err)
+	}
+
+	otherID, err := q.CreateUser(ctx, "other-owner", "", "hash", "viewer", false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.UpdateUserIdentity(ctx, otherID, "renamed-owner", ""); !errors.Is(err, ErrUsernameInUse) {
+		t.Fatalf("duplicate username update returned %v", err)
 	}
 }
 

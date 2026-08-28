@@ -10,6 +10,7 @@ const (
 type User struct {
 	ID                 int64      `db:"id" json:"id"`
 	Username           string     `db:"username" json:"username"`
+	DisplayName        string     `db:"display_name" json:"display_name"`
 	PasswordHash       string     `db:"password_hash" json:"-"`
 	Role               string     `db:"role" json:"role"`
 	MustChangePassword bool       `db:"must_change_password" json:"must_change_password"`
@@ -25,6 +26,7 @@ type User struct {
 type SessionPrincipal struct {
 	UserID             int64   `json:"user_id"`
 	Username           string  `json:"username"`
+	DisplayName        string  `json:"display_name"`
 	Role               string  `json:"role"`
 	MustChangePassword bool    `json:"must_change_password"`
 	MFAEnabled         bool    `json:"mfa_enabled"`
@@ -51,6 +53,7 @@ type AuthSession struct {
 	ClientIP           string     `db:"client_ip"`
 	UserAgentHash      []byte     `db:"user_agent_hash"`
 	Username           string     `db:"username"`
+	DisplayName        string     `db:"display_name"`
 	Role               string     `db:"role"`
 	MustChangePassword bool       `db:"must_change_password"`
 	UserDisabledAt     *time.Time `db:"user_disabled_at"`
@@ -92,16 +95,18 @@ type MediaAccessKey struct {
 }
 
 type SecurityAuditEvent struct {
-	ID             int64     `db:"id" json:"id"`
-	ActorUserID    *int64    `db:"actor_user_id" json:"actor_user_id,omitempty"`
-	ActorUsername  string    `db:"actor_username" json:"actor_username,omitempty"`
-	TargetUserID   *int64    `db:"target_user_id" json:"target_user_id,omitempty"`
-	TargetUsername string    `db:"target_username" json:"target_username,omitempty"`
-	Action         string    `db:"action" json:"action"`
-	Outcome        string    `db:"outcome" json:"outcome"`
-	ResourceType   string    `db:"resource_type" json:"resource_type,omitempty"`
-	ResourceID     string    `db:"resource_id" json:"resource_id,omitempty"`
-	ClientIP       string    `db:"client_ip" json:"client_ip,omitempty"`
-	Detail         string    `db:"detail" json:"detail,omitempty"`
-	CreatedAt      time.Time `db:"created_at" json:"created_at"`
+	ID                int64     `db:"id" json:"id"`
+	ActorUserID       *int64    `db:"actor_user_id" json:"actor_user_id,omitempty"`
+	ActorUsername     string    `db:"actor_username" json:"actor_username,omitempty"`
+	ActorDisplayName  string    `db:"actor_display_name" json:"actor_display_name,omitempty"`
+	TargetUserID      *int64    `db:"target_user_id" json:"target_user_id,omitempty"`
+	TargetUsername    string    `db:"target_username" json:"target_username,omitempty"`
+	TargetDisplayName string    `db:"target_display_name" json:"target_display_name,omitempty"`
+	Action            string    `db:"action" json:"action"`
+	Outcome           string    `db:"outcome" json:"outcome"`
+	ResourceType      string    `db:"resource_type" json:"resource_type,omitempty"`
+	ResourceID        string    `db:"resource_id" json:"resource_id,omitempty"`
+	ClientIP          string    `db:"client_ip" json:"client_ip,omitempty"`
+	Detail            string    `db:"detail" json:"detail,omitempty"`
+	CreatedAt         time.Time `db:"created_at" json:"created_at"`
 }

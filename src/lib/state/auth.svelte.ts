@@ -3,6 +3,7 @@ import { browser } from '$app/environment';
 export interface SessionPrincipal {
 	user_id: number;
 	username: string;
+	display_name: string;
 	role: 'admin' | 'viewer';
 	must_change_password: boolean;
 	mfa_enabled: boolean;

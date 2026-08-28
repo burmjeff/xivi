@@ -246,6 +246,21 @@ paths:
       responses:
         '204': { description: Session revoked. }
         default: { $ref: '#/components/responses/Error' }
+  /account/profile:
+    patch:
+      operationId: updateAccountProfile
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentityWriteRequest' }
+      responses:
+        '200':
+          description: Identity updated. Username changes revoke other browser sessions and rotate the current session; media keys remain active.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/SessionPrincipal' } }
+        default: { $ref: '#/components/responses/Error' }
   /account/media-keys:
     get:
       operationId: listMediaKeys
@@ -360,6 +375,22 @@ paths:
       parameters: [{ $ref: '#/components/parameters/UserId' }]
       responses:
         { '204': { description: User deleted. }, default: { $ref: '#/components/responses/Error' } }
+  /studio/users/{user_id}/profile:
+    patch:
+      operationId: updateUserProfile
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentityWriteRequest' }
+      responses:
+        '200':
+          description: User identity updated. Username changes revoke browser sessions but retain media keys.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/UserSummary' } }
+        default: { $ref: '#/components/responses/Error' }
   /studio/users/{user_id}/password-reset:
     post:
       operationId: resetUserPassword
@@ -1400,10 +1431,20 @@ components:
     SessionPrincipal:
       type: object
       required:
-        [user_id, username, role, must_change_password, mfa_enabled, mfa_required, lineup_ids]
+        [
+          user_id,
+          username,
+          display_name,
+          role,
+          must_change_password,
+          mfa_enabled,
+          mfa_required,
+          lineup_ids
+        ]
       properties:
         user_id: { type: integer, format: int64 }
         username: { type: string }
+        display_name: { type: string, maxLength: 80 }
         role: { type: string, enum: [admin, viewer] }
         must_change_password: { type: boolean }
         mfa_enabled: { type: boolean }
@@ -1440,10 +1481,21 @@ components:
     UserSummary:
       type: object
       required:
-        [id, username, role, must_change_password, mfa_enabled, created_at, updated_at, lineup_ids]
+        [
+          id,
+          username,
+          display_name,
+          role,
+          must_change_password,
+          mfa_enabled,
+          created_at,
+          updated_at,
+          lineup_ids
+        ]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
+        display_name: { type: string, maxLength: 80 }
         role: { type: string, enum: [admin, viewer] }
         must_change_password: { type: boolean }
         mfa_enabled: { type: boolean }
@@ -1463,10 +1515,22 @@ components:
       required: [username, password, role, disabled, lineup_ids]
       properties:
         username: { type: string }
+        display_name: { type: string, maxLength: 80 }
         password: { type: string, format: password, minLength: 8, maxLength: 128 }
         role: { type: string, enum: [admin, viewer] }
         disabled: { type: boolean }
         lineup_ids: { type: array, items: { type: integer, format: int64 } }
+    IdentityWriteRequest:
+      type: object
+      additionalProperties: false
+      required: [username, display_name]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 64
+          pattern: '^[a-z0-9][a-z0-9._-]{2,63}$'
+        display_name: { type: string, maxLength: 80 }
     UserUpdateRequest:
       type: object
       additionalProperties: false
@@ -1532,8 +1596,10 @@ components:
         id: { type: integer, format: int64 }
         actor_user_id: { type: integer, format: int64 }
         actor_username: { type: string }
+        actor_display_name: { type: string }
         target_user_id: { type: integer, format: int64 }
         target_username: { type: string }
+        target_display_name: { type: string }
         action: { type: string }
         outcome: { type: string }
         resource_type: { type: string }

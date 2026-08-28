@@ -124,7 +124,7 @@ func AuthenticateSession(c *fiber.Ctx) error {
 	}
 	csrf, _ := security.CSRFToken(token)
 	principal := models.SessionPrincipal{
-		UserID: session.UserID, Username: session.Username, Role: session.Role,
+		UserID: session.UserID, Username: session.Username, DisplayName: session.DisplayName, Role: session.Role,
 		MustChangePassword: session.MustChangePassword, MFAEnabled: session.MFAEnabled,
 		MFARequired: session.MFAEnabled && !session.MFAVerified, LineupIDs: lineupIDs, CSRFToken: csrf,
 	}

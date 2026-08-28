@@ -104,6 +104,7 @@ func TestSessionMiddlewareRejectsRevocationAndExpiry(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	db.MustExec(`CREATE TABLE app_user (
 		id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL,
+		display_name TEXT NOT NULL DEFAULT '',
 		role TEXT NOT NULL, must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
 		initial_password BOOLEAN NOT NULL DEFAULT FALSE, auth_version INTEGER NOT NULL DEFAULT 1,
 		disabled_at TIMESTAMP, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL)`)

@@ -4,10 +4,12 @@
 	import { api, XiviAPIError } from '$lib/api/client';
 	import ReauthenticationDialog from '$lib/components/security/ReauthenticationDialog.svelte';
 	import StudioHeader from '$lib/components/studio/StudioHeader.svelte';
+	import { auth } from '$lib/state/auth.svelte';
 
 	type User = {
 		id: number;
 		username: string;
+		display_name: string;
 		role: 'admin' | 'viewer';
 		must_change_password: boolean;
 		mfa_enabled: boolean;
@@ -21,8 +23,10 @@
 		id: number;
 		actor_user_id?: number;
 		actor_username?: string;
+		actor_display_name?: string;
 		target_user_id?: number;
 		target_username?: string;
+		target_display_name?: string;
 		action: string;
 		outcome: string;
 		resource_type?: string;
@@ -53,6 +57,7 @@
 		refetchInterval: 30_000
 	}));
 	let username = $state(''),
+		displayName = $state(''),
 		password = $state(''),
 		role = $state<'admin' | 'viewer'>('viewer'),
 		lineupIDs = $state<number[]>([]);
@@ -67,6 +72,9 @@
 	});
 	let resetFor = $state<number | null>(null),
 		resetPassword = $state('');
+	let identityFor = $state<number | null>(null),
+		identityUsername = $state(''),
+		identityDisplayName = $state('');
 	let mediaKeys = $state<Record<number, MediaKey[]>>({});
 	function errorMessage(caught: unknown) {
 		return caught instanceof XiviAPIError
@@ -74,8 +82,14 @@
 			: 'The request could not be completed.';
 	}
 	function auditActor(event: AuditEvent) {
-		if (event.actor_username) return event.actor_username;
-		if (event.action === 'login' && event.target_username) return event.target_username;
+		if (event.actor_username)
+			return event.actor_display_name
+				? `${event.actor_display_name} (@${event.actor_username})`
+				: event.actor_username;
+		if (event.action === 'login' && event.target_username)
+			return event.target_display_name
+				? `${event.target_display_name} (@${event.target_username})`
+				: event.target_username;
 		if (event.actor_user_id) return 'Deleted user';
 		if (event.action === 'login') return 'Unauthenticated request';
 		return 'Xivi system';
@@ -83,7 +97,9 @@
 	function auditTarget(event: AuditEvent) {
 		if (event.action === 'login') return '';
 		if (event.target_username && event.target_username !== event.actor_username) {
-			return event.target_username;
+			return event.target_display_name
+				? `${event.target_display_name} (@${event.target_username})`
+				: event.target_username;
 		}
 		if (event.target_user_id && !event.target_username) return 'Deleted user';
 		if (event.resource_type === 'user' && event.resource_id && !event.target_username) {
@@ -135,6 +151,7 @@
 				method: 'POST',
 				body: JSON.stringify({
 					username,
+					display_name: displayName,
 					password,
 					role,
 					disabled: false,
@@ -142,10 +159,31 @@
 				})
 			});
 			username = '';
+			displayName = '';
 			password = '';
 			lineupIDs = [];
 			await client.invalidateQueries({ queryKey: ['studio', 'users'] });
 			message = 'User created with a temporary password.';
+		});
+	}
+	function editIdentity(user: User) {
+		identityFor = user.id;
+		identityUsername = user.username;
+		identityDisplayName = user.display_name;
+	}
+	async function updateIdentity(user: User) {
+		await runSensitive(`change the identity for ${user.username}`, async () => {
+			await api(`/api/v2/studio/users/${user.id}/profile`, {
+				method: 'PATCH',
+				body: JSON.stringify({
+					username: identityUsername,
+					display_name: identityDisplayName
+				})
+			});
+			identityFor = null;
+			await client.invalidateQueries({ queryKey: ['studio', 'users'] });
+			await client.invalidateQueries({ queryKey: ['studio', 'security-audit'] });
+			message = `Identity updated for ${identityUsername}. Other browser sessions were signed out if the username changed.`;
 		});
 	}
 	async function update(
@@ -243,7 +281,20 @@
 				</div>
 			</div>
 			<form onsubmit={create}>
-				<label>Username<input bind:value={username} required maxlength="64" /></label><label
+				<label
+					>Username<input
+						bind:value={username}
+						required
+						minlength="3"
+						maxlength="64"
+						pattern="[a-z0-9][a-z0-9._-]+"
+					/></label
+				><label
+					>Display name <span>Optional</span><input
+						bind:value={displayName}
+						maxlength="80"
+					/></label
+				><label
 					>Temporary passphrase<input
 						type="password"
 						bind:value={password}
@@ -284,10 +335,13 @@
 					class="user-card"
 				>
 					<div class="identity">
-						<span class="avatar">{user.username.slice(0, 2).toUpperCase()}</span>
+						<span class="avatar"
+							>{(user.display_name || user.username).slice(0, 2).toUpperCase()}</span
+						>
 						<div>
-							<strong>{user.username}</strong><span
-								>{user.role} · {user.mfa_enabled
+							<strong>{user.display_name || user.username}</strong><span
+								>{#if user.display_name}@{user.username} ·
+								{/if}{user.role} · {user.mfa_enabled
 									? 'MFA enabled'
 									: 'MFA off'}{user.must_change_password ? ' · password change required' : ''}</span
 							>
@@ -325,6 +379,30 @@
 								>{/each}
 						</fieldset>{/if}
 					<div class="actions">
+						{#if identityFor === user.id}<div class="identity-edit">
+								<input
+									aria-label="Username"
+									bind:value={identityUsername}
+									minlength="3"
+									maxlength="64"
+									pattern="[a-z0-9][a-z0-9._-]+"
+								/>
+								<input
+									aria-label="Display name"
+									bind:value={identityDisplayName}
+									maxlength="80"
+									placeholder="Optional display name"
+								/>
+								<button class="app-button app-button--primary" onclick={() => updateIdentity(user)}
+									>Save identity</button
+								>
+								<button class="app-button app-button--quiet" onclick={() => (identityFor = null)}
+									>Cancel</button
+								>
+							</div>{:else if user.id !== auth.principal?.user_id}<button
+								class="app-button app-button--secondary"
+								onclick={() => editIdentity(user)}>Edit identity</button
+							>{/if}
 						{#if resetFor === user.id}<input
 								aria-label={`Temporary password for ${user.username}`}
 								type="password"
@@ -576,6 +654,15 @@
 		flex: 1;
 		min-width: 15rem;
 	}
+	.identity-edit {
+		display: grid;
+		grid-template-columns: minmax(10rem, 1fr) minmax(12rem, 1fr) auto auto;
+		width: 100%;
+		gap: 0.4rem;
+	}
+	.identity-edit input {
+		min-width: 0;
+	}
 	.key-list {
 		display: grid;
 		border: 1px solid var(--line);
@@ -668,6 +755,9 @@
 		}
 		.controls {
 			flex-wrap: wrap;
+		}
+		.identity-edit {
+			grid-template-columns: 1fr;
 		}
 		.audit-list article {
 			grid-template-columns: 1fr 1fr;

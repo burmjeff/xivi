@@ -18,6 +18,7 @@ func TestDefaultAdministratorInitialization(t *testing.T) {
 	db.MustExec(`CREATE TABLE template (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`)
 	db.MustExec(`CREATE TABLE app_user (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		display_name TEXT NOT NULL DEFAULT '',
 		password_hash TEXT NOT NULL, role TEXT NOT NULL, must_change_password BOOLEAN NOT NULL,
 		initial_password BOOLEAN NOT NULL DEFAULT FALSE,
 		auth_version INTEGER NOT NULL DEFAULT 1, disabled_at TIMESTAMP,
@@ -30,7 +31,9 @@ func TestDefaultAdministratorInitialization(t *testing.T) {
 	db.MustExec(`CREATE TABLE user_mfa (user_id INTEGER PRIMARY KEY REFERENCES app_user(id))`)
 	db.MustExec(`CREATE TABLE security_audit_event (
 		id INTEGER PRIMARY KEY, actor_user_id INTEGER, actor_username TEXT NOT NULL DEFAULT '',
+		actor_display_name TEXT NOT NULL DEFAULT '',
 		target_user_id INTEGER, target_username TEXT NOT NULL DEFAULT '',
+		target_display_name TEXT NOT NULL DEFAULT '',
 		action TEXT NOT NULL, outcome TEXT NOT NULL, resource_type TEXT NOT NULL,
 		resource_id TEXT NOT NULL, client_ip TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL,
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`)

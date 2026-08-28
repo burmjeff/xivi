@@ -6,6 +6,7 @@
 		KeyRound,
 		LockKeyhole,
 		LogOut,
+		MonitorSmartphone,
 		ShieldCheck,
 		Trash2,
 		UserRound
@@ -68,6 +69,16 @@
 	}));
 
 	let currentPassword = $state('');
+	let profileUsername = $state('');
+	let displayName = $state('');
+	let initializedProfileUserID = $state(0);
+	$effect(() => {
+		if (auth.principal && auth.principal.user_id !== initializedProfileUserID) {
+			profileUsername = auth.principal.username;
+			displayName = auth.principal.display_name;
+			initializedProfileUserID = auth.principal.user_id;
+		}
+	});
 	let newPassword = $state('');
 	let newPasswordConfirmation = $state('');
 	let passwordMFA = $state('');
@@ -155,6 +166,24 @@
 			newPasswordConfirmation = '';
 			passwordMFA = '';
 			status = 'Password changed and other sessions were revoked.';
+		});
+	}
+	async function updateProfile(event: SubmitEvent) {
+		event.preventDefault();
+		const previousUsername = auth.principal?.username;
+		await performSensitive('change your account identity', async () => {
+			const principal = await api<SessionPrincipal>('/api/v2/account/profile', {
+				method: 'PATCH',
+				body: JSON.stringify({ username: profileUsername, display_name: displayName })
+			});
+			setSession(principal);
+			profileUsername = principal.username;
+			displayName = principal.display_name;
+			await client.invalidateQueries({ queryKey: ['account', 'sessions'] });
+			status =
+				previousUsername !== principal.username
+					? 'Account identity updated. Other browser sessions were signed out.'
+					: 'Account identity updated.';
 		});
 	}
 	async function startMFA() {
@@ -280,12 +309,13 @@
 	<header>
 		<div>
 			<p class="eyebrow">Account & security</p>
-			<h1>{auth.principal?.username}</h1>
+			<h1>{auth.principal?.display_name || auth.principal?.username}</h1>
 			{#if auth.principal?.must_change_password}
 				<p>Administrator · Initial security setup</p>
 			{:else}
 				<p>
-					{auth.principal?.role === 'admin' ? 'Administrator' : 'Viewer'} · {auth.principal
+					{#if auth.principal?.display_name}@{auth.principal.username} ·
+					{/if}{auth.principal?.role === 'admin' ? 'Administrator' : 'Viewer'} · {auth.principal
 						?.lineup_ids.length ?? 0} explicit lineup grants
 				</p>
 			{/if}
@@ -313,6 +343,41 @@
 	{#if error}<p class="error" role="alert">{error}</p>{/if}
 
 	<div class:password-only={auth.principal?.must_change_password} class="account-grid">
+		{#if !auth.principal?.must_change_password}
+			<article class="profile-card">
+				<div class="card-title">
+					<UserRound size={20} />
+					<div>
+						<h2>Profile</h2>
+						<p>Your username signs you in; your display name is optional.</p>
+					</div>
+				</div>
+				<form onsubmit={updateProfile}>
+					<label
+						>Username<input
+							bind:value={profileUsername}
+							autocomplete="username"
+							minlength="3"
+							maxlength="64"
+							pattern="[a-z0-9][a-z0-9._-]+"
+							required
+						/></label
+					>
+					<label
+						>Display name <span class="optional">Optional</span><input
+							bind:value={displayName}
+							autocomplete="name"
+							maxlength="80"
+						/></label
+					>
+					<p class="profile-note">
+						Changing your username signs out your other browser sessions. Device access remains
+						active.
+					</p>
+					<button class="app-button app-button--primary" type="submit">Save profile</button>
+				</form>
+			</article>
+		{/if}
 		<article class="password-card">
 			<div class="card-title">
 				<LockKeyhole size={20} />
@@ -431,7 +496,7 @@
 
 			<article class="sessions-card">
 				<div class="card-title">
-					<UserRound size={20} />
+					<MonitorSmartphone size={20} />
 					<div>
 						<h2>Signed-in sessions</h2>
 						<p>Revoke browsers or devices you no longer recognize.</p>
@@ -627,6 +692,7 @@
 		display: grid;
 		grid-template-columns: minmax(19rem, 0.82fr) minmax(28rem, 1.18fr);
 		grid-template-areas:
+			'profile sessions'
 			'password sessions'
 			'mfa sessions'
 			'keys keys';
@@ -640,6 +706,9 @@
 	}
 	.password-card {
 		grid-area: password;
+	}
+	.profile-card {
+		grid-area: profile;
 	}
 	.mfa-card {
 		grid-area: mfa;
@@ -689,6 +758,16 @@
 		color: var(--muted);
 		font-size: 0.72rem;
 		font-weight: 800;
+	}
+	.optional {
+		font-weight: 550;
+		text-transform: none;
+	}
+	.profile-note {
+		margin: 0;
+		color: var(--muted);
+		font-size: 0.7rem;
+		line-height: 1.45;
 	}
 	input,
 	select {
@@ -937,6 +1016,7 @@
 		.account-grid {
 			grid-template-columns: 1fr;
 			grid-template-areas:
+				'profile'
 				'password'
 				'sessions'
 				'mfa'

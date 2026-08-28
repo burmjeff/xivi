@@ -53,23 +53,31 @@ func decodeStrict(c *fiber.Ctx, target any) error {
 func auditSecurity(c *fiber.Ctx, action, outcome, resourceType, resourceID, detail string, targetUserID *int64, knownTargetUsername ...string) {
 	var actor *int64
 	actorUsername := ""
+	actorDisplayName := ""
 	if principal, ok := middleware.Principal(c); ok {
 		id := principal.UserID
 		actor = &id
 		actorUsername = principal.Username
+		actorDisplayName = principal.DisplayName
 	}
 	targetUsername := ""
+	targetDisplayName := ""
 	if len(knownTargetUsername) > 0 {
 		targetUsername = knownTargetUsername[0]
+		if len(knownTargetUsername) > 1 {
+			targetDisplayName = knownTargetUsername[1]
+		}
 	} else if targetUserID != nil {
 		if target, err := database.Db.GetUserByID(c.UserContext(), *targetUserID); err == nil {
 			targetUsername = target.Username
+			targetDisplayName = target.DisplayName
 		}
 	}
 	ip := security.RequestNetworkInfo(c).IP.String()
 	_ = database.Db.Audit(c.UserContext(), models.SecurityAuditEvent{
-		ActorUserID: actor, ActorUsername: actorUsername, TargetUserID: targetUserID,
-		TargetUsername: targetUsername, Action: action, Outcome: outcome, ResourceType: resourceType,
+		ActorUserID: actor, ActorUsername: actorUsername, ActorDisplayName: actorDisplayName,
+		TargetUserID: targetUserID, TargetUsername: targetUsername, TargetDisplayName: targetDisplayName,
+		Action: action, Outcome: outcome, ResourceType: resourceType,
 		ResourceID: resourceID, ClientIP: ip, Detail: detail,
 	})
 }
@@ -190,7 +198,7 @@ func createBrowserSession(c *fiber.Ctx, user *models.User, mfaVerified bool) (mo
 	if user.Role == models.RoleAdmin {
 		lineups = []int64{}
 	}
-	return models.SessionPrincipal{UserID: user.ID, Username: user.Username, Role: user.Role,
+	return models.SessionPrincipal{UserID: user.ID, Username: user.Username, DisplayName: user.DisplayName, Role: user.Role,
 		MustChangePassword: user.MustChangePassword, MFAEnabled: user.MFAEnabled,
 		MFARequired: user.MFAEnabled && !mfaVerified, LineupIDs: lineups, CSRFToken: csrf}, nil
 }
@@ -481,6 +489,94 @@ func V2RevokeAccountSession(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
+type identityWriteRequest struct {
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+}
+
+func normalizedIdentity(c *fiber.Ctx) (identityWriteRequest, error) {
+	request := identityWriteRequest{}
+	if err := decodeStrict(c, &request); err != nil {
+		return request, err
+	}
+	username, err := security.NormalizeUsername(request.Username)
+	if err != nil {
+		return request, err
+	}
+	displayName, err := security.NormalizeDisplayName(request.DisplayName)
+	if err != nil {
+		return request, err
+	}
+	request.Username = username
+	request.DisplayName = displayName
+	return request, nil
+}
+
+func identityDetail(usernameChanged, displayNameChanged bool) string {
+	changes := make([]string, 0, 2)
+	if usernameChanged {
+		changes = append(changes, "username_changed")
+	}
+	if displayNameChanged {
+		changes = append(changes, "display_name_changed")
+	}
+	return strings.Join(changes, ",")
+}
+
+// V2UpdateAccountProfile allows an authenticated user to manage mutable
+// identity without changing the immutable user id used by grants, media keys,
+// and audit foreign keys.
+func V2UpdateAccountProfile(c *fiber.Ctx) error {
+	request, err := normalizedIdentity(c)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIError{
+			Code: "invalid_profile", Message: "The account identity was invalid.",
+			FieldErrors: map[string]string{"profile": err.Error()},
+		})
+	}
+	principal, _ := middleware.Principal(c)
+	user, err := database.Db.GetUserByID(c.UserContext(), principal.UserID)
+	if err != nil {
+		return v2Error(c, fiber.StatusUnauthorized, "authentication_required", "Sign in again.", false)
+	}
+	usernameChanged := user.Username != request.Username
+	displayNameChanged := user.DisplayName != request.DisplayName
+	if !usernameChanged && !displayNameChanged {
+		return c.JSON(principal)
+	}
+	if err := database.Db.UpdateUserIdentity(c.UserContext(), user.ID, request.Username, request.DisplayName); err != nil {
+		if errors.Is(err, queries.ErrUsernameInUse) {
+			return c.Status(fiber.StatusConflict).JSON(models.APIError{
+				Code: "username_in_use", Message: "That username is already used.",
+				FieldErrors: map[string]string{"username": "Choose a different username."},
+			})
+		}
+		return v2Error(c, fiber.StatusInternalServerError, "profile_update_failed", "The account identity could not be updated.", true)
+	}
+
+	response := principal
+	response.Username = request.Username
+	response.DisplayName = request.DisplayName
+	if usernameChanged {
+		currentSession, sessionOK := middleware.CurrentSession(c)
+		_ = database.Db.RevokeUserSessions(c.UserContext(), user.ID)
+		streaming.DefaultManager.DisconnectUserSessionClients(user.ID)
+		updated, loadErr := database.Db.GetUserByID(c.UserContext(), user.ID)
+		if loadErr != nil || !sessionOK {
+			return v2Error(c, fiber.StatusInternalServerError, "session_rotation_failed", "The username changed. Sign in again to continue.", true)
+		}
+		response, err = createBrowserSession(c, updated, currentSession.MFAVerified)
+		if err != nil {
+			middleware.ClearSessionCookie(c, currentSession.TransportScope)
+			return v2Error(c, fiber.StatusInternalServerError, "session_rotation_failed", "The username changed. Sign in again to continue.", true)
+		}
+	}
+	targetID := user.ID
+	auditSecurity(c, "profile_update", "success", "user", strconv.FormatInt(user.ID, 10),
+		identityDetail(usernameChanged, displayNameChanged), &targetID)
+	return c.JSON(response)
+}
+
 func V2StudioUsers(c *fiber.Ctx) error {
 	users, err := database.Db.ListUsers(c.UserContext())
 	if err != nil {
@@ -519,11 +615,12 @@ func V2StudioSecurityAudit(c *fiber.Ctx) error {
 }
 
 type userWriteRequest struct {
-	Username  string  `json:"username"`
-	Password  string  `json:"password"`
-	Role      string  `json:"role"`
-	Disabled  bool    `json:"disabled"`
-	LineupIDs []int64 `json:"lineup_ids"`
+	Username    string  `json:"username"`
+	DisplayName string  `json:"display_name"`
+	Password    string  `json:"password"`
+	Role        string  `json:"role"`
+	Disabled    bool    `json:"disabled"`
+	LineupIDs   []int64 `json:"lineup_ids"`
 }
 
 func validateLineupGrants(c *fiber.Ctx, role string, values []int64) ([]int64, bool) {
@@ -559,6 +656,10 @@ func V2CreateStudioUser(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(models.APIError{Code: "invalid_user", Message: "The username was invalid.", FieldErrors: map[string]string{"username": err.Error()}})
 	}
+	displayName, err := security.NormalizeDisplayName(request.DisplayName)
+	if err != nil {
+		return c.Status(400).JSON(models.APIError{Code: "invalid_user", Message: "The display name was invalid.", FieldErrors: map[string]string{"display_name": err.Error()}})
+	}
 	if request.Role != models.RoleAdmin && request.Role != models.RoleViewer {
 		return v2Error(c, 400, "invalid_role", "Choose admin or viewer.", false)
 	}
@@ -574,7 +675,7 @@ func V2CreateStudioUser(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, 500, "password_hash_failed", "The account could not be created.", true)
 	}
-	id, err := database.Db.CreateUser(c.UserContext(), username, hash, request.Role, true, request.LineupIDs)
+	id, err := database.Db.CreateUser(c.UserContext(), username, displayName, hash, request.Role, true, request.LineupIDs)
 	if err != nil {
 		return v2Error(c, 409, "user_create_failed", "The username is already used or the lineup selection is invalid.", false)
 	}
@@ -621,6 +722,50 @@ func V2UpdateStudioUser(c *fiber.Ctx) error {
 	_ = database.Db.RevokeUserMediaKeys(c.UserContext(), id)
 	streaming.DefaultManager.DisconnectAuthorizedClients("", 0, id)
 	auditSecurity(c, "user_update", "success", "user", strconv.FormatInt(id, 10), "sessions_and_keys_revoked", &id)
+	user, _ := database.Db.GetUserByID(c.UserContext(), id)
+	return c.JSON(user)
+}
+
+func V2UpdateStudioUserProfile(c *fiber.Ctx) error {
+	id, ok := security.ParsePositiveID(c.Params("user_id"))
+	if !ok {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_user", "The user id is invalid.", false)
+	}
+	principal, _ := middleware.Principal(c)
+	if id == principal.UserID {
+		return v2Error(c, fiber.StatusConflict, "self_profile_update_rejected", "Change your own identity from the Account page.", false)
+	}
+	request, err := normalizedIdentity(c)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIError{
+			Code: "invalid_profile", Message: "The account identity was invalid.",
+			FieldErrors: map[string]string{"profile": err.Error()},
+		})
+	}
+	target, err := database.Db.GetUserByID(c.UserContext(), id)
+	if err != nil {
+		return v2Error(c, fiber.StatusNotFound, "user_not_found", "The user was not found.", false)
+	}
+	usernameChanged := target.Username != request.Username
+	displayNameChanged := target.DisplayName != request.DisplayName
+	if !usernameChanged && !displayNameChanged {
+		return c.JSON(target)
+	}
+	if err := database.Db.UpdateUserIdentity(c.UserContext(), id, request.Username, request.DisplayName); err != nil {
+		if errors.Is(err, queries.ErrUsernameInUse) {
+			return c.Status(fiber.StatusConflict).JSON(models.APIError{
+				Code: "username_in_use", Message: "That username is already used.",
+				FieldErrors: map[string]string{"username": "Choose a different username."},
+			})
+		}
+		return v2Error(c, fiber.StatusInternalServerError, "profile_update_failed", "The account identity could not be updated.", true)
+	}
+	if usernameChanged {
+		_ = database.Db.RevokeUserSessions(c.UserContext(), id)
+		streaming.DefaultManager.DisconnectUserSessionClients(id)
+	}
+	auditSecurity(c, "user_profile_update", "success", "user", strconv.FormatInt(id, 10),
+		identityDetail(usernameChanged, displayNameChanged), &id)
 	user, _ := database.Db.GetUserByID(c.UserContext(), id)
 	return c.JSON(user)
 }
@@ -700,7 +845,7 @@ func V2DeleteStudioUser(c *fiber.Ctx) error {
 		}
 		return v2Error(c, 500, "user_delete_failed", "The user could not be deleted.", true)
 	}
-	auditSecurity(c, "user_delete", "success", "user", strconv.FormatInt(id, 10), "", nil, target.Username)
+	auditSecurity(c, "user_delete", "success", "user", strconv.FormatInt(id, 10), "", nil, target.Username, target.DisplayName)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 

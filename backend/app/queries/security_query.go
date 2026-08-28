@@ -8,18 +8,22 @@ import (
 	"xivi/backend/app/models"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/mattn/go-sqlite3"
 )
 
 type SecurityQueries struct{ BaseQueries }
 
-var ErrLastEnabledAdmin = errors.New("the final enabled administrator cannot be changed")
+var (
+	ErrLastEnabledAdmin = errors.New("the final enabled administrator cannot be changed")
+	ErrUsernameInUse    = errors.New("the username is already in use")
+)
 
 func NewSecurityQueries(db *sqlx.DB) *SecurityQueries {
 	return &SecurityQueries{BaseQueries: NewBaseQueries(db)}
 }
 
 const userSelect = `
-	SELECT u.id, u.username, u.password_hash, u.role, u.must_change_password, u.initial_password,
+	SELECT u.id, u.username, u.display_name, u.password_hash, u.role, u.must_change_password, u.initial_password,
 	       u.auth_version, u.disabled_at, u.created_at, u.updated_at,
 	       EXISTS(SELECT 1 FROM user_mfa m WHERE m.user_id = u.id) AS mfa_enabled
 	FROM app_user u`
@@ -112,12 +116,12 @@ func (q *SecurityQueries) ListUsers(ctx context.Context) ([]models.User, error) 
 	return users, nil
 }
 
-func (q *SecurityQueries) CreateUser(ctx context.Context, username, passwordHash, role string, mustChange bool, lineupIDs []int64) (int64, error) {
+func (q *SecurityQueries) CreateUser(ctx context.Context, username, displayName, passwordHash, role string, mustChange bool, lineupIDs []int64) (int64, error) {
 	var id int64
 	err := q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
 		result, err := tx.ExecContext(ctx, `INSERT INTO app_user
-			(username, password_hash, role, must_change_password, created_at, updated_at)
-			VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, username, passwordHash, role, mustChange)
+			(username, display_name, password_hash, role, must_change_password, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, username, displayName, passwordHash, role, mustChange)
 		if err != nil {
 			return err
 		}
@@ -128,6 +132,33 @@ func (q *SecurityQueries) CreateUser(ctx context.Context, username, passwordHash
 		return replaceUserLineupsTx(ctx, tx, id, lineupIDs)
 	})
 	return id, err
+}
+
+// UpdateUserIdentity changes presentation identity without coupling device
+// credentials to mutable names. A username change increments auth_version so
+// every existing browser session becomes invalid; display-name-only changes do
+// not unnecessarily interrupt sessions.
+func (q *SecurityQueries) UpdateUserIdentity(ctx context.Context, id int64, username, displayName string) error {
+	result, err := q.ExecContext(ctx, `UPDATE app_user
+		SET username = ?, display_name = ?,
+		    auth_version = auth_version + CASE WHEN username <> ? COLLATE NOCASE THEN 1 ELSE 0 END,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`, username, displayName, username, id)
+	if err != nil {
+		var sqliteError sqlite3.Error
+		if errors.As(err, &sqliteError) && sqliteError.ExtendedCode == sqlite3.ErrConstraintUnique {
+			return ErrUsernameInUse
+		}
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (q *SecurityQueries) UpdateUser(ctx context.Context, id int64, role string, disabled bool, lineupIDs []int64) error {
@@ -283,7 +314,7 @@ func (q *SecurityQueries) CreateSession(ctx context.Context, session *models.Aut
 
 func (q *SecurityQueries) GetSession(ctx context.Context, tokenHash []byte) (*models.AuthSession, error) {
 	session := &models.AuthSession{}
-	err := q.GetContext(ctx, session, `SELECT s.*, u.username, u.role,
+	err := q.GetContext(ctx, session, `SELECT s.*, u.username, u.display_name, u.role,
 		u.must_change_password, u.disabled_at AS user_disabled_at,
 		EXISTS(SELECT 1 FROM user_mfa m WHERE m.user_id = u.id) AS mfa_enabled
 		FROM auth_session s JOIN app_user u ON u.id = s.user_id
@@ -592,10 +623,11 @@ func (q *SecurityQueries) VirtualTunerCredentialValid(ctx context.Context, lineu
 
 func (q *SecurityQueries) Audit(ctx context.Context, event models.SecurityAuditEvent) error {
 	_, err := q.ExecContext(ctx, `INSERT INTO security_audit_event
-		(actor_user_id, actor_username, target_user_id, target_username, action, outcome, resource_type, resource_id, client_ip, detail)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, event.ActorUserID, event.ActorUsername,
-		event.TargetUserID, event.TargetUsername, event.Action, event.Outcome, event.ResourceType,
-		event.ResourceID, event.ClientIP, event.Detail)
+		(actor_user_id, actor_username, actor_display_name, target_user_id, target_username,
+		 target_display_name, action, outcome, resource_type, resource_id, client_ip, detail)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, event.ActorUserID, event.ActorUsername,
+		event.ActorDisplayName, event.TargetUserID, event.TargetUsername, event.TargetDisplayName,
+		event.Action, event.Outcome, event.ResourceType, event.ResourceID, event.ClientIP, event.Detail)
 	return err
 }
 

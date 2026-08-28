@@ -81,6 +81,22 @@ func TestPasswordHashAndBounds(t *testing.T) {
 	}
 }
 
+func TestDisplayNameNormalization(t *testing.T) {
+	value, err := NormalizeDisplayName("  José Xivi  ")
+	if err != nil || value != "José Xivi" {
+		t.Fatalf("display name normalized to %q, err=%v", value, err)
+	}
+	if value, err := NormalizeDisplayName(""); err != nil || value != "" {
+		t.Fatalf("empty optional display name returned %q, err=%v", value, err)
+	}
+	if _, err := NormalizeDisplayName("line\nbreak"); err == nil {
+		t.Fatal("display name with control character was accepted")
+	}
+	if _, err := NormalizeDisplayName(strings.Repeat("x", 81)); err == nil {
+		t.Fatal("oversized display name was accepted")
+	}
+}
+
 func TestPasswordVerificationHasBoundedMemoryConcurrency(t *testing.T) {
 	for index := 0; index < cap(passwordVerifierSlots); index++ {
 		passwordVerifierSlots <- struct{}{}

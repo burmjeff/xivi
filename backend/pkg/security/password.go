@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -42,6 +43,22 @@ func NormalizeUsername(value string) (string, error) {
 	value = strings.ToLower(strings.TrimSpace(value))
 	if !usernamePattern.MatchString(value) {
 		return "", errors.New("username must be 3-64 lowercase letters, numbers, dots, underscores, or hyphens")
+	}
+	return value, nil
+}
+
+// NormalizeDisplayName keeps display names presentation-only while bounding
+// their storage and excluding control characters that do not belong in UI or
+// audit output. An empty value is valid and means "show the username".
+func NormalizeDisplayName(value string) (string, error) {
+	value = strings.TrimSpace(norm.NFC.String(value))
+	if utf8.RuneCountInString(value) > 80 {
+		return "", errors.New("display name must contain at most 80 characters")
+	}
+	for _, character := range value {
+		if unicode.IsControl(character) {
+			return "", errors.New("display name cannot contain control characters")
+		}
 	}
 	return value, nil
 }

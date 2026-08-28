@@ -30,6 +30,7 @@ func V2Routes(a *fiber.App) {
 	ready.Post("/auth/mfa/recovery-codes", middleware.CSRFProtected(), middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2MFARegenerateRecoveryCodes)
 	ready.Get("/auth/sessions", controllers.V2AccountSessions)
 	ready.Delete("/auth/sessions/:session_id", middleware.CSRFProtected(), controllers.V2RevokeAccountSession)
+	ready.Patch("/account/profile", middleware.CSRFProtected(), middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2UpdateAccountProfile)
 
 	watch := ready.Group("", middleware.DeclareRoutePolicy("viewer"))
 	watch.Get("/watch/lineups", controllers.V2WatchLineups)
@@ -53,6 +54,7 @@ func V2Routes(a *fiber.App) {
 	studio.Get("/security/audit", controllers.V2StudioSecurityAudit)
 	studio.Post("/users", middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2CreateStudioUser)
 	studio.Patch("/users/:user_id", middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2UpdateStudioUser)
+	studio.Patch("/users/:user_id/profile", middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2UpdateStudioUserProfile)
 	studio.Post("/users/:user_id/password-reset", middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2ResetStudioUserPassword)
 	studio.Delete("/users/:user_id/mfa", middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2ResetStudioUserMFA)
 	studio.Delete("/users/:user_id", middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2DeleteStudioUser)

@@ -121,7 +121,7 @@
 				<a
 					class="account-link"
 					href="/account"
-					aria-label={`Account for ${auth.principal?.username ?? ''}`}
+					aria-label={`Account for ${auth.principal?.display_name || auth.principal?.username || ''}`}
 					title="Account"><CircleUserRound size={19} /></a
 				>
 				<ThemeSwitcher />

@@ -196,6 +196,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/account/profile': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateAccountProfile'];
+		trace?: never;
+	};
 	'/account/media-keys': {
 		parameters: {
 			query?: never;
@@ -258,6 +274,22 @@ export interface paths {
 		options?: never;
 		head?: never;
 		patch: operations['updateUser'];
+		trace?: never;
+	};
+	'/studio/users/{user_id}/profile': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateUserProfile'];
 		trace?: never;
 	};
 	'/studio/users/{user_id}/password-reset': {
@@ -1369,6 +1401,7 @@ export interface components {
 			/** Format: int64 */
 			user_id: number;
 			username: string;
+			display_name: string;
 			/** @enum {string} */
 			role: 'admin' | 'viewer';
 			must_change_password: boolean;
@@ -1403,6 +1436,7 @@ export interface components {
 			/** Format: int64 */
 			id: number;
 			username: string;
+			display_name: string;
 			/** @enum {string} */
 			role: 'admin' | 'viewer';
 			must_change_password: boolean;
@@ -1422,12 +1456,17 @@ export interface components {
 		};
 		UserWriteRequest: {
 			username: string;
+			display_name?: string;
 			/** Format: password */
 			password: string;
 			/** @enum {string} */
 			role: 'admin' | 'viewer';
 			disabled: boolean;
 			lineup_ids: number[];
+		};
+		IdentityWriteRequest: {
+			username: string;
+			display_name: string;
 		};
 		UserUpdateRequest: {
 			/** @enum {string} */
@@ -1486,9 +1525,11 @@ export interface components {
 			/** Format: int64 */
 			actor_user_id?: number;
 			actor_username?: string;
+			actor_display_name?: string;
 			/** Format: int64 */
 			target_user_id?: number;
 			target_username?: string;
+			target_display_name?: string;
 			action: string;
 			outcome: string;
 			resource_type?: string;
@@ -2433,6 +2474,31 @@ export interface operations {
 			default: components['responses']['Error'];
 		};
 	};
+	updateAccountProfile: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['IdentityWriteRequest'];
+			};
+		};
+		responses: {
+			/** @description Identity updated. Username changes revoke other browser sessions and rotate the current session; media keys remain active. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['SessionPrincipal'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
 	listMediaKeys: {
 		parameters: {
 			query?: never;
@@ -2584,6 +2650,33 @@ export interface operations {
 		};
 		responses: {
 			/** @description User updated and credentials revoked. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['UserSummary'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	updateUserProfile: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				user_id: components['parameters']['UserId'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['IdentityWriteRequest'];
+			};
+		};
+		responses: {
+			/** @description User identity updated. Username changes revoke browser sessions but retain media keys. */
 			200: {
 				headers: {
 					[name: string]: unknown;

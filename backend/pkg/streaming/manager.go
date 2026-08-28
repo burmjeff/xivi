@@ -1682,6 +1682,38 @@ func (m *Manager) DisconnectAuthorizedClients(authKind string, authID, ownerUser
 	return disconnected
 }
 
+// DisconnectUserSessionClients ends browser-session playback after a username
+// change without interrupting the same user's independently revocable media-key
+// players. The shared upstream remains available to every other downstream.
+func (m *Manager) DisconnectUserSessionClients(ownerUserID int64) int {
+	if ownerUserID < 1 {
+		return 0
+	}
+	m.mu.RLock()
+	sessions := make([]*Session, 0, len(m.sessions))
+	for _, session := range m.sessions {
+		sessions = append(sessions, session)
+	}
+	m.mu.RUnlock()
+	disconnected := 0
+	for _, session := range sessions {
+		session.mu.RLock()
+		ids := make([]string, 0)
+		for id, client := range session.clients {
+			if client.endReason == "" && client.metadata.AuthKind == "session" && client.metadata.OwnerUserID == ownerUserID {
+				ids = append(ids, id)
+			}
+		}
+		session.mu.RUnlock()
+		for _, id := range ids {
+			if session.ReleaseClient(id, "authorization_rotated") {
+				disconnected++
+			}
+		}
+	}
+	return disconnected
+}
+
 func (m *Manager) Snapshots() []SessionSnapshot {
 	m.mu.RLock()
 	sessions := make([]*Session, 0, len(m.sessions))
