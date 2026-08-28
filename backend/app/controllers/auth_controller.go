@@ -818,6 +818,7 @@ func V2AccountMediaKeys(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"items":                  keys,
 		"public_https_available": settings.APP_SETTINGS.Security.PublicBaseURL != "",
+		"retention_days":         settings.APP_SETTINGS.Security.AuditRetentionDays,
 	})
 }
 

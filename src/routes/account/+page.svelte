@@ -47,6 +47,7 @@
 	type MediaKeyList = {
 		items: MediaKey[];
 		public_https_available: boolean;
+		retention_days: number;
 	};
 
 	const client = useQueryClient();
@@ -465,7 +466,11 @@
 						<h2>Device access</h2>
 						<p>
 							Reusable M3U and XMLTV links for TVs and player apps. The underlying credential stays
-							hidden and each device can be revoked independently.
+							hidden and each device can be revoked independently. Revoked entries are deleted after
+							{keys.data?.retention_days ?? 'the configured retention period'}{keys.data
+								?.retention_days
+								? ' days'
+								: ''}.
 						</p>
 					</div>
 				</div>
@@ -828,7 +833,12 @@
 	}
 	.key-list {
 		display: grid;
+		max-height: min(32rem, 60vh);
+		overflow-y: auto;
+		overscroll-behavior-y: auto;
 		gap: 0.5rem;
+		padding-right: 0.25rem;
+		scrollbar-gutter: stable;
 	}
 	.key-row {
 		display: grid;

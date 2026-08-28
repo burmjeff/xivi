@@ -1474,6 +1474,8 @@ export interface components {
 			items: components['schemas']['MediaAccessKeyMetadata'][];
 			/** @description Whether Xivi has a configured public HTTPS base URL and can issue public output links for public-scoped keys. */
 			public_https_available: boolean;
+			/** @description Days revoked and expired device-access records are retained before automatic maintenance deletes them. */
+			retention_days: number;
 		};
 		MediaKeyCreateResponse: {
 			key: components['schemas']['MediaAccessKeyMetadata'];

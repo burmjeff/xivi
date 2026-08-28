@@ -29,6 +29,12 @@ func securityTestQueries(t *testing.T) *SecurityQueries {
 		lineup_id INTEGER NOT NULL REFERENCES template(id) ON DELETE CASCADE,
 		PRIMARY KEY(user_id, lineup_id))`)
 	db.MustExec(`CREATE TABLE user_mfa (user_id INTEGER PRIMARY KEY REFERENCES app_user(id))`)
+	db.MustExec(`CREATE TABLE user_mfa_recovery_code (
+		id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES app_user(id),
+		used_at TIMESTAMP NULL)`)
+	db.MustExec(`CREATE TABLE auth_session (
+		id INTEGER PRIMARY KEY, absolute_expires_at TIMESTAMP NOT NULL,
+		revoked_at TIMESTAMP NULL)`)
 	db.MustExec(`CREATE TABLE security_audit_event (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		actor_user_id INTEGER NULL REFERENCES app_user(id) ON DELETE SET NULL,
@@ -116,6 +122,53 @@ func TestMediaKeyRetainsEncryptedCredentialForReusableLinks(t *testing.T) {
 		t.Fatalf("device lineup access was not retained: %+v", keys[0].LineupIDs)
 	}
 }
+
+func TestSecurityRetentionDeletesOldDeviceKeysAndLineupGrants(t *testing.T) {
+	ctx := context.Background()
+	q := securityTestQueries(t)
+	userID, err := q.CreateUser(ctx, "retention-owner", "hash", "viewer", false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q.MustExec(`INSERT INTO template(id, name) VALUES (7, 'Home')`)
+	now := time.Now().UTC().Truncate(time.Second)
+	cutoff := now.AddDate(0, 0, -90)
+	for _, item := range []struct {
+		id        int
+		name      string
+		revokedAt *time.Time
+		expiresAt *time.Time
+	}{
+		{id: 1, name: "old-revoked", revokedAt: pointerTime(cutoff.Add(-time.Hour))},
+		{id: 2, name: "recent-revoked", revokedAt: pointerTime(cutoff.Add(time.Hour))},
+		{id: 3, name: "old-expired", expiresAt: pointerTime(cutoff.Add(-time.Hour))},
+		{id: 4, name: "active"},
+	} {
+		q.MustExec(`INSERT INTO media_access_key
+			(id, user_id, name, token_prefix, token_hash, token_cipher, network_scope,
+			 created_at, expires_at, revoked_at)
+			VALUES (?, ?, ?, ?, ?, ?, 'lan', ?, ?, ?)`, item.id, userID, item.name,
+			"prefix-"+item.name, []byte("hash-"+item.name), []byte("cipher-"+item.name),
+			now.AddDate(-1, 0, 0), item.expiresAt, item.revokedAt)
+		q.MustExec(`INSERT INTO media_key_lineup(media_key_id, lineup_id) VALUES (?, 7)`, item.id)
+	}
+	if err := q.PruneSecurityData(ctx, now, cutoff, 1000); err != nil {
+		t.Fatal(err)
+	}
+	var remaining []int
+	if err := q.SelectContext(ctx, &remaining, `SELECT id FROM media_access_key ORDER BY id`); err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 2 || remaining[0] != 2 || remaining[1] != 4 {
+		t.Fatalf("unexpected retained device keys: %v", remaining)
+	}
+	var removedGrants int
+	if err := q.GetContext(ctx, &removedGrants, `SELECT COUNT(*) FROM media_key_lineup WHERE media_key_id IN (1, 3)`); err != nil || removedGrants != 0 {
+		t.Fatalf("deleted device-key grants remained: count=%d err=%v", removedGrants, err)
+	}
+}
+
+func pointerTime(value time.Time) *time.Time { return &value }
 
 func streamAuthorizationTestQueries(t *testing.T) *SecurityQueries {
 	t.Helper()

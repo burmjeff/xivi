@@ -1507,7 +1507,7 @@ components:
         expires_at: { type: string, format: date-time }
     MediaKeyListResponse:
       type: object
-      required: [items, public_https_available]
+      required: [items, public_https_available, retention_days]
       properties:
         items:
           type: array
@@ -1516,6 +1516,10 @@ components:
         public_https_available:
           type: boolean
           description: Whether Xivi has a configured public HTTPS base URL and can issue public output links for public-scoped keys.
+        retention_days:
+          type: integer
+          minimum: 1
+          description: Days revoked and expired device-access records are retained before automatic maintenance deletes them.
     MediaKeyCreateResponse:
       type: object
       required: [key]

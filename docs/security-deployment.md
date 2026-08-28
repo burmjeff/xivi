@@ -170,6 +170,12 @@ Treat Internet exposure as an ongoing process:
    emergency. Report suspected credential exposure by revoking the affected
    sessions/media keys immediately and rotating upstream provider credentials.
 
+Revoked and expired device-access keys are retained for the configured security
+retention period (90 days by default), then deleted by the startup maintenance
+pass or the recurring storage cleanup (every six hours by default). Deletion
+cascades to lineup grants; SQLite secure deletion and bounded compaction prevent
+the encrypted credential rows from accumulating indefinitely.
+
 No deployment is vulnerability-proof. Keep the host, Docker runtime, Caddy,
 browser clients, media servers, and Xivi dependencies patched, and repeat an
 authenticated application scan after material authorization or streaming
