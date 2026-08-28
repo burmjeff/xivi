@@ -30,7 +30,8 @@ support bundle. A restore requires the matching database and authentication key.
 
 ## 2. Configure the network boundary
 
-Put these values in `/srv/xivi/xivi.env`, replacing every example address:
+For a public HTTPS deployment, put these values in `/srv/xivi/xivi.env`,
+replacing every example address:
 
 ```dotenv
 XIVI_PRODUCTION=true
@@ -43,6 +44,13 @@ ALLOW_LAN_HTTP=true
 SERVER_HOST=0.0.0.0
 SERVER_PORT=3000
 ```
+
+`PUBLIC_BASE_URL` and `PUBLIC_MEDIA_BASE_URL` are optional. Leave them unset
+for a local-only production container; Xivi will use `LOCAL_BASE_URL` and does
+not require a reverse proxy in that mode. When either public URL is configured,
+`TRUSTED_PROXY_CIDRS` is required so forwarded HTTPS and client-address headers
+can only be accepted from the actual proxy. Trusted LAN CIDRs remain required
+when full application access over local HTTP is enabled.
 
 `TRUSTED_PROXY_CIDRS` contains only the direct IP/CIDR of Caddy, not client
 networks. Xivi ignores forwarded scheme and client-IP headers from any other
@@ -108,8 +116,8 @@ Do not publish the container directly on a public interface.
 
 On first startup Xivi applies additive migrations and encrypts stored provider
 URLs. It fails closed in production when the authentication key cannot be
-created or read, or when the public URL, proxy CIDR, or required LAN CIDR is
-missing or invalid.
+created or read, when a configured public deployment has no trusted proxy
+CIDR, or when a required LAN CIDR is missing or invalid.
 
 ## 4. Complete the first-run password change and verify access
 

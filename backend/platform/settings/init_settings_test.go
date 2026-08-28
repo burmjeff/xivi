@@ -3,6 +3,7 @@ package settings
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -59,5 +60,29 @@ func TestWriteSettingsAtomicallyReplacesExistingConfig(t *testing.T) {
 	}
 	if len(matches) != 0 {
 		t.Fatalf("temporary settings files were not cleaned up: %v", matches)
+	}
+}
+
+func TestProductionSecurityAllowsLocalOnlyDeployment(t *testing.T) {
+	t.Setenv("XIVI_PRODUCTION", "true")
+	security := Security{
+		LocalBaseURL:    "http://192.168.1.10:3000",
+		AllowLANHTTP:    true,
+		TrustedLANCIDRs: []string{"192.168.1.0/24"},
+	}
+	if err := ValidateSecuritySettings(security); err != nil {
+		t.Fatalf("local-only production deployment was rejected: %v", err)
+	}
+}
+
+func TestProductionPublicDeploymentRequiresTrustedProxy(t *testing.T) {
+	t.Setenv("XIVI_PRODUCTION", "true")
+	security := Security{
+		PublicBaseURL: "https://tv.example.com",
+		LocalBaseURL:  "http://127.0.0.1:3000",
+	}
+	err := ValidateSecuritySettings(security)
+	if err == nil || !strings.Contains(err.Error(), "TRUSTED_PROXY_CIDRS") {
+		t.Fatalf("public production deployment did not require a trusted proxy: %v", err)
 	}
 }

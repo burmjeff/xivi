@@ -302,10 +302,12 @@
 					compatibility exception: use local TLS when confidentiality on your LAN matters.
 				</p>
 				<label
-					>Public HTTPS base URL<input
+					>Public HTTPS base URL <small>(optional)</small><input
 						bind:value={settings.security.public_base_url}
 						placeholder="https://tv.example.com"
-					/>{#if errors.public_base_url}<em>{errors.public_base_url}</em>{/if}</label
+					/>{#if errors.public_base_url}<em>{errors.public_base_url}</em>{/if}<small
+						>Leave blank for a local-only installation.</small
+					></label
 				>
 				<label
 					>Public media base URL <small>(optional)</small><input

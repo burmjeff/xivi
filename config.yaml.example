@@ -4,7 +4,7 @@ application:
   tz: America/New_York
   loglevel: 3
   # App-owned and hot-reloaded from Studio; there is no environment override.
-  updatecron: "0 0 * * *"
+  updatecron: '0 0 * * *'
 
 server:
   host: 127.0.0.1
@@ -58,9 +58,10 @@ virtual_tuner:
 # The authentication key is not stored in YAML or SQLite. Xivi creates it at
 # /xivi/config/auth.key on first startup unless XIVI_AUTH_KEY_FILE overrides it.
 security:
-  public_base_url: https://tv.example.com
+  # Optional. Leave both public URLs blank for a local-only production deployment.
+  public_base_url: ''
   # Optional separate key-authenticated hostname for players; defaults to public_base_url.
-  public_media_base_url: https://media.example.com
+  public_media_base_url: ''
   local_base_url: http://192.168.1.10:3000
   trusted_proxy_cidrs:
     - 192.168.1.20/32

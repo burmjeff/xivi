@@ -287,8 +287,6 @@ func ValidateSecuritySettings(security Security) error {
 		if err := validateBase(security.PublicBaseURL, true); err != nil {
 			return err
 		}
-	} else if production {
-		return fmt.Errorf("PUBLIC_BASE_URL is required in production")
 	}
 	if security.PublicMediaBaseURL != "" {
 		if err := validateBase(security.PublicMediaBaseURL, true); err != nil {
@@ -303,8 +301,9 @@ func ValidateSecuritySettings(security Security) error {
 			return fmt.Errorf("invalid trusted network CIDR")
 		}
 	}
-	if production && len(security.TrustedProxyCIDRs) == 0 {
-		return fmt.Errorf("TRUSTED_PROXY_CIDRS is required in production")
+	publicHTTPSConfigured := security.PublicBaseURL != "" || security.PublicMediaBaseURL != ""
+	if production && publicHTTPSConfigured && len(security.TrustedProxyCIDRs) == 0 {
+		return fmt.Errorf("TRUSTED_PROXY_CIDRS is required when public HTTPS is configured in production")
 	}
 	if security.AllowLANHTTP && production && len(security.TrustedLANCIDRs) == 0 {
 		return fmt.Errorf("TRUSTED_LAN_CIDRS is required when LAN HTTP is enabled in production")
