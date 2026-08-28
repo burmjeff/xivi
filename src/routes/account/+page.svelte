@@ -47,6 +47,18 @@
 		revoked_at?: string;
 		client_ip: string;
 	};
+	type TrustedBrowser = {
+		id: number;
+		transport_scope: string;
+		created_at: string;
+		last_used_at: string;
+		expires_at: string;
+		revoked_at?: string;
+		created_ip: string;
+		last_used_ip: string;
+		user_agent: string;
+		current: boolean;
+	};
 	type MediaKeyList = {
 		items: MediaKey[];
 		public_https_available: boolean;
@@ -75,6 +87,11 @@
 		queryKey: ['account', 'sessions'],
 		queryFn: () => api<{ items: Session[] }>('/api/v2/auth/sessions'),
 		enabled: !auth.principal?.must_change_password
+	}));
+	const trustedBrowsers = createQuery(() => ({
+		queryKey: ['account', 'trusted-browsers'],
+		queryFn: () => api<{ items: TrustedBrowser[] }>('/api/v2/auth/trusted-browsers'),
+		enabled: !auth.principal?.must_change_password && !!auth.principal?.mfa_enabled
 	}));
 
 	let currentPassword = $state('');
@@ -184,7 +201,7 @@
 			newPassword = '';
 			newPasswordConfirmation = '';
 			passwordMFA = '';
-			status = 'Password changed and other sessions were revoked.';
+			status = 'Password changed. Other sessions and trusted-browser approvals were revoked.';
 		});
 	}
 	async function updateProfile(event: SubmitEvent) {
@@ -201,7 +218,7 @@
 			await client.invalidateQueries({ queryKey: ['account', 'sessions'] });
 			status =
 				previousUsername !== principal.username
-					? 'Account identity updated. Other browser sessions were signed out.'
+					? 'Account identity updated. Other sessions were signed out and trusted-browser approvals were revoked.'
 					: 'Account identity updated.';
 		});
 	}
@@ -265,6 +282,27 @@
 			}
 			status = 'Session revoked.';
 		});
+	}
+	async function revokeTrustedBrowser(id: number) {
+		await perform(async () => {
+			await api(`/api/v2/auth/trusted-browsers/${id}`, { method: 'DELETE' });
+			await client.invalidateQueries({ queryKey: ['account', 'trusted-browsers'] });
+			status = 'Trusted browser revoked. Its current signed-in session remains active.';
+		});
+	}
+	async function revokeAllTrustedBrowsers() {
+		await perform(async () => {
+			await api('/api/v2/auth/trusted-browsers', { method: 'DELETE' });
+			await client.invalidateQueries({ queryKey: ['account', 'trusted-browsers'] });
+			status = 'Every trusted-browser approval was revoked. Current sessions remain active.';
+		});
+	}
+	function browserName(userAgent: string) {
+		if (/Edg\//.test(userAgent)) return 'Microsoft Edge';
+		if (/Firefox\//.test(userAgent)) return 'Mozilla Firefox';
+		if (/Chrome\//.test(userAgent)) return 'Google Chrome';
+		if (/Safari\//.test(userAgent)) return 'Apple Safari';
+		return 'Browser';
 	}
 	async function createKey(event: SubmitEvent) {
 		event.preventDefault();
@@ -396,8 +434,8 @@
 						/></label
 					>
 					<p class="profile-note">
-						Changing your username signs out your other browser sessions. Device access remains
-						active.
+						Changing your username signs out your other browser sessions and revokes trusted-browser
+						approvals. Device access remains active.
 					</p>
 					<button class="app-button app-button--primary" type="submit">Save profile</button>
 				</form>
@@ -507,7 +545,7 @@
 				{:else if auth.principal?.mfa_enabled}
 					<div class="enabled">
 						<ShieldCheck size={22} /><strong>MFA is enabled</strong><span
-							>Disabling it revokes every session.</span
+							>Disabling it revokes every session and trusted-browser approval.</span
 						>
 					</div>
 					<button
@@ -572,6 +610,63 @@
 								>{:else}<span>Revoked</span>{/if}
 						</div>{/each}
 				</div>
+				{#if auth.principal?.mfa_enabled}
+					<div class="trusted-heading">
+						<div>
+							<h3>Trusted browsers</h3>
+							<p>These browsers may skip the authenticator step after a correct password.</p>
+						</div>
+						{#if (trustedBrowsers.data?.items ?? []).some((browser) => !browser.revoked_at)}
+							<button
+								class="app-button app-button--quiet"
+								onclick={() =>
+									requestConfirmation({
+										title: 'Revoke every trusted browser?',
+										description:
+											'Every browser will need an authenticator or recovery code after its next password sign-in. Existing signed-in sessions remain active.',
+										confirmLabel: 'Revoke all',
+										tone: 'warning',
+										action: revokeAllTrustedBrowsers
+									})}>Revoke all</button
+							>
+						{/if}
+					</div>
+					<div class="trusted-list">
+						{#if trustedBrowsers.isPending}
+							<p class="empty-row">Loading trusted browsers…</p>
+						{:else if !trustedBrowsers.data?.items.length}
+							<p class="empty-row">No browsers are currently trusted.</p>
+						{:else}
+							{#each trustedBrowsers.data.items as browser}
+								<div class:revoked={!!browser.revoked_at} class="session-row">
+									<div>
+										<strong
+											>{browserName(browser.user_agent)}{browser.current
+												? ' · This browser'
+												: ''}</strong
+										>
+										<span
+											>{browser.transport_scope === 'https' ? 'Public HTTPS' : 'Direct LAN'} · Last used
+											{new Date(browser.last_used_at).toLocaleString()} from {browser.last_used_ip}</span
+										>
+										<span>Expires {new Date(browser.expires_at).toLocaleDateString()}</span>
+									</div>
+									{#if !browser.revoked_at}<button
+											class="app-button app-button--quiet"
+											onclick={() =>
+												requestConfirmation({
+													title: 'Stop trusting this browser?',
+													description:
+														'This browser will need an authenticator or recovery code after its next password sign-in. Its current session remains active.',
+													confirmLabel: 'Revoke trust',
+													action: () => revokeTrustedBrowser(browser.id)
+												})}>Revoke</button
+										>{:else}<span>Revoked</span>{/if}
+								</div>
+							{/each}
+						{/if}
+					</div>
+				{/if}
 			</article>
 
 			<article class="keys-card">
@@ -1060,6 +1155,37 @@
 		overflow-y: auto;
 		padding-right: 0.25rem;
 		scrollbar-gutter: stable;
+	}
+	.trusted-heading {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 0.75rem;
+		border-top: 1px solid var(--line);
+		padding-top: 1rem;
+	}
+	.trusted-heading h3,
+	.trusted-heading p,
+	.empty-row {
+		margin: 0;
+	}
+	.trusted-heading h3 {
+		font-size: 0.92rem;
+	}
+	.trusted-heading p,
+	.empty-row {
+		color: var(--muted);
+		font-size: 0.7rem;
+	}
+	.trusted-list {
+		display: grid;
+		max-height: 22rem;
+		overflow-y: auto;
+		padding-right: 0.25rem;
+		scrollbar-gutter: stable;
+	}
+	.empty-row {
+		padding: 0.7rem 0;
 	}
 	.session-row {
 		display: flex;

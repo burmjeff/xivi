@@ -34,6 +34,13 @@ var loginAttempts = struct {
 	items map[string]loginAttempt
 }{items: map[string]loginAttempt{}}
 
+const (
+	loginChallengeLifetime = 5 * time.Minute
+	loginChallengeFailures = 5
+	trustedBrowserLifetime = 30 * 24 * time.Hour
+	maximumTrustedBrowsers = 20
+)
+
 func decodeStrict(c *fiber.Ctx, target any) error {
 	decoder := json.NewDecoder(bytes.NewReader(c.Body()))
 	decoder.DisallowUnknownFields()
@@ -227,8 +234,83 @@ func verifyUserMFA(c *fiber.Ctx, user *models.User, code string) bool {
 	return used
 }
 
+func requestUserAgent(c *fiber.Ctx) (string, []byte) {
+	value := strings.TrimSpace(c.Get(fiber.HeaderUserAgent))
+	if len(value) > 255 {
+		value = value[:255]
+	}
+	hash := sha256.Sum256([]byte(value))
+	return value, hash[:]
+}
+
+func trustedBrowserValid(c *fiber.Ctx, user *models.User, scope string) bool {
+	token := strings.TrimSpace(c.Cookies(middleware.TrustedBrowserCookieName(scope)))
+	if token == "" || len(token) > 256 || !strings.HasPrefix(token, "xtb_") {
+		return false
+	}
+	hash, err := security.HashToken("trusted-browser", token)
+	if err != nil {
+		return false
+	}
+	now := time.Now().UTC()
+	browser, err := database.Db.GetValidTrustedBrowser(c.UserContext(), hash, user.ID, user.AuthVersion, scope, now)
+	if err != nil {
+		middleware.ClearTrustedBrowserCookie(c, scope)
+		return false
+	}
+	_ = database.Db.TouchTrustedBrowser(c.UserContext(), browser.ID, now, security.RequestNetworkInfo(c).IP.String())
+	return true
+}
+
+func createLoginChallenge(c *fiber.Ctx, user *models.User, scope string) (string, time.Time, error) {
+	random, err := security.RandomToken(32)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	token := "xlc_" + random
+	hash, err := security.HashToken("login-challenge", token)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	_, agentHash := requestUserAgent(c)
+	now := time.Now().UTC()
+	expires := now.Add(loginChallengeLifetime)
+	err = database.Db.CreateLoginChallenge(c.UserContext(), &models.LoginChallenge{
+		TokenHash: hash, UserID: user.ID, AuthVersion: user.AuthVersion, TransportScope: scope,
+		CreatedAt: now, ExpiresAt: expires, ClientIP: security.RequestNetworkInfo(c).IP.String(),
+		UserAgentHash: agentHash,
+	})
+	return token, expires, err
+}
+
+func createTrustedBrowser(c *fiber.Ctx, user *models.User, scope string) error {
+	random, err := security.RandomToken(32)
+	if err != nil {
+		return err
+	}
+	token := "xtb_" + random
+	hash, err := security.HashToken("trusted-browser", token)
+	if err != nil {
+		return err
+	}
+	agent, agentHash := requestUserAgent(c)
+	now := time.Now().UTC()
+	expires := now.Add(trustedBrowserLifetime)
+	ip := security.RequestNetworkInfo(c).IP.String()
+	if err := database.Db.CreateTrustedBrowser(c.UserContext(), &models.TrustedBrowser{
+		TokenHash: hash, UserID: user.ID, AuthVersion: user.AuthVersion, TransportScope: scope,
+		CreatedAt: now, LastUsedAt: now, ExpiresAt: expires, CreatedIP: ip, LastUsedIP: ip,
+		UserAgent: agent, UserAgentHash: agentHash,
+	}, maximumTrustedBrowsers); err != nil {
+		return err
+	}
+	middleware.SetTrustedBrowserCookie(c, scope, token, expires)
+	return nil
+}
+
 func V2Login(c *fiber.Ctx) error {
-	if _, ok := security.TransportScope(c); !ok || !middleware.ValidRequestOrigin(c) {
+	scope, ok := security.TransportScope(c)
+	if !ok || !middleware.ValidRequestOrigin(c) {
 		return v2Error(c, fiber.StatusForbidden, "transport_rejected", "Use public HTTPS or an explicitly trusted LAN address.", false)
 	}
 	count, err := database.Db.UserCount(c.UserContext())
@@ -238,7 +320,6 @@ func V2Login(c *fiber.Ctx) error {
 	request := struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
-		MFACode  string `json:"mfa_code"`
 	}{}
 	if err := decodeStrict(c, &request); err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_login", "The login request was invalid.", false)
@@ -262,9 +343,6 @@ func V2Login(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusTooManyRequests, "login_rate_limited", "Too many attempts. Try again shortly.", true)
 	}
 	valid := normalizeErr == nil && lookupErr == nil && user.DisabledAt == nil && passwordOK
-	if valid && user.MFAEnabled {
-		valid = verifyUserMFA(c, user, request.MFACode)
-	}
 	if !valid {
 		failures := recordLoginFailure(accountKey, addressKey)
 		auditSecurity(c, "login", "failure", "user", "", "invalid_credentials", nil)
@@ -272,17 +350,86 @@ func V2Login(c *fiber.Ctx) error {
 		// request and bucket ceilings prevent attacker-controlled lockout.
 		delay := 100 * time.Millisecond * time.Duration(1<<min(failures-1, 4))
 		time.Sleep(delay)
-		return v2Error(c, fiber.StatusUnauthorized, "invalid_credentials", "The username, password, or verification code was invalid.", false)
+		return v2Error(c, fiber.StatusUnauthorized, "invalid_credentials", "The username or password was invalid.", false)
 	}
 	loginAttempts.Lock()
 	delete(loginAttempts.items, accountKey)
 	loginAttempts.Unlock()
-	principal, err := createBrowserSession(c, user, !user.MFAEnabled || strings.TrimSpace(request.MFACode) != "")
+	if user.MFAEnabled && !trustedBrowserValid(c, user, scope) {
+		token, expires, challengeErr := createLoginChallenge(c, user, scope)
+		if challengeErr != nil {
+			return v2Error(c, fiber.StatusInternalServerError, "mfa_challenge_failed", "Verification could not be started.", true)
+		}
+		target := user.ID
+		auditSecurity(c, "login_challenge", "success", "user", strconv.FormatInt(user.ID, 10), "mfa_required", &target)
+		return c.Status(fiber.StatusAccepted).JSON(fiber.Map{
+			"mfa_required": true, "challenge_token": token, "expires_at": expires,
+		})
+	}
+	principal, err := createBrowserSession(c, user, true)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "session_failed", "The session could not be created.", true)
 	}
 	target := user.ID
 	auditSecurity(c, "login", "success", "user", strconv.FormatInt(user.ID, 10), "", &target)
+	return c.JSON(principal)
+}
+
+func V2CompleteMFALogin(c *fiber.Ctx) error {
+	scope, ok := security.TransportScope(c)
+	if !ok || !middleware.ValidRequestOrigin(c) {
+		return v2Error(c, fiber.StatusForbidden, "transport_rejected", "Use public HTTPS or an explicitly trusted LAN address.", false)
+	}
+	request := struct {
+		ChallengeToken string `json:"challenge_token"`
+		Code           string `json:"code"`
+		TrustBrowser   bool   `json:"trust_browser"`
+	}{}
+	if err := decodeStrict(c, &request); err != nil || len(request.ChallengeToken) > 256 || !strings.HasPrefix(request.ChallengeToken, "xlc_") {
+		return v2Error(c, fiber.StatusUnauthorized, "invalid_mfa_challenge", "Verification expired. Sign in again.", false)
+	}
+	hash, err := security.HashToken("login-challenge", request.ChallengeToken)
+	if err != nil {
+		return v2Error(c, fiber.StatusUnauthorized, "invalid_mfa_challenge", "Verification expired. Sign in again.", false)
+	}
+	challenge, err := database.Db.GetLoginChallenge(c.UserContext(), hash)
+	now := time.Now().UTC()
+	_, agentHash := requestUserAgent(c)
+	ip := security.RequestNetworkInfo(c).IP.String()
+	validChallenge := err == nil && challenge.ConsumedAt == nil && challenge.FailureCount < loginChallengeFailures &&
+		now.Before(challenge.ExpiresAt) && challenge.TransportScope == scope && challenge.ClientIP == ip &&
+		hmac.Equal(challenge.UserAgentHash, agentHash)
+	if !validChallenge {
+		return v2Error(c, fiber.StatusUnauthorized, "invalid_mfa_challenge", "Verification expired. Sign in again.", false)
+	}
+	user, err := database.Db.GetUserByID(c.UserContext(), challenge.UserID)
+	if err != nil || user.DisabledAt != nil || !user.MFAEnabled || user.AuthVersion != challenge.AuthVersion {
+		return v2Error(c, fiber.StatusUnauthorized, "invalid_mfa_challenge", "Verification expired. Sign in again.", false)
+	}
+	if !verifyUserMFA(c, user, request.Code) {
+		_ = database.Db.RecordLoginChallengeFailure(c.UserContext(), challenge.ID)
+		target := user.ID
+		auditSecurity(c, "login_mfa", "failure", "user", strconv.FormatInt(user.ID, 10), "invalid_code", &target)
+		return v2Error(c, fiber.StatusUnauthorized, "invalid_mfa_code", "The verification or recovery code was invalid.", false)
+	}
+	consumed, err := database.Db.ConsumeLoginChallenge(c.UserContext(), challenge.ID, now, loginChallengeFailures)
+	if err != nil || !consumed {
+		return v2Error(c, fiber.StatusUnauthorized, "invalid_mfa_challenge", "Verification expired. Sign in again.", false)
+	}
+	principal, err := createBrowserSession(c, user, true)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "session_failed", "The session could not be created.", true)
+	}
+	detail := ""
+	if request.TrustBrowser {
+		if err := createTrustedBrowser(c, user, scope); err != nil {
+			detail = "trusted_browser_failed"
+		} else {
+			detail = "trusted_browser_created"
+		}
+	}
+	target := user.ID
+	auditSecurity(c, "login", "success", "user", strconv.FormatInt(user.ID, 10), detail, &target)
 	return c.JSON(principal)
 }
 
@@ -376,7 +523,11 @@ func V2ChangePassword(c *fiber.Ctx) error {
 		security.SetInitialSetupRequired(false)
 	}
 	_ = database.Db.RevokeUserSessions(c.UserContext(), user.ID)
+	_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), user.ID)
 	_ = database.Db.RevokeUserMediaKeys(c.UserContext(), user.ID)
+	if session, ok := middleware.CurrentSession(c); ok {
+		middleware.ClearTrustedBrowserCookie(c, session.TransportScope)
+	}
 	streaming.DefaultManager.DisconnectAuthorizedClients("", 0, user.ID)
 	user, _ = database.Db.GetUserByID(c.UserContext(), user.ID)
 	newPrincipal, err := createBrowserSession(c, user, true)
@@ -423,6 +574,10 @@ func V2MFAConfirm(c *fiber.Ctx) error {
 		return v2Error(c, 500, "recovery_codes_failed", "Recovery codes could not be created.", true)
 	}
 	_ = database.Db.RevokeUserSessions(c.UserContext(), principal.UserID)
+	_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), principal.UserID)
+	if session, ok := middleware.CurrentSession(c); ok {
+		middleware.ClearTrustedBrowserCookie(c, session.TransportScope)
+	}
 	user, _ := database.Db.GetUserByID(c.UserContext(), principal.UserID)
 	rotated, rotateErr := createBrowserSession(c, user, true)
 	if rotateErr != nil {
@@ -438,9 +593,11 @@ func V2MFADisable(c *fiber.Ctx) error {
 		return v2Error(c, 500, "mfa_disable_failed", "MFA could not be disabled.", true)
 	}
 	_ = database.Db.RevokeUserSessions(c.UserContext(), principal.UserID)
+	_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), principal.UserID)
 	streaming.DefaultManager.DisconnectAuthorizedClients("", 0, principal.UserID)
 	if session, ok := middleware.CurrentSession(c); ok {
 		middleware.ClearSessionCookie(c, session.TransportScope)
+		middleware.ClearTrustedBrowserCookie(c, session.TransportScope)
 	}
 	auditSecurity(c, "mfa_disable", "success", "user", strconv.FormatInt(principal.UserID, 10), "", &principal.UserID)
 	return c.SendStatus(fiber.StatusNoContent)
@@ -486,6 +643,76 @@ func V2RevokeAccountSession(c *fiber.Ctx) error {
 		middleware.ClearSessionCookie(c, current.TransportScope)
 	}
 	auditSecurity(c, "session_revoke", "success", "session", strconv.FormatInt(id, 10), "", &principal.UserID)
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func currentTrustedBrowserHash(c *fiber.Ctx, scope string) []byte {
+	token := strings.TrimSpace(c.Cookies(middleware.TrustedBrowserCookieName(scope)))
+	if token == "" || !strings.HasPrefix(token, "xtb_") || len(token) > 256 {
+		return nil
+	}
+	hash, err := security.HashToken("trusted-browser", token)
+	if err != nil {
+		return nil
+	}
+	return hash
+}
+
+func V2AccountTrustedBrowsers(c *fiber.Ctx) error {
+	principal, _ := middleware.Principal(c)
+	items, err := database.Db.ListTrustedBrowsers(c.UserContext(), principal.UserID)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "trusted_browsers_unavailable", "Trusted browsers could not be loaded.", true)
+	}
+	scope, _ := security.TransportScope(c)
+	currentHash := currentTrustedBrowserHash(c, scope)
+	for index := range items {
+		items[index].Current = len(currentHash) > 0 && hmac.Equal(items[index].TokenHash, currentHash)
+	}
+	return c.JSON(fiber.Map{"items": items})
+}
+
+func V2RevokeAccountTrustedBrowser(c *fiber.Ctx) error {
+	id, ok := security.ParsePositiveID(c.Params("browser_id"))
+	if !ok {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_trusted_browser", "The trusted browser id is invalid.", false)
+	}
+	principal, _ := middleware.Principal(c)
+	items, err := database.Db.ListTrustedBrowsers(c.UserContext(), principal.UserID)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "trusted_browser_revoke_failed", "The trusted browser could not be revoked.", true)
+	}
+	scope, _ := security.TransportScope(c)
+	currentHash := currentTrustedBrowserHash(c, scope)
+	isCurrent := false
+	for _, item := range items {
+		if item.ID == id && len(currentHash) > 0 && hmac.Equal(item.TokenHash, currentHash) {
+			isCurrent = true
+			break
+		}
+	}
+	revoked, err := database.Db.RevokeTrustedBrowser(c.UserContext(), id, principal.UserID)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "trusted_browser_revoke_failed", "The trusted browser could not be revoked.", true)
+	}
+	if !revoked {
+		return v2Error(c, fiber.StatusNotFound, "trusted_browser_not_found", "The trusted browser was not found.", false)
+	}
+	if isCurrent {
+		middleware.ClearTrustedBrowserCookie(c, scope)
+	}
+	auditSecurity(c, "trusted_browser_revoke", "success", "trusted_browser", strconv.FormatInt(id, 10), "", &principal.UserID)
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func V2RevokeAllAccountTrustedBrowsers(c *fiber.Ctx) error {
+	principal, _ := middleware.Principal(c)
+	if err := database.Db.RevokeUserTrustedBrowsers(c.UserContext(), principal.UserID); err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "trusted_browser_revoke_failed", "Trusted browsers could not be revoked.", true)
+	}
+	scope, _ := security.TransportScope(c)
+	middleware.ClearTrustedBrowserCookie(c, scope)
+	auditSecurity(c, "trusted_browsers_revoke", "success", "user", strconv.FormatInt(principal.UserID, 10), "all", &principal.UserID)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -560,6 +787,7 @@ func V2UpdateAccountProfile(c *fiber.Ctx) error {
 	if usernameChanged {
 		currentSession, sessionOK := middleware.CurrentSession(c)
 		_ = database.Db.RevokeUserSessions(c.UserContext(), user.ID)
+		_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), user.ID)
 		streaming.DefaultManager.DisconnectUserSessionClients(user.ID)
 		updated, loadErr := database.Db.GetUserByID(c.UserContext(), user.ID)
 		if loadErr != nil || !sessionOK {
@@ -568,8 +796,10 @@ func V2UpdateAccountProfile(c *fiber.Ctx) error {
 		response, err = createBrowserSession(c, updated, currentSession.MFAVerified)
 		if err != nil {
 			middleware.ClearSessionCookie(c, currentSession.TransportScope)
+			middleware.ClearTrustedBrowserCookie(c, currentSession.TransportScope)
 			return v2Error(c, fiber.StatusInternalServerError, "session_rotation_failed", "The username changed. Sign in again to continue.", true)
 		}
+		middleware.ClearTrustedBrowserCookie(c, currentSession.TransportScope)
 	}
 	targetID := user.ID
 	auditSecurity(c, "profile_update", "success", "user", strconv.FormatInt(user.ID, 10),
@@ -719,6 +949,7 @@ func V2UpdateStudioUser(c *fiber.Ctx) error {
 		return v2Error(c, 409, "user_update_failed", "The user could not be updated.", false)
 	}
 	_ = database.Db.RevokeUserSessions(c.UserContext(), id)
+	_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), id)
 	_ = database.Db.RevokeUserMediaKeys(c.UserContext(), id)
 	streaming.DefaultManager.DisconnectAuthorizedClients("", 0, id)
 	auditSecurity(c, "user_update", "success", "user", strconv.FormatInt(id, 10), "sessions_and_keys_revoked", &id)
@@ -762,6 +993,7 @@ func V2UpdateStudioUserProfile(c *fiber.Ctx) error {
 	}
 	if usernameChanged {
 		_ = database.Db.RevokeUserSessions(c.UserContext(), id)
+		_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), id)
 		streaming.DefaultManager.DisconnectUserSessionClients(id)
 	}
 	auditSecurity(c, "user_profile_update", "success", "user", strconv.FormatInt(id, 10),
@@ -796,6 +1028,7 @@ func V2ResetStudioUserPassword(c *fiber.Ctx) error {
 		return v2Error(c, 500, "password_reset_failed", "The password could not be reset.", true)
 	}
 	_ = database.Db.RevokeUserSessions(c.UserContext(), id)
+	_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), id)
 	_ = database.Db.RevokeUserMediaKeys(c.UserContext(), id)
 	streaming.DefaultManager.DisconnectAuthorizedClients("", 0, id)
 	auditSecurity(c, "password_reset", "success", "user", strconv.FormatInt(id, 10), "sessions_and_keys_revoked", &id)
@@ -814,6 +1047,7 @@ func V2ResetStudioUserMFA(c *fiber.Ctx) error {
 		return v2Error(c, 500, "mfa_reset_failed", "MFA could not be reset.", true)
 	}
 	_ = database.Db.RevokeUserSessions(c.UserContext(), id)
+	_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), id)
 	streaming.DefaultManager.DisconnectAuthorizedClients("", 0, id)
 	auditSecurity(c, "mfa_reset", "success", "user", strconv.FormatInt(id, 10), "", &id)
 	return c.SendStatus(fiber.StatusNoContent)
@@ -858,8 +1092,9 @@ func V2RevokeStudioUserSessions(c *fiber.Ctx) error {
 		return v2Error(c, 404, "user_not_found", "The user was not found.", false)
 	}
 	_ = database.Db.RevokeUserSessions(c.UserContext(), id)
+	_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), id)
 	streaming.DefaultManager.DisconnectAuthorizedClients("", 0, id)
-	auditSecurity(c, "user_sessions_revoke", "success", "user", strconv.FormatInt(id, 10), "", &id)
+	auditSecurity(c, "user_sessions_revoke", "success", "user", strconv.FormatInt(id, 10), "sessions_and_trusted_browsers_revoked", &id)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 

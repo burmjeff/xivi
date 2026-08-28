@@ -36,6 +36,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/auth/login/mfa': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['completeMFALogin'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/auth/session': {
 		parameters: {
 			query?: never;
@@ -191,6 +207,38 @@ export interface paths {
 		put?: never;
 		post?: never;
 		delete: operations['revokeAccountSession'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/auth/trusted-browsers': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listTrustedBrowsers'];
+		put?: never;
+		post?: never;
+		delete: operations['revokeAllTrustedBrowsers'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/auth/trusted-browsers/{browser_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['revokeTrustedBrowser'];
 		options?: never;
 		head?: never;
 		patch?: never;
@@ -1411,6 +1459,14 @@ export interface components {
 			/** @description Required on cookie-authenticated mutations. */
 			csrf_token?: string;
 		};
+		LoginChallenge: {
+			/** @constant */
+			mfa_required: true;
+			/** @description Single-use, short-lived opaque credential for completing MFA login. It is not a session. */
+			challenge_token: string;
+			/** Format: date-time */
+			expires_at: string;
+		};
 		ReauthenticationRequest: {
 			/** Format: password */
 			password: string;
@@ -1431,6 +1487,24 @@ export interface components {
 			/** Format: date-time */
 			revoked_at?: string;
 			client_ip: string;
+		};
+		TrustedBrowser: {
+			/** Format: int64 */
+			id: number;
+			/** @enum {string} */
+			transport_scope: 'https' | 'lan_http';
+			/** Format: date-time */
+			created_at: string;
+			/** Format: date-time */
+			last_used_at: string;
+			/** Format: date-time */
+			expires_at: string;
+			/** Format: date-time */
+			revoked_at?: string;
+			created_ip: string;
+			last_used_ip: string;
+			user_agent: string;
+			current: boolean;
 		};
 		UserSummary: {
 			/** Format: int64 */
@@ -2223,12 +2297,50 @@ export interface operations {
 					username: string;
 					/** Format: password */
 					password: string;
-					mfa_code?: string;
 				};
 			};
 		};
 		responses: {
 			/** @description Authenticated session. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['SessionPrincipal'];
+				};
+			};
+			/** @description Password accepted; MFA verification is required before a session is created. */
+			202: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['LoginChallenge'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	completeMFALogin: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': {
+					challenge_token: string;
+					code: string;
+					/** @description Store a separate revocable browser approval for 30 days. A password is still required at future sign-ins. */
+					trust_browser: boolean;
+				};
+			};
+		};
+		responses: {
+			/** @description MFA verified and authenticated session created. */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -2465,6 +2577,69 @@ export interface operations {
 		requestBody?: never;
 		responses: {
 			/** @description Session revoked. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	listTrustedBrowsers: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Bounded trusted-browser history with active approvals first. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						items: components['schemas']['TrustedBrowser'][];
+					};
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	revokeAllTrustedBrowsers: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Every trusted-browser approval revoked; current sessions remain active. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	revokeTrustedBrowser: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				browser_id: number;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Trusted-browser approval revoked; its current session remains active. */
 			204: {
 				headers: {
 					[name: string]: unknown;

@@ -17,13 +17,15 @@ import (
 )
 
 const (
-	PublicSessionCookie = "__Host-xivi_session"
-	LANSessionCookie    = "xivi_lan_session"
-	passiveCheckHeader  = "X-Xivi-Session-Check"
-	principalLocal      = "xivi_principal"
-	sessionLocal        = "xivi_session"
-	sessionTokenLocal   = "xivi_session_token"
-	mediaKeyLocal       = "xivi_media_key"
+	PublicSessionCookie        = "__Host-xivi_session"
+	LANSessionCookie           = "xivi_lan_session"
+	PublicTrustedBrowserCookie = "__Host-xivi_trusted_browser"
+	LANTrustedBrowserCookie    = "xivi_lan_trusted_browser"
+	passiveCheckHeader         = "X-Xivi-Session-Check"
+	principalLocal             = "xivi_principal"
+	sessionLocal               = "xivi_session"
+	sessionTokenLocal          = "xivi_session_token"
+	mediaKeyLocal              = "xivi_media_key"
 )
 
 type MediaCredential struct {
@@ -59,6 +61,13 @@ func SessionCookieName(scope string) string {
 	return LANSessionCookie
 }
 
+func TrustedBrowserCookieName(scope string) string {
+	if scope == "https" {
+		return PublicTrustedBrowserCookie
+	}
+	return LANTrustedBrowserCookie
+}
+
 func SetSessionCookie(c *fiber.Ctx, scope, token string, expires time.Time) {
 	c.Cookie(&fiber.Cookie{
 		Name:     SessionCookieName(scope),
@@ -74,6 +83,31 @@ func SetSessionCookie(c *fiber.Ctx, scope, token string, expires time.Time) {
 func ClearSessionCookie(c *fiber.Ctx, scope string) {
 	c.Cookie(&fiber.Cookie{
 		Name:     SessionCookieName(scope),
+		Value:    "",
+		Path:     "/",
+		HTTPOnly: true,
+		Secure:   scope == "https",
+		SameSite: "Strict",
+		Expires:  time.Unix(1, 0).UTC(),
+		MaxAge:   -1,
+	})
+}
+
+func SetTrustedBrowserCookie(c *fiber.Ctx, scope, token string, expires time.Time) {
+	c.Cookie(&fiber.Cookie{
+		Name:     TrustedBrowserCookieName(scope),
+		Value:    token,
+		Path:     "/",
+		HTTPOnly: true,
+		Secure:   scope == "https",
+		SameSite: "Strict",
+		Expires:  expires,
+	})
+}
+
+func ClearTrustedBrowserCookie(c *fiber.Ctx, scope string) {
+	c.Cookie(&fiber.Cookie{
+		Name:     TrustedBrowserCookieName(scope),
 		Value:    "",
 		Path:     "/",
 		HTTPOnly: true,

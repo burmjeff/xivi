@@ -394,6 +394,105 @@ func (q *SecurityQueries) RevokeUserSessionByID(ctx context.Context, sessionID, 
 	return rows == 1, err
 }
 
+func (q *SecurityQueries) CreateLoginChallenge(ctx context.Context, challenge *models.LoginChallenge) error {
+	_, err := q.ExecContext(ctx, `INSERT INTO auth_login_challenge
+		(token_hash, user_id, auth_version, transport_scope, created_at, expires_at,
+		 client_ip, user_agent_hash)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, challenge.TokenHash, challenge.UserID,
+		challenge.AuthVersion, challenge.TransportScope, challenge.CreatedAt,
+		challenge.ExpiresAt, challenge.ClientIP, challenge.UserAgentHash)
+	return err
+}
+
+func (q *SecurityQueries) GetLoginChallenge(ctx context.Context, tokenHash []byte) (*models.LoginChallenge, error) {
+	challenge := &models.LoginChallenge{}
+	err := q.GetContext(ctx, challenge, `SELECT * FROM auth_login_challenge WHERE token_hash = ?`, tokenHash)
+	if err != nil {
+		return nil, err
+	}
+	return challenge, nil
+}
+
+func (q *SecurityQueries) RecordLoginChallengeFailure(ctx context.Context, id int64) error {
+	_, err := q.ExecContext(ctx, `UPDATE auth_login_challenge SET failure_count = failure_count + 1
+		WHERE id = ? AND consumed_at IS NULL`, id)
+	return err
+}
+
+func (q *SecurityQueries) ConsumeLoginChallenge(ctx context.Context, id int64, now time.Time, maxFailures int) (bool, error) {
+	result, err := q.ExecContext(ctx, `UPDATE auth_login_challenge SET consumed_at = ?
+		WHERE id = ? AND consumed_at IS NULL AND expires_at > ? AND failure_count < ?`, now, id, now, maxFailures)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
+
+func (q *SecurityQueries) CreateTrustedBrowser(ctx context.Context, browser *models.TrustedBrowser, maximum int) error {
+	return q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO trusted_browser
+			(token_hash, user_id, auth_version, transport_scope, created_at, last_used_at,
+			 expires_at, created_ip, last_used_ip, user_agent, user_agent_hash)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, browser.TokenHash, browser.UserID,
+			browser.AuthVersion, browser.TransportScope, browser.CreatedAt, browser.LastUsedAt,
+			browser.ExpiresAt, browser.CreatedIP, browser.LastUsedIP, browser.UserAgent,
+			browser.UserAgentHash); err != nil {
+			return err
+		}
+		if maximum > 0 {
+			_, err := tx.ExecContext(ctx, `UPDATE trusted_browser SET revoked_at = ?
+				WHERE user_id = ? AND revoked_at IS NULL AND id NOT IN (
+					SELECT id FROM trusted_browser WHERE user_id = ? AND revoked_at IS NULL
+					ORDER BY last_used_at DESC, id DESC LIMIT ?
+				)`, browser.CreatedAt, browser.UserID, browser.UserID, maximum)
+			return err
+		}
+		return nil
+	})
+}
+
+func (q *SecurityQueries) GetValidTrustedBrowser(ctx context.Context, tokenHash []byte, userID, authVersion int64, scope string, now time.Time) (*models.TrustedBrowser, error) {
+	browser := &models.TrustedBrowser{}
+	err := q.GetContext(ctx, browser, `SELECT * FROM trusted_browser
+		WHERE token_hash = ? AND user_id = ? AND auth_version = ? AND transport_scope = ?
+		  AND revoked_at IS NULL AND expires_at > ?`, tokenHash, userID, authVersion, scope, now)
+	if err != nil {
+		return nil, err
+	}
+	return browser, nil
+}
+
+func (q *SecurityQueries) TouchTrustedBrowser(ctx context.Context, id int64, at time.Time, ip string) error {
+	_, err := q.ExecContext(ctx, `UPDATE trusted_browser SET last_used_at = ?, last_used_ip = ?
+		WHERE id = ? AND revoked_at IS NULL AND expires_at > ?`, at, ip, id, at)
+	return err
+}
+
+func (q *SecurityQueries) ListTrustedBrowsers(ctx context.Context, userID int64) ([]models.TrustedBrowser, error) {
+	items := []models.TrustedBrowser{}
+	err := q.SelectContext(ctx, &items, `SELECT * FROM trusted_browser WHERE user_id = ?
+		ORDER BY CASE WHEN revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP THEN 0 ELSE 1 END,
+		last_used_at DESC, id DESC LIMIT 100`, userID)
+	return items, err
+}
+
+func (q *SecurityQueries) RevokeTrustedBrowser(ctx context.Context, id, userID int64) (bool, error) {
+	result, err := q.ExecContext(ctx, `UPDATE trusted_browser SET revoked_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND user_id = ? AND revoked_at IS NULL`, id, userID)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
+
+func (q *SecurityQueries) RevokeUserTrustedBrowsers(ctx context.Context, userID int64) error {
+	_, err := q.ExecContext(ctx, `UPDATE trusted_browser SET revoked_at = CURRENT_TIMESTAMP
+		WHERE user_id = ? AND revoked_at IS NULL`, userID)
+	return err
+}
+
 func (q *SecurityQueries) DeleteUser(ctx context.Context, userID int64) error {
 	return q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
 		var target struct {
@@ -658,6 +757,14 @@ func (q *SecurityQueries) ListSecurityAuditEvents(ctx context.Context, beforeID 
 func (q *SecurityQueries) PruneSecurityData(ctx context.Context, sessionBefore, auditBefore time.Time, maxAudit int) error {
 	return q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM auth_session WHERE absolute_expires_at < ? OR revoked_at < ?`, sessionBefore, sessionBefore); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM auth_login_challenge
+			WHERE expires_at < ? OR consumed_at IS NOT NULL`, sessionBefore); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM trusted_browser
+			WHERE expires_at < ? OR revoked_at < ?`, sessionBefore, sessionBefore); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM security_audit_event WHERE created_at < ?`, auditBefore); err != nil {

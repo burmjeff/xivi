@@ -71,6 +71,37 @@ type AuthSessionMetadata struct {
 	ClientIP          string     `db:"client_ip" json:"client_ip"`
 }
 
+type LoginChallenge struct {
+	ID             int64      `db:"id"`
+	TokenHash      []byte     `db:"token_hash"`
+	UserID         int64      `db:"user_id"`
+	AuthVersion    int64      `db:"auth_version"`
+	TransportScope string     `db:"transport_scope"`
+	CreatedAt      time.Time  `db:"created_at"`
+	ExpiresAt      time.Time  `db:"expires_at"`
+	ConsumedAt     *time.Time `db:"consumed_at"`
+	FailureCount   int        `db:"failure_count"`
+	ClientIP       string     `db:"client_ip"`
+	UserAgentHash  []byte     `db:"user_agent_hash"`
+}
+
+type TrustedBrowser struct {
+	ID             int64      `db:"id"`
+	TokenHash      []byte     `db:"token_hash" json:"-"`
+	UserID         int64      `db:"user_id" json:"-"`
+	AuthVersion    int64      `db:"auth_version" json:"-"`
+	TransportScope string     `db:"transport_scope" json:"transport_scope"`
+	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
+	LastUsedAt     time.Time  `db:"last_used_at" json:"last_used_at"`
+	ExpiresAt      time.Time  `db:"expires_at" json:"expires_at"`
+	RevokedAt      *time.Time `db:"revoked_at" json:"revoked_at,omitempty"`
+	CreatedIP      string     `db:"created_ip" json:"created_ip"`
+	LastUsedIP     string     `db:"last_used_ip" json:"last_used_ip"`
+	UserAgent      string     `db:"user_agent" json:"user_agent"`
+	UserAgentHash  []byte     `db:"user_agent_hash" json:"-"`
+	Current        bool       `db:"-" json:"current"`
+}
+
 type LineupGrant struct {
 	ID   int64  `db:"id" json:"id"`
 	Name string `db:"name" json:"name"`

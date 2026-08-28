@@ -58,7 +58,6 @@ paths:
               properties:
                 username: { type: string }
                 password: { type: string, format: password }
-                mfa_code: { type: string }
       responses:
         '200':
           {
@@ -66,6 +65,36 @@ paths:
             content:
               { application/json: { schema: { $ref: '#/components/schemas/SessionPrincipal' } } }
           }
+        '202':
+          {
+            description: Password accepted; MFA verification is required before a session is created.,
+            content:
+              { application/json: { schema: { $ref: '#/components/schemas/LoginChallenge' } } }
+          }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/login/mfa:
+    post:
+      operationId: completeMFALogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [challenge_token, code, trust_browser]
+              properties:
+                challenge_token: { type: string }
+                code: { type: string }
+                trust_browser:
+                  type: boolean
+                  description: Store a separate revocable browser approval for 30 days. A password is still required at future sign-ins.
+      responses:
+        '200':
+          description: MFA verified and authenticated session created.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/SessionPrincipal' } }
         default: { $ref: '#/components/responses/Error' }
   /auth/session:
     get:
@@ -245,6 +274,37 @@ paths:
         - { name: session_id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
         '204': { description: Session revoked. }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/trusted-browsers:
+    get:
+      operationId: listTrustedBrowsers
+      responses:
+        '200':
+          description: Bounded trusted-browser history with active approvals first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/TrustedBrowser' } }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: revokeAllTrustedBrowsers
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      responses:
+        '204':
+          { description: Every trusted-browser approval revoked; current sessions remain active. }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/trusted-browsers/{browser_id}:
+    delete:
+      operationId: revokeTrustedBrowser
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      parameters:
+        - { name: browser_id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204':
+          { description: Trusted-browser approval revoked; its current session remains active. }
         default: { $ref: '#/components/responses/Error' }
   /account/profile:
     patch:
@@ -1451,6 +1511,15 @@ components:
         mfa_required: { type: boolean }
         lineup_ids: { type: array, items: { type: integer, format: int64 } }
         csrf_token: { type: string, description: Required on cookie-authenticated mutations. }
+    LoginChallenge:
+      type: object
+      required: [mfa_required, challenge_token, expires_at]
+      properties:
+        mfa_required: { type: boolean, const: true }
+        challenge_token:
+          type: string
+          description: Single-use, short-lived opaque credential for completing MFA login. It is not a session.
+        expires_at: { type: string, format: date-time }
     ReauthenticationRequest:
       type: object
       additionalProperties: false
@@ -1478,6 +1547,31 @@ components:
         absolute_expires_at: { type: string, format: date-time }
         revoked_at: { type: string, format: date-time }
         client_ip: { type: string }
+    TrustedBrowser:
+      type: object
+      required:
+        [
+          id,
+          transport_scope,
+          created_at,
+          last_used_at,
+          expires_at,
+          created_ip,
+          last_used_ip,
+          user_agent,
+          current
+        ]
+      properties:
+        id: { type: integer, format: int64 }
+        transport_scope: { type: string, enum: [https, lan_http] }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        revoked_at: { type: string, format: date-time }
+        created_ip: { type: string }
+        last_used_ip: { type: string }
+        user_agent: { type: string }
+        current: { type: boolean }
     UserSummary:
       type: object
       required:

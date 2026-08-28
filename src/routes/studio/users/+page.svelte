@@ -204,7 +204,7 @@
 			identityFor = null;
 			await client.invalidateQueries({ queryKey: ['studio', 'users'] });
 			await client.invalidateQueries({ queryKey: ['studio', 'security-audit'] });
-			message = `Identity updated for ${identityUsername}. Other browser sessions were signed out if the username changed.`;
+			message = `Identity updated for ${identityUsername}. Other sessions and trusted-browser approvals were revoked if the username changed.`;
 		});
 	}
 	async function update(
@@ -221,7 +221,7 @@
 				})
 			});
 			await client.invalidateQueries({ queryKey: ['studio', 'users'] });
-			message = `${user.username} updated; their sessions and device access were revoked.`;
+			message = `${user.username} updated; their sessions, trusted browsers, and device access were revoked.`;
 		});
 	}
 	async function reset(user: User) {
@@ -232,7 +232,7 @@
 			});
 			resetFor = null;
 			resetPassword = '';
-			message = `Temporary password set for ${user.username}; their sessions and device access were revoked.`;
+			message = `Temporary password set for ${user.username}; their sessions, trusted browsers, and device access were revoked.`;
 		});
 	}
 	async function resetMFA(user: User) {
@@ -243,9 +243,9 @@
 		});
 	}
 	async function revokeSessions(user: User) {
-		await runSensitive(`revoke every session for ${user.username}`, async () => {
+		await runSensitive(`revoke every sign-in for ${user.username}`, async () => {
 			await api(`/api/v2/studio/users/${user.id}/sessions`, { method: 'DELETE' });
-			message = `Every session for ${user.username} was revoked.`;
+			message = `Every session and trusted browser for ${user.username} was revoked.`;
 		});
 	}
 	async function revokeKeys(user: User) {
@@ -450,12 +450,12 @@
 							class="app-button app-button--quiet"
 							onclick={() =>
 								requestConfirmation({
-									title: `Revoke all sessions for ${userLabel(user)}?`,
+									title: `Revoke all sign-ins for ${userLabel(user)}?`,
 									description:
-										'Every browser session for this account will be signed out immediately. Device access links will remain active.',
-									confirmLabel: 'Revoke sessions',
+										'Every browser session will be signed out immediately and every trusted-browser approval will be removed. Device access links remain active.',
+									confirmLabel: 'Revoke sign-ins',
 									action: () => revokeSessions(user)
-								})}>Revoke sessions</button
+								})}>Revoke sign-ins</button
 						><button class="app-button app-button--quiet" onclick={() => inspectKeys(user)}
 							>Inspect device access</button
 						><button

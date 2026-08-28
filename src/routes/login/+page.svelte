@@ -9,41 +9,63 @@
 	let username = $state('');
 	let password = $state('');
 	let mfaCode = $state('');
+	let step = $state<'password' | 'mfa'>('password');
+	let challengeToken = $state('');
+	let trustBrowser = $state(false);
 	let submitting = $state(false);
 	let error = $state('');
 	$effect(() => {
 		if (auth.initialPasswordChangeRequired && !username) username = 'xivi';
 	});
 
+	type LoginChallenge = { mfa_required: true; challenge_token: string; expires_at: string };
+	type LoginResponse = SessionPrincipal | LoginChallenge;
+
+	function isChallenge(response: LoginResponse): response is LoginChallenge {
+		return 'mfa_required' in response && 'challenge_token' in response;
+	}
+
+	async function finishLogin(principal: SessionPrincipal) {
+		setSession(principal);
+		const requested = page.url.searchParams.get('next') ?? '/';
+		const safeNext =
+			requested.startsWith('/') && !requested.startsWith('//') && !requested.includes('\\')
+				? requested
+				: '/';
+		const adminOnlyNext =
+			safeNext.startsWith('/studio') ||
+			safeNext.startsWith('/docs/') ||
+			safeNext.startsWith('/swagger');
+		const next = principal.role === 'viewer' && adminOnlyNext ? '/' : safeNext;
+		if (principal.must_change_password) {
+			await goto('/account?change-password=required', { replaceState: true });
+			return;
+		}
+		if (next.startsWith('/docs/') || next.startsWith('/swagger')) {
+			window.location.assign(next);
+			return;
+		}
+		await goto(next, { replaceState: true });
+	}
+
 	async function login(event: SubmitEvent) {
 		event.preventDefault();
 		submitting = true;
 		error = '';
 		try {
-			const principal = await api<SessionPrincipal>('/api/v2/auth/login', {
+			const response = await api<LoginResponse>('/api/v2/auth/login', {
 				method: 'POST',
-				body: JSON.stringify({ username, password, mfa_code: mfaCode })
+				body: JSON.stringify({ username, password })
 			});
-			setSession(principal);
-			const requested = page.url.searchParams.get('next') ?? '/';
-			const safeNext =
-				requested.startsWith('/') && !requested.startsWith('//') && !requested.includes('\\')
-					? requested
-					: '/';
-			const adminOnlyNext =
-				safeNext.startsWith('/studio') ||
-				safeNext.startsWith('/docs/') ||
-				safeNext.startsWith('/swagger');
-			const next = principal.role === 'viewer' && adminOnlyNext ? '/' : safeNext;
-			if (principal.must_change_password) {
-				await goto('/account?change-password=required', { replaceState: true });
+			if (isChallenge(response)) {
+				challengeToken = response.challenge_token;
+				password = '';
+				mfaCode = '';
+				trustBrowser = false;
+				step = 'mfa';
 				return;
 			}
-			if (next.startsWith('/docs/') || next.startsWith('/swagger')) {
-				window.location.assign(next);
-				return;
-			}
-			await goto(next, { replaceState: true });
+			await finishLogin(response);
 		} catch (caught) {
 			error =
 				caught instanceof XiviAPIError
@@ -53,6 +75,43 @@
 			submitting = false;
 		}
 	}
+
+	async function verifyMFA(event: SubmitEvent) {
+		event.preventDefault();
+		submitting = true;
+		error = '';
+		try {
+			const principal = await api<SessionPrincipal>('/api/v2/auth/login/mfa', {
+				method: 'POST',
+				body: JSON.stringify({
+					challenge_token: challengeToken,
+					code: mfaCode,
+					trust_browser: trustBrowser
+				})
+			});
+			await finishLogin(principal);
+		} catch (caught) {
+			error =
+				caught instanceof XiviAPIError
+					? caught.detail.message
+					: 'Xivi could not reach the authentication service.';
+			if (caught instanceof XiviAPIError && caught.detail.code === 'invalid_mfa_challenge') {
+				step = 'password';
+				challengeToken = '';
+				mfaCode = '';
+			}
+		} finally {
+			submitting = false;
+		}
+	}
+
+	function restartLogin() {
+		step = 'password';
+		challengeToken = '';
+		mfaCode = '';
+		trustBrowser = false;
+		error = '';
+	}
 </script>
 
 <svelte:head><title>Sign in · Xivi</title></svelte:head>
@@ -61,26 +120,26 @@
 	<section class="login-story" aria-label="Xivi">
 		<SignalMark />
 		<div class="story-copy">
-			<h1>Live TV,<br /><em>for your people.</em></h1>
+			<h1>Live Streams,<br /><em>for your people.</em></h1>
 			<p>Watch your channels. Organize the signal in Studio.</p>
 		</div>
 	</section>
 
 	<section class="login-panel">
-		<form onsubmit={login}>
+		<form onsubmit={step === 'password' ? login : verifyMFA}>
 			<div class="form-heading">
 				<div class="lock-tile"><LockKeyhole size={23} /></div>
 				<div>
-					<p>Welcome back</p>
-					<h2>Sign in to Xivi</h2>
+					<p>{step === 'password' ? 'Welcome back' : 'One more step'}</p>
+					<h2>{step === 'password' ? 'Sign in to Xivi' : 'Verify your identity'}</h2>
 				</div>
 			</div>
-			{#if auth.bootstrapRequired}
+			{#if step === 'password' && auth.bootstrapRequired}
 				<div class="bootstrap" role="alert">
 					<strong>First-run account is still initializing</strong>
 					Restart Xivi if this message remains visible.
 				</div>
-			{:else if auth.initialPasswordChangeRequired}
+			{:else if step === 'password' && auth.initialPasswordChangeRequired}
 				<div class="bootstrap" role="alert">
 					<strong>First sign-in</strong>
 					{#if auth.initialLoginAllowed}
@@ -96,37 +155,64 @@
 					{/if}
 				</div>
 			{/if}
-			<label
-				>Username<input
-					bind:value={username}
-					autocomplete="username"
-					required
-					maxlength="64"
-				/></label
-			>
-			<label
-				>Password<input
-					bind:value={password}
-					type="password"
-					autocomplete="current-password"
-					required
-					maxlength="128"
-				/></label
-			>
-			{#if !auth.initialPasswordChangeRequired}<label
-					>Authenticator or recovery code <span>if enabled</span><input
+			{#if step === 'password'}
+				<label
+					>Username<input
+						bind:value={username}
+						autocomplete="username"
+						required
+						maxlength="64"
+					/></label
+				>
+				<label
+					>Password<input
+						bind:value={password}
+						type="password"
+						autocomplete="current-password"
+						required
+						maxlength="128"
+					/></label
+				>
+			{:else}
+				<p class="mfa-guidance">
+					Enter the current code from your authenticator app, or use one of your recovery codes.
+				</p>
+				<label
+					>Verification or recovery code<input
 						bind:value={mfaCode}
 						autocomplete="one-time-code"
+						inputmode="numeric"
+						required
+						maxlength="32"
 					/></label
-				>{/if}
+				>
+				<label class="remember">
+					<input type="checkbox" bind:checked={trustBrowser} />
+					<span
+						><strong>Trust this browser for 30 days</strong><small
+							>Only use this on a private device. Your password is still required at every new
+							sign-in.</small
+						></span
+					>
+				</label>
+			{/if}
 			{#if error}<p class="error" role="alert">{error}</p>{/if}
 			<button
 				type="submit"
 				disabled={submitting ||
 					auth.bootstrapRequired ||
 					(auth.initialPasswordChangeRequired && !auth.initialLoginAllowed)}
-				>{submitting ? 'Signing in…' : 'Sign in'}</button
+				>{submitting
+					? step === 'password'
+						? 'Signing in…'
+						: 'Verifying…'
+					: step === 'password'
+						? 'Sign in'
+						: 'Verify and continue'}</button
 			>
+			{#if step === 'mfa'}<button class="back" type="button" onclick={restartLogin}
+					>Back to password</button
+				>{/if}
 			<p class="transport">
 				Use the public HTTPS address whenever you are outside your trusted home network.
 			</p>
@@ -175,7 +261,7 @@
 	}
 	h1 {
 		margin: 0.8rem 0 1rem;
-		font: 750 clamp(3.6rem, 7vw, 7.5rem)/0.86 var(--font-display);
+		font: 750 clamp(3.6rem, 7vw, 7.5rem) / 0.86 var(--font-display);
 		letter-spacing: -0.07em;
 	}
 	h1 em {
@@ -287,6 +373,42 @@
 		color: #687184;
 		text-align: center;
 		font-size: 0.7rem;
+	}
+	.mfa-guidance {
+		margin: 0;
+		color: #586071;
+		font-size: 0.82rem;
+		line-height: 1.5;
+	}
+	.remember {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		align-items: start;
+		gap: 0.7rem;
+		border-radius: 0.82rem;
+		background: #eceef3;
+		padding: 0.8rem;
+		cursor: pointer;
+	}
+	.remember input {
+		width: 1.15rem;
+		min-height: 1.15rem;
+		margin-top: 0.1rem;
+	}
+	.remember span {
+		display: grid;
+		gap: 0.15rem;
+		color: var(--ink);
+	}
+	.remember small {
+		color: #687184;
+		font-weight: 550;
+		line-height: 1.4;
+	}
+	.back {
+		min-height: 2.6rem;
+		background: transparent;
+		color: #586071;
 	}
 	@media (max-width: 760px) {
 		.login-page {

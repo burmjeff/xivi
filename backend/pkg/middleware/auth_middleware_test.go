@@ -66,6 +66,46 @@ func TestSessionCookieScopesAndLifetimes(t *testing.T) {
 	}
 }
 
+func TestTrustedBrowserCookieScopes(t *testing.T) {
+	app := fiber.New()
+	app.Get("/:scope", func(c *fiber.Ctx) error {
+		SetTrustedBrowserCookie(c, c.Params("scope"), "opaque", time.Now().Add(30*24*time.Hour))
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	app.Delete("/:scope", func(c *fiber.Ctx) error {
+		ClearTrustedBrowserCookie(c, c.Params("scope"))
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	for _, test := range []struct {
+		path       string
+		name       string
+		wantSecure bool
+	}{
+		{path: "/https", name: PublicTrustedBrowserCookie, wantSecure: true},
+		{path: "/lan_http", name: LANTrustedBrowserCookie, wantSecure: false},
+	} {
+		response, err := app.Test(httptest.NewRequest(fiber.MethodGet, test.path, nil), -1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cookies := response.Cookies()
+		if len(cookies) != 1 || cookies[0].Name != test.name || !cookies[0].HttpOnly || cookies[0].Secure != test.wantSecure || cookies[0].SameSite != 3 || cookies[0].Path != "/" {
+			t.Fatalf("unexpected trusted-browser cookie: %#v", cookies)
+		}
+		_ = response.Body.Close()
+
+		response, err = app.Test(httptest.NewRequest(fiber.MethodDelete, test.path, nil), -1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cookies = response.Cookies()
+		if len(cookies) != 1 || cookies[0].Name != test.name || cookies[0].MaxAge >= 0 {
+			t.Fatalf("trusted-browser cookie was not expired: %#v", cookies)
+		}
+		_ = response.Body.Close()
+	}
+}
+
 func TestAnonymousSessionMiddlewareContinuesToTheRoute(t *testing.T) {
 	app := fiber.New()
 	app.Use(AuthenticateSession)

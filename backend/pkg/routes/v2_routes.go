@@ -16,6 +16,7 @@ func V2Routes(a *fiber.App) {
 	// Explicitly anonymous security bootstrap and login surface.
 	v2.Get("/auth/bootstrap-status", middleware.DeclareRoutePolicy("anonymous"), middleware.BoundedRateLimit(60, time.Minute, false), controllers.V2BootstrapStatus)
 	v2.Post("/auth/login", middleware.DeclareRoutePolicy("anonymous"), controllers.V2Login)
+	v2.Post("/auth/login/mfa", middleware.DeclareRoutePolicy("anonymous"), middleware.BoundedRateLimit(30, 15*time.Minute, false), controllers.V2CompleteMFALogin)
 
 	auth := v2.Group("", middleware.DeclareRoutePolicy("authenticated"), middleware.RequireAuthenticated())
 	auth.Get("/auth/session", controllers.V2Session)
@@ -30,6 +31,9 @@ func V2Routes(a *fiber.App) {
 	ready.Post("/auth/mfa/recovery-codes", middleware.CSRFProtected(), middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2MFARegenerateRecoveryCodes)
 	ready.Get("/auth/sessions", controllers.V2AccountSessions)
 	ready.Delete("/auth/sessions/:session_id", middleware.CSRFProtected(), controllers.V2RevokeAccountSession)
+	ready.Get("/auth/trusted-browsers", controllers.V2AccountTrustedBrowsers)
+	ready.Delete("/auth/trusted-browsers", middleware.CSRFProtected(), controllers.V2RevokeAllAccountTrustedBrowsers)
+	ready.Delete("/auth/trusted-browsers/:browser_id", middleware.CSRFProtected(), controllers.V2RevokeAccountTrustedBrowser)
 	ready.Patch("/account/profile", middleware.CSRFProtected(), middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2UpdateAccountProfile)
 
 	watch := ready.Group("", middleware.DeclareRoutePolicy("viewer"))

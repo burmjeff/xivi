@@ -3,6 +3,7 @@ package queries
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
@@ -36,6 +37,21 @@ func securityTestQueries(t *testing.T) *SecurityQueries {
 	db.MustExec(`CREATE TABLE auth_session (
 		id INTEGER PRIMARY KEY, absolute_expires_at TIMESTAMP NOT NULL,
 		revoked_at TIMESTAMP NULL)`)
+	db.MustExec(`CREATE TABLE auth_login_challenge (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, token_hash BLOB NOT NULL UNIQUE,
+		user_id INTEGER NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+		auth_version INTEGER NOT NULL, transport_scope TEXT NOT NULL,
+		created_at TIMESTAMP NOT NULL, expires_at TIMESTAMP NOT NULL,
+		consumed_at TIMESTAMP NULL, failure_count INTEGER NOT NULL DEFAULT 0,
+		client_ip TEXT NOT NULL, user_agent_hash BLOB NOT NULL)`)
+	db.MustExec(`CREATE TABLE trusted_browser (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, token_hash BLOB NOT NULL UNIQUE,
+		user_id INTEGER NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+		auth_version INTEGER NOT NULL, transport_scope TEXT NOT NULL,
+		created_at TIMESTAMP NOT NULL, last_used_at TIMESTAMP NOT NULL,
+		expires_at TIMESTAMP NOT NULL, revoked_at TIMESTAMP NULL,
+		created_ip TEXT NOT NULL, last_used_ip TEXT NOT NULL,
+		user_agent TEXT NOT NULL, user_agent_hash BLOB NOT NULL)`)
 	db.MustExec(`CREATE TABLE security_audit_event (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		actor_user_id INTEGER NULL REFERENCES app_user(id) ON DELETE SET NULL,
@@ -228,6 +244,83 @@ func TestSecurityRetentionDeletesOldDeviceKeysAndLineupGrants(t *testing.T) {
 }
 
 func pointerTime(value time.Time) *time.Time { return &value }
+
+func TestLoginChallengeIsBoundedAndSingleUse(t *testing.T) {
+	ctx := context.Background()
+	q := securityTestQueries(t)
+	userID, err := q.CreateUser(ctx, "mfa-user", "", "hash", "viewer", false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	challenge := &models.LoginChallenge{
+		TokenHash: []byte("challenge-hash"), UserID: userID, AuthVersion: 1,
+		TransportScope: "https", CreatedAt: now, ExpiresAt: now.Add(5 * time.Minute),
+		ClientIP: "192.0.2.10", UserAgentHash: []byte("agent-hash"),
+	}
+	if err := q.CreateLoginChallenge(ctx, challenge); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := q.GetLoginChallenge(ctx, challenge.TokenHash)
+	if err != nil || stored.UserID != userID || stored.FailureCount != 0 {
+		t.Fatalf("unexpected challenge: %+v err=%v", stored, err)
+	}
+	if err := q.RecordLoginChallengeFailure(ctx, stored.ID); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ = q.GetLoginChallenge(ctx, challenge.TokenHash)
+	if stored.FailureCount != 1 {
+		t.Fatalf("failure count=%d, want 1", stored.FailureCount)
+	}
+	consumed, err := q.ConsumeLoginChallenge(ctx, stored.ID, now.Add(time.Minute), 5)
+	if err != nil || !consumed {
+		t.Fatalf("challenge was not consumed: consumed=%v err=%v", consumed, err)
+	}
+	consumed, err = q.ConsumeLoginChallenge(ctx, stored.ID, now.Add(2*time.Minute), 5)
+	if err != nil || consumed {
+		t.Fatalf("challenge replay succeeded: consumed=%v err=%v", consumed, err)
+	}
+}
+
+func TestTrustedBrowserValidationRevocationAndOrdering(t *testing.T) {
+	ctx := context.Background()
+	q := securityTestQueries(t)
+	userID, err := q.CreateUser(ctx, "trusted-user", "", "hash", "viewer", false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	for index, name := range []string{"older", "newer"} {
+		at := now.Add(time.Duration(index) * time.Minute)
+		browser := &models.TrustedBrowser{
+			TokenHash: []byte("trusted-" + name), UserID: userID, AuthVersion: 1,
+			TransportScope: "https", CreatedAt: at, LastUsedAt: at,
+			ExpiresAt: now.Add(30 * 24 * time.Hour), CreatedIP: "192.0.2.10",
+			LastUsedIP: "192.0.2.10", UserAgent: name, UserAgentHash: []byte(name),
+		}
+		if err := q.CreateTrustedBrowser(ctx, browser, 20); err != nil {
+			t.Fatal(err)
+		}
+	}
+	valid, err := q.GetValidTrustedBrowser(ctx, []byte("trusted-newer"), userID, 1, "https", now)
+	if err != nil || valid.UserAgent != "newer" {
+		t.Fatalf("trusted browser was not valid: %+v err=%v", valid, err)
+	}
+	items, err := q.ListTrustedBrowsers(ctx, userID)
+	if err != nil || len(items) != 2 || items[0].UserAgent != "newer" {
+		t.Fatalf("unexpected trusted-browser ordering: %+v err=%v", items, err)
+	}
+	if revoked, err := q.RevokeTrustedBrowser(ctx, items[0].ID, userID); err != nil || !revoked {
+		t.Fatalf("revoke failed: revoked=%v err=%v", revoked, err)
+	}
+	if _, err := q.GetValidTrustedBrowser(ctx, []byte("trusted-newer"), userID, 1, "https", now); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("revoked browser remained valid: %v", err)
+	}
+	items, err = q.ListTrustedBrowsers(ctx, userID)
+	if err != nil || items[0].UserAgent != "older" || items[1].UserAgent != "newer" {
+		t.Fatalf("active browser was not ordered first: %+v err=%v", items, err)
+	}
+}
 
 func streamAuthorizationTestQueries(t *testing.T) *SecurityQueries {
 	t.Helper()
