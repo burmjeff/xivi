@@ -30,10 +30,20 @@
 				requested.startsWith('/') && !requested.startsWith('//') && !requested.includes('\\')
 					? requested
 					: '/';
-			const next = principal.role === 'viewer' && safeNext.startsWith('/studio') ? '/' : safeNext;
-			await goto(principal.must_change_password ? '/account?change-password=required' : next, {
-				replaceState: true
-			});
+			const adminOnlyNext =
+				safeNext.startsWith('/studio') ||
+				safeNext.startsWith('/docs/') ||
+				safeNext.startsWith('/swagger');
+			const next = principal.role === 'viewer' && adminOnlyNext ? '/' : safeNext;
+			if (principal.must_change_password) {
+				await goto('/account?change-password=required', { replaceState: true });
+				return;
+			}
+			if (next.startsWith('/docs/') || next.startsWith('/swagger')) {
+				window.location.assign(next);
+				return;
+			}
+			await goto(next, { replaceState: true });
 		} catch (caught) {
 			error =
 				caught instanceof XiviAPIError

@@ -2,6 +2,7 @@ package routes
 
 import (
 	"fmt"
+	"net/url"
 
 	"xivi/backend/pkg/middleware"
 	xividocs "xivi/docs"
@@ -160,30 +161,36 @@ func serveDocumentationAsset(c *fiber.Ctx) error {
 	return filesystem.SendFile(c, swaggerFiles.HTTP, "/"+asset)
 }
 
+func redirectUnauthenticatedDocumentationPage(destination string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if _, authenticated := middleware.Principal(c); authenticated {
+			return c.Next()
+		}
+		return c.Redirect("/login?next="+url.QueryEscape(destination), fiber.StatusSeeOther)
+	}
+}
+
 // APIDocumentationRoutes serves the current OpenAPI contract and a clearly
 // separated legacy contract. Documentation is never available anonymously.
 func APIDocumentationRoutes(a *fiber.App) {
-	admin := []fiber.Handler{
+	common := []fiber.Handler{
 		middleware.DeclareRoutePolicy("admin"),
-		middleware.RequireAdmin(),
-		middleware.RequirePasswordChanged(),
 		documentationSecurityHeaders,
 	}
-	docs := a.Group("/docs", admin...)
-	docs.Get("", func(c *fiber.Ctx) error { return c.Redirect("/docs/", fiber.StatusTemporaryRedirect) })
-	docs.Get("/", documentationPage(false))
-	docs.Get("/index.html", documentationPage(false))
-	docs.Get("/openapi.yaml", serveCurrentOpenAPI)
-	docs.Get("/assets/:asset", serveDocumentationAsset)
-	docs.Get("/legacy", func(c *fiber.Ctx) error { return c.Redirect("/docs/legacy/", fiber.StatusTemporaryRedirect) })
-	docs.Get("/legacy/", documentationPage(true))
-	docs.Get("/legacy/index.html", documentationPage(true))
-	docs.Get("/legacy/openapi.json", serveLegacyOpenAPI)
+	admin := []fiber.Handler{middleware.RequireAdmin(), middleware.RequirePasswordChanged()}
+	docs := a.Group("/docs", common...)
+	docs.Get("/", redirectUnauthenticatedDocumentationPage("/docs/"), admin[0], admin[1], documentationPage(false))
+	docs.Get("/index.html", redirectUnauthenticatedDocumentationPage("/docs/"), admin[0], admin[1], documentationPage(false))
+	docs.Get("/openapi.yaml", admin[0], admin[1], serveCurrentOpenAPI)
+	docs.Get("/assets/:asset", admin[0], admin[1], serveDocumentationAsset)
+	docs.Get("/legacy/", redirectUnauthenticatedDocumentationPage("/docs/legacy/"), admin[0], admin[1], documentationPage(true))
+	docs.Get("/legacy/index.html", redirectUnauthenticatedDocumentationPage("/docs/legacy/"), admin[0], admin[1], documentationPage(true))
+	docs.Get("/legacy/openapi.json", admin[0], admin[1], serveLegacyOpenAPI)
 
-	legacy := a.Group("/swagger", admin...)
+	legacy := a.Group("/swagger", common...)
 	redirectLegacy := func(c *fiber.Ctx) error {
 		return c.Redirect("/docs/legacy/", fiber.StatusPermanentRedirect)
 	}
-	legacy.Get("", redirectLegacy)
-	legacy.Get("/*", redirectLegacy)
+	legacy.Get("", redirectUnauthenticatedDocumentationPage("/docs/legacy/"), admin[0], admin[1], redirectLegacy)
+	legacy.Get("/*", redirectUnauthenticatedDocumentationPage("/docs/legacy/"), admin[0], admin[1], redirectLegacy)
 }
