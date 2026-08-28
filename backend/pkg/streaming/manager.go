@@ -1714,6 +1714,34 @@ func (m *Manager) DisconnectUserSessionClients(ownerUserID int64) int {
 	return disconnected
 }
 
+// ActiveViewerCounts returns the active downstream connections associated with
+// one credential and its owning account. It counts clients across every shared
+// producer; upstream sharing therefore never bypasses downstream admission.
+func (m *Manager) ActiveViewerCounts(authKind string, authID, ownerUserID int64) (credentialCount, ownerCount int) {
+	m.mu.RLock()
+	sessions := make([]*Session, 0, len(m.sessions))
+	for _, session := range m.sessions {
+		sessions = append(sessions, session)
+	}
+	m.mu.RUnlock()
+	for _, session := range sessions {
+		session.mu.RLock()
+		for _, client := range session.clients {
+			if client.endReason != "" {
+				continue
+			}
+			if authKind != "" && client.metadata.AuthKind == authKind && client.metadata.AuthID == authID {
+				credentialCount++
+			}
+			if ownerUserID > 0 && client.metadata.OwnerUserID == ownerUserID {
+				ownerCount++
+			}
+		}
+		session.mu.RUnlock()
+	}
+	return credentialCount, ownerCount
+}
+
 func (m *Manager) Snapshots() []SessionSnapshot {
 	m.mu.RLock()
 	sessions := make([]*Session, 0, len(m.sessions))

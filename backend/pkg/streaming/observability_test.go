@@ -108,6 +108,31 @@ func TestStreamSnapshotsHaveStableOperationalOrdering(t *testing.T) {
 	}
 }
 
+func TestManagerCountsCredentialAndOwnerConnectionsAcrossStreams(t *testing.T) {
+	config := testConfig(t.TempDir())
+	manager := NewManager(func(id, source string, generation uint64, config Config, hub *Hub) Producer {
+		return newReadyFake()
+	}, func() Config { return config })
+	t.Cleanup(manager.Close)
+	for index, streamID := range []string{"channel-a", "channel-b"} {
+		session, err := manager.Acquire(context.Background(), streamID, []string{"https://example.test/live"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, allowed := session.RegisterClient(ClientMetadata{ID: streamID, Protocol: "mpegts", AuthKind: "media_key", AuthID: 9, OwnerUserID: 4}, nil); !allowed {
+			t.Fatalf("viewer %d was not registered", index)
+		}
+	}
+	credential, owner := manager.ActiveViewerCounts("media_key", 9, 4)
+	if credential != 2 || owner != 2 {
+		t.Fatalf("unexpected active viewer counts: credential=%d owner=%d", credential, owner)
+	}
+	otherCredential, sameOwner := manager.ActiveViewerCounts("media_key", 10, 4)
+	if otherCredential != 0 || sameOwner != 2 {
+		t.Fatalf("credential and owner budgets were not independent: credential=%d owner=%d", otherCredential, sameOwner)
+	}
+}
+
 func TestManagerClonesRequestOwnedIdentifiers(t *testing.T) {
 	config := testConfig(t.TempDir())
 	manager := NewManager(func(id, source string, generation uint64, config Config, hub *Hub) Producer {

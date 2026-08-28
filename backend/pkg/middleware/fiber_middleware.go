@@ -17,6 +17,7 @@ func FiberMiddleware(a *fiber.App) {
 		c.Set("X-Frame-Options", "DENY")
 		c.Set("Cross-Origin-Resource-Policy", "same-origin")
 		c.Set("Referrer-Policy", "no-referrer")
+		c.Set("X-Robots-Tag", "noindex, nofollow, noarchive")
 		c.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
 		c.Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:")
 		if len(c.Path()) >= 4 && c.Path()[:4] == "/api" {
@@ -28,4 +29,5 @@ func FiberMiddleware(a *fiber.App) {
 		Format: "${time} ${status} ${latency} ${method} ${path} request_id=${locals:requestid}\n",
 	}))
 	a.Use(AuthenticateSession)
+	a.Use(ObserveAutomationSignals)
 }

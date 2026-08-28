@@ -615,7 +615,9 @@
 				</p>{:else if !auditQuery.data?.items.length}<p class="empty">
 					No security events have been recorded.
 				</p>{:else}{#each auditQuery.data.items as event}<article
-						class:failure={event.outcome === 'failure' || event.outcome === 'denied'}
+						class:failure={event.outcome === 'failure' ||
+							event.outcome === 'denied' ||
+							event.outcome === 'blocked'}
 					>
 						<time>{new Date(event.created_at).toLocaleString()}</time>
 						<div class="audit-action">

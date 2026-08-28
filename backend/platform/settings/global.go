@@ -72,22 +72,25 @@ type Playlist struct {
 }
 
 type Streaming struct {
-	Proxy                 bool   `yaml:"proxy" json:"proxy"`
-	IngestBufferMS        int    `yaml:"ingest_buffer_ms" json:"ingest_buffer_ms"`
-	StartupTimeoutSeconds int    `yaml:"startup_timeout_seconds" json:"startup_timeout_seconds"`
-	StartupHedgeMS        int    `yaml:"startup_hedge_ms" json:"startup_hedge_ms"`
-	StallTimeoutSeconds   int    `yaml:"stall_timeout_seconds" json:"stall_timeout_seconds"`
-	HedgeTimeoutSeconds   int    `yaml:"hedge_timeout_seconds" json:"hedge_timeout_seconds"`
-	IdleTimeoutSeconds    int    `yaml:"idle_timeout_seconds" json:"idle_timeout_seconds"`
-	RetryLimit            int    `yaml:"retry_limit" json:"retry_limit"`
-	RetryBackoffMS        int    `yaml:"retry_backoff_ms" json:"retry_backoff_ms"`
-	HLSSegmentSeconds     int    `yaml:"hls_segment_seconds" json:"hls_segment_seconds"`
-	HLSPlaylistLength     int    `yaml:"hls_playlist_length" json:"hls_playlist_length"`
-	HLSCompatibilityMode  bool   `yaml:"hls_compatibility_mode" json:"hls_compatibility_mode"`
-	ClientBufferMB        int    `yaml:"client_buffer_mb" json:"client_buffer_mb"`
-	PrewarmChannels       int    `yaml:"prewarm_channels" json:"prewarm_channels"`
-	TLSVerify             bool   `yaml:"tls_verify" json:"tls_verify"`
-	UserAgent             string `yaml:"useragent" json:"useragent"`
+	Proxy                       bool   `yaml:"proxy" json:"proxy"`
+	IngestBufferMS              int    `yaml:"ingest_buffer_ms" json:"ingest_buffer_ms"`
+	StartupTimeoutSeconds       int    `yaml:"startup_timeout_seconds" json:"startup_timeout_seconds"`
+	StartupHedgeMS              int    `yaml:"startup_hedge_ms" json:"startup_hedge_ms"`
+	StallTimeoutSeconds         int    `yaml:"stall_timeout_seconds" json:"stall_timeout_seconds"`
+	HedgeTimeoutSeconds         int    `yaml:"hedge_timeout_seconds" json:"hedge_timeout_seconds"`
+	IdleTimeoutSeconds          int    `yaml:"idle_timeout_seconds" json:"idle_timeout_seconds"`
+	RetryLimit                  int    `yaml:"retry_limit" json:"retry_limit"`
+	RetryBackoffMS              int    `yaml:"retry_backoff_ms" json:"retry_backoff_ms"`
+	HLSSegmentSeconds           int    `yaml:"hls_segment_seconds" json:"hls_segment_seconds"`
+	HLSPlaylistLength           int    `yaml:"hls_playlist_length" json:"hls_playlist_length"`
+	HLSCompatibilityMode        bool   `yaml:"hls_compatibility_mode" json:"hls_compatibility_mode"`
+	ClientBufferMB              int    `yaml:"client_buffer_mb" json:"client_buffer_mb"`
+	PrewarmChannels             int    `yaml:"prewarm_channels" json:"prewarm_channels"`
+	MaxConcurrentStreamsPerUser int    `yaml:"max_concurrent_streams_per_user" json:"max_concurrent_streams_per_user"`
+	MaxConcurrentStreamsPerKey  int    `yaml:"max_concurrent_streams_per_key" json:"max_concurrent_streams_per_key"`
+	StreamStartsPerMinute       int    `yaml:"stream_starts_per_minute" json:"stream_starts_per_minute"`
+	TLSVerify                   bool   `yaml:"tls_verify" json:"tls_verify"`
+	UserAgent                   string `yaml:"useragent" json:"useragent"`
 }
 
 type Vector struct {
@@ -116,6 +119,7 @@ type VirtualTuner struct {
 // root key is stored outside the database and is never serialized in settings.
 type Security struct {
 	PublicBaseURL          string   `yaml:"public_base_url" json:"public_base_url"`
+	PublicMediaBaseURL     string   `yaml:"public_media_base_url" json:"public_media_base_url"`
 	LocalBaseURL           string   `yaml:"local_base_url" json:"local_base_url"`
 	TrustedProxyCIDRs      []string `yaml:"trusted_proxy_cidrs" json:"trusted_proxy_cidrs"`
 	TrustedLANCIDRs        []string `yaml:"trusted_lan_cidrs" json:"trusted_lan_cidrs"`

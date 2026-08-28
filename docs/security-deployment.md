@@ -35,6 +35,7 @@ Put these values in `/srv/xivi/xivi.env`, replacing every example address:
 ```dotenv
 XIVI_PRODUCTION=true
 PUBLIC_BASE_URL=https://tv.example.com
+PUBLIC_MEDIA_BASE_URL=https://media.example.com
 LOCAL_BASE_URL=http://192.168.1.10:3000
 TRUSTED_PROXY_CIDRS=192.168.1.20/32
 TRUSTED_LAN_CIDRS=192.168.1.0/24
@@ -60,6 +61,27 @@ observes, and configure its access logger to omit URL query strings plus
 `Cookie`, `Authorization`, and `X-CSRF-Token` headers. Media keys necessarily
 travel in compatibility-client query strings; ordinary proxy logs must never
 become a second credential store.
+
+`PUBLIC_MEDIA_BASE_URL` is optional. When it is configured, route both public
+hostnames to the same Xivi port but apply different edge policy:
+
+- the application hostname carries browser and API traffic and may use WAF bot
+  scoring or an adaptive browser challenge;
+- the media hostname carries key-authenticated M3U, XMLTV, images, HLS, and
+  MPEG-TS and must never present an HTML challenge to Plex, Jellyfin, Emby, VLC,
+  or another compatibility client;
+- rate-limit new media connections at the edge only as an additional coarse
+  safeguard. Do not rate-limit individual HLS segments.
+
+Xivi independently applies cost-weighted request budgets to network, address,
+account/session, and device-key identities. It also limits genuinely new stream
+starts and concurrent downstream viewers. Configure the latter controls under
+**Studio → Settings → Streaming**. Large result pages and guide windows consume
+more budget, while ordinary HLS refreshes do not consume a stream-start slot.
+
+If Caddy itself performs rate limiting, confirm that the selected module is in
+the deployed Caddy build; it is not part of every standard package. Keep the
+Caddy administration endpoint bound to loopback or a protected local socket.
 
 Direct LAN HTTP is a compatibility mode, not confidential transport. Anyone
 able to observe that LAN can read passwords and page data. Prefer local TLS.

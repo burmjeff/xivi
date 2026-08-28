@@ -44,6 +44,9 @@
 			hls_compatibility_mode: boolean;
 			client_buffer_mb: number;
 			prewarm_channels: number;
+			max_concurrent_streams_per_user: number;
+			max_concurrent_streams_per_key: number;
+			stream_starts_per_minute: number;
 			tls_verify: boolean;
 			useragent: string;
 		};
@@ -61,6 +64,7 @@
 		};
 		security: {
 			public_base_url: string;
+			public_media_base_url: string;
 			local_base_url: string;
 			trusted_proxy_cidrs: string[];
 			trusted_lan_cidrs: string[];
@@ -101,6 +105,11 @@
 				!settings.security.public_base_url.startsWith('https://')
 			)
 				next.public_base_url = 'Public access must use HTTPS.';
+			if (
+				settings.security.public_media_base_url &&
+				!/^https:\/\/[^/]+\/?$/.test(settings.security.public_media_base_url)
+			)
+				next.public_media_base_url = 'The optional media host must be an HTTPS scheme and host.';
 			if (!/^https?:\/\/[^/]+\/?$/.test(settings.security.local_base_url))
 				next.local_base_url = 'Use only an HTTP or HTTPS scheme and host.';
 			const cidr = /^(?:[0-9a-fA-F:.]+)\/\d{1,3}$/;
@@ -142,6 +151,21 @@
 				next.client_buffer_mb = 'Reserve at least 1 MB per MPEG-TS viewer.';
 			if (settings.streaming.prewarm_channels < 0 || settings.streaming.prewarm_channels > 8)
 				next.prewarm_channels = 'Prewarm from 0 to 8 nearby channels.';
+			if (
+				settings.streaming.max_concurrent_streams_per_user < 1 ||
+				settings.streaming.max_concurrent_streams_per_user > 100
+			)
+				next.max_concurrent_streams_per_user = 'Allow between 1 and 100 streams per account.';
+			if (
+				settings.streaming.max_concurrent_streams_per_key < 1 ||
+				settings.streaming.max_concurrent_streams_per_key > 100
+			)
+				next.max_concurrent_streams_per_key = 'Allow between 1 and 100 streams per device key.';
+			if (
+				settings.streaming.stream_starts_per_minute < 1 ||
+				settings.streaming.stream_starts_per_minute > 600
+			)
+				next.stream_starts_per_minute = 'Allow between 1 and 600 stream starts per minute.';
 		}
 		if (
 			section === 'devices' &&
@@ -282,6 +306,15 @@
 						bind:value={settings.security.public_base_url}
 						placeholder="https://tv.example.com"
 					/>{#if errors.public_base_url}<em>{errors.public_base_url}</em>{/if}</label
+				>
+				<label
+					>Public media base URL <small>(optional)</small><input
+						bind:value={settings.security.public_media_base_url}
+						placeholder="https://media.example.com"
+					/>{#if errors.public_media_base_url}<em>{errors.public_media_base_url}</em>{/if}<small
+						>Use a separate player hostname without browser challenges; leave blank to use the
+						public app URL.</small
+					></label
 				>
 				<label
 					>Direct local base URL<input
@@ -518,6 +551,38 @@
 							bind:value={settings.streaming.prewarm_channels}
 						/>{#if errors.prewarm_channels}<em>{errors.prewarm_channels}</em>{/if}<small
 							>Uses only unused per-source connections. Zero disables predictive warming.</small
+						></label
+					>
+					<label
+						>Streams per account<input
+							type="number"
+							min="1"
+							max="100"
+							bind:value={settings.streaming.max_concurrent_streams_per_user}
+						/>{#if errors.max_concurrent_streams_per_user}<em
+								>{errors.max_concurrent_streams_per_user}</em
+							>{/if}<small>Includes browser sessions and device keys owned by the account.</small
+						></label
+					>
+					<label
+						>Streams per device key<input
+							type="number"
+							min="1"
+							max="100"
+							bind:value={settings.streaming.max_concurrent_streams_per_key}
+						/>{#if errors.max_concurrent_streams_per_key}<em
+								>{errors.max_concurrent_streams_per_key}</em
+							>{/if}<small>Limits one copied player credential without affecting other keys.</small
+						></label
+					>
+					<label
+						>Stream starts per minute<input
+							type="number"
+							min="1"
+							max="600"
+							bind:value={settings.streaming.stream_starts_per_minute}
+						/>{#if errors.stream_starts_per_minute}<em>{errors.stream_starts_per_minute}</em
+							>{/if}<small>Applies to new HLS and MPEG-TS viewers, not segment polling.</small
 						></label
 					>
 				</div>

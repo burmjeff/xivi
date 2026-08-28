@@ -29,6 +29,8 @@ import (
 
 const streamOperationTimeout = 30 * time.Second
 
+var errStreamAdmissionDenied = errors.New("stream admission denied")
+
 func streamSources(channels []models.ChannelUrl) []streaming.Source {
 	sources := make([]streaming.Source, 0, len(channels))
 	for _, channel := range channels {
@@ -231,6 +233,40 @@ func hlsViewerID(c *fiber.Ctx, streamID string) string {
 	return "hls_" + hex.EncodeToString(sum[:8])
 }
 
+func activeViewerForRequest(c *fiber.Ctx, streamID, playbackID, protocol string) (string, bool) {
+	if playbackID != "" {
+		if handle, current := streaming.DefaultManager.ResolvePlayback(playbackID, streamID); current {
+			if session, active := streaming.DefaultManager.Get(streamID); active && session.HasActiveClient(handle.ClientID) {
+				return handle.ClientID, true
+			}
+		}
+	}
+	if protocol == "hls" {
+		viewerID := hlsViewerID(c, streamID)
+		if session, active := streaming.DefaultManager.Get(streamID); active && session.HasActiveClient(viewerID) {
+			return viewerID, true
+		}
+		return viewerID, false
+	}
+	return "", false
+}
+
+func beginStreamAdmission(c *fiber.Ctx, streamID, playbackID, protocol string) (*middleware.StreamAdmissionLease, error) {
+	_, existing := activeViewerForRequest(c, streamID, playbackID, protocol)
+	lease, denied := middleware.AdmitStreamStart(c, existing)
+	if denied == nil {
+		return lease, nil
+	}
+	c.Set(fiber.HeaderRetryAfter, strconv.Itoa(max(1, int(denied.RetryAfter.Seconds()))))
+	if err := c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+		"error": true, "code": denied.Code, "message": denied.Message, "msg": denied.Message,
+		"retryable": true,
+	}); err != nil {
+		return nil, err
+	}
+	return nil, errStreamAdmissionDenied
+}
+
 // GetStream returns the shared MPEG-TS transport stream for a channel UUID.
 // Every viewer receives data from a bounded Go fan-out queue, so a slow or
 // disconnected client cannot stall the one upstream GStreamer producer.
@@ -247,6 +283,14 @@ func GetStream(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(c.UserContext(), streamOperationTimeout)
 	defer cancel()
 	playbackID := requestPlaybackID(c)
+	admission, admissionErr := beginStreamAdmission(c, streamID, playbackID, "mpegts")
+	if admissionErr != nil {
+		if errors.Is(admissionErr, errStreamAdmissionDenied) {
+			return nil
+		}
+		return admissionErr
+	}
+	defer admission.Release()
 	session, _, trackedClientID, err := acquireStreamSession(ctx, streamID, playbackID, "mpegts")
 	if err != nil {
 		incidentID := ""
@@ -266,6 +310,7 @@ func GetStream(c *fiber.Ctx) error {
 		subscription.Close()
 		return c.SendStatus(fiber.StatusGone)
 	}
+	admission.Release()
 	c.Set("X-Xivi-Incident-ID", session.IncidentID())
 	c.Set("X-Xivi-Connection-ID", clientID)
 	c.Set(fiber.HeaderContentType, "video/MP2T")
@@ -344,6 +389,14 @@ func GetHlsStream(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(c.UserContext(), streamOperationTimeout)
 	defer cancel()
 	playbackID := requestPlaybackID(c)
+	admission, admissionErr := beginStreamAdmission(c, streamID, playbackID, "hls")
+	if admissionErr != nil {
+		if errors.Is(admissionErr, errStreamAdmissionDenied) {
+			return nil
+		}
+		return admissionErr
+	}
+	defer admission.Release()
 	session, _, trackedClientID, err := acquireStreamSession(ctx, streamID, playbackID, "hls")
 	if err != nil {
 		incidentID := ""
@@ -364,6 +417,7 @@ func GetHlsStream(c *fiber.Ctx) error {
 	if _, allowed := session.RegisterClient(streamClientMetadata(c, "hls", viewerID), nil); !allowed {
 		return c.SendStatus(fiber.StatusGone)
 	}
+	admission.Release()
 	c.Set("X-Xivi-Incident-ID", session.IncidentID())
 	c.Set("X-Xivi-Connection-ID", viewerID)
 	c.Locals("stream_client_id", viewerID)

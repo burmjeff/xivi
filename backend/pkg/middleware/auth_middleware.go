@@ -54,6 +54,19 @@ func CurrentMediaCredential(c *fiber.Ctx) (MediaCredential, bool) {
 	return credential, ok
 }
 
+func storeMediaCredential(c *fiber.Ctx, credential MediaCredential) {
+	c.Locals(mediaKeyLocal, credential)
+	if credential.Key == nil || credential.Key.LastUsedAt == nil || credential.Key.LastUsedIP == "" || time.Since(*credential.Key.LastUsedAt) > 30*time.Minute {
+		return
+	}
+	previous := net.ParseIP(credential.Key.LastUsedIP)
+	current := security.RequestNetworkInfo(c).IP
+	if previous == nil || current == nil || requestNetworkPrefix(previous) == requestNetworkPrefix(current) {
+		return
+	}
+	RecordAutomationObservation(c, "media_key_network_change", "media_key", "credential_used_from_a_different_network")
+}
+
 func SessionCookieName(scope string) string {
 	if scope == "https" {
 		return PublicSessionCookie
@@ -419,7 +432,7 @@ func RequireImageAccess() fiber.Handler {
 		if err != nil || !allowed {
 			return securityError(c, fiber.StatusNotFound, "image_not_found", "The image was not found.")
 		}
-		c.Locals(mediaKeyLocal, credential)
+		storeMediaCredential(c, credential)
 		return c.Next()
 	}
 }
@@ -448,7 +461,7 @@ func RequireLineupAccess(param string) fiber.Handler {
 		if err != nil || !allowed {
 			return securityError(c, fiber.StatusNotFound, "lineup_not_found", "The lineup was not found.")
 		}
-		c.Locals(mediaKeyLocal, credential)
+		storeMediaCredential(c, credential)
 		return c.Next()
 	}
 }
@@ -470,7 +483,7 @@ func RequireLineupMediaAccess(param string) fiber.Handler {
 		if err != nil || !allowed {
 			return securityError(c, fiber.StatusNotFound, "lineup_not_found", "The lineup was not found.")
 		}
-		c.Locals(mediaKeyLocal, credential)
+		storeMediaCredential(c, credential)
 		return c.Next()
 	}
 }
@@ -505,7 +518,7 @@ func RequirePlayback() fiber.Handler {
 		if err != nil || !allowed {
 			return securityError(c, fiber.StatusNotFound, "stream_not_found", "The stream was not found.")
 		}
-		c.Locals(mediaKeyLocal, credential)
+		storeMediaCredential(c, credential)
 		return c.Next()
 	}
 }

@@ -82,6 +82,9 @@ func InitSettings() error {
 		if env, exists := os.LookupEnv("PUBLIC_BASE_URL"); exists {
 			appSettings.Security.PublicBaseURL = strings.TrimRight(strings.TrimSpace(env), "/")
 		}
+		if env, exists := os.LookupEnv("PUBLIC_MEDIA_BASE_URL"); exists {
+			appSettings.Security.PublicMediaBaseURL = strings.TrimRight(strings.TrimSpace(env), "/")
+		}
 		if env, exists := os.LookupEnv("LOCAL_BASE_URL"); exists {
 			appSettings.Security.LocalBaseURL = strings.TrimRight(strings.TrimSpace(env), "/")
 		}
@@ -98,6 +101,15 @@ func InitSettings() error {
 
 	if appSettings.Streaming.HedgeTimeoutSeconds == 0 {
 		appSettings.Streaming.HedgeTimeoutSeconds = 3
+	}
+	if appSettings.Streaming.MaxConcurrentStreamsPerUser == 0 {
+		appSettings.Streaming.MaxConcurrentStreamsPerUser = 8
+	}
+	if appSettings.Streaming.MaxConcurrentStreamsPerKey == 0 {
+		appSettings.Streaming.MaxConcurrentStreamsPerKey = 4
+	}
+	if appSettings.Streaming.StreamStartsPerMinute == 0 {
+		appSettings.Streaming.StreamStartsPerMinute = 20
 	}
 	// The serve root is fixed by the process working directory and mounted
 	// volume. A historical config value must not imply that it can move live.
@@ -140,22 +152,25 @@ func SetDefaults() (*AppSettings, error) {
 			Name_score:  0.96,
 		},
 		Streaming: Streaming{
-			Proxy:                 true,
-			IngestBufferMS:        750,
-			StartupTimeoutSeconds: 12,
-			StartupHedgeMS:        750,
-			StallTimeoutSeconds:   5,
-			HedgeTimeoutSeconds:   3,
-			IdleTimeoutSeconds:    45,
-			RetryLimit:            6,
-			RetryBackoffMS:        500,
-			HLSSegmentSeconds:     1,
-			HLSPlaylistLength:     8,
-			HLSCompatibilityMode:  true,
-			ClientBufferMB:        2,
-			PrewarmChannels:       2,
-			TLSVerify:             true,
-			UserAgent:             "Xivi 1.0",
+			Proxy:                       true,
+			IngestBufferMS:              750,
+			StartupTimeoutSeconds:       12,
+			StartupHedgeMS:              750,
+			StallTimeoutSeconds:         5,
+			HedgeTimeoutSeconds:         3,
+			IdleTimeoutSeconds:          45,
+			RetryLimit:                  6,
+			RetryBackoffMS:              500,
+			HLSSegmentSeconds:           1,
+			HLSPlaylistLength:           8,
+			HLSCompatibilityMode:        true,
+			ClientBufferMB:              2,
+			PrewarmChannels:             2,
+			MaxConcurrentStreamsPerUser: 8,
+			MaxConcurrentStreamsPerKey:  4,
+			StreamStartsPerMinute:       20,
+			TLSVerify:                   true,
+			UserAgent:                   "Xivi 1.0",
 		},
 		Vector: Vector{
 			BatchSize:       100,
@@ -275,6 +290,11 @@ func ValidateSecuritySettings(security Security) error {
 	} else if production {
 		return fmt.Errorf("PUBLIC_BASE_URL is required in production")
 	}
+	if security.PublicMediaBaseURL != "" {
+		if err := validateBase(security.PublicMediaBaseURL, true); err != nil {
+			return fmt.Errorf("public media base URL: %w", err)
+		}
+	}
 	if err := validateBase(security.LocalBaseURL, false); err != nil {
 		return err
 	}
@@ -292,8 +312,22 @@ func ValidateSecuritySettings(security Security) error {
 	return nil
 }
 
+func ValidateStreamingSecurityLimits(streaming Streaming) error {
+	if streaming.MaxConcurrentStreamsPerUser < 1 || streaming.MaxConcurrentStreamsPerUser > 100 {
+		return fmt.Errorf("max concurrent streams per user must be between 1 and 100")
+	}
+	if streaming.MaxConcurrentStreamsPerKey < 1 || streaming.MaxConcurrentStreamsPerKey > 100 {
+		return fmt.Errorf("max concurrent streams per key must be between 1 and 100")
+	}
+	if streaming.StreamStartsPerMinute < 1 || streaming.StreamStartsPerMinute > 600 {
+		return fmt.Errorf("stream starts per minute must be between 1 and 600")
+	}
+	return nil
+}
+
 func normalizeSecurity(security *Security) {
 	security.PublicBaseURL = strings.TrimRight(strings.TrimSpace(security.PublicBaseURL), "/")
+	security.PublicMediaBaseURL = strings.TrimRight(strings.TrimSpace(security.PublicMediaBaseURL), "/")
 	security.LocalBaseURL = strings.TrimRight(strings.TrimSpace(security.LocalBaseURL), "/")
 	if security.LocalBaseURL == "" {
 		security.LocalBaseURL = "http://127.0.0.1:3000"

@@ -31,6 +31,10 @@ streaming:
   hls_compatibility_mode: true
   client_buffer_mb: 2
   prewarm_channels: 2
+  # These protect downstream capacity without limiting HLS segment requests.
+  max_concurrent_streams_per_user: 8
+  max_concurrent_streams_per_key: 4
+  stream_starts_per_minute: 20
   tls_verify: true
   useragent: Xivi 1.0
 
@@ -55,6 +59,8 @@ virtual_tuner:
 # /xivi/config/auth.key on first startup unless XIVI_AUTH_KEY_FILE overrides it.
 security:
   public_base_url: https://tv.example.com
+  # Optional separate key-authenticated hostname for players; defaults to public_base_url.
+  public_media_base_url: https://media.example.com
   local_base_url: http://192.168.1.10:3000
   trusted_proxy_cidrs:
     - 192.168.1.20/32

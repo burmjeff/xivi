@@ -125,6 +125,7 @@
 	let recoveryCodes = $state<string[]>([]);
 	let keyName = $state('Living room player');
 	let keyScope = $state<'public' | 'lan'>('lan');
+	let keyExpiryDays = $state('never');
 	let keyScopeSelected = $state(false);
 	let keyLineups = $state<number[]>([]);
 	$effect(() => {
@@ -307,9 +308,18 @@
 	async function createKey(event: SubmitEvent) {
 		event.preventDefault();
 		await performSensitive('add device access', async () => {
+			const expiresAt =
+				keyExpiryDays === 'never'
+					? undefined
+					: new Date(Date.now() + Number(keyExpiryDays) * 24 * 60 * 60 * 1000).toISOString();
 			await api<{ key: MediaKey }>('/api/v2/account/media-keys', {
 				method: 'POST',
-				body: JSON.stringify({ name: keyName, network_scope: keyScope, lineup_ids: keyLineups })
+				body: JSON.stringify({
+					name: keyName,
+					network_scope: keyScope,
+					lineup_ids: keyLineups,
+					expires_at: expiresAt
+				})
 			});
 			await client.invalidateQueries({ queryKey: ['account', 'media-keys'] });
 			status = 'Device access added. Its M3U and XMLTV links remain available below.';
@@ -698,9 +708,15 @@
 								>{/if}<option value="lan">Local network only</option></select
 						></label
 					>
+					<label
+						>Expiration<select bind:value={keyExpiryDays}
+							><option value="never">No expiration</option><option value="30">30 days</option
+							><option value="90">90 days</option><option value="365">1 year</option></select
+						></label
+					>
 					{#if keys.data && !keys.data.public_https_available}<p class="scope-note">
 							Public copy links become available after an administrator configures the Public HTTPS
-							base URL and restarts Xivi.
+							base URL.
 						</p>{/if}
 					<fieldset>
 						<legend>Allowed lineups</legend>{#each lineups.data?.items ?? [] as lineup}<label
@@ -734,6 +750,9 @@
 										? `Last used ${new Date(key.last_used_at).toLocaleString()} from ${key.last_used_ip}`
 										: 'Never used'}</small
 								>
+								{#if key.expires_at}<small
+										>Expires {new Date(key.expires_at).toLocaleString()}</small
+									>{/if}
 							</div>
 							{#if !key.revoked_at}<button
 									aria-label={`Revoke ${key.name}`}

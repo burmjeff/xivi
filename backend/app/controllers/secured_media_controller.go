@@ -3,9 +3,12 @@ package controllers
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -46,6 +49,20 @@ func mediaURL(base, path, token string) string {
 	return parsed.String()
 }
 
+func setPrivateValidator(c *fiber.Ctx, contentIdentity []byte) bool {
+	digest := sha256.Sum256(contentIdentity)
+	etag := `"` + hex.EncodeToString(digest[:]) + `"`
+	c.Set(fiber.HeaderETag, etag)
+	c.Set(fiber.HeaderCacheControl, "private, max-age=0, must-revalidate")
+	for _, candidate := range strings.Split(c.Get(fiber.HeaderIfNoneMatch), ",") {
+		if strings.TrimSpace(candidate) == etag || strings.TrimSpace(candidate) == "*" {
+			c.Status(fiber.StatusNotModified)
+			return true
+		}
+	}
+	return false
+}
+
 func GetDynamicM3U(c *fiber.Ctx) error {
 	lineupID, ok := security.ParsePositiveID(c.Params("lineup_id"))
 	if !ok {
@@ -59,7 +76,7 @@ func GetDynamicM3U(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusNotFound, "lineup_not_found", "The lineup was not found.", false)
 	}
-	base := security.BaseURLForRequest(c)
+	base := security.MediaBaseURLForRequest(c)
 	var buffer bytes.Buffer
 	writer := bufio.NewWriter(&buffer)
 	xmltv := mediaURL(base, "/media/v1/lineups/"+strconv.FormatInt(lineupID, 10)+"/guide.xml", token)
@@ -100,7 +117,9 @@ func GetDynamicM3U(c *fiber.Ctx) error {
 	_ = writer.Flush()
 	c.Set(fiber.HeaderContentType, "audio/x-mpegurl; charset=utf-8")
 	c.Set(fiber.HeaderContentDisposition, fmt.Sprintf("attachment; filename=\"xivi-lineup-%d.m3u\"", lineupID))
-	c.Set(fiber.HeaderCacheControl, "no-store")
+	if setPrivateValidator(c, buffer.Bytes()) {
+		return nil
+	}
 	_ = lineup
 	return c.Send(buffer.Bytes())
 }
@@ -121,8 +140,12 @@ func GetDynamicXMLTV(c *fiber.Ctx) error {
 	}
 	c.Set(fiber.HeaderContentType, "application/xml; charset=utf-8")
 	c.Set(fiber.HeaderContentDisposition, fmt.Sprintf("attachment; filename=\"xivi-lineup-%d.xml\"", lineupID))
-	c.Set(fiber.HeaderCacheControl, "no-store")
-	base := security.BaseURLForRequest(c)
+	base := security.MediaBaseURLForRequest(c)
+	identity := []byte(fmt.Sprintf("%d|%d|%d|%s|%s", lineupID, info.Size(), info.ModTime().UnixNano(), base, token))
+	c.Set(fiber.HeaderLastModified, info.ModTime().UTC().Format(http.TimeFormat))
+	if setPrivateValidator(c, identity) {
+		return nil
+	}
 	c.Context().Response.SetBodyStreamWriter(func(writer *bufio.Writer) {
 		file, openErr := os.Open(path)
 		if openErr != nil {

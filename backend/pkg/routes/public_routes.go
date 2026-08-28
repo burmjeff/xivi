@@ -101,5 +101,5 @@ func PublicRoutes(a *fiber.App) {
 	tuner.Get("/:lineup_id/device.xml", controllers.GetVirtualTunerDeviceDescription)
 
 	// App Routes
-	router.Get("/images/:asset", middleware.DeclareRoutePolicy("lineup-media-or-viewer"), middleware.RequireImageAccess(), controllers.GetSecuredImage)
+	router.Get("/images/:asset", middleware.DeclareRoutePolicy("lineup-media-or-viewer"), middleware.RequireImageAccess(), middleware.RequestBudget(1, "image"), controllers.GetSecuredImage)
 }

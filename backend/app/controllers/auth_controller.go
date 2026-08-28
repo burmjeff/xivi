@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -938,14 +937,11 @@ func V2StudioSecurityAudit(c *fiber.Ctx) error {
 	}
 	var beforeID int64
 	if cursor := strings.TrimSpace(c.Query("cursor")); cursor != "" {
-		decoded, err := base64.RawURLEncoding.DecodeString(cursor)
-		if err != nil {
+		decoded, err := security.ParsePageCursor(cursor, paginationBinding(c))
+		if err != nil || decoded < 1 {
 			return v2Error(c, fiber.StatusBadRequest, "invalid_cursor", "The audit cursor is invalid.", false)
 		}
-		beforeID, err = strconv.ParseInt(string(decoded), 10, 64)
-		if err != nil || beforeID < 1 {
-			return v2Error(c, fiber.StatusBadRequest, "invalid_cursor", "The audit cursor is invalid.", false)
-		}
+		beforeID = int64(decoded)
 	}
 	items, total, err := database.Db.ListSecurityAuditEvents(c.UserContext(), beforeID, limit)
 	if err != nil {
@@ -953,7 +949,10 @@ func V2StudioSecurityAudit(c *fiber.Ctx) error {
 	}
 	var nextCursor *string
 	if len(items) == limit && len(items) > 0 {
-		value := base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(items[len(items)-1].ID, 10)))
+		value, cursorErr := security.EncodePageCursor(int(items[len(items)-1].ID), paginationBinding(c))
+		if cursorErr != nil {
+			return v2Error(c, fiber.StatusInternalServerError, "cursor_unavailable", "The next audit page could not be created.", true)
+		}
 		nextCursor = &value
 	}
 	return c.JSON(fiber.Map{"items": items, "next_cursor": nextCursor, "total": total})
@@ -1329,6 +1328,10 @@ func mediaKeyOutputLinks(key *models.MediaAccessKey) (map[string]map[string]stri
 	}
 
 	policy := settings.Current().Security
+	publicMediaBase := policy.PublicMediaBaseURL
+	if publicMediaBase == "" {
+		publicMediaBase = policy.PublicBaseURL
+	}
 	localBase, _ := url.Parse(policy.LocalBaseURL)
 	localTransportAvailable := localBase != nil &&
 		(localBase.Scheme == "https" || policy.AllowLANHTTP)
@@ -1337,9 +1340,9 @@ func mediaKeyOutputLinks(key *models.MediaAccessKey) (map[string]map[string]stri
 		id := strconv.FormatInt(lineupID, 10)
 		suffix := "?access_token=" + url.QueryEscape(token)
 		values := map[string]string{}
-		if key.NetworkScope == "public" && policy.PublicBaseURL != "" {
-			values["public_m3u"] = policy.PublicBaseURL + "/media/v1/lineups/" + id + "/playlist.m3u" + suffix
-			values["public_xmltv"] = policy.PublicBaseURL + "/media/v1/lineups/" + id + "/guide.xml" + suffix
+		if key.NetworkScope == "public" && publicMediaBase != "" {
+			values["public_m3u"] = publicMediaBase + "/media/v1/lineups/" + id + "/playlist.m3u" + suffix
+			values["public_xmltv"] = publicMediaBase + "/media/v1/lineups/" + id + "/guide.xml" + suffix
 		}
 		if localTransportAvailable {
 			values["local_m3u"] = policy.LocalBaseURL + "/media/v1/lineups/" + id + "/playlist.m3u" + suffix
@@ -1383,7 +1386,7 @@ func V2AccountMediaKeys(c *fiber.Ctx) error {
 	policy := settings.Current().Security
 	return c.JSON(fiber.Map{
 		"items":                  keys,
-		"public_https_available": policy.PublicBaseURL != "",
+		"public_https_available": policy.PublicBaseURL != "" || policy.PublicMediaBaseURL != "",
 		"retention_days":         policy.AuditRetentionDays,
 	})
 }

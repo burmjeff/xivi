@@ -107,6 +107,23 @@ func BaseURLForRequest(c *fiber.Ctx) string {
 	return policy.LocalBaseURL
 }
 
+// MediaBaseURLForRequest optionally separates compatibility-player traffic
+// from the browser/WAF hostname. Browser playback continues to use same-origin
+// paths, while generated device outputs use this key-authenticated media host.
+func MediaBaseURLForRequest(c *fiber.Ctx) string {
+	policy := settings.Current().Security
+	network := requestNetworkInfo(c, policy)
+	if network.Scheme == "https" {
+		if policy.PublicMediaBaseURL != "" {
+			return policy.PublicMediaBaseURL
+		}
+		if policy.PublicBaseURL != "" {
+			return policy.PublicBaseURL
+		}
+	}
+	return policy.LocalBaseURL
+}
+
 func ValidBaseURL(value string, requireHTTPS bool) bool {
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {

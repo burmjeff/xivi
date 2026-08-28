@@ -223,6 +223,7 @@ func TestMediaKeyOutputLinksRemainAvailableWithoutStandaloneKey(t *testing.T) {
 
 	originalSecurity := settings.Current().Security
 	settings.Current().Security.PublicBaseURL = "https://tv.example.com"
+	settings.Current().Security.PublicMediaBaseURL = "https://media.example.com"
 	settings.Current().Security.LocalBaseURL = "http://192.168.1.10:3000"
 	settings.Current().Security.AllowLANHTTP = true
 	t.Cleanup(func() { settings.Current().Security = originalSecurity })
@@ -249,8 +250,8 @@ func TestMediaKeyOutputLinksRemainAvailableWithoutStandaloneKey(t *testing.T) {
 			t.Fatalf("%s was not reconstructed with the encrypted credential: %q", name, links["42"][name])
 		}
 	}
-	if !strings.HasPrefix(links["42"]["public_m3u"], "https://tv.example.com/") ||
-		!strings.HasPrefix(links["42"]["public_xmltv"], "https://tv.example.com/") ||
+	if !strings.HasPrefix(links["42"]["public_m3u"], "https://media.example.com/") ||
+		!strings.HasPrefix(links["42"]["public_xmltv"], "https://media.example.com/") ||
 		!strings.HasPrefix(links["42"]["local_m3u"], "http://192.168.1.10:3000/") ||
 		!strings.HasPrefix(links["42"]["local_xmltv"], "http://192.168.1.10:3000/") {
 		t.Fatalf("public and local output links did not use their configured endpoints: %#v", links["42"])

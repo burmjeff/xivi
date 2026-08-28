@@ -1454,7 +1454,11 @@ components:
       in: query
       description: Restrict lineup channels to a match-health state.
       schema: { type: string, enum: [unmatched, low-confidence, duplicate-tvg-id] }
-    Cursor: { name: cursor, in: query, schema: { type: string } }
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque, expiring continuation token bound to the authenticated user, route, and active filters.
+      schema: { type: string }
     Limit:
       { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
   responses:

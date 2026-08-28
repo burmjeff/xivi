@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"bytes"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -55,5 +56,34 @@ func TestSanitizeM3UValueRemovesControlAndDelimiterInjection(t *testing.T) {
 	value := sanitizeM3UValue("bad,\"\t\r\n#EXTINF:evil\x00\x7f")
 	if strings.ContainsAny(value, ",\"\t\r\n\x00\x7f") {
 		t.Fatalf("unsafe M3U value: %q", value)
+	}
+}
+
+func TestPrivateValidatorSupportsCredentialScopedRevalidation(t *testing.T) {
+	app := fiber.New()
+	app.Get("/output", func(c *fiber.Ctx) error {
+		if setPrivateValidator(c, []byte("credential-and-version")) {
+			return nil
+		}
+		return c.SendString("payload")
+	})
+	first, err := app.Test(httptest.NewRequest(http.MethodGet, "/output", nil), -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	etag := first.Header.Get("ETag")
+	if etag == "" || first.Header.Get("Cache-Control") != "private, max-age=0, must-revalidate" {
+		t.Fatalf("validator headers missing: %#v", first.Header)
+	}
+	_ = first.Body.Close()
+	request := httptest.NewRequest(http.MethodGet, "/output", nil)
+	request.Header.Set("If-None-Match", etag)
+	second, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Body.Close()
+	if second.StatusCode != http.StatusNotModified {
+		t.Fatalf("revalidation returned %d", second.StatusCode)
 	}
 }

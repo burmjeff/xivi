@@ -74,6 +74,12 @@ func UpdateSettings(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
+	if err := settings.ValidateStreamingSecurityLimits(newSettings.Streaming); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
 
 	previous := settings.Current()
 	if err := settings.WriteSettings(newSettings); err != nil {

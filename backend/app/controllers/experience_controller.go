@@ -3,13 +3,14 @@ package controllers
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"database/sql"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"xivi/backend/app/queries"
 	"xivi/backend/pkg/logoassets"
 	"xivi/backend/pkg/middleware"
+	"xivi/backend/pkg/security"
 	"xivi/backend/pkg/streaming"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/platform/cron"
@@ -56,7 +58,21 @@ func optionalBoolQuery(c *fiber.Ctx, name string) (bool, error) {
 	return strconv.ParseBool(value)
 }
 
-func pageParams(c *fiber.Ctx) (int, int) {
+func paginationBinding(c *fiber.Ctx) string {
+	principal, _ := middleware.Principal(c)
+	values := []string{}
+	c.Context().QueryArgs().VisitAll(func(key, value []byte) {
+		if strings.EqualFold(string(key), "cursor") {
+			return
+		}
+		values = append(values, string(key)+"="+string(value))
+	})
+	sort.Strings(values)
+	digest := sha256.Sum256([]byte(strings.Join(values, "\x00")))
+	return fmt.Sprintf("user:%d|%s|%x", principal.UserID, c.Path(), digest)
+}
+
+func pageParams(c *fiber.Ctx) (int, int, error) {
 	limit, _ := strconv.Atoi(c.Query("limit", "100"))
 	if limit < 1 {
 		limit = 1
@@ -66,23 +82,25 @@ func pageParams(c *fiber.Ctx) (int, int) {
 	}
 	offset := 0
 	if cursor := c.Query("cursor"); cursor != "" {
-		if decoded, err := base64.RawURLEncoding.DecodeString(cursor); err == nil {
-			offset, _ = strconv.Atoi(string(decoded))
+		var err error
+		offset, err = security.ParsePageCursor(cursor, paginationBinding(c))
+		if err != nil {
+			return 0, 0, err
 		}
 	}
-	if offset < 0 {
-		offset = 0
-	}
-	return limit, offset
+	return limit, offset, nil
 }
 
-func nextCursor(offset, count int, total int64) *string {
+func nextCursor(c *fiber.Ctx, offset, count int, total int64) (*string, error) {
 	next := offset + count
 	if int64(next) >= total {
-		return nil
+		return nil, nil
 	}
-	value := base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(next)))
-	return &value
+	value, err := security.EncodePageCursor(next, paginationBinding(c))
+	if err != nil {
+		return nil, err
+	}
+	return &value, nil
 }
 
 func scopeGuideChannelAssets(channel *models.GuideChannel, lineupID int64) {
@@ -173,7 +191,10 @@ func v2LineupChannels(c *fiber.Ctx, guide bool) error {
 	if !guide && c.Query("from") == "" {
 		to = time.Now().UTC().Add(4 * time.Hour)
 	}
-	limit, offset := pageParams(c)
+	limit, offset, err := pageParams(c)
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_cursor", "The page cursor is invalid or expired.", false)
+	}
 	items, total, err := database.Db.GetGuideChannels(c.UserContext(), lineupID, groupID, strings.TrimSpace(c.Query("q")), from, to, limit, offset)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "channels_unavailable", "Channels could not be loaded.", true)
@@ -181,7 +202,11 @@ func v2LineupChannels(c *fiber.Ctx, guide bool) error {
 	for index := range items {
 		scopeGuideChannelAssets(&items[index], lineupID)
 	}
-	return c.JSON(models.Paginated[models.GuideChannel]{Items: items, NextCursor: nextCursor(offset, len(items), total), Total: total})
+	cursor, err := nextCursor(c, offset, len(items), total)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "cursor_unavailable", "The next page could not be created.", true)
+	}
+	return c.JSON(models.Paginated[models.GuideChannel]{Items: items, NextCursor: cursor, Total: total})
 }
 
 func V2WatchChannels(c *fiber.Ctx) error { return v2LineupChannels(c, false) }
@@ -264,7 +289,10 @@ func V2Search(c *fiber.Ctx) error {
 			return v2Error(c, fiber.StatusNotFound, "lineup_not_found", "The lineup was not found.", false)
 		}
 	}
-	limit, offset := pageParams(c)
+	limit, offset, err := pageParams(c)
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_cursor", "The page cursor is invalid or expired.", false)
+	}
 	now := time.Now().UTC()
 	items, total, err := database.Db.GetGuideChannels(c.UserContext(), *lineupID, nil, strings.TrimSpace(c.Query("q")), now.Add(-time.Hour), now.Add(4*time.Hour), limit, offset)
 	if err != nil {
@@ -273,7 +301,11 @@ func V2Search(c *fiber.Ctx) error {
 	for index := range items {
 		scopeGuideChannelAssets(&items[index], *lineupID)
 	}
-	return c.JSON(models.Paginated[models.GuideChannel]{Items: items, NextCursor: nextCursor(offset, len(items), total), Total: total})
+	cursor, err := nextCursor(c, offset, len(items), total)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "cursor_unavailable", "The next page could not be created.", true)
+	}
+	return c.JSON(models.Paginated[models.GuideChannel]{Items: items, NextCursor: cursor, Total: total})
 }
 
 func V2StudioOverview(c *fiber.Ctx) error {
@@ -484,12 +516,19 @@ func V2StudioSourceGroups(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_filter", "The source availability filter is invalid.", false)
 	}
-	limit, offset := pageParams(c)
+	limit, offset, err := pageParams(c)
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_cursor", "The page cursor is invalid or expired.", false)
+	}
 	items, total, err := database.Db.GetSourceGroups(c.UserContext(), playlistID, lineupID, unusedOnly, enabledOnly, strings.TrimSpace(c.Query("q")), limit, offset)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "source_groups_unavailable", "Source groups could not be loaded.", true)
 	}
-	return c.JSON(models.Paginated[models.SourceGroup]{Items: items, NextCursor: nextCursor(offset, len(items), total), Total: total})
+	cursor, err := nextCursor(c, offset, len(items), total)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "cursor_unavailable", "The next page could not be created.", true)
+	}
+	return c.JSON(models.Paginated[models.SourceGroup]{Items: items, NextCursor: cursor, Total: total})
 }
 
 func V2SetStudioSourceGroupEnabled(c *fiber.Ctx) error {
@@ -578,12 +617,19 @@ func V2StudioGroupChannels(c *fiber.Ctx) error {
 	if matchHealth == "duplicate-tvg-id" && lineupID == nil {
 		return v2Error(c, fiber.StatusBadRequest, "lineup_required", "Choose a lineup for duplicate guide-ID review.", false)
 	}
-	limit, offset := pageParams(c)
+	limit, offset, err := pageParams(c)
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_cursor", "The page cursor is invalid or expired.", false)
+	}
 	items, total, err := database.Db.GetWorkspaceChannels(c.UserContext(), id, lineupID, strings.TrimSpace(c.Query("q")), matchHealth, limit, offset)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "workspace_unavailable", "Lineup channels could not be loaded.", true)
 	}
-	return c.JSON(models.Paginated[models.WorkspaceChannel]{Items: items, NextCursor: nextCursor(offset, len(items), total), Total: total})
+	cursor, err := nextCursor(c, offset, len(items), total)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "cursor_unavailable", "The next page could not be created.", true)
+	}
+	return c.JSON(models.Paginated[models.WorkspaceChannel]{Items: items, NextCursor: cursor, Total: total})
 }
 
 func V2StudioDuplicateTVGIDs(c *fiber.Ctx) error {
@@ -595,12 +641,19 @@ func V2StudioDuplicateTVGIDs(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_filter", "The acknowledgement filter is invalid.", false)
 	}
-	limit, offset := pageParams(c)
+	limit, offset, err := pageParams(c)
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_cursor", "The page cursor is invalid or expired.", false)
+	}
 	items, total, err := database.Db.GetDuplicateTVGIDReviews(c.UserContext(), lineupID, includeAcknowledged, limit, offset)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "duplicate_review_unavailable", "Duplicate guide IDs could not be loaded.", true)
 	}
-	return c.JSON(models.Paginated[models.DuplicateTVGIDReview]{Items: items, NextCursor: nextCursor(offset, len(items), total), Total: total})
+	cursor, err := nextCursor(c, offset, len(items), total)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "cursor_unavailable", "The next page could not be created.", true)
+	}
+	return c.JSON(models.Paginated[models.DuplicateTVGIDReview]{Items: items, NextCursor: cursor, Total: total})
 }
 
 func V2SetStudioDuplicateTVGIDReview(c *fiber.Ctx) error {
@@ -670,7 +723,10 @@ func V2StudioSourceChannels(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_filter", "The source availability filter is invalid.", false)
 	}
-	limit, offset := pageParams(c)
+	limit, offset, err := pageParams(c)
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_cursor", "The page cursor is invalid or expired.", false)
+	}
 	items, total, err := database.Db.GetSourceChannels(c.UserContext(), playlistID, groupID, lineupID, unusedOnly, enabledOnly, strings.TrimSpace(c.Query("q")), limit, offset)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "sources_unavailable", "Source channels could not be loaded.", true)
@@ -680,7 +736,11 @@ func V2StudioSourceChannels(c *fiber.Ctx) error {
 			items[index].LogoURL = scopedSourceLogoURL(items[index].ID)
 		}
 	}
-	return c.JSON(models.Paginated[models.SourceChannel]{Items: items, NextCursor: nextCursor(offset, len(items), total), Total: total})
+	cursor, err := nextCursor(c, offset, len(items), total)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "cursor_unavailable", "The next page could not be created.", true)
+	}
+	return c.JSON(models.Paginated[models.SourceChannel]{Items: items, NextCursor: cursor, Total: total})
 }
 
 func V2StudioSourceChannelLogo(c *fiber.Ctx) error {
@@ -731,7 +791,10 @@ func V2StudioReview(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_channel", "The channel id is invalid.", false)
 	}
-	limit, offset := pageParams(c)
+	limit, offset, err := pageParams(c)
+	if err != nil {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_cursor", "The page cursor is invalid or expired.", false)
+	}
 	items, total, err := database.Db.GetMatchReview(c.UserContext(), channelID, strings.TrimSpace(c.Query("q")), limit, offset)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "review_unavailable", "Match review could not be loaded.", true)
@@ -741,7 +804,11 @@ func V2StudioReview(c *fiber.Ctx) error {
 			items[index].SourceLogoURL = scopedSourceLogoURL(items[index].SourceChannelID)
 		}
 	}
-	return c.JSON(models.Paginated[models.MatchReview]{Items: items, NextCursor: nextCursor(offset, len(items), total), Total: total})
+	cursor, err := nextCursor(c, offset, len(items), total)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "cursor_unavailable", "The next page could not be created.", true)
+	}
+	return c.JSON(models.Paginated[models.MatchReview]{Items: items, NextCursor: cursor, Total: total})
 }
 
 func V2StudioMatchRejections(c *fiber.Ctx) error {
