@@ -67,7 +67,7 @@ func acquireStreamSession(ctx context.Context, streamID, playbackID, protocol st
 		var session *streaming.Session
 		var handle streaming.PlaybackHandle
 		var acquireErr error
-		if protocol == "mpegts" {
+		if protocol == "mpegts" || protocol == "hls" {
 			session, handle, acquireErr = streaming.DefaultManager.StartPlaybackSources(ctx, playbackID, streamID, protocol, streamSources(*channels))
 		} else {
 			session, handle, acquireErr = streaming.DefaultManager.AcquirePlaybackSources(ctx, playbackID, streamID, protocol, streamSources(*channels))
@@ -75,7 +75,7 @@ func acquireStreamSession(ctx context.Context, streamID, playbackID, protocol st
 		return session, *channels, handle.ClientID, acquireErr
 	}
 	var session *streaming.Session
-	if protocol == "mpegts" {
+	if protocol == "mpegts" || protocol == "hls" {
 		session, err = streaming.DefaultManager.StartSources(ctx, streamID, streamSources(*channels))
 	} else {
 		session, err = streaming.DefaultManager.AcquireSources(ctx, streamID, streamSources(*channels))
@@ -422,6 +422,15 @@ func GetHlsStream(c *fiber.Ctx) error {
 	c.Set("X-Xivi-Connection-ID", viewerID)
 	c.Locals("stream_client_id", viewerID)
 	c.Locals("stream_playback_id", playbackID)
+	// Track the real viewer before waiting so speculative prewarms cannot be
+	// mistaken for equal-priority work and concurrent manifest retries reuse
+	// this tune instead of reserving additional start capacity.
+	if err := session.WaitReady(ctx); err != nil {
+		diagnostic := fmt.Errorf("stream media did not become ready: %w", err)
+		session.RecordClientEvent(viewerID, "error", "stream_not_ready", diagnostic.Error(), "")
+		session.CloseClient(viewerID, "hls_start_failed")
+		return streamErrorForSession(c, fiber.StatusBadGateway, "The stream could not start.", diagnostic, session.IncidentID())
+	}
 	if err := session.WaitHLS(ctx); err != nil {
 		diagnostic := fmt.Errorf("HLS playlist did not become ready: %w", err)
 		session.RecordClientEvent(viewerID, "error", "hls_not_ready", diagnostic.Error(), "")

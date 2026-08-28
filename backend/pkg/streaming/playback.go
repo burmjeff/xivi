@@ -41,10 +41,11 @@ func (m *Manager) AcquirePlaybackSources(ctx context.Context, playbackID, stream
 	return m.acquirePlaybackSources(ctx, playbackID, streamID, protocol, sources, true)
 }
 
-// StartPlaybackSources is the non-blocking MPEG-TS counterpart to
+// StartPlaybackSources is the non-blocking counterpart to
 // AcquirePlaybackSources. Capacity-aware channel handoff still completes
 // before it returns, but media validation proceeds while the client is already
-// attached to the session.
+// attached to the session. MPEG-TS writers and cold HLS viewers both use it so
+// they are visible to lifecycle and capacity management during startup.
 func (m *Manager) StartPlaybackSources(ctx context.Context, playbackID, streamID, protocol string, sources []Source) (*Session, PlaybackHandle, error) {
 	return m.acquirePlaybackSources(ctx, playbackID, streamID, protocol, sources, false)
 }

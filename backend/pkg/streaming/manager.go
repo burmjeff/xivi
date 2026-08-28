@@ -838,7 +838,27 @@ func (s *Session) startManagedProducer(source Source, sourceIndex, sourceCount i
 	if s.sourceAllowed != nil && !s.sourceAllowed(source, sourceCount) {
 		return nil, errors.New("source is in a short health cooldown after recent failures")
 	}
-	lease, err := s.connections.acquire(source)
+	s.mu.RLock()
+	prewarm := s.prewarm
+	s.mu.RUnlock()
+	var lease *connectionLease
+	var err error
+	if prewarm {
+		lease, err = s.connections.acquirePrewarm(source)
+		if err != nil {
+			// A real viewer can claim a session while its speculative startup is
+			// racing for capacity. Re-check the flag before failing so that upgrade
+			// can immediately use the slot intentionally reserved for it.
+			s.mu.RLock()
+			prewarm = s.prewarm
+			s.mu.RUnlock()
+			if !prewarm {
+				lease, err = s.connections.acquire(source)
+			}
+		}
+	} else {
+		lease, err = s.connections.acquire(source)
+	}
 	if err != nil {
 		return nil, err
 	}

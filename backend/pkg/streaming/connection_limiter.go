@@ -57,6 +57,17 @@ func newConnectionCoordinator() *connectionCoordinator {
 }
 
 func (c *connectionCoordinator) acquire(source Source) (*connectionLease, error) {
+	return c.acquireWithReserve(source, 0)
+}
+
+// acquirePrewarm leaves one configured connection unused for an actual tune.
+// Speculative neighboring channels must never occupy every provider slot,
+// especially while the requested channel is still completing a cold start.
+func (c *connectionCoordinator) acquirePrewarm(source Source) (*connectionLease, error) {
+	return c.acquireWithReserve(source, 1)
+}
+
+func (c *connectionCoordinator) acquireWithReserve(source Source, reserve int) (*connectionLease, error) {
 	if source.PoolID == 0 {
 		return &connectionLease{}, nil
 	}
@@ -72,7 +83,11 @@ func (c *connectionCoordinator) acquire(source Source) (*connectionLease, error)
 		c.pools[source.PoolID] = pool
 	}
 	pool.name, pool.limit = source.PoolName, limit
-	if pool.active >= limit {
+	usable := max(0, limit-reserve)
+	if pool.active >= usable {
+		if reserve > 0 {
+			return nil, fmt.Errorf("%w: source %q is preserving %d of %d connections for active playback", ErrSourceConnectionLimit, source.PoolName, reserve, limit)
+		}
 		return nil, fmt.Errorf("%w: source %q is using %d/%d connections", ErrSourceConnectionLimit, source.PoolName, pool.active, limit)
 	}
 	pool.active++

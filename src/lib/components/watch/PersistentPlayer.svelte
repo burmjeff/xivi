@@ -53,6 +53,7 @@
 		attachedUrl = '',
 		networkRetries = 0,
 		mediaRecoveries = 0,
+		playbackReady = $state(false),
 		viewerId = '',
 		incidentId = $state(''),
 		lastTelemetryAt = 0,
@@ -119,15 +120,26 @@
 	let next = $derived(neighborsQuery.data?.next);
 	const prewarmed = new Set<string>();
 	$effect(() => {
+		if (!playbackReady || !playerRoute) return;
 		const candidates = [previous, next];
-		for (const candidate of candidates) {
+		const timers: ReturnType<typeof setTimeout>[] = [];
+		for (const [index, candidate] of candidates.entries()) {
 			const id = candidate?.stream_url ? streamId(candidate.stream_url) : '';
 			if (!id || prewarmed.has(id)) continue;
-			prewarmed.add(id);
-			void api(`/api/v2/stream/prewarm/${id}`, { method: 'POST' }).catch(() => {
-				// Prewarming is opportunistic and may be refused by a source connection budget.
-			});
+			timers.push(
+				setTimeout(
+					() => {
+						if (!playbackReady || prewarmed.has(id)) return;
+						prewarmed.add(id);
+						void api(`/api/v2/stream/prewarm/${id}`, { method: 'POST' }).catch(() => {
+							// Prewarming is opportunistic and may be refused by a source connection budget.
+						});
+					},
+					750 + index * 1_000
+				)
+			);
 		}
+		return () => timers.forEach(clearTimeout);
 	});
 
 	function cleanup() {
@@ -145,6 +157,7 @@
 			video.load();
 		}
 		attachedUrl = '';
+		playbackReady = false;
 	}
 	function releasePlayback() {
 		const id = attachedUrl ? streamId(attachedUrl) : '';
@@ -186,6 +199,7 @@
 		playbackPaused = false;
 		networkRetries = 0;
 		mediaRecoveries = 0;
+		playbackReady = true;
 		if (stallTimer) clearTimeout(stallTimer);
 	}
 	function onCanPlay() {
@@ -261,6 +275,7 @@
 		loading = true;
 		error = '';
 		playbackPaused = true;
+		playbackReady = false;
 		if (Hls.isSupported()) {
 			hls = new Hls({
 				enableWorker: true,
