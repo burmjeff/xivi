@@ -20,14 +20,19 @@ jobs:
         run: docker build --target development --tag xivi-security-dev .
       - name: Test, audit dependencies, and enforce SQL construction
         run: |
-          docker run --rm -v "$PWD:/workspace" -w /workspace xivi-security-dev bash -lc '
+          docker run --rm -v "$PWD:/workspace:ro" xivi-security-dev bash -lc '
+            set -euo pipefail
+            ci_workspace="$(mktemp -d)"
+            tar --exclude=.git --exclude=node_modules --exclude=.svelte-kit --exclude=build \
+              -C /workspace -cf - . | tar -C "$ci_workspace" -xf -
+            cd "$ci_workspace"
             npm ci && npm audit --audit-level=low && npm run check && npm run build &&
             go test ./... &&
             go install golang.org/x/vuln/cmd/govulncheck@v1.1.4 && govulncheck ./... &&
             go run github.com/securego/gosec/v2/cmd/gosec@v2.22.11 -include=G201,G202 ./...
           '
       - name: Semgrep SQL rules
-        run: docker run --rm -v "$PWD:/src" semgrep/semgrep:1.136.0 semgrep scan --no-git-ignore --config /src/.semgrep.yml --error /src/backend
+        run: docker run --rm -v "$PWD:/src:ro" semgrep/semgrep:1.136.0 semgrep scan --no-git-ignore --config /src/.semgrep.yml --error /src/backend
       - name: Build final image
         run: docker build --target deployment --tag xivi-security:ci .
       - name: Scan final image
