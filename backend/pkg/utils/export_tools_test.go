@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/xml"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -170,9 +169,9 @@ func setupXMLTVExportTest(t *testing.T) *sqlx.DB {
 	return db
 }
 
-func readXMLTVExport(t *testing.T, name string) models.EpgItem {
+func readXMLTVExport(t *testing.T, lineupID int64) models.EpgItem {
 	t.Helper()
-	content, err := os.ReadFile(filepath.Join(settings.EPG_FILEPATH, name+".xml"))
+	content, err := os.ReadFile(LineupXMLTVPath(lineupID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +189,7 @@ func TestXMLTVExportUsesStableFallbackIDsAndDeduplicatesMappedChannels(t *testin
 		t.Fatal(err)
 	}
 
-	item := readXMLTVExport(t, lineup.Name)
+	item := readXMLTVExport(t, lineup.ID)
 	if len(item.Channels) != 3 {
 		t.Fatalf("XMLTV channel count = %d, want 3 unique channel ids", len(item.Channels))
 	}
@@ -260,7 +259,7 @@ func TestXMLTVExportCanLeaveGuideGapsBlank(t *testing.T) {
 	if err := CreateEpgXML(lineup); err != nil {
 		t.Fatal(err)
 	}
-	item := readXMLTVExport(t, lineup.Name)
+	item := readXMLTVExport(t, lineup.ID)
 	if len(item.Channels) != 3 {
 		t.Fatalf("XMLTV channel count = %d, want 3", len(item.Channels))
 	}

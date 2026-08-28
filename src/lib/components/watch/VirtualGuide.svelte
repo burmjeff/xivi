@@ -70,21 +70,39 @@
 	);
 	let activeRow = $state(0),
 		activeProgramme = $state(0);
-	function left(programme: Programme) {
-		return Math.max(
-			0,
-			((new Date(programme.start).getTime() - from.getTime()) / (to.getTime() - from.getTime())) *
-				timelineWidth
-		);
-	}
-	function width(programme: Programme) {
-		return Math.max(
-			54,
-			((new Date(programme.end).getTime() - new Date(programme.start).getTime()) /
-				(to.getTime() - from.getTime())) *
-				timelineWidth -
-				3
-		);
+	type ProgrammePlacement = {
+		visible: boolean;
+		left: number;
+		width: number;
+		compact: boolean;
+		sliver: boolean;
+	};
+	function place(programme: Programme): ProgrammePlacement {
+		const windowStart = from.getTime();
+		const windowEnd = to.getTime();
+		const windowDuration = windowEnd - windowStart;
+		const programmeStart = new Date(programme.start).getTime();
+		const programmeEnd = new Date(programme.end).getTime();
+		if (
+			!Number.isFinite(programmeStart) ||
+			!Number.isFinite(programmeEnd) ||
+			windowDuration <= 0 ||
+			programmeEnd <= programmeStart ||
+			programmeEnd <= windowStart ||
+			programmeStart >= windowEnd
+		) {
+			return { visible: false, left: 0, width: 0, compact: true, sliver: true };
+		}
+
+		// Programme queries intentionally include entries that cross the requested
+		// window. Clamp both endpoints before converting them to pixels so an entry
+		// that began yesterday still ends at its real time today.
+		const clippedStart = Math.max(windowStart, programmeStart);
+		const clippedEnd = Math.min(windowEnd, programmeEnd);
+		const left = ((clippedStart - windowStart) / windowDuration) * timelineWidth;
+		const right = ((clippedEnd - windowStart) / windowDuration) * timelineWidth;
+		const width = Math.max(1, right - left);
+		return { visible: true, left, width, compact: width < 76, sliver: width < 24 };
 	}
 	function time(value: string | Date) {
 		return new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' }).format(
@@ -177,21 +195,27 @@
 					<div class="programme-track" style={`width:${timelineWidth}px`}>
 						{#if channel.programmes.length}
 							{#each channel.programmes as programme, programmeIndex}
-								<button
-									class:current={channel.current?.id === programme.id}
-									role="gridcell"
-									tabindex={activeRow === virtualRow.index && activeProgramme === programmeIndex
-										? 0
-										: -1}
-									data-guide-cell={`${virtualRow.index}-${programmeIndex}`}
-									style={`left:${left(programme)}px;width:${width(programme)}px`}
-									onclick={() => goto(`/watch/channel/${channel.id}`)}
-									onkeydown={(event) => keys(event, virtualRow.index, programmeIndex)}
-									title={`${programme.title}, ${time(programme.start)} to ${time(programme.end)}`}
-									><strong>{programme.title}</strong><small class="tabular"
-										>{time(programme.start)}–{time(programme.end)}</small
-									></button
-								>
+								{@const placement = place(programme)}
+								{#if placement.visible}
+									<button
+										class:current={channel.current?.id === programme.id}
+										class:compact={placement.compact}
+										class:sliver={placement.sliver}
+										role="gridcell"
+										aria-label={`${programme.title}, ${time(programme.start)} to ${time(programme.end)}`}
+										tabindex={activeRow === virtualRow.index && activeProgramme === programmeIndex
+											? 0
+											: -1}
+										data-guide-cell={`${virtualRow.index}-${programmeIndex}`}
+										style={`left:${placement.left}px;width:${placement.width}px`}
+										onclick={() => goto(`/watch/channel/${channel.id}`)}
+										onkeydown={(event) => keys(event, virtualRow.index, programmeIndex)}
+										title={`${programme.title}, ${time(programme.start)} to ${time(programme.end)}`}
+										><strong>{programme.title}</strong><small class="tabular"
+											>{time(programme.start)}–{time(programme.end)}</small
+										></button
+									>
+								{/if}
 							{/each}
 						{:else}<a class="unavailable" href={`/watch/channel/${channel.id}`}
 								>Schedule unavailable · Play channel</a
@@ -350,6 +374,18 @@
 		margin-top: 0.25rem;
 		color: var(--muted);
 		font-size: 0.62rem;
+	}
+	.programme-track button.compact {
+		border-radius: 0.4rem;
+		padding-inline: 0.35rem;
+	}
+	.programme-track button.compact small,
+	.programme-track button.sliver strong {
+		display: none;
+	}
+	.programme-track button.sliver {
+		border-radius: 0.2rem;
+		padding: 0;
 	}
 	.unavailable {
 		position: absolute;

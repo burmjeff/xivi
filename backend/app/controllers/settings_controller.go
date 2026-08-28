@@ -40,7 +40,7 @@ func UpdateSettings(c *fiber.Ctx) error {
 	newSettings := &settings.AppSettings{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(newSettings); err != nil {
+	if err := decodeStrict(c, newSettings); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,

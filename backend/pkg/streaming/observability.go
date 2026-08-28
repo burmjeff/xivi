@@ -7,16 +7,20 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"xivi/backend/pkg/security"
 )
 
 var diagnosticURLPattern = regexp.MustCompile(`https?://[^\s"'<>]+`)
 
 type ClientMetadata struct {
-	ID        string
-	Protocol  string
-	RemoteIP  string
-	Method    string
-	UserAgent string
+	ID          string
+	Protocol    string
+	RemoteIP    string
+	Method      string
+	UserAgent   string
+	AuthKind    string
+	AuthID      int64
+	OwnerUserID int64
 }
 
 type ClientSnapshot struct {
@@ -30,6 +34,7 @@ type ClientSnapshot struct {
 	BytesDelivered uint64    `json:"bytes_delivered"`
 	BitrateBPS     uint64    `json:"bitrate_bps"`
 	EndReason      string    `json:"end_reason,omitempty"`
+	AuthKind       string    `json:"auth_kind,omitempty"`
 }
 
 type MetricSample struct {
@@ -141,14 +146,12 @@ func ClassifyError(err error) (code string, retryable bool) {
 }
 
 func SanitizeDiagnostic(message string) string {
-	return diagnosticURLPattern.ReplaceAllStringFunc(message, func(raw string) string {
+	message = diagnosticURLPattern.ReplaceAllStringFunc(message, func(raw string) string {
 		parsed, err := url.Parse(raw)
 		if err != nil {
 			return "[upstream URL]"
 		}
-		parsed.User = nil
-		parsed.RawQuery = ""
-		parsed.Fragment = ""
-		return parsed.String()
+		return parsed.Scheme + "://" + parsed.Host + "/…"
 	})
+	return security.RedactSensitiveText(message)
 }

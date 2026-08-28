@@ -79,6 +79,15 @@ func (q *StreamQueries) GetChannelsbyUuid(ctx context.Context, uuid string) (*[]
 
 		return err
 	})
+	if err == nil {
+		for index := range *channels {
+			channelsURL, revealErr := revealProviderURL((*channels)[index].URLCipher, (*channels)[index].Url)
+			if revealErr != nil {
+				return nil, revealErr
+			}
+			(*channels)[index].Url = channelsURL
+		}
+	}
 
 	if err != nil {
 		log.Error().Err(err).Str("uuid", uuid).Msg("Error fetching channels by UUID")

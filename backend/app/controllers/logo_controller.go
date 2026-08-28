@@ -2,11 +2,7 @@ package controllers
 
 import (
 	"context"
-	"io"
-	"net/http"
-	"net/url"
 	"strconv"
-	"time"
 
 	"xivi/backend/app/models"
 	"xivi/backend/pkg/utils"
@@ -112,7 +108,7 @@ func UploadLogo(c *fiber.Ctx) error {
 	logo := &models.Logo{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(logo); err != nil {
+	if err := decodeStrict(c, logo); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -183,7 +179,7 @@ func UpdateLogo(c *fiber.Ctx) error {
 	logo := &models.Logo{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(logo); err != nil {
+	if err := decodeStrict(c, logo); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -234,40 +230,15 @@ func UpdateLogo(c *fiber.Ctx) error {
 // @Produce json
 // @Param id body string true "Logo ID"
 // @Success 204 {string} status "ok"
-// @Security ApiKeyAuth
 // @Router /logo [delete]
 func DeleteLogo(c *fiber.Ctx) error {
 	ctx := context.Background()
-	// Get now time.
-	now := time.Now().Unix()
-
-	// Get claims from JWT.
-	claims, err := utils.ExtractTokenMetadata(c)
-	if err != nil {
-		// Return status 500 and JWT parse error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	// Set expiration time from JWT data of current logo.
-	expires := claims.Expires
-
-	// Checking, if now time greather than expiration from JWT.
-	if now > expires {
-		// Return status 401 and unauthorized error message.
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": true,
-			"msg":   "unauthorized, check expiration time of your token",
-		})
-	}
 
 	// Create new Logo struct
 	logo := &models.Logo{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(logo); err != nil {
+	if err := decodeStrict(c, logo); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -308,64 +279,4 @@ func DeleteLogo(c *fiber.Ctx) error {
 
 	// Return status 204 no content.
 	return c.SendStatus(fiber.StatusNoContent)
-}
-
-func ProxyImage(c *fiber.Ctx) error {
-	// Get the URL of the image from the query parameter
-	imageURL := c.Query("url")
-	if imageURL == "" {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Missing URL parameter",
-		})
-	}
-
-	// Parse the image URL
-	parsedURL, err := url.Parse(imageURL)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Invalid URL",
-		})
-	}
-
-	// Create a new request to the external server
-	req, err := http.NewRequest("GET", parsedURL.String(), nil)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Error creating request",
-		})
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0")
-
-	resp, err := new(http.Client).Do(req)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Error sending request",
-		})
-	}
-	defer resp.Body.Close()
-
-	// Set the appropriate Content-Type header
-	contentType := resp.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = http.DetectContentType(nil)
-	}
-	c.Set("Content-Type", contentType)
-
-	// Set the response status code
-	c.Status(resp.StatusCode)
-
-	// Serve the image
-	_, err = io.Copy(c, resp.Body)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Error sending request",
-		})
-	}
-
-	return nil
 }

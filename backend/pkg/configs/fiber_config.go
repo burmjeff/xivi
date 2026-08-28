@@ -16,7 +16,11 @@ func FiberConfig() fiber.Config {
 
 	// Return Fiber configuration.
 	return fiber.Config{
-		ReadTimeout: time.Second * time.Duration(settings.APP_SETTINGS.Server.ReadTimeout),
-		Views:       engine, //set as render engine
+		ReadTimeout:           time.Second * time.Duration(settings.APP_SETTINGS.Server.ReadTimeout),
+		BodyLimit:             8 * 1024 * 1024,
+		ReadBufferSize:        16 * 1024,
+		ServerHeader:          "",
+		DisableStartupMessage: true,
+		Views:                 engine, //set as render engine
 	}
 }

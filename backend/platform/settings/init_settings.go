@@ -1,11 +1,13 @@
 package settings
 
 import (
-	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -76,6 +78,21 @@ func InitSettings() error {
 				log.Debug().Msgf("Log level set to: %d", level)
 			}
 		}
+		if env, exists := os.LookupEnv("PUBLIC_BASE_URL"); exists {
+			appSettings.Security.PublicBaseURL = strings.TrimRight(strings.TrimSpace(env), "/")
+		}
+		if env, exists := os.LookupEnv("LOCAL_BASE_URL"); exists {
+			appSettings.Security.LocalBaseURL = strings.TrimRight(strings.TrimSpace(env), "/")
+		}
+		if env, exists := os.LookupEnv("TRUSTED_PROXY_CIDRS"); exists {
+			appSettings.Security.TrustedProxyCIDRs = splitCIDRs(env)
+		}
+		if env, exists := os.LookupEnv("TRUSTED_LAN_CIDRS"); exists {
+			appSettings.Security.TrustedLANCIDRs = splitCIDRs(env)
+		}
+		if env, exists := os.LookupEnv("ALLOW_LAN_HTTP"); exists {
+			appSettings.Security.AllowLANHTTP, _ = strconv.ParseBool(env)
+		}
 	}
 
 	if appSettings.Streaming.HedgeTimeoutSeconds == 0 {
@@ -86,6 +103,16 @@ func InitSettings() error {
 	}
 
 	return nil
+}
+
+func splitCIDRs(value string) []string {
+	result := []string{}
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 func SetDefaults() (*AppSettings, error) {
@@ -142,6 +169,12 @@ func SetDefaults() (*AppSettings, error) {
 		VirtualTuner: VirtualTuner{
 			TunerCount: 6,
 		},
+		Security: Security{
+			LocalBaseURL:       "http://127.0.0.1:3000",
+			AllowLANHTTP:       true,
+			AuditRetentionDays: 90,
+			MaximumAuditEvents: 100000,
+		},
 	}
 
 	return &defaults, nil
@@ -149,14 +182,21 @@ func SetDefaults() (*AppSettings, error) {
 
 func WriteSettings(settings *AppSettings) error {
 	normalizeMaintenance(&settings.Maintenance)
+	normalizeSecurity(&settings.Security)
+	if err := ValidateSecuritySettings(settings.Security); err != nil {
+		return err
+	}
 	config := fmt.Sprintf("%s/config.yaml", CONFIG_PATH)
 	yamlData, err := yaml.Marshal(&settings)
 	if err != nil {
 		return fmt.Errorf("error while marshaling. %v", err)
 	}
-	err = os.WriteFile(config, yamlData, 0644)
+	err = os.WriteFile(config, yamlData, 0600)
 	if err != nil {
 		return fmt.Errorf("unable to write data into the settings file: %v", err)
+	}
+	if err := os.Chmod(config, 0600); err != nil {
+		return fmt.Errorf("unable to secure the settings file: %v", err)
 	}
 
 	// Update log level if it changed
@@ -167,6 +207,59 @@ func WriteSettings(settings *AppSettings) error {
 
 	APP_SETTINGS = settings
 	return nil
+}
+
+func ValidateSecuritySettings(security Security) error {
+	validateBase := func(raw string, requireHTTPS bool) error {
+		parsed, err := url.Parse(raw)
+		if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+			return fmt.Errorf("base URL must contain only a scheme and host")
+		}
+		if requireHTTPS && parsed.Scheme != "https" {
+			return fmt.Errorf("public base URL must use HTTPS")
+		}
+		if !requireHTTPS && parsed.Scheme != "http" && parsed.Scheme != "https" {
+			return fmt.Errorf("local base URL must use HTTP or HTTPS")
+		}
+		return nil
+	}
+	production := strings.EqualFold(strings.TrimSpace(os.Getenv("XIVI_PRODUCTION")), "true")
+	if security.PublicBaseURL != "" {
+		if err := validateBase(security.PublicBaseURL, true); err != nil {
+			return err
+		}
+	} else if production {
+		return fmt.Errorf("PUBLIC_BASE_URL is required in production")
+	}
+	if err := validateBase(security.LocalBaseURL, false); err != nil {
+		return err
+	}
+	for _, item := range append(append([]string{}, security.TrustedProxyCIDRs...), security.TrustedLANCIDRs...) {
+		if _, _, err := net.ParseCIDR(strings.TrimSpace(item)); err != nil {
+			return fmt.Errorf("invalid trusted network CIDR")
+		}
+	}
+	if production && len(security.TrustedProxyCIDRs) == 0 {
+		return fmt.Errorf("TRUSTED_PROXY_CIDRS is required in production")
+	}
+	if security.AllowLANHTTP && production && len(security.TrustedLANCIDRs) == 0 {
+		return fmt.Errorf("TRUSTED_LAN_CIDRS is required when LAN HTTP is enabled in production")
+	}
+	return nil
+}
+
+func normalizeSecurity(security *Security) {
+	security.PublicBaseURL = strings.TrimRight(strings.TrimSpace(security.PublicBaseURL), "/")
+	security.LocalBaseURL = strings.TrimRight(strings.TrimSpace(security.LocalBaseURL), "/")
+	if security.LocalBaseURL == "" {
+		security.LocalBaseURL = "http://127.0.0.1:3000"
+	}
+	if security.AuditRetentionDays < 1 || security.AuditRetentionDays > 3650 {
+		security.AuditRetentionDays = 90
+	}
+	if security.MaximumAuditEvents < 1000 || security.MaximumAuditEvents > 1000000 {
+		security.MaximumAuditEvents = 100000
+	}
 }
 
 func normalizeMaintenance(maintenance *Maintenance) {
@@ -188,39 +281,11 @@ func normalizeMaintenance(maintenance *Maintenance) {
 }
 
 func InitPaths() error {
-	if _, err := os.Stat(CONFIG_PATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(CONFIG_PATH, os.ModePerm)
-		if err != nil {
+	for _, path := range []string{CONFIG_PATH, SERVE_PATH, M3U_FILEPATH, EPG_FILEPATH, LOGO_FILEPATH, STREAM_FILEPATH} {
+		if err := os.MkdirAll(path, 0700); err != nil {
 			return err
 		}
-	}
-	if _, err := os.Stat(SERVE_PATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(SERVE_PATH, os.ModePerm)
-		if err != nil {
-			return err
-		}
-	}
-	if _, err := os.Stat(M3U_FILEPATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(M3U_FILEPATH, os.ModePerm)
-		if err != nil {
-			return err
-		}
-	}
-	if _, err := os.Stat(EPG_FILEPATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(EPG_FILEPATH, os.ModePerm)
-		if err != nil {
-			return err
-		}
-	}
-	if _, err := os.Stat(LOGO_FILEPATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(LOGO_FILEPATH, os.ModePerm)
-		if err != nil {
-			return err
-		}
-	}
-	if _, err := os.Stat(STREAM_FILEPATH); errors.Is(err, os.ErrNotExist) {
-		err := os.Mkdir(STREAM_FILEPATH, os.ModePerm)
-		if err != nil {
+		if err := os.Chmod(path, 0700); err != nil {
 			return err
 		}
 	}
@@ -242,7 +307,7 @@ func CopyDefaultLogo() {
 	}
 	defer source.Close()
 
-	destination, err := os.Create(fmt.Sprintf("%s/xivi_channel.png", LOGO_FILEPATH)) //create the destination file
+	destination, err := os.OpenFile(fmt.Sprintf("%s/xivi_channel.png", LOGO_FILEPATH), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		log.Err(err)
 		return

@@ -10,6 +10,7 @@ import (
 	"xivi/backend/app/models"
 	"xivi/backend/pkg/channelmatch"
 	"xivi/backend/pkg/logoassets"
+	"xivi/backend/pkg/security"
 	"xivi/backend/platform/settings"
 
 	"github.com/jmoiron/sqlx"
@@ -23,12 +24,36 @@ type ExperienceQueries struct {
 
 func NewExperienceQueries(db *sqlx.DB) *ExperienceQueries {
 	return &ExperienceQueries{
-		BaseQueries:     NewBaseQueries(db),
-		storeSourceLogo: logoassets.StoreSourceLogo,
+		BaseQueries: NewBaseQueries(db),
+		storeSourceLogo: func(ctx context.Context, rawURL, name string) error {
+			return logoassets.StoreSourceLogo(ctx, rawURL, name)
+		},
 	}
 }
 
+func revealOptionalProviderValue(value **string) error {
+	if value == nil || *value == nil {
+		return nil
+	}
+	revealed, err := security.RevealString(**value)
+	if err != nil {
+		return err
+	}
+	*value = &revealed
+	return nil
+}
+
 func (q *ExperienceQueries) GetLineupSummaries(ctx context.Context) ([]models.LineupSummary, error) {
+	return q.getLineupSummaries(ctx, 0, false)
+}
+
+// GetViewerLineupSummaries enforces lineup grants in SQL so unauthorized rows
+// never enter the application response pipeline.
+func (q *ExperienceQueries) GetViewerLineupSummaries(ctx context.Context, userID int64) ([]models.LineupSummary, error) {
+	return q.getLineupSummaries(ctx, userID, true)
+}
+
+func (q *ExperienceQueries) getLineupSummaries(ctx context.Context, userID int64, restricted bool) ([]models.LineupSummary, error) {
 	rows := []models.LineupSummary{}
 	query := `
 		SELECT t.id, t.name,
@@ -40,10 +65,16 @@ func (q *ExperienceQueries) GetLineupSummaries(ctx context.Context) ([]models.Li
 		FROM template t
 		LEFT JOIN template_group_item tgi ON tgi.template_id = t.id
 		LEFT JOIN template_group_channel tgc ON tgc.group_id = tgi.group_id
-		LEFT JOIN templatechannel tc ON tc.id = tgc.channel_id
+		LEFT JOIN templatechannel tc ON tc.id = tgc.channel_id`
+	args := []any{}
+	if restricted {
+		query += ` WHERE EXISTS (SELECT 1 FROM user_lineup ul WHERE ul.user_id = ? AND ul.lineup_id = t.id)`
+		args = append(args, userID)
+	}
+	query += `
 		GROUP BY t.id, t.name
 		ORDER BY LOWER(t.name), t.id`
-	if err := q.SelectContext(ctx, &rows, query); err != nil {
+	if err := q.SelectContext(ctx, &rows, query, args...); err != nil {
 		return nil, err
 	}
 	duplicates, err := q.loadDuplicateTVGIDReviews(ctx, nil, false)
@@ -469,7 +500,27 @@ func (q *ExperienceQueries) GetSourceChannels(ctx context.Context, playlistID, g
 	if err := q.SelectContext(ctx, &rows, query, append(args, limit, offset)...); err != nil {
 		return nil, 0, err
 	}
+	for index := range rows {
+		if err := revealOptionalProviderValue(&rows[index].LogoURL); err != nil {
+			return nil, 0, err
+		}
+	}
 	return rows, total, nil
+}
+
+func (q *ExperienceQueries) GetSourceChannelLogoSource(ctx context.Context, sourceChannelID int64) (string, error) {
+	var source struct {
+		URL string `db:"url"`
+	}
+	err := q.GetContext(ctx, &source, `SELECT TRIM(pc.tvg_logo) AS url
+		FROM playlistchannel pc
+		JOIN playlistgroup pg ON pg.id = pc.group_id
+		WHERE pc.id = ? AND NULLIF(TRIM(pc.tvg_logo), '') IS NOT NULL`, sourceChannelID)
+	if err != nil {
+		return "", err
+	}
+	source.URL, err = security.RevealString(source.URL)
+	return source.URL, err
 }
 
 func (q *ExperienceQueries) GetMatchReview(ctx context.Context, channelID *int64, search string, limit, offset int) ([]models.MatchReview, int64, error) {
@@ -509,6 +560,11 @@ func (q *ExperienceQueries) GetMatchReview(ctx context.Context, channelID *int64
 		ORDER BY ` + orderSQL + ` LIMIT ? OFFSET ?`
 	if err := q.SelectContext(ctx, &rows, query, append(args, limit, offset)...); err != nil {
 		return nil, 0, err
+	}
+	for index := range rows {
+		if err := revealOptionalProviderValue(&rows[index].SourceLogoURL); err != nil {
+			return nil, 0, err
+		}
 	}
 	return rows, total, nil
 }
@@ -552,6 +608,11 @@ func (q *ExperienceQueries) GetMatchSuggestions(ctx context.Context, channelID i
 		)
 		ORDER BY pc.id`, channelID); err != nil {
 		return nil, 0, err
+	}
+	for index := range candidates {
+		if err := revealOptionalProviderValue(&candidates[index].LogoURL); err != nil {
+			return nil, 0, err
+		}
 	}
 
 	rejections := []struct {
@@ -790,6 +851,11 @@ func (q *ExperienceQueries) GetMatchRejections(ctx context.Context, channelID in
 		)
 		ORDER BY pc.id`, channelID, channelID); err != nil {
 		return nil, err
+	}
+	for index := range candidates {
+		if err := revealOptionalProviderValue(&candidates[index].LogoURL); err != nil {
+			return nil, err
+		}
 	}
 
 	for index := range rows {

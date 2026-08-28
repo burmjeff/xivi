@@ -149,9 +149,8 @@
 	function releasePlayback() {
 		const id = attachedUrl ? streamId(attachedUrl) : '';
 		if (!id || !viewerId) return;
-		void fetch('/api/v2/watch/playback/release', {
+		void api('/api/v2/watch/playback/release', {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ playback_id: viewerId, stream_id: id }),
 			keepalive: true
 		}).catch(() => {

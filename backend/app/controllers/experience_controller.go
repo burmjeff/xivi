@@ -8,16 +8,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/app/queries"
+	"xivi/backend/pkg/logoassets"
+	"xivi/backend/pkg/middleware"
 	"xivi/backend/pkg/streaming"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/platform/cron"
 	"xivi/backend/platform/database"
+	"xivi/backend/platform/settings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog/log"
@@ -80,6 +85,25 @@ func nextCursor(offset, count int, total int64) *string {
 	return &value
 }
 
+func scopeGuideChannelAssets(channel *models.GuideChannel, lineupID int64) {
+	if channel == nil || channel.Logo == "" {
+		return
+	}
+	separator := "?"
+	if strings.Contains(channel.Logo, "?") {
+		separator = "&"
+	}
+	channel.Logo += separator + "lineup_id=" + strconv.FormatInt(lineupID, 10)
+}
+
+func scopedSourceLogoURL(sourceChannelID int64) *string {
+	if sourceChannelID < 1 {
+		return nil
+	}
+	value := "/api/v2/studio/source-channels/" + strconv.FormatInt(sourceChannelID, 10) + "/logo"
+	return &value
+}
+
 func timeWindow(c *fiber.Ctx) (time.Time, time.Time, error) {
 	now := time.Now().UTC()
 	from, to := now.Add(-30*time.Minute), now.Add(6*time.Hour)
@@ -107,7 +131,14 @@ func timeWindow(c *fiber.Ctx) (time.Time, time.Time, error) {
 
 // V2WatchLineups returns lineups without exposing legacy template terminology.
 func V2WatchLineups(c *fiber.Ctx) error {
-	items, err := database.Db.GetLineupSummaries(c.UserContext())
+	principal, _ := middleware.Principal(c)
+	var items []models.LineupSummary
+	var err error
+	if principal.IsAdmin() {
+		items, err = database.Db.GetLineupSummaries(c.UserContext())
+	} else {
+		items, err = database.Db.GetViewerLineupSummaries(c.UserContext(), principal.UserID)
+	}
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "lineups_unavailable", "Lineups could not be loaded.", true)
 	}
@@ -147,6 +178,9 @@ func v2LineupChannels(c *fiber.Ctx, guide bool) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "channels_unavailable", "Channels could not be loaded.", true)
 	}
+	for index := range items {
+		scopeGuideChannelAssets(&items[index], lineupID)
+	}
 	return c.JSON(models.Paginated[models.GuideChannel]{Items: items, NextCursor: nextCursor(offset, len(items), total), Total: total})
 }
 
@@ -163,6 +197,16 @@ func V2WatchChannel(c *fiber.Ctx) error {
 	if queryErr != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
 	}
+	principal, _ := middleware.Principal(c)
+	if lineupID == nil && !principal.IsAdmin() {
+		return v2Error(c, fiber.StatusBadRequest, "lineup_required", "A lineup id is required.", false)
+	}
+	if lineupID != nil {
+		allowed, accessErr := database.Db.UserCanAccessLineup(c.UserContext(), principal.UserID, principal.Role, *lineupID)
+		if accessErr != nil || !allowed {
+			return v2Error(c, fiber.StatusNotFound, "channel_not_found", "That channel is no longer available.", false)
+		}
+	}
 	var item *models.GuideChannel
 	if lineupID != nil {
 		item, err = database.Db.GetGuideChannelForLineup(c.UserContext(), *lineupID, id, now.Add(-2*time.Hour), now.Add(12*time.Hour))
@@ -171,6 +215,9 @@ func V2WatchChannel(c *fiber.Ctx) error {
 	}
 	if err != nil {
 		return v2Error(c, fiber.StatusNotFound, "channel_not_found", "That channel is no longer available.", false)
+	}
+	if lineupID != nil {
+		scopeGuideChannelAssets(item, *lineupID)
 	}
 	return c.JSON(item)
 }
@@ -188,6 +235,8 @@ func V2WatchChannelNeighbors(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusNotFound, "channel_not_found", "That channel is no longer available in this lineup.", false)
 	}
+	scopeGuideChannelAssets(neighbors.Previous, lineupID)
+	scopeGuideChannelAssets(neighbors.Next, lineupID)
 	return c.JSON(neighbors)
 }
 
@@ -196,18 +245,33 @@ func V2Search(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
 	}
+	principal, _ := middleware.Principal(c)
 	if lineupID == nil {
-		lineups, loadErr := database.Db.GetLineupSummaries(c.UserContext())
+		var lineups []models.LineupSummary
+		var loadErr error
+		if principal.IsAdmin() {
+			lineups, loadErr = database.Db.GetLineupSummaries(c.UserContext())
+		} else {
+			lineups, loadErr = database.Db.GetViewerLineupSummaries(c.UserContext(), principal.UserID)
+		}
 		if loadErr != nil || len(lineups) == 0 {
 			return c.JSON(fiber.Map{"items": []any{}, "next_cursor": nil, "total": 0})
 		}
 		lineupID = &lineups[0].ID
+	} else {
+		allowed, accessErr := database.Db.UserCanAccessLineup(c.UserContext(), principal.UserID, principal.Role, *lineupID)
+		if accessErr != nil || !allowed {
+			return v2Error(c, fiber.StatusNotFound, "lineup_not_found", "The lineup was not found.", false)
+		}
 	}
 	limit, offset := pageParams(c)
 	now := time.Now().UTC()
 	items, total, err := database.Db.GetGuideChannels(c.UserContext(), *lineupID, nil, strings.TrimSpace(c.Query("q")), now.Add(-time.Hour), now.Add(4*time.Hour), limit, offset)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "search_unavailable", "Search is temporarily unavailable.", true)
+	}
+	for index := range items {
+		scopeGuideChannelAssets(&items[index], *lineupID)
 	}
 	return c.JSON(models.Paginated[models.GuideChannel]{Items: items, NextCursor: nextCursor(offset, len(items), total), Total: total})
 }
@@ -258,14 +322,15 @@ func V2MoveStudioGroup(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The group id is invalid.", false)
 	}
 	body := positionRequest{}
-	if err := c.BodyParser(&body); err != nil || (body.BeforeID == nil) == (body.AfterID == nil) {
+	if err := decodeStrict(c, &body); err != nil || (body.BeforeID == nil) == (body.AfterID == nil) {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_move", "Choose exactly one group to move before or after.", false)
 	}
 	if err := database.Db.MoveWorkspaceGroup(c.UserContext(), lineupID, groupID, body.BeforeID, body.AfterID); err != nil {
 		if errors.Is(err, queries.ErrLineupNotFound) || errors.Is(err, queries.ErrStudioGroupNotFound) {
 			return studioGroupError(c, err)
 		}
-		return v2Error(c, fiber.StatusUnprocessableEntity, "group_move_failed", err.Error(), false)
+		log.Error().Err(err).Msg("Lineup group move failed")
+		return v2Error(c, fiber.StatusUnprocessableEntity, "group_move_failed", "The lineup group could not be moved.", false)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }
@@ -302,7 +367,7 @@ func V2CreateStudioGroup(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
 	}
 	request := models.StudioGroupCreateRequest{}
-	if err := c.BodyParser(&request); err != nil {
+	if err := decodeStrict(c, &request); err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The lineup group request is invalid.", false)
 	}
 	request.Name = strings.TrimSpace(request.Name)
@@ -336,7 +401,7 @@ func V2UpdateStudioGroup(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The group id is invalid.", false)
 	}
 	request := models.StudioGroupUpdateRequest{}
-	if err := c.BodyParser(&request); err != nil {
+	if err := decodeStrict(c, &request); err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The lineup group request is invalid.", false)
 	}
 	request.Name = strings.TrimSpace(request.Name)
@@ -433,7 +498,7 @@ func V2SetStudioSourceGroupEnabled(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_source_group", "The source group id is invalid.", false)
 	}
 	request := models.SourceGroupEnableRequest{}
-	if err := c.BodyParser(&request); err != nil || request.Enabled == nil {
+	if err := decodeStrict(c, &request); err != nil || request.Enabled == nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_enablement", "The source group enablement request is invalid.", false)
 	}
 	if err := database.Db.SetSourceGroupEnabled(c.UserContext(), sourceGroupID, *request.Enabled); err != nil {
@@ -451,7 +516,7 @@ func V2SetStudioGroupSourceLink(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The group id is invalid.", false)
 	}
 	request := models.SourceGroupLinkRequest{}
-	if err := c.BodyParser(&request); err != nil || request.SourceGroupID < 1 {
+	if err := decodeStrict(c, &request); err != nil || request.SourceGroupID < 1 {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_source_group", "Choose a source group to sync.", false)
 	}
 	if err := database.Db.SetSourceGroupLink(c.UserContext(), groupID, request); err != nil {
@@ -544,7 +609,7 @@ func V2SetStudioDuplicateTVGIDReview(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
 	}
 	request := models.DuplicateTVGIDReviewRequest{}
-	if err := c.BodyParser(&request); err != nil || strings.TrimSpace(request.TVGID) == "" {
+	if err := decodeStrict(c, &request); err != nil || strings.TrimSpace(request.TVGID) == "" {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_duplicate_review", "Choose a duplicate guide ID to review.", false)
 	}
 	err = database.Db.SetDuplicateTVGIDReviewAcknowledged(c.UserContext(), lineupID, request.TVGID, request.Acknowledged)
@@ -563,7 +628,7 @@ func V2MergeStudioDuplicateTVGID(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
 	}
 	request := models.DuplicateTVGIDMergeRequest{}
-	if err := c.BodyParser(&request); err != nil || strings.TrimSpace(request.TVGID) == "" || request.KeepChannelID < 1 {
+	if err := decodeStrict(c, &request); err != nil || strings.TrimSpace(request.TVGID) == "" || request.KeepChannelID < 1 {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_duplicate_merge", "Choose which duplicate channel to keep.", false)
 	}
 	result, err := database.Db.MergeDuplicateTVGIDChannels(c.UserContext(), lineupID, request.TVGID, request.KeepChannelID)
@@ -610,12 +675,41 @@ func V2StudioSourceChannels(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "sources_unavailable", "Source channels could not be loaded.", true)
 	}
+	for index := range items {
+		if items[index].LogoURL != nil && strings.TrimSpace(*items[index].LogoURL) != "" {
+			items[index].LogoURL = scopedSourceLogoURL(items[index].ID)
+		}
+	}
 	return c.JSON(models.Paginated[models.SourceChannel]{Items: items, NextCursor: nextCursor(offset, len(items), total), Total: total})
+}
+
+func V2StudioSourceChannelLogo(c *fiber.Ctx) error {
+	sourceChannelID, err := parseID(c, "source_channel_id")
+	if err != nil || sourceChannelID < 1 {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_source_channel", "The source channel id is invalid.", false)
+	}
+	rawURL, err := database.Db.GetSourceChannelLogoSource(c.UserContext(), sourceChannelID)
+	if err != nil {
+		return v2Error(c, fiber.StatusNotFound, "source_logo_not_found", "That source logo was not found.", false)
+	}
+	name := logoassets.SourceLogoName(rawURL)
+	path := filepath.Join(settings.LOGO_FILEPATH, name+".png")
+	info, statErr := os.Stat(path)
+	if errors.Is(statErr, os.ErrNotExist) {
+		if storeErr := logoassets.StoreSourceLogo(c.UserContext(), rawURL, name); storeErr != nil {
+			return v2Error(c, fiber.StatusBadGateway, "source_logo_unavailable", "The source logo could not be loaded.", true)
+		}
+	} else if statErr != nil || info.IsDir() || info.Size() == 0 {
+		return v2Error(c, fiber.StatusBadGateway, "source_logo_unavailable", "The source logo could not be loaded.", true)
+	}
+	c.Set(fiber.HeaderContentType, "image/png")
+	c.Set(fiber.HeaderCacheControl, "private, no-store")
+	return c.SendFile(path)
 }
 
 func V2SetStudioSourceChannelsEnabled(c *fiber.Ctx) error {
 	request := models.SourceChannelEnableRequest{}
-	if err := c.BodyParser(&request); err != nil || len(request.ChannelIDs) == 0 {
+	if err := decodeStrict(c, &request); err != nil || len(request.ChannelIDs) == 0 {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_selection", "Select at least one source channel.", false)
 	}
 	if err := database.Db.SetSourceChannelsEnabled(c.UserContext(), request.ChannelIDs, request.Enabled); err != nil {
@@ -642,6 +736,11 @@ func V2StudioReview(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "review_unavailable", "Match review could not be loaded.", true)
 	}
+	for index := range items {
+		if items[index].SourceLogoURL != nil && strings.TrimSpace(*items[index].SourceLogoURL) != "" {
+			items[index].SourceLogoURL = scopedSourceLogoURL(items[index].SourceChannelID)
+		}
+	}
 	return c.JSON(models.Paginated[models.MatchReview]{Items: items, NextCursor: nextCursor(offset, len(items), total), Total: total})
 }
 
@@ -653,6 +752,13 @@ func V2StudioMatchRejections(c *fiber.Ctx) error {
 	items, err := database.Db.GetMatchRejections(c.UserContext(), channelID)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "rejections_unavailable", "Match history could not be loaded.", true)
+	}
+	for index := range items {
+		if items[index].SourceChannelID != nil && items[index].LogoURL != nil && strings.TrimSpace(*items[index].LogoURL) != "" {
+			items[index].LogoURL = scopedSourceLogoURL(*items[index].SourceChannelID)
+		} else {
+			items[index].LogoURL = nil
+		}
 	}
 	return c.JSON(fiber.Map{"items": items, "next_cursor": nil, "total": len(items)})
 }
@@ -695,6 +801,11 @@ func V2StudioMatchSuggestions(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "suggestions_unavailable", "Source suggestions could not be loaded.", true)
 	}
+	for index := range items {
+		if items[index].LogoURL != nil && strings.TrimSpace(*items[index].LogoURL) != "" {
+			items[index].LogoURL = scopedSourceLogoURL(items[index].SourceChannelID)
+		}
+	}
 	return c.JSON(models.Paginated[models.MatchSuggestion]{Items: items, Total: total})
 }
 
@@ -725,13 +836,14 @@ func V2MoveStudioMatch(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_source_channel", "The source channel id is invalid.", false)
 	}
 	body := positionRequest{}
-	if err := c.BodyParser(&body); err != nil || (body.BeforeID == nil) == (body.AfterID == nil) {
+	if err := decodeStrict(c, &body); err != nil || (body.BeforeID == nil) == (body.AfterID == nil) {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_move", "Choose exactly one source to move before or after.", false)
 	}
 	if err := database.Db.MoveMatchVariant(c.UserContext(), channelID, sourceChannelID, body.BeforeID, body.AfterID); errors.Is(err, sql.ErrNoRows) {
 		return v2Error(c, fiber.StatusNotFound, "match_not_found", "That source variant or its destination was not found.", false)
 	} else if err != nil {
-		return v2Error(c, fiber.StatusUnprocessableEntity, "move_failed", err.Error(), false)
+		log.Error().Err(err).Msg("Source variant move failed")
+		return v2Error(c, fiber.StatusUnprocessableEntity, "move_failed", "The source variant could not be moved.", false)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }
@@ -767,11 +879,12 @@ func V2MoveStudioChannel(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusConflict, "synced_group_managed", "Channel order is controlled by the connected source group.", false)
 	}
 	body := positionRequest{}
-	if err := c.BodyParser(&body); err != nil {
+	if err := decodeStrict(c, &body); err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_request", "The move request is invalid.", false)
 	}
 	if err := database.Db.MoveWorkspaceChannel(c.UserContext(), groupID, channelID, body.BeforeID, body.AfterID); err != nil {
-		return v2Error(c, fiber.StatusUnprocessableEntity, "move_failed", err.Error(), false)
+		log.Error().Err(err).Msg("Lineup channel move failed")
+		return v2Error(c, fiber.StatusUnprocessableEntity, "move_failed", "The lineup channel could not be moved.", false)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }
@@ -787,7 +900,7 @@ func V2BatchAddStudioChannels(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusConflict, "synced_group_managed", "Channels are added by the connected source group.", false)
 	}
 	request := models.WorkspaceBatchAddRequest{}
-	if err := c.BodyParser(&request); err != nil || len(request.SourceChannelIDs) == 0 {
+	if err := decodeStrict(c, &request); err != nil || len(request.SourceChannelIDs) == 0 {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_selection", "Select at least one source channel.", false)
 	}
 	uuids := make([]string, len(request.SourceChannelIDs))
@@ -813,7 +926,7 @@ func V2BatchRemoveStudioChannels(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusConflict, "synced_group_managed", "Channels are removed by the connected source group.", false)
 	}
 	request := models.WorkspaceBatchRemoveRequest{}
-	if err := c.BodyParser(&request); err != nil || len(request.ChannelIDs) == 0 {
+	if err := decodeStrict(c, &request); err != nil || len(request.ChannelIDs) == 0 {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_selection", "Select at least one lineup channel.", false)
 	}
 	if err := database.Db.BatchRemoveWorkspaceChannels(c.UserContext(), groupID, request.ChannelIDs); err != nil {
@@ -828,7 +941,7 @@ func V2BatchMoveStudioChannels(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_group", "The group id is invalid.", false)
 	}
 	request := models.WorkspaceBatchMoveRequest{}
-	if err := c.BodyParser(&request); err != nil || len(request.ChannelIDs) == 0 || request.TargetGroupID < 1 {
+	if err := decodeStrict(c, &request); err != nil || len(request.ChannelIDs) == 0 || request.TargetGroupID < 1 {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_move", "Select channels and a destination group.", false)
 	}
 	for _, candidateGroupID := range []int64{groupID, request.TargetGroupID} {
@@ -839,7 +952,8 @@ func V2BatchMoveStudioChannels(c *fiber.Ctx) error {
 		}
 	}
 	if err := database.Db.BatchMoveWorkspaceChannels(c.UserContext(), groupID, request.TargetGroupID, request.ChannelIDs, request.BeforeID, request.AfterID); err != nil {
-		return v2Error(c, fiber.StatusUnprocessableEntity, "batch_move_failed", err.Error(), false)
+		log.Error().Err(err).Msg("Lineup channel batch move failed")
+		return v2Error(c, fiber.StatusUnprocessableEntity, "batch_move_failed", "The selected lineup channels could not be moved.", false)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }
@@ -850,7 +964,7 @@ func V2UpdateStudioChannel(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_channel", "The channel id is invalid.", false)
 	}
 	update := models.WorkspaceChannelUpdate{}
-	if err := c.BodyParser(&update); err != nil || strings.TrimSpace(update.Name) == "" {
+	if err := decodeStrict(c, &update); err != nil || strings.TrimSpace(update.Name) == "" {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_channel", "A channel name is required.", false)
 	}
 	if err := database.Db.UpdateWorkspaceChannel(c.UserContext(), channelID, update); err != nil {
@@ -912,10 +1026,7 @@ func launchV2Job(ctx context.Context, kind, resource string, resourceID int64, q
 			}
 		}()
 		if workErr := work(reporter.Report); workErr != nil {
-			message := strings.TrimSpace(workErr.Error())
-			if message == "" {
-				message = "The operation failed."
-			}
+			message := sanitizeOperationError(workErr)
 			errorCode := fmt.Sprintf("%s_%s_failed", resource, kind)
 			persistV2JobUpdate(ctx, jobID, "failed", 100, message, errorCode)
 			return
@@ -923,6 +1034,23 @@ func launchV2Job(ctx context.Context, kind, resource string, resourceID int64, q
 		persistV2JobUpdate(ctx, jobID, "succeeded", 100, successMessage, "")
 	}(job.ID)
 	return job, nil
+}
+
+func sanitizeOperationError(err error) string {
+	if err == nil {
+		return "The operation failed."
+	}
+	message := strings.TrimSpace(streaming.SanitizeDiagnostic(err.Error()))
+	lower := strings.ToLower(message)
+	for _, marker := range []string{"select ", "insert ", "update ", "delete ", "sql", "constraint failed", "no such table", "syntax error", "stack trace", "/xivi/", "/workspaces/", `:\`} {
+		if strings.Contains(lower, marker) {
+			return "The operation failed while processing protected server data."
+		}
+	}
+	if message == "" {
+		return "The operation failed."
+	}
+	return truncateRunes(message, 500)
 }
 
 func persistV2JobUpdate(ctx context.Context, jobID int64, status string, progress int, message, errorCode string) {

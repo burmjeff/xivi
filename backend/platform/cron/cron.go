@@ -308,6 +308,10 @@ func RunMaintenance() {
 	if databaseErr != nil {
 		log.Error().Err(databaseErr).Msg("Storage maintenance completed with database errors")
 	}
+	securityPolicy := settings.APP_SETTINGS.Security
+	if err := database.Db.PruneSecurityData(ctx, now, now.AddDate(0, 0, -securityPolicy.AuditRetentionDays), securityPolicy.MaximumAuditEvents); err != nil {
+		log.Error().Err(err).Msg("Security audit and session retention cleanup failed")
+	}
 
 	streamFiles, streamErr := streaming.DefaultManager.PruneOrphanedStreamFiles()
 	if streamErr != nil {

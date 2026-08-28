@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"xivi/backend/app/models"
+	"xivi/backend/pkg/streaming"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/pkg/virtualtuner"
 	"xivi/backend/platform/database"
@@ -95,7 +96,7 @@ func CreateTemplate(c *fiber.Ctx) error {
 	template := &models.Template{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(template); err != nil {
+	if err := decodeStrict(c, template); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -150,7 +151,7 @@ func UpdateTemplate(c *fiber.Ctx) error {
 	template := &models.Template{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(template); err != nil {
+	if err := decodeStrict(c, template); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -225,6 +226,8 @@ func DeleteTemplate(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
+	viewerIDs, _ := database.Db.GetLineupViewerIDs(c.UserContext(), template_id)
+	mediaKeyIDs, _ := database.Db.GetLineupMediaKeyIDs(c.UserContext(), template_id)
 
 	go m3uTools.RemoveTemplate(template)
 
@@ -236,6 +239,13 @@ func DeleteTemplate(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
+	for _, userID := range viewerIDs {
+		streaming.DefaultManager.DisconnectAuthorizedClients("", 0, userID)
+	}
+	for _, keyID := range mediaKeyIDs {
+		streaming.DefaultManager.DisconnectAuthorizedClients("media_key", keyID, 0)
+	}
+	streaming.DefaultManager.DisconnectAuthorizedClients("virtual_tuner", template_id, 0)
 	if err := virtualtuner.Reconfigure(); err != nil {
 		log.Error().Err(err).Msg("Virtual tuner discovery could not be reconfigured after lineup deletion")
 	}
@@ -376,7 +386,7 @@ func CreateTemplateGroup(c *fiber.Ctx) error {
 	templateGroup := &models.TemplateGroup{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(templateGroup); err != nil {
+	if err := decodeStrict(c, templateGroup); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -615,7 +625,7 @@ func UpdateTemplateGroup(c *fiber.Ctx) error {
 	templateGroup := &models.TemplateGroup{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(templateGroup); err != nil {
+	if err := decodeStrict(c, templateGroup); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -705,7 +715,7 @@ func CreateTemplateChannel(c *fiber.Ctx) error {
 	templateChannel := &models.TemplateChannel{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(templateChannel); err != nil {
+	if err := decodeStrict(c, templateChannel); err != nil {
 		log.Err(err)
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -799,7 +809,7 @@ func UpdateTemplateChannel(c *fiber.Ctx) error {
 	templateChannelLogo := &models.TemplateChannelLogo{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(templateChannelLogo); err != nil {
+	if err := decodeStrict(c, templateChannelLogo); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -957,6 +967,7 @@ func GetTemplateChannelItems(c *fiber.Ctx) error {
 		if err != nil {
 			continue
 		}
+		scopeAdminPlaylistChannelLogo(playlistChannel)
 		playlistChannels = append(playlistChannels, *playlistChannel)
 	}
 	if len(playlistChannels) <= 0 {
@@ -986,7 +997,7 @@ func DeleteTemplateChannelItem(c *fiber.Ctx) error {
 	templateItem := &models.TemplateChannelItem{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(templateItem); err != nil {
+	if err := decodeStrict(c, templateItem); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -1133,6 +1144,7 @@ func AddChannelMatch(c *fiber.Ctx) error {
 			"msg":   "playlist channel with this ID not found",
 		})
 	}
+	scopeAdminPlaylistChannelLogo(playlistChannel)
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{

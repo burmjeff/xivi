@@ -7,11 +7,11 @@ import (
 	"image/color"
 	"image/png"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"xivi/backend/pkg/outbound"
 	"xivi/backend/platform/settings"
 
 	"github.com/davidbyttow/govips/v2/vips"
@@ -37,11 +37,11 @@ func TestStoreSourceLogoDownloadsAndNormalizesImage(t *testing.T) {
 	if err := png.Encode(&source, picture); err != nil {
 		t.Fatalf("building source image failed: %v", err)
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		writer.Header().Set("Content-Type", "image/png")
-		_, _ = writer.Write(source.Bytes())
-	}))
-	defer server.Close()
+	previousFetcher := fetchSourceLogo
+	fetchSourceLogo = func(context.Context, string, outbound.Policy, int64, http.Header) ([]byte, http.Header, error) {
+		return source.Bytes(), http.Header{"Content-Type": []string{"image/png"}}, nil
+	}
+	defer func() { fetchSourceLogo = previousFetcher }()
 
 	previousLogoPath := settings.LOGO_FILEPATH
 	settings.LOGO_FILEPATH = t.TempDir()
@@ -49,7 +49,7 @@ func TestStoreSourceLogoDownloadsAndNormalizesImage(t *testing.T) {
 	vips.Startup(nil)
 	defer vips.Shutdown()
 
-	if err := StoreSourceLogo(context.Background(), server.URL+"/provider.png", "source-provider-test"); err != nil {
+	if err := StoreSourceLogo(context.Background(), "https://provider.example/provider.png", "source-provider-test"); err != nil {
 		t.Fatalf("storing source logo failed: %v", err)
 	}
 	stored := filepath.Join(settings.LOGO_FILEPATH, "source-provider-test.png")

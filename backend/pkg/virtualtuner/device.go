@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"xivi/backend/app/models"
+	"xivi/backend/pkg/security"
 	"xivi/backend/platform/database"
 	"xivi/backend/platform/settings"
 )
@@ -32,6 +33,7 @@ type Device struct {
 	TunerCount            uint8  `json:"tuner_count"`
 	BaseURL               string `json:"base_url"`
 	LineupURL             string `json:"lineup_url"`
+	MediaToken            string `json:"-"`
 }
 
 type DiscoverData struct {
@@ -98,6 +100,7 @@ func NewDevice(lineup models.Template, origin string, tunerCount int) Device {
 		tunerCount = 255
 	}
 	hash := sha256.Sum256([]byte(fmt.Sprintf("xivi-virtual-tuner-%d", lineup.ID)))
+	mediaToken, _ := security.VirtualTunerToken(lineup.ID, lineup.VirtualTunerTokenVersion)
 	return Device{
 		LineupID:              lineup.ID,
 		LineupName:            lineup.Name,
@@ -109,6 +112,7 @@ func NewDevice(lineup models.Template, origin string, tunerCount int) Device {
 		TunerCount:            uint8(tunerCount),
 		BaseURL:               baseURL,
 		LineupURL:             baseURL + "/lineup.json",
+		MediaToken:            mediaToken,
 	}
 }
 
@@ -158,13 +162,21 @@ func Status() LineupStatus {
 	return LineupStatus{ScanInProgress: 0, ScanPossible: 0, Source: "Cable", SourceList: []string{"Cable"}}
 }
 
-func Lineup(origin string, channels []models.TemplateChannel) []LineupEntry {
+func Lineup(origin string, channels []models.TemplateChannel, credential ...string) []LineupEntry {
+	token := ""
+	if len(credential) > 0 {
+		token = credential[0]
+	}
 	entries := make([]LineupEntry, 0, len(channels))
 	for index, channel := range channels {
+		streamURL := strings.TrimRight(origin, "/") + "/stream/" + url.PathEscape(channel.Uuid)
+		if token != "" {
+			streamURL += "?access_token=" + url.QueryEscape(token)
+		}
 		entries = append(entries, LineupEntry{
 			GuideNumber: strconv.Itoa(index + 1),
 			GuideName:   channel.Name,
-			URL:         strings.TrimRight(origin, "/") + "/stream/" + url.PathEscape(channel.Uuid),
+			URL:         streamURL,
 		})
 	}
 	return entries

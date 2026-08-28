@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"xivi/backend/pkg/outbound"
 	"xivi/backend/platform/settings"
 
 	"github.com/rs/zerolog/log"
@@ -163,6 +164,8 @@ type Manager struct {
 	observer          Observer
 	connections       *connectionCoordinator
 	sourceHealth      map[string]*sourceHealthState
+	sourceValidator   func(context.Context, Source) error
+	sourceRelay       func(Source) (*outbound.Relay, error)
 }
 
 type Session struct {
@@ -204,6 +207,8 @@ type Session struct {
 	hls                hlsTimeline
 	sourceAllowed      func(Source, int) bool
 	recordSourceResult func(Source, time.Duration, error)
+	validateSource     func(context.Context, Source) error
+	relaySource        func(Source) (*outbound.Relay, error)
 	hlsReadyOnce       sync.Once
 	onReconnect        func()
 	onDone             func(*Session)
@@ -234,6 +239,7 @@ type managedProducer struct {
 	cleanupOnce  sync.Once
 	cleanupAlert sync.Once
 	cleanupDone  chan struct{}
+	relay        *outbound.Relay
 }
 
 type sourceHealthState struct {
@@ -304,21 +310,36 @@ var (
 var DefaultManager = NewManager(nil, nil)
 
 func NewManager(factory ProducerFactory, configProvider func() Config) *Manager {
+	var sourceValidator func(context.Context, Source) error
+	var sourceRelay func(Source) (*outbound.Relay, error)
 	if factory == nil {
 		factory = newGSTProducer
+		sourceValidator = func(ctx context.Context, source Source) error {
+			_, err := outbound.Validate(ctx, source.URL, true)
+			return err
+		}
+		sourceRelay = func(source Source) (*outbound.Relay, error) {
+			return outbound.StartRelay(source.URL, outbound.Policy{
+				AllowPrivate: true,
+				Timeout:      20 * time.Second,
+				MaxRedirects: 3,
+			})
+		}
 	}
 	if configProvider == nil {
 		configProvider = CurrentConfig
 	}
 	manager := &Manager{
-		sessions:     make(map[string]*Session),
-		playbacks:    make(map[string]playbackLease),
-		factory:      factory,
-		config:       configProvider,
-		cleanupStop:  make(chan struct{}),
-		cleanupDone:  make(chan struct{}),
-		connections:  newConnectionCoordinator(),
-		sourceHealth: make(map[string]*sourceHealthState),
+		sessions:        make(map[string]*Session),
+		playbacks:       make(map[string]playbackLease),
+		factory:         factory,
+		config:          configProvider,
+		cleanupStop:     make(chan struct{}),
+		cleanupDone:     make(chan struct{}),
+		connections:     newConnectionCoordinator(),
+		sourceHealth:    make(map[string]*sourceHealthState),
+		sourceValidator: sourceValidator,
+		sourceRelay:     sourceRelay,
 	}
 	go manager.cleanupLoop()
 	return manager
@@ -448,6 +469,8 @@ func (m *Manager) acquireSources(ctx context.Context, id string, sources []Sourc
 		prewarm:            prewarm,
 		sourceAllowed:      m.sourceIsAllowed,
 		recordSourceResult: m.recordSourceResult,
+		validateSource:     m.sourceValidator,
+		relaySource:        m.sourceRelay,
 		onReconnect: func() {
 			m.mu.Lock()
 			m.totalReconnect++
@@ -803,12 +826,31 @@ func (s *Session) startColdProducerRace(sources []Source, primaryIndex int) (*ma
 }
 
 func (s *Session) startManagedProducer(source Source, sourceIndex, sourceCount int) (*managedProducer, error) {
+	if s.validateSource != nil {
+		validationTimeout := min(s.config.StartupTimeout, 5*time.Second)
+		validationContext, cancel := context.WithTimeout(s.ctx, validationTimeout)
+		err := s.validateSource(validationContext, source)
+		cancel()
+		if err != nil {
+			return nil, fmt.Errorf("outbound source rejected before connection: %w", err)
+		}
+	}
 	if s.sourceAllowed != nil && !s.sourceAllowed(source, sourceCount) {
 		return nil, errors.New("source is in a short health cooldown after recent failures")
 	}
 	lease, err := s.connections.acquire(source)
 	if err != nil {
 		return nil, err
+	}
+	producerSource := source.URL
+	var relay *outbound.Relay
+	if s.relaySource != nil {
+		relay, err = s.relaySource(source)
+		if err != nil {
+			lease.Release()
+			return nil, fmt.Errorf("create protected upstream relay: %w", err)
+		}
+		producerSource = relay.URL()
 	}
 	s.mu.Lock()
 	s.generation++
@@ -822,9 +864,9 @@ func (s *Session) startManagedProducer(source Source, sourceIndex, sourceCount i
 	s.mu.Unlock()
 	s.emitEvent("info", "source_connecting", fmt.Sprintf("Connecting to ordered source %d of %d.", sourceIndex+1, sourceCount), "")
 	localHub := NewHub(s.config.ClientBufferBytes)
-	producer := s.factory(s.id, source.URL, generation, s.config, localHub)
+	producer := s.factory(s.id, producerSource, generation, s.config, localHub)
 	managed := &managedProducer{producer: producer, hub: localHub, lease: lease,
-		sourceIndex: sourceIndex, generation: generation, startedAt: time.Now()}
+		sourceIndex: sourceIndex, generation: generation, startedAt: time.Now(), relay: relay}
 	startupDeadline := time.Now().Add(s.config.StartupTimeout)
 	startResult := make(chan error, 1)
 	go func() { startResult <- producer.Start() }()
@@ -983,6 +1025,9 @@ func (s *Session) stopManagedProducer(managed *managedProducer) error {
 		managed.cleanupDone = make(chan struct{})
 		go func() {
 			defer close(managed.cleanupDone)
+			if managed.relay != nil {
+				_ = managed.relay.Close()
+			}
 			managed.producer.Stop()
 			managed.lease.Release()
 			s.clearProducer(managed.producer)
@@ -1038,7 +1083,7 @@ func (s *Session) reportSourceFailure(err error, attempt int) {
 		severity = "warning"
 	}
 	s.emitEvent(severity, code, err.Error(), "")
-	log.Warn().Err(err).Str("stream_id", s.id).Int("source_position", s.sourcePosition()).Int("attempt", attempt).Msg("Streaming source failed; trying the next ordered variant")
+	log.Warn().Str("error", SanitizeDiagnostic(err.Error())).Str("stream_id", s.id).Int("source_position", s.sourcePosition()).Int("attempt", attempt).Msg("Streaming source failed; trying the next ordered variant")
 }
 
 func backoff(base time.Duration, exponent int) time.Duration {
@@ -1531,6 +1576,7 @@ func (s *Session) Snapshot() SessionSnapshot {
 			ID: client.metadata.ID, Protocol: client.metadata.Protocol, RemoteIP: client.metadata.RemoteIP,
 			Method: client.metadata.Method, UserAgent: client.metadata.UserAgent, StartedAt: client.startedAt,
 			LastSeenAt: client.lastSeenAt, BytesDelivered: client.bytesDelivered, BitrateBPS: client.bitrateBPS,
+			AuthKind: client.metadata.AuthKind,
 		})
 	}
 	snapshot.BytesDelivered = bytesOut
@@ -1604,6 +1650,36 @@ func (m *Manager) RestartSource(id string) bool {
 func (m *Manager) DisconnectClient(id, clientID string) bool {
 	session, ok := m.Get(id)
 	return ok && session.DisconnectClient(clientID)
+}
+
+// DisconnectAuthorizedClients terminates downstream viewers whose credential
+// or owning account was revoked. Shared producers stay alive for other users.
+func (m *Manager) DisconnectAuthorizedClients(authKind string, authID, ownerUserID int64) int {
+	m.mu.RLock()
+	sessions := make([]*Session, 0, len(m.sessions))
+	for _, session := range m.sessions {
+		sessions = append(sessions, session)
+	}
+	m.mu.RUnlock()
+	disconnected := 0
+	for _, session := range sessions {
+		session.mu.RLock()
+		ids := make([]string, 0)
+		for id, client := range session.clients {
+			credentialMatch := authKind != "" && client.metadata.AuthKind == authKind && client.metadata.AuthID == authID
+			ownerMatch := ownerUserID > 0 && client.metadata.OwnerUserID == ownerUserID
+			if client.endReason == "" && (credentialMatch || ownerMatch) {
+				ids = append(ids, id)
+			}
+		}
+		session.mu.RUnlock()
+		for _, id := range ids {
+			if session.ReleaseClient(id, "authorization_revoked") {
+				disconnected++
+			}
+		}
+	}
+	return disconnected
 }
 
 func (m *Manager) Snapshots() []SessionSnapshot {

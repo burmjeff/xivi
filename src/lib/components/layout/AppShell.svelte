@@ -13,8 +13,11 @@
 		Activity,
 		ArrowLeftRight,
 		PanelLeftClose,
-		PanelLeftOpen
+		PanelLeftOpen,
+		Users,
+		CircleUserRound
 	} from '@lucide/svelte';
+	import { auth } from '$lib/state/auth.svelte';
 	import SignalMark from '$lib/components/brand/SignalMark.svelte';
 	import CommandMenu from './CommandMenu.svelte';
 	import ThemeSwitcher from '$lib/components/ui/ThemeSwitcher.svelte';
@@ -47,6 +50,7 @@
 		{ href: '/studio/sources', label: 'Sources', icon: Database },
 		{ href: '/studio/guide-data', label: 'Guide Data', icon: BookOpen },
 		{ href: '/studio/streams', label: 'Streams', icon: Activity },
+		{ href: '/studio/users', label: 'Users', icon: Users },
 		{ href: '/studio/settings', label: 'Settings', icon: Settings }
 	];
 	function active(href: string) {
@@ -95,7 +99,13 @@
 					aria-label={preferences.studioNavCollapsed ? 'Watch' : undefined}
 					title={preferences.studioNavCollapsed ? 'Watch' : undefined}
 					><ArrowLeftRight size={18} /><span>Watch</span></a
-				><ThemeSwitcher />
+				><a
+					href="/account"
+					aria-label={preferences.studioNavCollapsed ? 'Account' : undefined}
+					title={preferences.studioNavCollapsed ? 'Account' : undefined}
+					><CircleUserRound size={18} /><span>Account</span></a
+				>
+				<ThemeSwitcher />
 			</div>
 		</aside>
 	{:else}
@@ -107,7 +117,13 @@
 			</nav>
 			<div class="header-actions">
 				<CommandMenu compact iconOnly triggerLabel="Search Xivi" />
-				<a class="studio-link" href="/studio">Studio</a>
+				{#if auth.principal?.role === 'admin'}<a class="studio-link" href="/studio">Studio</a>{/if}
+				<a
+					class="account-link"
+					href="/account"
+					aria-label={`Account for ${auth.principal?.username ?? ''}`}
+					title="Account"><CircleUserRound size={19} /></a
+				>
 				<ThemeSwitcher />
 			</div>
 		</header>
@@ -122,11 +138,19 @@
 		{@render children?.()}
 	</main>
 
-	{#if !studio}<nav class="watch-bottom" aria-label="Watch">
+	{#if !studio}<nav
+			class:admin-nav={auth.principal?.role === 'admin'}
+			class="watch-bottom"
+			aria-label="Watch"
+		>
 			{#each watchNav as item}{@const Icon = item.icon}<a
 					href={item.href}
 					class:active={active(item.href)}><Icon size={21} /><span>{item.label}</span></a
-				>{/each}<a href="/studio"><PanelsTopLeft size={21} /><span>Studio</span></a>
+				>{/each}{#if auth.principal?.role === 'admin'}<a href="/studio"
+					><PanelsTopLeft size={21} /><span>Studio</span></a
+				>{/if}<a href="/account" class:active={active('/account')}
+				><CircleUserRound size={21} /><span>Account</span></a
+			>
 		</nav>{/if}
 </div>
 
@@ -184,6 +208,19 @@
 		border-radius: 0.85rem;
 		padding: 0.55rem 0.85rem;
 		font-weight: 750;
+	}
+	.account-link {
+		display: grid;
+		width: 2.75rem;
+		height: 2.75rem;
+		place-items: center;
+		border: 1px solid var(--line);
+		border-radius: 0.85rem;
+		color: var(--muted);
+	}
+	.account-link:hover {
+		background: var(--surface-raised);
+		color: var(--text);
 	}
 	.watch-main {
 		min-height: calc(100dvh - 4.6rem);
@@ -267,14 +304,23 @@
 	.rail-bottom {
 		margin-top: auto;
 		display: grid;
-		grid-template-columns: 1fr auto;
+		grid-template-columns: minmax(0, 1fr);
 		align-items: center;
 		gap: 0.35rem;
 		border-top: 1px solid var(--line);
 		padding-top: 0.7rem;
 	}
 	.rail-command {
-		grid-column: 1/3;
+		grid-column: 1/-1;
+	}
+	.rail-bottom > a {
+		grid-column: 1;
+		min-width: 0;
+	}
+	.rail-bottom > :global(button) {
+		grid-row: auto;
+		grid-column: 1;
+		justify-self: start;
 	}
 	.studio-main {
 		min-height: 100dvh;
@@ -317,6 +363,8 @@
 		grid-column: 1;
 	}
 	.studio-rail.collapsed .rail-bottom > :global(button) {
+		grid-row: auto;
+		grid-column: 1;
 		justify-self: center;
 	}
 	.studio-main.studio-nav-collapsed {
@@ -414,6 +462,9 @@
 			padding: 0.38rem;
 			box-shadow: 0 15px 40px rgb(0 0 0 / 0.35);
 			backdrop-filter: blur(16px);
+		}
+		.watch-bottom.admin-nav {
+			grid-template-columns: repeat(5, 1fr);
 		}
 		.watch-bottom a {
 			display: grid;

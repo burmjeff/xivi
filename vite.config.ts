@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
 
 const port = process.env.SERVER_PORT || 3000;
+const backend = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
@@ -14,34 +15,47 @@ export default defineConfig({
 			overlay: true
 		},
 		proxy: {
+			'/media': {
+				target: backend,
+				changeOrigin: true,
+				secure: false,
+				timeout: 0,
+				proxyTimeout: 0
+			},
 			'/stream': {
-				target: `http://127.0.0.1:${port}`,
+				target: backend,
 				changeOrigin: true,
 				secure: false,
 				timeout: 0,
 				proxyTimeout: 0
 			},
 			'/api': {
-				target: `http://127.0.0.1:${port}`,
+				target: backend,
 				changeOrigin: true,
 				secure: false,
 				ws: true,
+				configure(proxy) {
+					// Browser requests are same-origin to Vite. Present the proxied
+					// backend origin so development exercises the same strict origin
+					// validation as production.
+					proxy.on('proxyReq', (request) => request.setHeader('Origin', backend));
+				},
 				// Add timeout to prevent hanging requests
 				timeout: 5000
 			},
 			'/images': {
-				target: `http://127.0.0.1:${port}`,
+				target: backend,
 				changeOrigin: true,
 				secure: false,
 				ws: true,
 				timeout: 5000
 			},
-			'/proxy-image': {
-				target: `http://127.0.0.1:${port}`,
+			'/virtual-tuner': {
+				target: backend,
 				changeOrigin: true,
 				secure: false,
-				ws: true,
-				timeout: 5000
+				timeout: 0,
+				proxyTimeout: 0
 			}
 		}
 	},

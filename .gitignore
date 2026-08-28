@@ -18,6 +18,7 @@ xivi.exe
 /models/
 /docs/*
 !/docs/openapi-v2.yaml
+!/docs/security-deployment.md
 xivi
 lib_build/
 serve/

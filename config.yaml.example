@@ -48,3 +48,16 @@ maintenance:
 
 virtual_tuner:
   tuner_count: 6
+
+# The authentication key is not stored here. Mount a root key at the path in
+# XIVI_AUTH_KEY_FILE (normally /xivi/config/auth.key).
+security:
+  public_base_url: https://tv.example.com
+  local_base_url: http://192.168.1.10:3000
+  trusted_proxy_cidrs:
+    - 192.168.1.20/32
+  trusted_lan_cidrs:
+    - 192.168.1.0/24
+  allow_lan_http: true
+  audit_retention_days: 90
+  maximum_audit_events: 100000

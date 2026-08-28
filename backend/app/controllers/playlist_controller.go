@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"xivi/backend/app/models"
+	"xivi/backend/pkg/security"
 	"xivi/backend/pkg/streaming"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/platform/cron"
@@ -41,6 +42,7 @@ func GetPlaylists(c *fiber.Ctx) error {
 	}
 	for index := range *playlists {
 		(*playlists)[index].ActiveConnections = usage[(*playlists)[index].ID]
+		(*playlists)[index].URL = security.RedactProviderURL((*playlists)[index].URL)
 	}
 
 	// Return status 200 OK.
@@ -86,6 +88,7 @@ func GetPlaylist(c *fiber.Ctx) error {
 			break
 		}
 	}
+	playlist.URL = security.RedactProviderURL(playlist.URL)
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
@@ -197,6 +200,9 @@ func GetPlaylistGroupChannels(c *fiber.Ctx) error {
 			"playlistgroups": nil,
 		})
 	}
+	for index := range channels {
+		scopeAdminPlaylistChannelLogo(&channels[index])
+	}
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
@@ -220,7 +226,7 @@ func CreatePlaylist(c *fiber.Ctx) error {
 	playlist := &models.Playlist{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(playlist); err != nil {
+	if err := decodeStrict(c, playlist); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -262,11 +268,13 @@ func CreatePlaylist(c *fiber.Ctx) error {
 
 	//TODO async Parse m3u and insert channels
 	m3uParser := utils.M3uParser{}
+	providerPlaylist := *playlist
 	go func() {
-		if err := m3uParser.ParseM3u(*playlist); err != nil {
+		if err := m3uParser.ParseM3u(providerPlaylist); err != nil {
 			log.Error().Err(err).Int64("playlist_id", playlist.ID).Msg("Initial playlist import failed")
 		}
 	}()
+	playlist.URL = security.RedactProviderURL(playlist.URL)
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
@@ -290,7 +298,7 @@ func UpdatePlaylist(c *fiber.Ctx) error {
 	playlist := &models.Playlist{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(playlist); err != nil {
+	if err := decodeStrict(c, playlist); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -315,6 +323,9 @@ func UpdatePlaylist(c *fiber.Ctx) error {
 	// validation failure or silently changing the limit.
 	if playlist.ConnectionLimit == 0 {
 		playlist.ConnectionLimit = foundPlaylist.ConnectionLimit
+	}
+	if playlist.URL == "" {
+		playlist.URL = foundPlaylist.URL
 	}
 
 	// Create a new validator for a Playlist model.
@@ -403,7 +414,7 @@ func ConvertPlaylistGroup(c *fiber.Ctx) error {
 	}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(templateGroup); err != nil {
+	if err := decodeStrict(c, templateGroup); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -600,7 +611,7 @@ func UpdatePlaylistGroup(c *fiber.Ctx) error {
 	playlistGroup := &models.PlaylistGroup{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(playlistGroup); err != nil {
+	if err := decodeStrict(c, playlistGroup); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,

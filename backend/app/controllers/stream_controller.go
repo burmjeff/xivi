@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -16,6 +15,9 @@ import (
 	"strings"
 	"time"
 	"xivi/backend/app/models"
+	"xivi/backend/pkg/middleware"
+	"xivi/backend/pkg/outbound"
+	"xivi/backend/pkg/security"
 	"xivi/backend/pkg/streaming"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/platform/database"
@@ -37,6 +39,9 @@ func streamSources(channels []models.ChannelUrl) []streaming.Source {
 }
 
 func acquireStreamSession(ctx context.Context, streamID, playbackID, protocol string) (*streaming.Session, []models.ChannelUrl, string, error) {
+	if !settings.APP_SETTINGS.Streaming.Proxy {
+		return nil, nil, "", errors.New("secure playback requires stream proxying")
+	}
 	channels, err := database.Db.GetChannelsbyUuid(ctx, streamID)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("load ordered source variants: %w", err)
@@ -44,8 +49,17 @@ func acquireStreamSession(ctx context.Context, streamID, playbackID, protocol st
 	if channels == nil || len(*channels) == 0 {
 		return nil, nil, "", fmt.Errorf("no streamable source variants are available")
 	}
-	if !settings.APP_SETTINGS.Streaming.Proxy {
-		return nil, *channels, "", nil
+	if _, active := streaming.DefaultManager.Get(streamID); !active {
+		validated := make([]models.ChannelUrl, 0, len(*channels))
+		for _, channel := range *channels {
+			if _, validationErr := outbound.Validate(ctx, channel.Url, true); validationErr == nil {
+				validated = append(validated, channel)
+			}
+		}
+		if len(validated) == 0 {
+			return nil, nil, "", fmt.Errorf("all source variants were rejected by the outbound network policy")
+		}
+		channels = &validated
 	}
 	if playbackID != "" {
 		var session *streaming.Session
@@ -79,12 +93,12 @@ func streamError(c *fiber.Ctx, status int, message string, err error) error {
 }
 
 func streamErrorForSession(c *fiber.Ctx, status int, message string, err error, incidentID string) error {
-	log.Error().Err(err).Str("stream_id", c.Params("stream_id")).Msg(message)
 	detail := ""
 	code, retryable := streaming.ClassifyError(err)
 	if err != nil {
 		detail = streaming.SanitizeDiagnostic(err.Error())
 	}
+	log.Error().Str("error", detail).Str("stream_id", c.Params("stream_id")).Msg(message)
 	if incidentID != "" {
 		c.Set("X-Xivi-Incident-ID", incidentID)
 	}
@@ -95,8 +109,64 @@ func streamErrorForSession(c *fiber.Ctx, status int, message string, err error, 
 }
 
 func streamClientMetadata(c *fiber.Ctx, protocol, id string) streaming.ClientMetadata {
-	return streaming.ClientMetadata{ID: strings.Clone(id), Protocol: protocol, RemoteIP: strings.Clone(c.IP()),
+	metadata := streaming.ClientMetadata{ID: strings.Clone(id), Protocol: protocol, RemoteIP: security.RequestNetworkInfo(c).IP.String(),
 		Method: c.Method() + " " + c.Path(), UserAgent: strings.Clone(c.Get(fiber.HeaderUserAgent))}
+	if principal, ok := middleware.Principal(c); ok {
+		if session, sessionOK := middleware.CurrentSession(c); sessionOK {
+			metadata.AuthKind, metadata.AuthID, metadata.OwnerUserID = "session", session.ID, principal.UserID
+		} else {
+			metadata.AuthKind, metadata.AuthID, metadata.OwnerUserID = "user", principal.UserID, principal.UserID
+		}
+	} else if credential, ok := middleware.CurrentMediaCredential(c); ok {
+		if credential.Key != nil {
+			metadata.AuthKind, metadata.AuthID, metadata.OwnerUserID = "media_key", credential.Key.ID, credential.Key.UserID
+		} else {
+			metadata.AuthKind, metadata.AuthID = "virtual_tuner", credential.VirtualLineupID
+		}
+	}
+	return metadata
+}
+
+type streamAuthorization struct {
+	kind    string
+	id      int64
+	role    string
+	version int64
+}
+
+func captureStreamAuthorization(c *fiber.Ctx) streamAuthorization {
+	if principal, ok := middleware.Principal(c); ok {
+		if session, sessionOK := middleware.CurrentSession(c); sessionOK {
+			return streamAuthorization{kind: "session", id: session.ID}
+		}
+		return streamAuthorization{kind: "user", id: principal.UserID, role: principal.Role}
+	}
+	if credential, ok := middleware.CurrentMediaCredential(c); ok {
+		if credential.Key != nil {
+			return streamAuthorization{kind: "media_key", id: credential.Key.ID}
+		}
+		_, version, _ := security.ValidateVirtualTunerToken(credential.Token)
+		return streamAuthorization{kind: "virtual_tuner", id: credential.VirtualLineupID, version: version}
+	}
+	return streamAuthorization{}
+}
+
+func (authorization streamAuthorization) allows(ctx context.Context, streamID string) bool {
+	var allowed bool
+	var err error
+	switch authorization.kind {
+	case "session":
+		allowed, err = database.Db.SessionCanAccessChannel(ctx, authorization.id, streamID)
+	case "user":
+		allowed, err = database.Db.UserCanAccessChannel(ctx, authorization.id, authorization.role, streamID)
+	case "media_key":
+		allowed, err = database.Db.MediaKeyAllowsChannel(ctx, authorization.id, streamID)
+	case "virtual_tuner":
+		allowed, err = database.Db.VirtualTunerAllowsChannel(ctx, authorization.id, authorization.version, streamID)
+	default:
+		return false
+	}
+	return err == nil && allowed
 }
 
 func normalizedPlaybackID(namespace, candidate string) string {
@@ -170,10 +240,14 @@ func GetStream(c *fiber.Ctx) error {
 	if streamID == "" {
 		return streamError(c, fiber.StatusBadRequest, "A stream id is required.", nil)
 	}
+	if !settings.APP_SETTINGS.Streaming.Proxy {
+		return streamErrorForSession(c, fiber.StatusServiceUnavailable,
+			"Secure playback requires stream proxying to be enabled.", errors.New("stream proxy is disabled"), "")
+	}
 	ctx, cancel := context.WithTimeout(c.UserContext(), streamOperationTimeout)
 	defer cancel()
 	playbackID := requestPlaybackID(c)
-	session, channels, trackedClientID, err := acquireStreamSession(ctx, streamID, playbackID, "mpegts")
+	session, _, trackedClientID, err := acquireStreamSession(ctx, streamID, playbackID, "mpegts")
 	if err != nil {
 		incidentID := ""
 		if session != nil {
@@ -186,10 +260,6 @@ func GetStream(c *fiber.Ctx) error {
 		}
 		return streamErrorForSession(c, fiber.StatusBadGateway, "The stream could not start.", err, incidentID)
 	}
-	if !settings.APP_SETTINGS.Streaming.Proxy {
-		return c.Redirect(channels[0].Url, http.StatusTemporaryRedirect)
-	}
-
 	subscription := session.Subscribe()
 	clientID, allowed := session.RegisterClient(streamClientMetadata(c, "mpegts", trackedClientID), subscription.Close)
 	if !allowed {
@@ -201,10 +271,31 @@ func GetStream(c *fiber.Ctx) error {
 	c.Set(fiber.HeaderContentType, "video/MP2T")
 	c.Set(fiber.HeaderCacheControl, "no-store")
 	c.Set(fiber.HeaderConnection, "keep-alive")
+	authorization := captureStreamAuthorization(c)
 	c.Context().Response.SetBodyStreamWriter(func(writer *bufio.Writer) {
 		defer subscription.Close()
 		reason := "client_disconnected"
 		defer func() { session.CloseClient(clientID, reason) }()
+		authorizationDone := make(chan struct{})
+		defer close(authorizationDone)
+		go func() {
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-authorizationDone:
+					return
+				case <-ticker.C:
+					authorizationContext, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+					stillAllowed := authorization.allows(authorizationContext, streamID)
+					cancel()
+					if !stillAllowed {
+						session.ReleaseClient(clientID, "authorization_revoked")
+						return
+					}
+				}
+			}
+		}()
 		buffered := 0
 		firstChunk := true
 		lastFlush := time.Now()
@@ -246,10 +337,14 @@ func GetHlsStream(c *fiber.Ctx) error {
 	if streamID == "" {
 		return streamError(c, fiber.StatusBadRequest, "A stream id is required.", nil)
 	}
+	if !settings.APP_SETTINGS.Streaming.Proxy {
+		return streamErrorForSession(c, fiber.StatusServiceUnavailable,
+			"Secure playback requires stream proxying to be enabled.", errors.New("stream proxy is disabled"), "")
+	}
 	ctx, cancel := context.WithTimeout(c.UserContext(), streamOperationTimeout)
 	defer cancel()
 	playbackID := requestPlaybackID(c)
-	session, channels, trackedClientID, err := acquireStreamSession(ctx, streamID, playbackID, "hls")
+	session, _, trackedClientID, err := acquireStreamSession(ctx, streamID, playbackID, "hls")
 	if err != nil {
 		incidentID := ""
 		if session != nil {
@@ -261,9 +356,6 @@ func GetHlsStream(c *fiber.Ctx) error {
 				"The previous stream is still stopping; retry shortly.", err, incidentID)
 		}
 		return streamErrorForSession(c, fiber.StatusBadGateway, "The stream could not start.", err, incidentID)
-	}
-	if !settings.APP_SETTINGS.Streaming.Proxy {
-		return c.Redirect(channels[0].Url, http.StatusTemporaryRedirect)
 	}
 	viewerID := trackedClientID
 	if viewerID == "" {
@@ -374,7 +466,9 @@ func sendHLSFile(c *fiber.Ctx, streamID, asset string) error {
 			}
 			if err == nil {
 				identityKey, identityValue := "", ""
-				if playbackID, ok := c.Locals("stream_playback_id").(string); ok && playbackID != "" {
+				if token := c.Query("access_token"); token != "" {
+					identityKey, identityValue = "access_token", token
+				} else if playbackID, ok := c.Locals("stream_playback_id").(string); ok && playbackID != "" {
 					identityKey, identityValue = "playback_token", playbackID
 				} else if token := c.Query("playback_token"); token != "" {
 					identityKey, identityValue = "playback_token", token
@@ -397,7 +491,7 @@ func sendHLSFile(c *fiber.Ctx, streamID, asset string) error {
 			}
 			time.Sleep(15 * time.Millisecond)
 		}
-		log.Debug().Err(err).Str("stream_id", streamID).Msg("HLS playlist rewrite was not ready to serve")
+		log.Debug().Str("error", streaming.SanitizeDiagnostic(err.Error())).Str("stream_id", streamID).Msg("HLS playlist rewrite was not ready to serve")
 		c.Set("Retry-After", "1")
 		return c.SendStatus(fiber.StatusServiceUnavailable)
 	}
@@ -406,7 +500,7 @@ func sendHLSFile(c *fiber.Ctx, streamID, asset string) error {
 		return c.SendStatus(fiber.StatusNotFound)
 	}
 	c.Set(fiber.HeaderContentType, "video/MP2T")
-	c.Set(fiber.HeaderCacheControl, "public, max-age=60, immutable")
+	c.Set(fiber.HeaderCacheControl, "private, no-store")
 	if session, ok := streaming.DefaultManager.Get(streamID); ok {
 		clientID, _ := c.Locals("stream_client_id").(string)
 		if clientID == "" {
@@ -541,7 +635,7 @@ func V2PrewarmStream(c *fiber.Ctx) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		if _, err := streaming.DefaultManager.PrewarmSources(ctx, streamID, sources); err != nil {
-			log.Debug().Err(err).Str("stream_id", streamID).Msg("Optional stream prewarm was skipped")
+			log.Debug().Str("error", streaming.SanitizeDiagnostic(err.Error())).Str("stream_id", streamID).Msg("Optional stream prewarm was skipped")
 		}
 	}()
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"status": "prewarm_requested"})
@@ -564,12 +658,17 @@ type releasePlaybackRequest struct {
 // channel switch without turning normal navigation into an error.
 func V2ReleasePlayback(c *fiber.Ctx) error {
 	request := releasePlaybackRequest{}
-	if err := c.BodyParser(&request); err != nil {
+	if err := decodeStrict(c, &request); err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_request", "Playback release data is invalid.", false)
 	}
 	playbackID := normalizedPlaybackID("viewer", request.PlaybackID)
 	if playbackID == "" || request.StreamID == "" {
 		return v2Error(c, fiber.StatusBadRequest, "missing_playback_identity", "A playback id and stream id are required.", false)
+	}
+	principal, _ := middleware.Principal(c)
+	allowed, err := database.Db.UserCanAccessChannel(c.UserContext(), principal.UserID, principal.Role, request.StreamID)
+	if err != nil || !allowed {
+		return v2Error(c, fiber.StatusNotFound, "stream_not_found", "That stream was not found.", false)
 	}
 	ctx, cancel := context.WithTimeout(c.UserContext(), streamOperationTimeout)
 	defer cancel()
@@ -586,20 +685,35 @@ func V2StreamTelemetry(c *fiber.Ctx) error {
 		Message  string         `json:"message"`
 		Details  map[string]any `json:"details"`
 	}
-	if err := c.BodyParser(&request); err != nil {
+	if err := decodeStrict(c, &request); err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_telemetry", "Player telemetry was not valid.", false)
 	}
+	if !safeTelemetryIdentifier(request.StreamID, 128) || (request.ViewerID != "" && !safeTelemetryIdentifier(request.ViewerID, 128)) {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_telemetry", "Player telemetry identifiers were invalid.", false)
+	}
+	principal, _ := middleware.Principal(c)
+	allowed, accessErr := database.Db.UserCanAccessChannel(c.UserContext(), principal.UserID, principal.Role, request.StreamID)
+	if accessErr != nil || !allowed {
+		return v2Error(c, fiber.StatusNotFound, "stream_not_found", "That stream session was not found.", false)
+	}
 	session, ok := streaming.DefaultManager.Get(request.StreamID)
-	details, _ := json.Marshal(request.Details)
+	details, _ := json.Marshal(sanitizeTelemetryValue(request.Details, 0))
+	if len(details) > 4096 {
+		details = []byte(`{"truncated":true}`)
+	}
 	if request.Severity != "error" && request.Severity != "warning" {
 		request.Severity = "info"
 	}
 	if request.Code == "" {
 		request.Code = "player_event"
 	}
+	if !safeTelemetryIdentifier(request.Code, 64) {
+		request.Code = "player_event"
+	}
 	if request.Message == "" {
 		request.Message = "The player reported a stream event."
 	}
+	request.Message = truncateRunes(security.RedactSensitiveText(streaming.SanitizeDiagnostic(request.Message)), 500)
 	if ok {
 		session.RecordClientEvent(request.ViewerID, request.Severity, request.Code, request.Message, string(details))
 		return c.JSON(fiber.Map{"incident_id": session.IncidentID(), "code": request.Code})
@@ -618,6 +732,62 @@ func V2StreamTelemetry(c *fiber.Ctx) error {
 		return v2Error(c, fiber.StatusInternalServerError, "telemetry_failed", "Player telemetry could not be saved.", true)
 	}
 	return c.JSON(fiber.Map{"incident_id": history.IncidentID, "code": request.Code})
+}
+
+func safeTelemetryIdentifier(value string, maximum int) bool {
+	if value == "" || len(value) > maximum {
+		return false
+	}
+	for _, character := range value {
+		if !(character == '-' || character == '_' || character >= '0' && character <= '9' || character >= 'A' && character <= 'Z' || character >= 'a' && character <= 'z') {
+			return false
+		}
+	}
+	return true
+}
+
+func truncateRunes(value string, maximum int) string {
+	runes := []rune(value)
+	if len(runes) > maximum {
+		return string(runes[:maximum])
+	}
+	return value
+}
+
+func sanitizeTelemetryValue(value any, depth int) any {
+	if depth > 4 {
+		return "[omitted]"
+	}
+	switch typed := value.(type) {
+	case string:
+		return truncateRunes(security.RedactSensitiveText(streaming.SanitizeDiagnostic(typed)), 500)
+	case map[string]any:
+		clean := make(map[string]any, min(len(typed), 64))
+		count := 0
+		for key, item := range typed {
+			if count >= 64 {
+				clean["truncated"] = true
+				break
+			}
+			lower := strings.ToLower(key)
+			if strings.Contains(lower, "token") || strings.Contains(lower, "password") || strings.Contains(lower, "secret") || strings.Contains(lower, "authorization") || strings.Contains(lower, "cookie") || strings.Contains(lower, "csrf") {
+				clean[key] = "[redacted]"
+			} else {
+				clean[key] = sanitizeTelemetryValue(item, depth+1)
+			}
+			count++
+		}
+		return clean
+	case []any:
+		maximum := min(len(typed), 64)
+		clean := make([]any, 0, maximum)
+		for _, item := range typed[:maximum] {
+			clean = append(clean, sanitizeTelemetryValue(item, depth+1))
+		}
+		return clean
+	default:
+		return value
+	}
 }
 
 // GetHlsChannels gets HLS channels by legacy template group.

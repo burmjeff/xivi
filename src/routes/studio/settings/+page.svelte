@@ -10,7 +10,8 @@
 		CalendarClock,
 		Cast,
 		Palette,
-		HardDrive
+		HardDrive,
+		ShieldCheck
 	} from '@lucide/svelte';
 	import { api } from '$lib/api/client';
 	import StudioHeader from '$lib/components/studio/StudioHeader.svelte';
@@ -58,6 +59,15 @@
 		virtual_tuner: {
 			tuner_count: number;
 		};
+		security: {
+			public_base_url: string;
+			local_base_url: string;
+			trusted_proxy_cidrs: string[];
+			trusted_lan_cidrs: string[];
+			allow_lan_http: boolean;
+			audit_retention_days: number;
+			maximum_audit_events: number;
+		};
 	};
 	type Response = { settings: Settings };
 	const query = createQuery(() => ({
@@ -83,6 +93,20 @@
 			if (settings.server.port < 1 || settings.server.port > 65535)
 				next.port = 'Use a port from 1 to 65535.';
 			if (settings.server.readtimeout < 1) next.readtimeout = 'Timeout must be positive.';
+		}
+		if (section === 'security') {
+			if (
+				settings.security.public_base_url &&
+				!settings.security.public_base_url.startsWith('https://')
+			)
+				next.public_base_url = 'Public access must use HTTPS.';
+			if (!/^https?:\/\/[^/]+\/?$/.test(settings.security.local_base_url))
+				next.local_base_url = 'Use only an HTTP or HTTPS scheme and host.';
+			const cidr = /^(?:[0-9a-fA-F:.]+)\/\d{1,3}$/;
+			if (settings.security.trusted_proxy_cidrs.some((value) => !cidr.test(value)))
+				next.trusted_proxy_cidrs = 'Enter one CIDR per line.';
+			if (settings.security.trusted_lan_cidrs.some((value) => !cidr.test(value)))
+				next.trusted_lan_cidrs = 'Enter one CIDR per line.';
 		}
 		if (section === 'matching') {
 			const score = settings.playlist.name_score;
@@ -164,7 +188,7 @@
 			if (section === 'devices') {
 				await client.invalidateQueries({ queryKey: ['studio', 'device-outputs'] });
 			}
-			message = `${section[0].toUpperCase()}${section.slice(1)} settings saved.${section === 'server' || section === 'maintenance' ? ' Restart Xivi to apply scheduling changes.' : ''}`;
+			message = `${section[0].toUpperCase()}${section.slice(1)} settings saved.${section === 'server' || section === 'maintenance' || section === 'security' ? ' Restart Xivi to apply these changes.' : ''}`;
 		} catch {
 			message = 'Settings could not be saved.';
 		} finally {
@@ -175,6 +199,9 @@
 		if (query.data?.settings) settings = structuredClone(query.data.settings);
 		errors = {};
 		message = 'Unsaved changes reset.';
+	}
+	function updateSecurityCIDRs(key: 'trusted_proxy_cidrs' | 'trusted_lan_cidrs', value: string) {
+		if (settings) settings.security[key] = value.split(/\s+/).filter(Boolean);
 	}
 	const themes: ThemePreference[] = ['system', 'light', 'dark'];
 </script>
@@ -233,6 +260,84 @@
 					class="app-button app-button--primary"
 					onclick={() => save('application')}
 					disabled={saving === 'application'}><Save size={16} />Save About</button
+				>
+			</footer>
+		</section>
+		<section class="settings-card security-card">
+			<header>
+				<ShieldCheck />
+				<div>
+					<p class="eyebrow">Security</p>
+					<h2>Internet boundary <span class="restart">Restart</span></h2>
+				</div>
+			</header>
+			<div class="fields">
+				<p class="section-note">
+					Forwarded headers are trusted only from the proxy networks below. Direct LAN HTTP is a
+					compatibility exception: use local TLS when confidentiality on your LAN matters.
+				</p>
+				<label
+					>Public HTTPS base URL<input
+						bind:value={settings.security.public_base_url}
+						placeholder="https://tv.example.com"
+					/>{#if errors.public_base_url}<em>{errors.public_base_url}</em>{/if}</label
+				>
+				<label
+					>Direct local base URL<input
+						bind:value={settings.security.local_base_url}
+						placeholder="http://192.168.1.10:3000"
+					/>{#if errors.local_base_url}<em>{errors.local_base_url}</em>{/if}</label
+				>
+				<div class="field-pair">
+					<label
+						>Trusted Caddy proxy CIDRs<textarea
+							rows="3"
+							value={settings.security.trusted_proxy_cidrs.join('\n')}
+							oninput={(event) =>
+								updateSecurityCIDRs('trusted_proxy_cidrs', event.currentTarget.value)}
+						></textarea>{#if errors.trusted_proxy_cidrs}<em>{errors.trusted_proxy_cidrs}</em
+							>{/if}</label
+					>
+					<label
+						>Trusted LAN CIDRs<textarea
+							rows="3"
+							value={settings.security.trusted_lan_cidrs.join('\n')}
+							oninput={(event) =>
+								updateSecurityCIDRs('trusted_lan_cidrs', event.currentTarget.value)}
+						></textarea>{#if errors.trusted_lan_cidrs}<em>{errors.trusted_lan_cidrs}</em
+							>{/if}</label
+					>
+					<label
+						>Audit retention days<input
+							type="number"
+							min="1"
+							max="3650"
+							bind:value={settings.security.audit_retention_days}
+						/></label
+					>
+					<label
+						>Maximum audit events<input
+							type="number"
+							min="1000"
+							max="1000000"
+							bind:value={settings.security.maximum_audit_events}
+						/></label
+					>
+				</div>
+				<label class="switch-row"
+					><span
+						><strong>Allow full application over trusted LAN HTTP</strong><small
+							>Sessions are shorter and cannot be replayed through the public proxy, but LAN traffic
+							remains cleartext.</small
+						></span
+					><input type="checkbox" bind:checked={settings.security.allow_lan_http} /></label
+				>
+			</div>
+			<footer>
+				<button
+					class="app-button app-button--primary"
+					onclick={() => save('security')}
+					disabled={saving === 'security'}><Save size={16} />Save Security</button
 				>
 			</footer>
 		</section>
@@ -554,8 +659,7 @@
 			</header>
 			<div class="fields">
 				<p class="section-note">
-					Enable virtual tuners individually from <a href="/studio">Device outputs</a> on the Studio
-					overview.
+					Enable virtual tuners individually from <a href="/studio">Device outputs</a> on the Studio overview.
 				</p>
 				<label
 					>Simultaneous tuners per lineup<input
@@ -700,13 +804,18 @@
 		font-size: 0.67rem;
 		font-weight: 700;
 	}
-	.fields input {
+	.fields input,
+	.fields textarea {
 		min-height: 2.7rem;
 		border: 1px solid var(--line);
 		border-radius: 0.7rem;
 		background: var(--surface-raised);
 		padding: 0.5rem 0.65rem;
 		color: var(--text);
+	}
+	.fields textarea {
+		resize: vertical;
+		line-height: 1.45;
 	}
 	.fields input:disabled {
 		opacity: 0.55;

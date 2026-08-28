@@ -12,6 +12,7 @@ import (
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/pkg/logoassets"
+	"xivi/backend/pkg/security"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -544,6 +545,13 @@ func (q *ExperienceQueries) applyDefaultSourceLogos(ctx context.Context, groupID
 		ORDER BY tc.id`, groupID); err != nil {
 		return err
 	}
+	for index := range candidates {
+		revealed, err := security.RevealString(candidates[index].LogoURL)
+		if err != nil {
+			return err
+		}
+		candidates[index].LogoURL = revealed
+	}
 	logoIDs := map[string]int64{}
 	type sourceLogoAsset struct {
 		Name      string
@@ -596,7 +604,7 @@ func (q *ExperienceQueries) applyDefaultSourceLogos(ctx context.Context, groupID
 	}()
 	for imported := range imports {
 		if imported.Err != nil {
-			log.Warn().Err(imported.Err).Int64("channel_id", imported.Asset.ChannelID).Str("logo_url", imported.Asset.URL).Msg("Source logo could not be imported")
+			log.Warn().Err(imported.Err).Int64("channel_id", imported.Asset.ChannelID).Msg("Source logo could not be imported")
 			continue
 		}
 		if _, err := q.ExecContext(ctx, `INSERT OR IGNORE INTO logo (name) VALUES (?)`, imported.Asset.Name); err != nil {

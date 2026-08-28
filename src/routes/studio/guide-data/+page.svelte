@@ -59,10 +59,10 @@
 	function edit(epg: LegacyEpg) {
 		editing = epg;
 		name = epg.name;
-		url = epg.url;
+		url = '';
 	}
 	async function save() {
-		if (!name.trim() || !url.trim()) return;
+		if (!name.trim() || (!editing && !url.trim())) return;
 		busy = 'form';
 		try {
 			await api('/api/epg', {
@@ -202,11 +202,14 @@
 			<label>Name<input bind:value={name} required placeholder="Regional guide" /></label><label
 				>XMLTV URL<input
 					bind:value={url}
-					required
+					required={!editing}
 					type="url"
 					placeholder="https://provider.example/guide.xml"
 				/></label
 			>
+			{#if editing}<small class="secret-note"
+					>Leave this blank to keep the encrypted XMLTV URL. Enter a URL only to replace it.</small
+				>{/if}
 			<div>
 				<button class="app-button app-button--primary" disabled={busy === 'form'}
 					><Plus size={17} />{editing ? 'Save source' : 'Add and import'}</button

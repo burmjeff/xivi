@@ -1,0 +1,13 @@
+rules:
+  - id: xivi-formatted-sql
+    message: SQL must not be built with fmt.Sprintf; use placeholders and server-owned constant fragments.
+    severity: ERROR
+    languages: [go]
+    patterns:
+      - pattern-either:
+          - pattern: $DB.Exec(fmt.Sprintf(...), ...)
+          - pattern: $DB.ExecContext($CTX, fmt.Sprintf(...), ...)
+          - pattern: $DB.Query(fmt.Sprintf(...), ...)
+          - pattern: $DB.QueryContext($CTX, fmt.Sprintf(...), ...)
+          - pattern: $DB.Get($OUT, fmt.Sprintf(...), ...)
+          - pattern: $DB.Select($OUT, fmt.Sprintf(...), ...)

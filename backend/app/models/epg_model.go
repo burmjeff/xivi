@@ -10,6 +10,7 @@ type Epg struct {
 	ID        int64     `db:"id" json:"id"`
 	Name      string    `db:"name" json:"name" validate:"required,lte=255"`
 	URL       string    `db:"url" json:"url" validate:"required,lte=255"`
+	URLCipher []byte    `db:"url_cipher" json:"-"`
 	Order     int64     `db:"orderr" json:"orderr"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`

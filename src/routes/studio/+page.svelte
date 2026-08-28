@@ -9,6 +9,7 @@
 		Check,
 		ExternalLink,
 		RefreshCw,
+		RotateCcw,
 		Cpu,
 		Server
 	} from '@lucide/svelte';
@@ -144,6 +145,21 @@
 		} catch {
 			publishMessage = `The guide output setting for ${lineupName} could not be saved.`;
 			await deviceOutputsQuery.refetch();
+		} finally {
+			stopSaving(savingKey);
+		}
+	}
+	async function rotateTunerCredential(lineupId: number, lineupName: string) {
+		const savingKey = `tuner-credential:${lineupId}`;
+		startSaving(savingKey);
+		publishMessage = '';
+		try {
+			await api(`/api/v2/studio/device-outputs/virtual-tuner/${lineupId}/credential/rotate`, {
+				method: 'POST'
+			});
+			publishMessage = `${lineupName}'s virtual tuner credential was rotated. Existing tuner URLs are revoked.`;
+		} catch {
+			publishMessage = `The virtual tuner credential for ${lineupName} could not be rotated. Confirm your password again and retry.`;
 		} finally {
 			stopSaving(savingKey);
 		}
@@ -302,22 +318,19 @@
 											)}
 									/>
 								</label>
-								<button onclick={() => copy(`/m3u/${lineup.name}.m3u`)}>
-									{#if copied === `/m3u/${lineup.name}.m3u`}<Check size={16} />{:else}<Copy
-											size={16}
-										/>{/if}M3U
-								</button>
-								<button onclick={() => copy(`/xmltv/${lineup.name}.xml`)}>
-									{#if copied === `/xmltv/${lineup.name}.xml`}<Check size={16} />{:else}<Copy
-											size={16}
-										/>{/if}XMLTV
-								</button>
+								<a class="secured-output" href="/account#media-keys">Create secured URLs</a>
 								{#if tuner?.enabled}
 									<button onclick={() => copy(tuner.base_url)}>
 										{#if copied === tuner.base_url}<Check size={16} />{:else}<Copy
 												size={16}
 											/>{/if}Tuner
 									</button>
+									<button
+										disabled={saving(`tuner-credential:${lineup.id}`)}
+										title="Invalidate existing signed tuner stream URLs"
+										onclick={() => rotateTunerCredential(lineup.id, lineup.name)}
+										><RotateCcw size={16} />Rotate tuner key</button
+									>
 								{/if}
 								<button
 									class="publish"
@@ -614,7 +627,8 @@
 		justify-content: flex-end;
 		gap: 0.4rem;
 	}
-	.output-links button {
+	.output-links button,
+	.output-links .secured-output {
 		display: flex;
 		min-height: 2.5rem;
 		align-items: center;
@@ -626,6 +640,8 @@
 		font-size: 0.72rem;
 		font-weight: 750;
 		cursor: pointer;
+		text-decoration: none;
+		color: inherit;
 	}
 	.output-links button.publish {
 		background: var(--periwinkle);

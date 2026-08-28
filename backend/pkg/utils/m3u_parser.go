@@ -10,7 +10,6 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -18,6 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 	"xivi/backend/app/models"
+	"xivi/backend/pkg/outbound"
+	"xivi/backend/pkg/security"
 	"xivi/backend/platform/database"
 
 	"github.com/rs/zerolog/log"
@@ -42,6 +43,7 @@ type M3uParser struct {
 	batchMutex   sync.Mutex
 	batchSize    int
 	Progress     ProgressReporter
+	httpClient   *http.Client
 }
 
 // Add a group creation semaphore to limit concurrent group creations
@@ -88,30 +90,39 @@ func (m *M3uParser) ParseM3u(playlist models.Playlist) error {
 	if isValidURL(playlist.URL) {
 		log.Info().Msg("Started parsing m3u URL...")
 		reportProgress(m.Progress, 0, "Downloading playlist…")
-		resp, err := http.Get(playlist.URL)
+		var body []byte
+		var err error
+		if m.httpClient != nil {
+			request, requestErr := http.NewRequestWithContext(context.Background(), http.MethodGet, playlist.URL, nil)
+			if requestErr != nil {
+				return requestErr
+			}
+			response, requestErr := m.httpClient.Do(request)
+			if requestErr != nil {
+				return requestErr
+			}
+			defer response.Body.Close()
+			if response.StatusCode < 200 || response.StatusCode >= 300 {
+				return fmt.Errorf("download playlist: server returned %s", response.Status)
+			}
+			body, err = io.ReadAll(io.LimitReader(response.Body, (64<<20)+1))
+			if len(body) > 64<<20 {
+				err = outbound.ErrResponseTooLarge
+			}
+		} else {
+			body, _, err = outbound.FetchBytes(context.Background(), playlist.URL, outbound.Policy{
+				AllowPrivate: true,
+				Timeout:      2 * time.Minute,
+				MaxRedirects: 3,
+			}, 64<<20, nil)
+		}
 		if err != nil {
-			log.Error().Msgf("Unable to get M3U FILE: %v", err)
+			log.Error().Err(err).Msg("Unable to get M3U source")
 			return fmt.Errorf("download playlist: %w", err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-			return fmt.Errorf("download playlist: server returned %s", resp.Status)
-		}
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			log.Error().Msgf("Unable to get M3U FILE: %v", err)
-			return fmt.Errorf("read playlist response: %w", err)
 		}
 		m.content = string(body)
 	} else {
-		log.Info().Msg("Started parsing m3u file...")
-		reportProgress(m.Progress, 0, "Reading playlist file…")
-		body, err := os.ReadFile(playlist.URL)
-		if err != nil {
-			log.Error().Msgf("Unable to get M3U FILE: %v", err)
-			return fmt.Errorf("read playlist file: %w", err)
-		}
-		m.content = string(body)
+		return fmt.Errorf("local playlist paths are not accepted; use an HTTPS URL")
 	}
 
 	if m.content != "" {
@@ -242,24 +253,14 @@ func (m *M3uParser) parseLines() {
 			for i := 0; i < len(chunk); i += 1 {
 				if re.Match([]byte(chunk[i])) {
 					entriesInspected++
-					// Sample part of the line to help debugging
-					lineSample := chunk[i]
-					if len(lineSample) > 50 {
-						lineSample = lineSample[:50] + "..."
-					}
-					log.Debug().Msgf("Found EXTINF line: %s", lineSample)
+					log.Debug().Int("line_length", len(chunk[i])).Msg("Found EXTINF line")
 
 					if i+1 < len(chunk) && isValidURL(chunk[i+1]) {
 						m.parseLine(chunk[i], chunk[i+1])
 						channelsFound++
 					} else if i+1 < len(chunk) {
-						// Log the invalid URL for debugging
 						if i+1 < len(chunk) {
-							invalidURL := chunk[i+1]
-							if len(invalidURL) > 50 {
-								invalidURL = invalidURL[:50] + "..."
-							}
-							log.Warn().Msgf("Invalid URL following EXTINF: %s", invalidURL)
+							log.Warn().Int("value_length", len(chunk[i+1])).Msg("Invalid URL following EXTINF")
 						} else {
 							log.Warn().Msg("EXTINF line has no following URL (at end of chunk)")
 						}
@@ -332,6 +333,17 @@ func (m *M3uParser) flushBatches() {
 		for _, pair := range m.channelPairs {
 			channel := pair.Channel
 			var channelID int64
+			storedLogo := channel.Logo
+			if channel.Logo != nil {
+				protected, protectErr := security.ProtectString(*channel.Logo)
+				if protectErr != nil {
+					log.Error().Msg("Failed to protect a provider logo URL")
+					_ = tx.Rollback()
+					success = false
+					break
+				}
+				storedLogo = &protected
+			}
 
 			if channel.ID == 0 {
 				// Insert new channel
@@ -344,7 +356,7 @@ func (m *M3uParser) flushBatches() {
 					break
 				}
 
-				res, err := stmt.Exec(channel.TvgID, channel.TvgName, channel.Logo, channel.Title,
+				res, err := stmt.Exec(channel.TvgID, channel.TvgName, storedLogo, channel.Title,
 					channel.GroupId, channel.Enabled, channel.CreatedAt, channel.UpdatedAt)
 				if err != nil {
 					log.Error().Msgf("Failed to execute statement: %v", err)
@@ -375,7 +387,7 @@ func (m *M3uParser) flushBatches() {
 					break
 				}
 
-				_, err = stmt.Exec(channel.TvgID, channel.TvgName, channel.Logo, channel.Title,
+				_, err = stmt.Exec(channel.TvgID, channel.TvgName, storedLogo, channel.Title,
 					channel.Enabled, channel.UpdatedAt, channel.ID)
 				if err != nil {
 					log.Error().Msgf("Failed to execute update statement: %v", err)
@@ -419,6 +431,13 @@ func (m *M3uParser) flushBatches() {
 				log.Warn().Msg("Skipping URL insert with no valid channel ID")
 				continue
 			}
+			urlCipher, encryptErr := security.EncryptSecret([]byte(url.Url))
+			if encryptErr != nil {
+				log.Error().Msg("Failed to protect a channel source URL")
+				_ = tx.Rollback()
+				success = false
+				break
+			}
 
 			// Check if URL exists
 			var urlID int64
@@ -428,7 +447,7 @@ func (m *M3uParser) flushBatches() {
 			if err == sql.ErrNoRows || err != nil {
 				// Insert new URL
 				log.Debug().Msgf("Inserting new URL for channel ID: %d", url.ChannelId)
-				stmt, err = tx.Prepare("INSERT INTO channelurl (url, channel_id, orderr, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+				stmt, err = tx.Prepare("INSERT INTO channelurl (url, url_cipher, channel_id, orderr, created_at, updated_at) VALUES ('encrypted', ?, ?, ?, ?, ?)")
 				if err != nil {
 					log.Error().Msgf("Failed to prepare URL statement: %v", err)
 					tx.Rollback()
@@ -436,11 +455,11 @@ func (m *M3uParser) flushBatches() {
 					break
 				}
 
-				_, err = stmt.Exec(url.Url, url.ChannelId, url.Order, url.CreatedAt, url.UpdatedAt)
+				_, err = stmt.Exec(urlCipher, url.ChannelId, url.Order, url.CreatedAt, url.UpdatedAt)
 			} else {
 				// Update existing URL
 				log.Debug().Msgf("Updating existing URL ID: %d for channel ID: %d", urlID, url.ChannelId)
-				stmt, err = tx.Prepare("UPDATE channelurl SET url = ?, orderr = ?, updated_at = ? WHERE id = ?")
+				stmt, err = tx.Prepare("UPDATE channelurl SET url = 'encrypted', url_cipher = ?, orderr = ?, updated_at = ? WHERE id = ?")
 				if err != nil {
 					log.Error().Msgf("Failed to prepare URL update statement: %v", err)
 					tx.Rollback()
@@ -448,7 +467,7 @@ func (m *M3uParser) flushBatches() {
 					break
 				}
 
-				_, err = stmt.Exec(url.Url, url.Order, url.UpdatedAt, urlID)
+				_, err = stmt.Exec(urlCipher, url.Order, url.UpdatedAt, urlID)
 			}
 
 			if err != nil {

@@ -65,10 +65,7 @@ func CreateEpgXMLWithProgress(lineup models.Template, reporter ProgressReporter)
 
 		epgChannel := models.EpgChannel{ChannelId: exportID, DisplayName: channel.Name, Icon: models.Icon{}}
 		if logo, logoErr := database.Db.GetLogo(ctx, channel.LogoId); logoErr == nil {
-			epgChannel.Icon.Src = fmt.Sprintf("http://%s:%d/%s",
-				settings.APP_SETTINGS.Server.Host,
-				settings.APP_SETTINGS.Server.Port,
-				GetLogoUrl(logo.Name))
+			epgChannel.Icon.Src = "/" + strings.TrimLeft(GetLogoUrl(logo.Name), "/")
 		} else {
 			log.Debug().Err(logoErr).Str("channel", channel.Name).Msg("Leaving XMLTV channel icon empty")
 		}
@@ -115,10 +112,10 @@ func CreateEpgXMLWithProgress(lineup models.Template, reporter ProgressReporter)
 		reportProgress(reporter, 35+(index+1)*40/len(exportChannels), fmt.Sprintf("Building guide coverage… %d/%d channels", index+1, len(exportChannels)))
 	}
 
-	if err := os.MkdirAll(settings.EPG_FILEPATH, 0755); err != nil {
+	if err := os.MkdirAll(settings.EPG_FILEPATH, 0700); err != nil {
 		return fmt.Errorf("could not create the XMLTV output directory: %w", err)
 	}
-	finalFilePath := filepath.Join(settings.EPG_FILEPATH, lineup.Name+".xml")
+	finalFilePath := LineupXMLTVPath(lineup.ID)
 	file, err := os.CreateTemp(settings.EPG_FILEPATH, ".xivi-*.xml.tmp")
 	if err != nil {
 		return fmt.Errorf("could not create the XMLTV export: %w", err)
@@ -128,7 +125,7 @@ func CreateEpgXMLWithProgress(lineup models.Template, reporter ProgressReporter)
 		_ = file.Close()
 		_ = os.Remove(tempFilePath)
 	}()
-	if err := file.Chmod(0644); err != nil {
+	if err := file.Chmod(0600); err != nil {
 		return fmt.Errorf("could not set XMLTV file permissions: %w", err)
 	}
 
@@ -161,6 +158,13 @@ func CreateEpgXMLWithProgress(lineup models.Template, reporter ProgressReporter)
 		Dur("duration", time.Since(start)).
 		Msg("EPG XML created successfully")
 	return nil
+}
+
+// LineupXMLTVPath uses a database id rather than a user-controlled lineup
+// name, preventing path traversal and keeping private canonical artifacts
+// stable across renames.
+func LineupXMLTVPath(lineupID int64) string {
+	return filepath.Join(settings.EPG_FILEPATH, fmt.Sprintf("lineup-%d.xml", lineupID))
 }
 
 func xmlTVExportWindow(now time.Time) (time.Time, time.Time) {
@@ -248,15 +252,4 @@ func minTime(left, right time.Time) time.Time {
 // upstream guide refresh fails or no guide sources are configured.
 func RebuildEpgOutputs(reporter ProgressReporter) error {
 	return generateEPGFiles(context.Background(), reporter)
-}
-
-// RemoveEpg removes an EPG file.
-func RemoveEpg(epg *models.Epg) {
-	filePath := filepath.Join(settings.EPG_FILEPATH, epg.Name+".xml")
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return
-	}
-	if err := os.Remove(filePath); err != nil {
-		log.Error().Err(err).Str("file", filePath).Msg("Failed to remove EPG file")
-	}
 }

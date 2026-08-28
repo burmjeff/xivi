@@ -1,17 +1,21 @@
 package database
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 	"xivi/backend/app/queries"
 	"xivi/backend/platform/settings"
 
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite3"
+	migratesqlite "github.com/golang-migrate/migrate/v4/database/sqlite3"
 	"github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	gosqlite "github.com/mattn/go-sqlite3"
 	"github.com/rs/zerolog/log"
 )
 
@@ -19,6 +23,7 @@ var (
 	Db         *Queries
 	dbInstance *sqlx.DB     // Store the database instance for reinitialization
 	dbMutex    sync.RWMutex // Mutex to protect database operations during reinitialization
+	driverOnce sync.Once
 )
 
 // Queries struct for collect all app queries.
@@ -31,6 +36,7 @@ type Queries struct {
 	*queries.StreamQueries     // load queries from Stream model
 	*queries.CleanupQueries    // load Cleanup queries
 	*queries.ExperienceQueries // load queries for the v2 product interface
+	*queries.SecurityQueries   // authentication, authorization, and media credentials
 }
 
 // OpenDBConnection func for opening database connection.
@@ -46,8 +52,21 @@ func OpenDBConnection() (*Queries, error) {
 
 	// Apply additional PRAGMA optimizations
 	optimizeDBConnection(db)
+	for _, path := range databaseFiles() {
+		if err := os.Chmod(path, 0600); err != nil && !os.IsNotExist(err) {
+			_ = db.Close()
+			return nil, fmt.Errorf("secure database file: %w", err)
+		}
+	}
 
-	InitDB(db)
+	if err := InitDB(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("database migration failed: %w", err)
+	}
+	if err := encryptExistingProviderURLs(context.Background(), db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("provider URL encryption migration failed: %w", err)
+	}
 
 	return &Queries{
 		// Set queries from models using the new constructors:
@@ -59,17 +78,32 @@ func OpenDBConnection() (*Queries, error) {
 		StreamQueries:     queries.NewStreamQueries(db),   // from Stream model
 		CleanupQueries:    queries.NewCleanupQueries(db),  // from Cleanup model
 		ExperienceQueries: queries.NewExperienceQueries(db),
+		SecurityQueries:   queries.NewSecurityQueries(db),
 	}, nil
 }
 
+func databaseFiles() []string {
+	base := filepath.Join(settings.CONFIG_PATH, "xivi.db")
+	return []string{base, base + "-wal", base + "-shm"}
+}
+
 func getDB() (*sqlx.DB, error) {
+	driverOnce.Do(func() {
+		sql.Register("sqlite3_xivi", &gosqlite.SQLiteDriver{ConnectHook: func(connection *gosqlite.SQLiteConn) error {
+			if _, err := connection.Exec("PRAGMA trusted_schema = OFF;", nil); err != nil {
+				return err
+			}
+			_, err := connection.Exec("PRAGMA secure_delete = FAST;", nil)
+			return err
+		}})
+	})
 	// Begin explicit transactions with a write reservation. Several Studio
 	// operations validate their target before mutating it; deferred transactions
 	// can otherwise fail immediately while upgrading that read transaction to a
 	// writer, even when a busy timeout is configured.
-	connStr := fmt.Sprintf("%s/xivi.db?_journal_mode=WAL&_foreign_keys=on&_shared_cache=true&_recursive_triggers=false&_busy_timeout=10000&_txlock=immediate", settings.CONFIG_PATH)
+	connStr := fmt.Sprintf("%s/xivi.db?_journal_mode=WAL&_foreign_keys=on&_shared_cache=true&_recursive_triggers=false&_secure_delete=FAST&_busy_timeout=10000&_txlock=immediate", settings.CONFIG_PATH)
 
-	db, err := sqlx.Open("sqlite3", connStr)
+	db, err := sqlx.Open("sqlite3_xivi", connStr)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +123,8 @@ func optimizeDBConnection(db *sqlx.DB) {
 		"PRAGMA locking_mode = NORMAL;",          // Normal locking mode for better concurrency
 		"PRAGMA analysis_limit = 10000;",         // Increased limit for query analysis
 		"PRAGMA wal_autocheckpoint = 4000;",      // Increase WAL checkpoint interval
-		"PRAGMA secure_delete = OFF;",            // Disable secure delete for performance
+		"PRAGMA secure_delete = FAST;",           // Scrub sensitive rows without a full-page rewrite
+		"PRAGMA trusted_schema = OFF;",           // Do not trust application-defined schema functions
 		"PRAGMA query_only = OFF;",               // Allow write operations
 		"PRAGMA mmap_size = 1073741824;",         // Set memory-mapped I/O size (1GB)
 		"PRAGMA cache_size = -1048576;",          // Set cache size (1GB)
@@ -122,12 +157,15 @@ func optimizeDBConnection(db *sqlx.DB) {
 }
 
 func InitDB(db *sqlx.DB) error {
-	driver, err := sqlite3.WithInstance(db.DB, &sqlite3.Config{})
+	driver, err := migratesqlite.WithInstance(db.DB, &migratesqlite.Config{})
 	if err != nil {
-		log.Fatal().Msgf("Failed to create database driver: %v", err)
+		return fmt.Errorf("create database migration driver: %w", err)
 	}
 
 	fsrc, err := (&file.File{}).Open("file://./backend/platform/database/migrations")
+	if err != nil {
+		fsrc, err = (&file.File{}).Open("file://./migrations")
+	}
 	if err != nil {
 		fsrc, err = (&file.File{}).Open("file://./database_migrations")
 		if err != nil {
@@ -141,12 +179,16 @@ func InitDB(db *sqlx.DB) error {
 		"xivi",
 		driver)
 	if err != nil {
-		log.Fatal().Msgf("Failed to create migration: %v", err)
+		return fmt.Errorf("create database migration: %w", err)
 	}
+	// migrate.Close also closes the sql.DB supplied through WithInstance. Xivi
+	// still needs that shared pool for the encryption pass and the running
+	// application, so close only the file source owned by this function.
+	defer func() { _ = fsrc.Close() }()
 
 	err = m.Up()
 	if err != nil && err != migrate.ErrNoChange {
-		log.Fatal().Msgf("Failed to run migrations: %v", err)
+		return fmt.Errorf("run database migrations: %w", err)
 	}
 
 	log.Print("Migrations ran successfully")

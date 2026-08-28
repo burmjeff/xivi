@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"xivi/backend/app/models"
+	"xivi/backend/pkg/security"
 	"xivi/backend/pkg/streaming"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/pkg/virtualtuner"
@@ -20,6 +22,47 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const (
+	initialAdminUsername = "xivi"
+	initialAdminPassword = "xivi"
+)
+
+func initializeDefaultAdministrator(ctx context.Context) (bool, error) {
+	count, err := database.Db.UserCount(ctx)
+	if err != nil {
+		return false, err
+	}
+	created := false
+	if count == 0 {
+		passwordHash, hashErr := security.HashPassword(initialAdminPassword)
+		if hashErr != nil {
+			return false, hashErr
+		}
+		var id int64
+		created, id, err = database.Db.CreateInitialAdminIfEmpty(ctx, initialAdminUsername, passwordHash)
+		if err != nil {
+			return false, err
+		}
+		if created {
+			_ = database.Db.Audit(ctx, models.SecurityAuditEvent{
+				TargetUserID:   &id,
+				TargetUsername: initialAdminUsername,
+				Action:         "initial_admin_create",
+				Outcome:        "success",
+				ResourceType:   "user",
+				ResourceID:     fmt.Sprintf("%d", id),
+				Detail:         "automatic_first_run_account_password_change_required",
+			})
+		}
+	}
+	initialSetupRequired, err := database.Db.InitialAdminPasswordChangeRequired(ctx, initialAdminUsername)
+	if err != nil {
+		return false, err
+	}
+	security.SetInitialSetupRequired(initialSetupRequired)
+	return created, nil
+}
+
 // StartServer func for starting a simple server.
 func StartServer(app *fiber.App) {
 	var err error
@@ -27,6 +70,13 @@ func StartServer(app *fiber.App) {
 	database.Db, err = database.OpenDBConnection()
 	if err != nil {
 		log.Fatal().Msgf("Failed to connect to database: %v", err)
+	}
+	createdInitialAdmin, err := initializeDefaultAdministrator(context.Background())
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize the first administrator")
+	}
+	if createdInitialAdmin {
+		log.Warn().Str("username", initialAdminUsername).Msg("Created the first-run administrator; a password change is required before Xivi can be used")
 	}
 	if interrupted, reconcileErr := database.Db.FailIncompleteJobs(context.Background()); reconcileErr != nil {
 		log.Error().Err(reconcileErr).Msg("Failed to reconcile interrupted operation jobs")

@@ -2,10 +2,489 @@ openapi: 3.1.0
 info:
   title: Xivi Interface API
   version: 2.0.0
-  description: Additive API for the Xivi Watch and Studio interfaces, including virtual tuner output controls.
+  description: Authenticated API for Xivi Watch and Studio. Cookie mutations require the session-bound X-CSRF-Token. Compatibility players use revocable lineup-scoped media keys, never account passwords.
 servers:
   - url: /api/v2
+security:
+  - cookieAuth: []
 paths:
+  /auth/bootstrap-status:
+    get:
+      operationId: getBootstrapStatus
+      security: []
+      responses:
+        '200':
+          {
+            description: First-run administrator and password-change state. Detailed state is returned only to direct trusted-LAN clients; public callers receive a neutral response.,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: object,
+                        required:
+                          [
+                            bootstrap_required,
+                            initial_password_change_required,
+                            initial_login_allowed
+                          ],
+                        properties:
+                          {
+                            bootstrap_required: { type: boolean },
+                            initial_password_change_required: { type: boolean },
+                            initial_login_allowed:
+                              {
+                                type: boolean,
+                                description: True only for direct trusted-LAN requests when the automatic temporary administrator is active and the transport is permitted.
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+  /auth/login:
+    post:
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+                mfa_code: { type: string }
+      responses:
+        '200':
+          {
+            description: Authenticated session.,
+            content:
+              { application/json: { schema: { $ref: '#/components/schemas/SessionPrincipal' } } }
+          }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/session:
+    get:
+      operationId: getSession
+      responses:
+        '200':
+          {
+            description: Current principal and CSRF token.,
+            content:
+              { application/json: { schema: { $ref: '#/components/schemas/SessionPrincipal' } } }
+          }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/logout:
+    post:
+      operationId: logout
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      responses:
+        {
+          '204': { description: Session revoked. },
+          default: { $ref: '#/components/responses/Error' }
+        }
+  /auth/reauth:
+    post:
+      operationId: reauthenticate
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json: { schema: { $ref: '#/components/schemas/ReauthenticationRequest' } }
+            }
+        }
+      responses:
+        {
+          '204': { description: Recent identity confirmation recorded. },
+          default: { $ref: '#/components/responses/Error' }
+        }
+  /auth/password:
+    post:
+      operationId: changePassword
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string, format: password }
+                new_password: { type: string, format: password, minLength: 8, maxLength: 128 }
+                mfa_code: { type: string }
+      responses:
+        '200':
+          {
+            description: Password changed and replacement session created.,
+            content:
+              { application/json: { schema: { $ref: '#/components/schemas/SessionPrincipal' } } }
+          }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/mfa/enroll:
+    post:
+      operationId: enrollMFA
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      responses:
+        '200':
+          {
+            description: Pending TOTP secret shown only for confirmation.,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: object,
+                        properties: { secret: { type: string }, otpauth_uri: { type: string } }
+                      }
+                  }
+              }
+          }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/mfa/confirm:
+    post:
+      operationId: confirmMFA
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      type: object,
+                      additionalProperties: false,
+                      required: [secret, code],
+                      properties: { secret: { type: string }, code: { type: string } }
+                    }
+                }
+            }
+        }
+      responses:
+        '200':
+          {
+            description: MFA enabled; recovery codes returned once.,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: object,
+                        properties: { recovery_codes: { type: array, items: { type: string } } }
+                      }
+                  }
+              }
+          }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/mfa:
+    delete:
+      operationId: disableMFA
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      responses:
+        {
+          '204': { description: MFA disabled and sessions revoked. },
+          default: { $ref: '#/components/responses/Error' }
+        }
+  /auth/mfa/recovery-codes:
+    post:
+      operationId: regenerateMFARecoveryCodes
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      responses:
+        '200':
+          description: Replacement one-time recovery codes; previous codes are invalidated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recovery_codes: { type: array, items: { type: string } }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/sessions:
+    get:
+      operationId: listAccountSessions
+      responses:
+        '200':
+          {
+            description: Account sessions.,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: object,
+                        properties:
+                          {
+                            items:
+                              {
+                                type: array,
+                                items: { $ref: '#/components/schemas/AuthSessionMetadata' }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/sessions/{session_id}:
+    delete:
+      operationId: revokeAccountSession
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      parameters:
+        - { name: session_id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204': { description: Session revoked. }
+        default: { $ref: '#/components/responses/Error' }
+  /account/media-keys:
+    get:
+      operationId: listMediaKeys
+      responses:
+        '200':
+          {
+            description: Key metadata; plaintext is never recoverable.,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: object,
+                        properties:
+                          {
+                            items:
+                              {
+                                type: array,
+                                items: { $ref: '#/components/schemas/MediaAccessKeyMetadata' },
+                                description: Active credentials include reusable output links. The standalone credential is never returned.
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+    post:
+      operationId: createMediaKey
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      requestBody:
+        {
+          required: true,
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/MediaKeyCreateRequest' } } }
+        }
+      responses:
+        '201':
+          {
+            description: Named device access with reusable secured output links. The standalone credential is never returned.,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: '#/components/schemas/MediaKeyCreateResponse' } }
+              }
+          }
+        default: { $ref: '#/components/responses/Error' }
+  /account/media-keys/{key_id}:
+    delete:
+      operationId: revokeMediaKey
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      parameters:
+        [{ name: key_id, in: path, required: true, schema: { type: integer, format: int64 } }]
+      responses:
+        {
+          '204': { description: Key revoked and active clients disconnected. },
+          default: { $ref: '#/components/responses/Error' }
+        }
+  /studio/users:
+    get:
+      operationId: listUsers
+      responses:
+        '200':
+          {
+            description: Users and grantable lineups.,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: object,
+                        properties:
+                          {
+                            items:
+                              { type: array, items: { $ref: '#/components/schemas/UserSummary' } },
+                            lineups:
+                              { type: array, items: { $ref: '#/components/schemas/LineupGrant' } }
+                          }
+                      }
+                  }
+              }
+          }
+    post:
+      operationId: createUser
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      requestBody:
+        {
+          required: true,
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/UserWriteRequest' } } }
+        }
+      responses:
+        {
+          '201':
+            {
+              description: User created.,
+              content:
+                { application/json: { schema: { $ref: '#/components/schemas/UserSummary' } } }
+            },
+          default: { $ref: '#/components/responses/Error' }
+        }
+  /studio/users/{user_id}:
+    patch:
+      operationId: updateUser
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      requestBody:
+        {
+          required: true,
+          content:
+            { application/json: { schema: { $ref: '#/components/schemas/UserUpdateRequest' } } }
+        }
+      responses:
+        {
+          '200':
+            {
+              description: User updated and credentials revoked.,
+              content:
+                { application/json: { schema: { $ref: '#/components/schemas/UserSummary' } } }
+            },
+          default: { $ref: '#/components/responses/Error' }
+        }
+    delete:
+      operationId: deleteUser
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      responses:
+        { '204': { description: User deleted. }, default: { $ref: '#/components/responses/Error' } }
+  /studio/users/{user_id}/password-reset:
+    post:
+      operationId: resetUserPassword
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [password]
+              properties:
+                password: { type: string, format: password, minLength: 8, maxLength: 128 }
+      responses:
+        '204': { description: Temporary password set and credentials revoked. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/users/{user_id}/mfa:
+    delete:
+      operationId: resetUserMFA
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      responses:
+        '204': { description: MFA reset and sessions revoked. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/users/{user_id}/sessions:
+    delete:
+      operationId: revokeUserSessions
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      responses:
+        '204': { description: All browser sessions revoked. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/users/{user_id}/media-keys:
+    get:
+      operationId: listUserMediaKeys
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      responses:
+        '200':
+          description: Inspectable key metadata without recoverable plaintext credentials.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/MediaAccessKeyMetadata' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: revokeUserMediaKeys
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      responses:
+        '204': { description: All media keys revoked and affected viewers disconnected. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/users/{user_id}/media-keys/{key_id}:
+    delete:
+      operationId: revokeUserMediaKey
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/UserId' }
+        - { name: key_id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204': { description: Selected media key revoked and affected viewers disconnected. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/security/audit:
+    get:
+      operationId: listSecurityAudit
+      parameters:
+        [{ $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/Limit' }]
+      responses:
+        '200':
+          {
+            description: Bounded security event page.,
+            content:
+              { application/json: { schema: { $ref: '#/components/schemas/SecurityAuditPage' } } }
+          }
+        default: { $ref: '#/components/responses/Error' }
+  /media/v1/lineups/{lineup_id}/playlist.m3u:
+    get:
+      operationId: getSecuredM3U
+      servers: [{ url: / }]
+      security: [{ mediaKey: [] }]
+      parameters: [{ $ref: '#/components/parameters/LineupId' }]
+      responses:
+        {
+          '200':
+            {
+              description: Dynamic secured playlist.,
+              content: { audio/x-mpegurl: { schema: { type: string } } }
+            },
+          default: { $ref: '#/components/responses/Error' }
+        }
+  /media/v1/lineups/{lineup_id}/guide.xml:
+    get:
+      operationId: getSecuredXMLTV
+      servers: [{ url: / }]
+      security: [{ mediaKey: [] }]
+      parameters: [{ $ref: '#/components/parameters/LineupId' }]
+      responses:
+        {
+          '200':
+            {
+              description: Authorized dynamic XMLTV.,
+              content: { application/xml: { schema: { type: string } } }
+            },
+          default: { $ref: '#/components/responses/Error' }
+        }
   /watch/lineups:
     get:
       operationId: listWatchLineups
@@ -247,6 +726,19 @@ paths:
       responses:
         '200':
           description: Updated virtual tuner state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceOutputs' }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/device-outputs/virtual-tuner/{lineup_id}/credential/rotate:
+    post:
+      operationId: rotateLineupVirtualTunerCredential
+      description: Rotates the lineup-scoped LAN credential and immediately disconnects clients using the previous credential.
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      parameters: [{ $ref: '#/components/parameters/LineupId' }]
+      responses:
+        '200':
+          description: Updated virtual tuner state and replacement URLs.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DeviceOutputs' }
@@ -632,6 +1124,25 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SourceChannelPage' }
         default: { $ref: '#/components/responses/Error' }
+  /studio/source-channels/{source_channel_id}/logo:
+    get:
+      operationId: getSourceChannelLogo
+      description: Returns a normalized source logo through the authenticated outbound-fetch boundary. The provider URL is never exposed to the browser.
+      parameters:
+        - name: source_channel_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Normalized source logo.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: 'private, no-store' }
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        default: { $ref: '#/components/responses/Error' }
   /studio/source-channels/enabled:
     patch:
       operationId: setSourceChannelsEnabled
@@ -793,6 +1304,22 @@ paths:
           description: Resumable Server-Sent Event snapshots for jobs and resources.
           content: { text/event-stream: { schema: { type: string } } }
 components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: __Host-xivi_session
+      description: Opaque public HTTPS session. Trusted direct-LAN HTTP uses the separate xivi_lan_session cookie.
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: Session-bound token returned by GET /auth/session.
+    mediaKey:
+      type: apiKey
+      in: query
+      name: access_token
+      description: Named, revocable device credential restricted by lineup and network scope. Authentication uses a keyed hash; the recoverable copy is encrypted at rest solely to rebuild owner-visible output URLs.
   parameters:
     LineupId:
       { name: lineup_id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -802,6 +1329,7 @@ components:
       { name: channel_id, in: path, required: true, schema: { type: integer, format: int64 } }
     SourceId:
       { name: source_id, in: path, required: true, schema: { type: integer, format: int64 } }
+    UserId: { name: user_id, in: path, required: true, schema: { type: integer, format: int64 } }
     SourceChannelId:
       {
         name: source_channel_id,
@@ -884,6 +1412,141 @@ components:
             running: { type: boolean }
             port: { type: integer, const: 65001 }
             devices: { type: array, items: { $ref: '#/components/schemas/VirtualTunerDevice' } }
+    SessionPrincipal:
+      type: object
+      required:
+        [user_id, username, role, must_change_password, mfa_enabled, mfa_required, lineup_ids]
+      properties:
+        user_id: { type: integer, format: int64 }
+        username: { type: string }
+        role: { type: string, enum: [admin, viewer] }
+        must_change_password: { type: boolean }
+        mfa_enabled: { type: boolean }
+        mfa_required: { type: boolean }
+        lineup_ids: { type: array, items: { type: integer, format: int64 } }
+        csrf_token: { type: string, description: Required on cookie-authenticated mutations. }
+    ReauthenticationRequest:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password: { type: string, format: password }
+    AuthSessionMetadata:
+      type: object
+      required:
+        [
+          id,
+          transport_scope,
+          created_at,
+          last_seen_at,
+          idle_expires_at,
+          absolute_expires_at,
+          client_ip
+        ]
+      properties:
+        id: { type: integer, format: int64 }
+        transport_scope: { type: string, enum: [https, lan_http] }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        idle_expires_at: { type: string, format: date-time }
+        absolute_expires_at: { type: string, format: date-time }
+        revoked_at: { type: string, format: date-time }
+        client_ip: { type: string }
+    UserSummary:
+      type: object
+      required:
+        [id, username, role, must_change_password, mfa_enabled, created_at, updated_at, lineup_ids]
+      properties:
+        id: { type: integer, format: int64 }
+        username: { type: string }
+        role: { type: string, enum: [admin, viewer] }
+        must_change_password: { type: boolean }
+        mfa_enabled: { type: boolean }
+        disabled_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        lineup_ids: { type: array, items: { type: integer, format: int64 } }
+    LineupGrant:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+    UserWriteRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password, role, disabled, lineup_ids]
+      properties:
+        username: { type: string }
+        password: { type: string, format: password, minLength: 8, maxLength: 128 }
+        role: { type: string, enum: [admin, viewer] }
+        disabled: { type: boolean }
+        lineup_ids: { type: array, items: { type: integer, format: int64 } }
+    UserUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [role, disabled, lineup_ids]
+      properties:
+        role: { type: string, enum: [admin, viewer] }
+        disabled: { type: boolean }
+        lineup_ids: { type: array, items: { type: integer, format: int64 } }
+    MediaAccessKeyMetadata:
+      type: object
+      required: [id, user_id, name, token_prefix, network_scope, created_at, lineup_ids]
+      properties:
+        id: { type: integer, format: int64 }
+        user_id: { type: integer, format: int64 }
+        name: { type: string }
+        token_prefix: { type: string }
+        network_scope: { type: string, enum: [public, lan] }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time }
+        last_used_ip: { type: string }
+        revoked_at: { type: string, format: date-time }
+        lineup_ids: { type: array, items: { type: integer, format: int64 } }
+        links:
+          type: object
+          description: Credential-bearing output URLs available only to the key owner. Omitted for revoked, expired, and legacy hash-only keys.
+          additionalProperties:
+            type: object
+            additionalProperties: { type: string, format: uri }
+    MediaKeyCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, network_scope, lineup_ids]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        network_scope: { type: string, enum: [public, lan] }
+        lineup_ids: { type: array, minItems: 1, items: { type: integer, format: int64 } }
+        expires_at: { type: string, format: date-time }
+    MediaKeyCreateResponse:
+      type: object
+      required: [key]
+      properties:
+        key: { $ref: '#/components/schemas/MediaAccessKeyMetadata' }
+    SecurityAuditEvent:
+      type: object
+      required: [id, action, outcome, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        actor_user_id: { type: integer, format: int64 }
+        actor_username: { type: string }
+        target_user_id: { type: integer, format: int64 }
+        target_username: { type: string }
+        action: { type: string }
+        outcome: { type: string }
+        resource_type: { type: string }
+        resource_id: { type: string }
+        client_ip: { type: string }
+        detail: { type: string }
+        created_at: { type: string, format: date-time }
+    SecurityAuditPage:
+      allOf:
+        - { $ref: '#/components/schemas/PageMetadata' }
+        - type: object
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/SecurityAuditEvent' } }
     APIError:
       type: object
       required: [code, message, retryable]

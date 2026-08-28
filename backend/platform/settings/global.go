@@ -12,6 +12,7 @@ var APP_SETTINGS = &AppSettings{
 	Vector:       Vector{},
 	Maintenance:  Maintenance{},
 	VirtualTuner: VirtualTuner{},
+	Security:     Security{},
 }
 var SERVER_PATH = ""
 var CONFIG_PATH = "./config"
@@ -29,6 +30,7 @@ type AppSettings struct {
 	Vector       `yaml:"vector" json:"vector"`
 	Maintenance  `yaml:"maintenance" json:"maintenance"`
 	VirtualTuner `yaml:"virtual_tuner" json:"virtual_tuner"`
+	Security     `yaml:"security" json:"security"`
 }
 
 type Application struct {
@@ -91,4 +93,16 @@ type Maintenance struct {
 
 type VirtualTuner struct {
 	TunerCount int `yaml:"tuner_count" json:"tuner_count"`
+}
+
+// Security contains only non-secret deployment policy. The authentication
+// root key is supplied through XIVI_AUTH_KEY_FILE and is never serialized.
+type Security struct {
+	PublicBaseURL      string   `yaml:"public_base_url" json:"public_base_url"`
+	LocalBaseURL       string   `yaml:"local_base_url" json:"local_base_url"`
+	TrustedProxyCIDRs  []string `yaml:"trusted_proxy_cidrs" json:"trusted_proxy_cidrs"`
+	TrustedLANCIDRs    []string `yaml:"trusted_lan_cidrs" json:"trusted_lan_cidrs"`
+	AllowLANHTTP       bool     `yaml:"allow_lan_http" json:"allow_lan_http"`
+	AuditRetentionDays int      `yaml:"audit_retention_days" json:"audit_retention_days"`
+	MaximumAuditEvents int      `yaml:"maximum_audit_events" json:"maximum_audit_events"`
 }

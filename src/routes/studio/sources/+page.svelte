@@ -71,7 +71,7 @@
 	function edit(source: LegacyPlaylist) {
 		editing = source;
 		name = source.name;
-		url = source.url;
+		url = '';
 		connectionLimit = source.connection_limit || 1;
 	}
 	function reset() {
@@ -81,7 +81,7 @@
 		connectionLimit = 1;
 	}
 	async function save() {
-		if (!name.trim() || !url.trim()) return;
+		if (!name.trim() || (!editing && !url.trim())) return;
 		busy = 'form';
 		message = '';
 		const wasEditing = !!editing;
@@ -230,9 +230,12 @@
 					bind:value={url}
 					type="url"
 					placeholder="https://provider.example/playlist.m3u"
-					required
+					required={!editing}
 				/></label
 			>
+			{#if editing}<small class="secret-note"
+					>Leave this blank to keep the encrypted provider URL. Enter a URL only to replace it.</small
+				>{/if}
 			<label
 				>Maximum stream connections<input
 					bind:value={connectionLimit}

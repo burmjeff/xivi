@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 	"xivi/backend/app/models"
+	"xivi/backend/pkg/security"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/platform/cron"
 	"xivi/backend/platform/database"
@@ -33,6 +34,9 @@ func GetEpgs(c *fiber.Ctx) error {
 			"count": 0,
 			"epgs":  nil,
 		})
+	}
+	for index := range *epgs {
+		(*epgs)[index].URL = security.RedactProviderURL((*epgs)[index].URL)
 	}
 
 	// Return status 200 OK.
@@ -98,7 +102,7 @@ func AddEpg(c *fiber.Ctx) error {
 	epg := &models.Epg{}
 
 	// Check, if received JSON data is valid.
-	if err := c.BodyParser(epg); err != nil {
+	if err := decodeStrict(c, epg); err != nil {
 		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -132,7 +136,9 @@ func AddEpg(c *fiber.Ctx) error {
 	epg.ID = id
 
 	//TODO async Parse m3u and insert channels
-	go utils.ParseEpg(epg)
+	providerEpg := *epg
+	go utils.ParseEpg(&providerEpg)
+	epg.URL = security.RedactProviderURL(epg.URL)
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
@@ -153,58 +159,41 @@ func AddEpg(c *fiber.Ctx) error {
 // @Router /epg [put]
 func UpdateEpg(c *fiber.Ctx) error {
 	ctx := context.Background()
-	// Create new Epg struct
 	epg := &models.Epg{}
-
-	// Check, if received JSON data is valid.
-	if err := c.BodyParser(epg); err != nil {
-		// Return status 400 and error message.
-		log.Error().Msgf("UpdateEpg Error: %v", err.Error())
+	if err := decodeStrict(c, epg); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   err.Error(),
+			"msg":   "The guide source request was invalid.",
 		})
 	}
-
-	// Create a new validator for a Epg model.
-	validate := utils.NewValidator()
-
-	// Validate epg fields.
-	if err := validate.Struct(epg); err != nil {
-		log.Error().Msgf("UpdateEpg Error: %v", err)
-		// Return, if some fields are not valid.
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": true,
-			"msg":   utils.ValidatorErrors(err),
-		})
-	}
-
-	// Checking, if epg with given ID is exists.
 	foundEpg, err := database.Db.GetEpg(ctx, epg.ID)
 	if err != nil {
-		log.Error().Msgf("UpdateEpg Error: %v", err)
-		// Return status 404 and epg not found error.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": true,
 			"msg":   "epg with this ID not found",
 		})
 	}
-
-	// Update epg by given ID.
-	if err := database.Db.UpdateEpg(ctx, foundEpg.ID, epg); err != nil {
-		log.Error().Msgf("UpdateEpg Error: %v", err)
-		// Return status 500 and error message.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+	urlChanged := epg.URL != "" && epg.URL != foundEpg.URL
+	if epg.URL == "" {
+		epg.URL = foundEpg.URL
+	}
+	validate := utils.NewValidator()
+	if err := validate.Struct(epg); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   err.Error(),
+			"msg":   utils.ValidatorErrors(err),
 		})
 	}
-
-	if epg.URL != foundEpg.URL {
+	if err := database.Db.UpdateEpg(ctx, foundEpg.ID, epg); err != nil {
+		log.Error().Msgf("UpdateEpg Error: %v", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "The guide source could not be updated.",
+		})
+	}
+	if urlChanged {
 		go utils.ParseEpg(epg)
 	}
-
-	// Return status 201.
 	return c.SendStatus(fiber.StatusCreated)
 }
 
@@ -235,8 +224,6 @@ func DeleteEpg(c *fiber.Ctx) error {
 			"msg":   "epg with this ID not found",
 		})
 	}
-
-	go utils.RemoveEpg(foundEpg)
 
 	// Delete epg by given ID.
 	if err := database.Db.DeleteEpg(ctx, foundEpg.ID); err != nil {

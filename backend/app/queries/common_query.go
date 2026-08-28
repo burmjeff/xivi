@@ -115,37 +115,18 @@ func (q *BaseQueries) WrapExec(query string, args ...interface{}) (sql.Result, e
 	duration := time.Since(start)
 
 	if duration > 100*time.Millisecond {
-		log.Debug().Str("query", query).Float64("duration_ms", float64(duration.Milliseconds())).Msg("slow query detected")
+		log.Debug().Float64("duration_ms", float64(duration.Milliseconds())).Msg("slow database operation detected")
 	}
 
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
 		}
-		log.Error().Err(err).Str("query", query).Msg("database query failed")
+		log.Error().Err(err).Msg("database operation failed")
 		return nil, fmt.Errorf("%w: %v", ErrDBInternal, err)
 	}
 
 	return res, nil
-}
-
-// Pagination parameters
-type PaginationParams struct {
-	Offset int
-	Limit  int
-}
-
-// DefaultPagination returns default pagination parameters
-func DefaultPagination() PaginationParams {
-	return PaginationParams{
-		Offset: 0,
-		Limit:  100,
-	}
-}
-
-// ApplyPagination adds pagination to a query
-func ApplyPagination(query string, params PaginationParams) string {
-	return fmt.Sprintf("%s LIMIT %d OFFSET %d", query, params.Limit, params.Offset)
 }
 
 // WithContext executes a query with context for timeout/cancellation

@@ -20,6 +20,7 @@ type PlaylistChannel struct {
 type ChannelUrl struct {
 	ID              int64     `db:"id" json:"id"`
 	Url             string    `db:"url" json:"url" validate:"required,lte=255"`
+	URLCipher       []byte    `db:"url_cipher" json:"-"`
 	ChannelId       int64     `db:"channel_id" json:"channel_id" validate:"required"`
 	Order           int64     `db:"orderr" json:"orderr"`
 	CreatedAt       time.Time `db:"created_at" json:"created_at"`

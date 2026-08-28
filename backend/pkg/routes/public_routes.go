@@ -1,22 +1,23 @@
 package routes
 
 import (
-	"net/http"
+	"time"
 	"xivi/backend/app/controllers"
-	"xivi/backend/platform/settings"
+	"xivi/backend/pkg/middleware"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/filesystem"
 )
 
 // PublicRoutes func for describe group of public routes.
 func PublicRoutes(a *fiber.App) {
+	a.Get("/healthz", middleware.DeclareRoutePolicy("anonymous"), func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{"status": "ok"})
+	})
 	// Create routes group.
-	api := a.Group("/api")
+	api := a.Group("/api", middleware.DeclareRoutePolicy("admin"), middleware.RequireAdmin(), middleware.RequirePasswordChanged(), middleware.BoundedRateLimit(240, time.Minute, true), middleware.CSRFProtected(), middleware.SanitizeLegacyServerErrors())
 	router := a.Group("/")
 
 	// Playlist Routes
-	api.Get("/token/new", controllers.GetNewAccessToken)                                             // create a new access tokens
 	api.Get("/playlists", controllers.GetPlaylists)                                                  // get list of all playlists
 	api.Get("/playlist/:id", controllers.GetPlaylist)                                                // get a playlist by ID
 	api.Get("/playlist/:id/groups", controllers.GetPlaylistGroups)                                   // get groups by playlist_id
@@ -69,11 +70,10 @@ func PublicRoutes(a *fiber.App) {
 	api.Get("/epg/tvgids", controllers.GetEpgTvgids)         // get epg channel ids
 
 	// Logo Routes
-	api.Get("/logos", controllers.GetLogos)             // get list of all logos
-	api.Get("/logo/:logoid", controllers.GetLogo)       // get a logo by ID
-	api.Post("/logo", controllers.UploadLogo)           // create a new logo
-	api.Delete("/logo/:logoid", controllers.DeleteLogo) // delete a logo by ID
-	router.Get("/proxy-image", controllers.ProxyImage)  // proxy image urls
+	api.Get("/logos", controllers.GetLogos)                                                        // get list of all logos
+	api.Get("/logo/:logoid", controllers.GetLogo)                                                  // get a logo by ID
+	api.Post("/logo", middleware.BoundedRateLimit(10, time.Minute, false), controllers.UploadLogo) // create a new logo
+	api.Delete("/logo/:logoid", controllers.DeleteLogo)                                            // delete a logo by ID
 
 	// Settings Routes
 	api.Get("/settings", controllers.GetSettings)    // get settings
@@ -83,29 +83,23 @@ func PublicRoutes(a *fiber.App) {
 	api.Get("/system/status", controllers.GetSystemStatus) // get system status metrics
 
 	// Stream Routes
-	router.Get("/stream/:stream_id", controllers.GetStream)
-	router.Get("/stream/hls/:stream_id", controllers.GetHlsStream)
-	router.Get("/stream/hls/:stream_id/:asset", controllers.GetHlsAsset)
+	router.Get("/stream/:stream_id", middleware.DeclareRoutePolicy("media-or-viewer"), middleware.RequirePlayback(), controllers.GetStream)
+	router.Get("/stream/hls/:stream_id", middleware.DeclareRoutePolicy("media-or-viewer"), middleware.RequirePlayback(), controllers.GetHlsStream)
+	router.Get("/stream/hls/:stream_id/:asset", middleware.DeclareRoutePolicy("media-or-viewer"), middleware.RequirePlayback(), controllers.GetHlsAsset)
 	api.Get("/channels/hls/:group_id", controllers.GetHlsChannels)
 
 	// Each enabled lineup is exposed as an independent virtual network tuner.
-	router.Get("/virtual-tuner/:lineup_id/discover.json", controllers.GetVirtualTunerDiscover)
-	router.Get("/virtual-tuner/:lineup_id/lineup_status.json", controllers.GetVirtualTunerLineupStatus)
-	router.Get("/virtual-tuner/:lineup_id/lineup.json", controllers.GetVirtualTunerLineup)
-	router.Post("/virtual-tuner/:lineup_id/lineup.post", controllers.PostVirtualTunerLineup)
-	router.Get("/virtual-tuner/:lineup_id/device.xml", controllers.GetVirtualTunerDeviceDescription)
+	tuner := router.Group("/virtual-tuner", middleware.DeclareRoutePolicy("trusted-lan-device"), middleware.RequireTrustedLAN())
+	tuner.Use(func(c *fiber.Ctx) error {
+		c.Set(fiber.HeaderCacheControl, "private, no-store")
+		return c.Next()
+	})
+	tuner.Get("/:lineup_id/discover.json", controllers.GetVirtualTunerDiscover)
+	tuner.Get("/:lineup_id/lineup_status.json", controllers.GetVirtualTunerLineupStatus)
+	tuner.Get("/:lineup_id/lineup.json", controllers.GetVirtualTunerLineup)
+	tuner.Post("/:lineup_id/lineup.post", controllers.PostVirtualTunerLineup)
+	tuner.Get("/:lineup_id/device.xml", controllers.GetVirtualTunerDeviceDescription)
 
 	// App Routes
-	router.Use("/images", filesystem.New(filesystem.Config{
-		Root:   http.Dir(settings.LOGO_FILEPATH),
-		Browse: false,
-	}))
-	router.Use("/m3u", filesystem.New(filesystem.Config{
-		Root:   http.Dir(settings.M3U_FILEPATH),
-		Browse: false,
-	}))
-	router.Use("/xmltv", filesystem.New(filesystem.Config{
-		Root:   http.Dir(settings.EPG_FILEPATH),
-		Browse: false,
-	}))
+	router.Get("/images/:asset", middleware.DeclareRoutePolicy("lineup-media-or-viewer"), middleware.RequireImageAccess(), controllers.GetSecuredImage)
 }

@@ -16,12 +16,15 @@
 		BookOpen,
 		Settings,
 		Activity,
+		Users,
 		RefreshCw,
 		UploadCloud,
 		Play
 	} from '@lucide/svelte';
 	import { api, params } from '$lib/api/client';
 	import type { GuideChannel, Paginated } from '$lib/api/types';
+	import { auth } from '$lib/state/auth.svelte';
+	import { preferences } from '$lib/state/preferences.svelte';
 
 	let {
 		compact = false,
@@ -71,14 +74,21 @@
 			icon: Activity
 		},
 		{
+			label: 'Users',
+			detail: 'Accounts and lineup access',
+			href: '/studio/users',
+			icon: Users
+		},
+		{
 			label: 'Settings',
 			detail: 'Matching, streaming and server',
 			href: '/studio/settings',
 			icon: Settings
 		}
 	];
+	let allowedStudioEntries = $derived(auth.principal?.role === 'admin' ? studioEntries : []);
 	let entries = $derived(
-		studio ? [...studioEntries, ...watchEntries] : [...watchEntries, ...studioEntries]
+		studio ? [...allowedStudioEntries, ...watchEntries] : [...watchEntries, ...allowedStudioEntries]
 	);
 	let filtered = $derived(
 		entries.filter((entry) =>
@@ -89,7 +99,9 @@
 		queryKey: ['command-search', query],
 		enabled: open && query.trim().length >= 2,
 		queryFn: () =>
-			api<Paginated<GuideChannel>>(`/api/v2/search${params({ q: query.trim(), limit: 8 })}`),
+			api<Paginated<GuideChannel>>(
+				`/api/v2/search${params({ q: query.trim(), lineup_id: preferences.lineupId, limit: 8 })}`
+			),
 		staleTime: 15_000
 	}));
 	function choose(href: string) {
@@ -187,7 +199,10 @@
 				{#if channelSearch.data?.items.length}
 					<p class="result-label">Channels</p>
 					{#each channelSearch.data.items as channel}
-						<button onclick={() => choose(`/watch/channel/${channel.id}`)}>
+						<button
+							onclick={() =>
+								choose(`/watch/channel/${channel.id}${params({ lineup: preferences.lineupId })}`)}
+						>
 							<Play size={18} />
 							<span>
 								<strong>{channel.name}</strong>

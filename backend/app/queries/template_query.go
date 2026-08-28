@@ -101,6 +101,25 @@ func (q *TemplateQueries) SetTemplateVirtualTunerEnabled(id int64, enabled bool)
 	return nil
 }
 
+// RotateTemplateVirtualTunerCredential invalidates every previously issued
+// signed tuner URL for one lineup without affecting other lineup devices.
+func (q *TemplateQueries) RotateTemplateVirtualTunerCredential(id int64) error {
+	result, err := q.Exec(`UPDATE template
+		SET virtual_tuner_token_version = virtual_tuner_token_version + 1
+		WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // SetTemplateFillMissingGuideSlots controls whether XMLTV publication fills
 // uncovered intervals with export-only placeholder programmes.
 func (q *TemplateQueries) SetTemplateFillMissingGuideSlots(id int64, enabled bool) error {

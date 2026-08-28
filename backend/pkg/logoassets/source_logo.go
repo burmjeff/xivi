@@ -5,8 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -14,6 +12,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"xivi/backend/pkg/outbound"
 	"xivi/backend/platform/settings"
 
 	"github.com/davidbyttow/govips/v2/vips"
@@ -21,7 +20,7 @@ import (
 
 const maxSourceLogoBytes = 8 << 20
 
-var sourceLogoClient = &http.Client{Timeout: 12 * time.Second}
+var fetchSourceLogo = outbound.FetchBytes
 
 // SourceLogoName creates a readable, filesystem-safe identity for a remote
 // playlist logo. The URL hash prevents unrelated providers with the same image
@@ -63,7 +62,7 @@ func StoreSourceLogo(ctx context.Context, rawURL, name string) error {
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return fmt.Errorf("source logo URL is invalid")
 	}
-	if err := os.MkdirAll(settings.LOGO_FILEPATH, 0o755); err != nil {
+	if err := os.MkdirAll(settings.LOGO_FILEPATH, 0o700); err != nil {
 		return err
 	}
 	target := filepath.Join(settings.LOGO_FILEPATH, name+".png")
@@ -73,28 +72,12 @@ func StoreSourceLogo(ctx context.Context, rawURL, name string) error {
 		return err
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	content, headers, err := fetchSourceLogo(ctx, parsed.String(), outbound.Policy{AllowPrivate: true, Timeout: 12 * time.Second, MaxRedirects: 3}, maxSourceLogoBytes, nil)
 	if err != nil {
 		return err
 	}
-	request.Header.Set("User-Agent", "Xivi source logo importer")
-	response, err := sourceLogoClient.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("source logo returned HTTP %d", response.StatusCode)
-	}
-	if response.ContentLength > maxSourceLogoBytes {
-		return fmt.Errorf("source logo exceeds the 8 MiB limit")
-	}
-	content, err := io.ReadAll(io.LimitReader(response.Body, maxSourceLogoBytes+1))
-	if err != nil {
-		return err
-	}
-	if len(content) > maxSourceLogoBytes {
-		return fmt.Errorf("source logo exceeds the 8 MiB limit")
+	if contentType := strings.ToLower(headers.Get("Content-Type")); contentType != "" && !strings.HasPrefix(contentType, "image/") && contentType != "application/octet-stream" {
+		return fmt.Errorf("source logo response was not an image")
 	}
 
 	image, err := vips.NewImageFromBuffer(content)
@@ -102,6 +85,9 @@ func StoreSourceLogo(ctx context.Context, rawURL, name string) error {
 		return fmt.Errorf("source logo is not a supported image: %w", err)
 	}
 	defer image.Close()
+	if image.Width() < 1 || image.Height() < 1 || int64(image.Width())*int64(image.Height()) > 40_000_000 {
+		return fmt.Errorf("source logo dimensions exceed the 40 megapixel limit")
+	}
 	if err := image.ThumbnailWithSize(256, 256, vips.InterestingNone, vips.SizeBoth); err != nil {
 		return err
 	}
@@ -120,7 +106,7 @@ func StoreSourceLogo(ctx context.Context, rawURL, name string) error {
 		_ = temporary.Close()
 		return err
 	}
-	if err := temporary.Chmod(0o644); err != nil {
+	if err := temporary.Chmod(0o600); err != nil {
 		_ = temporary.Close()
 		return err
 	}

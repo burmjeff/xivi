@@ -6,7 +6,7 @@
 	"scripts": {
 		"prepare": "svelte-kit sync",
 		"setup": "npm ci",
-		"setup-all": "npm run setup && echo \"Download Golang dependencies...\" && go install github.com/swaggo/swag/cmd/swag@latest && go get ./...",
+		"setup-all": "npm run setup && echo \"Download Golang dependencies...\" && go mod download && go mod verify",
 		"upgrade": "npx npm-check-updates -u && npm run setup",
 		"upgrade-all": "npx npm-check-updates -u && npm run setup && echo \"Update Golang dependencies...\" && go get -u ./...",
 		"dev": "vite dev",
@@ -19,8 +19,8 @@
 		"format": "prettier --write . && go fmt ./...",
 		"build": "npx vite build",
 		"api:types": "openapi-typescript docs/openapi-v2.yaml -o src/lib/api/generated.ts && prettier --write src/lib/api/generated.ts",
-		"build-all": "swag init && npm run build && echo \"Building Golang binary...\" && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags \"-linkmode 'external' -extldflags '-lstdc++ -lssl -lcrypto' -s -w\" -buildvcs=false -mod=readonly -v -o xivi .",
-		"build-all-win": "swag init && npm run build && echo \"Building Golang binary...\" && go build -ldflags \"-linkmode 'external' -extldflags '-lstdc++ -lssl -lcrypto' -s -w\" -buildvcs=false -mod=readonly -v -o xivi .",
+		"build-all": "npm run build && echo \"Building Golang binary...\" && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags \"-linkmode 'external' -extldflags '-lstdc++ -lssl -lcrypto' -s -w\" -buildvcs=false -mod=readonly -v -o xivi .",
+		"build-all-win": "npm run build && echo \"Building Golang binary...\" && go build -trimpath -ldflags \"-linkmode 'external' -extldflags '-lstdc++ -lssl -lcrypto' -s -w\" -buildvcs=false -mod=readonly -v -o xivi .",
 		"serve": "./xivi",
 		"serve-win": "open-cli http://localhost:3000 && xivi",
 		"docker": "docker build . -t xivi -f Dockerfile",
@@ -37,7 +37,7 @@
 		"eslint-plugin-svelte": "^3.13.0",
 		"globals": "^17.11.0",
 		"npm-check-updates": "^19.1.2",
-		"open-cli": "^8.0.0",
+		"open-cli": "^9.0.0",
 		"openapi-typescript": "^7.13.0",
 		"prettier": "^3.6.2",
 		"prettier-plugin-svelte": "^3.4.0",
@@ -63,6 +63,10 @@
 		"@tanstack/svelte-virtual": "^3.13.36",
 		"bits-ui": "^2.19.0",
 		"hls.js": "^1.6.15",
-		"media-chrome": "^4.16.0"
+		"media-chrome": "^4.16.0",
+		"qrcode-generator": "^2.0.4"
+	},
+	"overrides": {
+		"cookie": "^0.7.2"
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"xivi/backend/pkg/security"
 	"xivi/backend/platform/settings"
 
 	"github.com/rs/zerolog/log"
@@ -113,6 +114,11 @@ func (service *Service) serve(conn *net.UDPConn) {
 				return
 			}
 			log.Warn().Err(err).Msg("Virtual tuner discovery read failed")
+			continue
+		}
+		if remote == nil || !security.IsTrustedLAN(remote.IP) {
+			// UDP discovery has no authentication handshake. Never confirm the
+			// existence of a tuner to an address outside the explicit LAN policy.
 			continue
 		}
 		request, err := parseDiscoveryRequest(buffer[:count])

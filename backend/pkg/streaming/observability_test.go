@@ -30,7 +30,7 @@ func TestClassifyErrorProvidesActionableCodes(t *testing.T) {
 
 func TestSanitizeDiagnosticRemovesUpstreamCredentials(t *testing.T) {
 	message := SanitizeDiagnostic("request https://viewer:secret@provider.test/live.ts?token=private failed")
-	if message != "request https://provider.test/live.ts failed" {
+	if message != "request https://provider.test/… failed" {
 		t.Fatalf("unexpected sanitized diagnostic: %q", message)
 	}
 }

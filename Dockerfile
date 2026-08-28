@@ -1,7 +1,8 @@
 ARG UBUNTU_RELEASE=resolute
 ARG NODE_VERSION=24
-ARG GO_VERSION=1.24.1
+ARG GO_VERSION=1.25.13
 ARG ONNX_RUNTIME_VERSION=1.22.0
+ARG ONNX_RUNTIME_SHA256=8344d55f93d5bc5021ce342db50f62079daf39aaafb5d311a451846228be49b3
 
 # Keep the frontend and backend toolchains identical between development and
 # production builds. The runtime libraries themselves are defined once below.
@@ -27,6 +28,7 @@ RUN npm run build
 FROM ubuntu:${UBUNTU_RELEASE} AS native-runtime
 
 ARG ONNX_RUNTIME_VERSION
+ARG ONNX_RUNTIME_SHA256
 ARG DEBIAN_FRONTEND=noninteractive
 
 # This is the single source of truth for native packages used by both the
@@ -51,6 +53,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -fsSL \
     "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_RUNTIME_VERSION}/onnxruntime-linux-x64-${ONNX_RUNTIME_VERSION}.tgz" \
     -o /tmp/onnxruntime.tgz \
+    && echo "${ONNX_RUNTIME_SHA256}  /tmp/onnxruntime.tgz" | sha256sum -c - \
     && mkdir -p /usr/local/onnxruntime \
     && tar -xzf /tmp/onnxruntime.tgz -C /usr/local/onnxruntime --strip-components=1 \
     && rm /tmp/onnxruntime.tgz \
@@ -90,15 +93,16 @@ FROM native-builder AS server-builder
 WORKDIR /build
 
 COPY backend/ /build/backend
+COPY docs/ /build/docs
 COPY go.* ./
 COPY *.go ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download && go mod verify
 
-ENV CGO_ENABLED=1 GOOS=linux GOARCH=amd64
-RUN go install github.com/swaggo/swag/cmd/swag@latest \
-    && /root/go/bin/swag init
-RUN go mod tidy
-RUN go build -ldflags "-linkmode 'external' -extldflags '-lstdc++ -lssl -lcrypto' -s -w" -buildvcs=false -mod=readonly -v -o xivi .
+ENV CGO_ENABLED=1 GOOS=linux GOARCH=amd64 GOFLAGS=-mod=readonly GOTOOLCHAIN=local
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -trimpath -ldflags "-linkmode 'external' -extldflags '-lstdc++ -lssl -lcrypto' -s -w" -buildvcs=false -o xivi .
 
 #
 # development container
@@ -135,24 +139,29 @@ FROM native-runtime AS deployment
 ENV APP_NAME="Xivi" \
     APP_VERSION="1.0" \
     TZ="America/New_York" \
-    SERVER_HOST="127.0.0.1" \
+    SERVER_HOST="0.0.0.0" \
     SERVER_PORT=3000 \
     SERVER_READ_TIMEOUT=60 \
-    JWT_SECRET_KEY="secret" \
-    JWT_SECRET_KEY_EXPIRE_MINUTES_COUNT=15 \
+    XIVI_PRODUCTION="true" \
     LOG_LEVEL=3
 
-RUN mkdir -p /xivi
+RUN rm -f /usr/bin/pebble \
+    && groupadd --system --gid 10001 xivi \
+    && useradd --system --uid 10001 --gid xivi --home-dir /xivi --shell /usr/sbin/nologin xivi \
+    && mkdir -p /xivi/config /xivi/serve \
+    && chown -R xivi:xivi /xivi
 WORKDIR /xivi
 
-COPY --from=app-builder /app/build /xivi/build
-COPY --from=server-builder ["/build/xivi", "/xivi/"]
-COPY backend/platform/database/migrations/ /xivi/database_migrations
-COPY xivi_channel.png /xivi/xivi_channel.png
+COPY --chown=xivi:xivi --from=app-builder /app/build /xivi/build
+COPY --chown=xivi:xivi --from=server-builder ["/build/xivi", "/xivi/"]
+COPY --chown=xivi:xivi backend/platform/database/migrations/ /xivi/database_migrations
+COPY --chown=xivi:xivi xivi_channel.png /xivi/xivi_channel.png
 
 VOLUME /xivi/config /xivi/serve
 
 EXPOSE $SERVER_PORT
 EXPOSE 65001/udp
 
+USER 10001:10001
+HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 CMD ["/xivi/xivi", "healthcheck"]
 ENTRYPOINT ["/xivi/xivi"]

@@ -9,12 +9,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 	"xivi/backend/app/models"
+	"xivi/backend/pkg/outbound"
 	"xivi/backend/platform/database"
 
 	"github.com/rs/zerolog/log"
@@ -44,25 +44,20 @@ func ParseEpgWithProgress(epg *models.Epg, reporter ProgressReporter) error {
 	log.Info().Msg("EPG Parser started")
 	reportProgress(reporter, 0, "Downloading and reading XMLTV schedule…")
 
-	// Create a custom HTTP client with optimized settings
-	client := &http.Client{
-		Timeout: 5 * time.Minute,
-		Transport: &http.Transport{
-			MaxIdleConns:        10,
-			MaxIdleConnsPerHost: 10,
-			IdleConnTimeout:     30 * time.Second,
-			DisableCompression:  false, // Enable automatic compression handling
-		},
-	}
-
 	// Parse the XML data
-	epgItem, err := fetchAndParseEPGWithProgress(ctx, epg, client, reporter)
+	epgItem, err := fetchAndParseEPGWithProgress(ctx, epg, nil, reporter)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to parse EPG data")
 		return fmt.Errorf("could not load guide data: %w", err)
 	}
 	programmeCount := len(epgItem.Programmes)
 	epgItem.Programmes = currentEPGProgrammes(epgItem.Programmes, time.Now().Add(-24*time.Hour))
+	for index := range epgItem.Channels {
+		epgItem.Channels[index].Icon.Src = ""
+	}
+	for index := range epgItem.Programmes {
+		epgItem.Programmes[index].Icon.Src = ""
+	}
 	if skipped := programmeCount - len(epgItem.Programmes); skipped > 0 {
 		log.Info().Int("expired_programmes_skipped", skipped).Msg("Skipped expired XMLTV programmes before database import")
 	}
@@ -123,21 +118,33 @@ func fetchAndParseEPGWithProgress(ctx context.Context, epg *models.Epg, client *
 	if isValidURL(epg.URL) {
 		log.Info().Msg("Fetching EPG from URL...")
 		// Use the optimized HTTP client
-		req, err := http.NewRequestWithContext(ctx, "GET", epg.URL, nil)
+		var resp *http.Response
+		var err error
+		if client != nil {
+			request, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, epg.URL, nil)
+			if requestErr != nil {
+				return models.EpgItem{}, requestErr
+			}
+			resp, err = client.Do(request)
+			if err == nil && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+				status := resp.Status
+				resp.Body.Close()
+				return models.EpgItem{}, fmt.Errorf("guide source returned %s", status)
+			}
+		} else {
+			resp, err = outbound.Open(ctx, epg.URL, outbound.Policy{
+				AllowPrivate: true,
+				Timeout:      5 * time.Minute,
+				MaxRedirects: 3,
+			}, http.Header{"User-Agent": []string{"Xivi XMLTV importer"}})
+		}
 		if err != nil {
 			return models.EpgItem{}, err
 		}
-
-		// Add headers for compression support
-		req.Header.Set("Accept-Encoding", "gzip, deflate")
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return models.EpgItem{}, err
-		}
-		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		const maxXMLTVBytes = int64(512 << 20)
+		if resp.ContentLength > maxXMLTVBytes {
 			resp.Body.Close()
-			return models.EpgItem{}, fmt.Errorf("guide source returned %s", resp.Status)
+			return models.EpgItem{}, fmt.Errorf("guide source exceeds the 512 MiB limit")
 		}
 
 		cleanup = func() { resp.Body.Close() }
@@ -145,11 +152,11 @@ func fetchAndParseEPGWithProgress(ctx context.Context, epg *models.Epg, client *
 		// Check for gzip encoding
 		if resp.Header.Get("Content-Encoding") == "gzip" ||
 			(resp.Header.Get("Content-Type") == "application/x-gzip") {
-			gzReader, err := gzip.NewReader(resp.Body)
+			gzReader, err := gzip.NewReader(io.LimitReader(resp.Body, maxXMLTVBytes+1))
 			if err != nil {
 				return models.EpgItem{}, err
 			}
-			reader = gzReader
+			reader = io.LimitReader(gzReader, maxXMLTVBytes+1)
 			oldCleanup := cleanup
 			cleanup = func() {
 				gzReader.Close()
@@ -157,14 +164,14 @@ func fetchAndParseEPGWithProgress(ctx context.Context, epg *models.Epg, client *
 			}
 		} else {
 			// Check for gzip magic bytes
-			bufReader := bufio.NewReader(resp.Body)
+			bufReader := bufio.NewReader(io.LimitReader(resp.Body, maxXMLTVBytes+1))
 			testBytes, err := bufReader.Peek(2)
 			if err == nil && testBytes[0] == 31 && testBytes[1] == 139 {
 				gzReader, err := gzip.NewReader(bufReader)
 				if err != nil {
 					return models.EpgItem{}, err
 				}
-				reader = gzReader
+				reader = io.LimitReader(gzReader, maxXMLTVBytes+1)
 				oldCleanup := cleanup
 				cleanup = func() {
 					gzReader.Close()
@@ -175,13 +182,7 @@ func fetchAndParseEPGWithProgress(ctx context.Context, epg *models.Epg, client *
 			}
 		}
 	} else {
-		log.Info().Msg("Reading EPG from file...")
-		file, err := os.Open(epg.URL)
-		if err != nil {
-			return models.EpgItem{}, err
-		}
-		reader = file
-		cleanup = func() { file.Close() }
+		return models.EpgItem{}, fmt.Errorf("local guide paths are not accepted; use an HTTPS URL")
 	}
 
 	defer cleanup()

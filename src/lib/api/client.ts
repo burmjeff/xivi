@@ -1,4 +1,5 @@
 import type { APIError } from './types';
+import { clearSession, csrfToken } from '$lib/state/auth.svelte';
 
 export class XiviAPIError extends Error {
 	constructor(
@@ -9,12 +10,23 @@ export class XiviAPIError extends Error {
 	}
 }
 
+const sessionInvalidatingCodes = new Set([
+	'authentication_required',
+	'session_expired',
+	'session_revoked'
+]);
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+	const method = (init?.method ?? 'GET').toUpperCase();
+	const mutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
 	const response = await fetch(path, {
 		...init,
+		credentials: 'same-origin',
+		cache: 'no-store',
 		headers: {
 			Accept: 'application/json',
 			...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+			...(mutation && csrfToken() ? { 'X-CSRF-Token': csrfToken() } : {}),
 			...init?.headers
 		}
 	});
@@ -29,6 +41,10 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 		} catch {
 			/* response was not JSON */
 		}
+		// A failed password confirmation is a credential error for that one
+		// operation, not evidence that the existing browser session is invalid.
+		// Only explicit session-authentication errors should redirect to login.
+		if (response.status === 401 && sessionInvalidatingCodes.has(detail.code)) clearSession();
 		throw new XiviAPIError(response.status, detail);
 	}
 	if (response.status === 204 || response.headers.get('content-length') === '0')

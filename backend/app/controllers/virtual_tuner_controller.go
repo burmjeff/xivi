@@ -3,6 +3,7 @@ package controllers
 import (
 	"fmt"
 	"strconv"
+	"xivi/backend/pkg/streaming"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/pkg/virtualtuner"
 	"xivi/backend/platform/database"
@@ -24,7 +25,7 @@ func loadVirtualTunerDevice(c *fiber.Ctx) (virtualtuner.Device, error) {
 	if !lineup.VirtualTunerEnabled {
 		return virtualtuner.Device{}, fiber.NewError(fiber.StatusNotFound, "The virtual tuner is disabled for this lineup.")
 	}
-	return virtualtuner.NewDevice(*lineup, c.BaseURL(), settings.APP_SETTINGS.VirtualTuner.TunerCount), nil
+	return virtualtuner.NewDevice(*lineup, settings.APP_SETTINGS.Security.LocalBaseURL, settings.APP_SETTINGS.VirtualTuner.TunerCount), nil
 }
 
 func GetVirtualTunerDiscover(c *fiber.Ctx) error {
@@ -52,7 +53,7 @@ func GetVirtualTunerLineup(c *fiber.Ctx) error {
 		log.Error().Err(err).Int64("lineup_id", device.LineupID).Msg("Virtual tuner lineup could not be loaded")
 		return fiber.NewError(fiber.StatusInternalServerError, "The tuner lineup could not be loaded.")
 	}
-	return c.JSON(virtualtuner.Lineup(c.BaseURL(), channels))
+	return c.JSON(virtualtuner.Lineup(settings.APP_SETTINGS.Security.LocalBaseURL, channels, device.MediaToken))
 }
 
 func PostVirtualTunerLineup(c *fiber.Ctx) error {
@@ -76,7 +77,7 @@ func GetVirtualTunerDeviceDescription(c *fiber.Ctx) error {
 }
 
 func V2DeviceOutputs(c *fiber.Ctx) error {
-	devices, err := virtualtuner.AllDevices(c.BaseURL())
+	devices, err := virtualtuner.AllDevices(settings.APP_SETTINGS.Security.LocalBaseURL)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "device_outputs_unavailable", "Device outputs could not be loaded.", true)
 	}
@@ -104,7 +105,7 @@ func V2SetLineupVirtualTunerEnabled(c *fiber.Ctx) error {
 	request := struct {
 		Enabled *bool `json:"enabled"`
 	}{}
-	if err := c.BodyParser(&request); err != nil || request.Enabled == nil {
+	if err := decodeStrict(c, &request); err != nil || request.Enabled == nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_device_output", "An enabled value is required.", false)
 	}
 
@@ -121,9 +122,29 @@ func V2SetLineupVirtualTunerEnabled(c *fiber.Ctx) error {
 	if err := virtualtuner.Reconfigure(); err != nil {
 		_ = database.Db.SetTemplateVirtualTunerEnabled(lineupID, lineup.VirtualTunerEnabled)
 		_ = virtualtuner.Reconfigure()
-		return v2Error(c, fiber.StatusConflict, "virtual_tuner_discovery_unavailable", err.Error(), true)
+		return v2Error(c, fiber.StatusConflict, "virtual_tuner_discovery_unavailable", "Virtual tuner discovery could not be reconfigured. Confirm that UDP port 65001 is available.", true)
 	}
 	return V2DeviceOutputs(c)
+}
+
+func V2RotateLineupVirtualTunerCredential(c *fiber.Ctx) error {
+	lineupID, err := strconv.ParseInt(c.Params("lineup_id"), 10, 64)
+	if err != nil || lineupID < 1 {
+		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
+	}
+	lineup, err := database.Db.GetTemplate(lineupID)
+	if err != nil {
+		return v2Error(c, fiber.StatusNotFound, "lineup_not_found", "The lineup was not found.", false)
+	}
+	if !lineup.VirtualTunerEnabled {
+		return v2Error(c, fiber.StatusConflict, "virtual_tuner_disabled", "Enable the lineup virtual tuner before rotating its credential.", false)
+	}
+	if err := database.Db.RotateTemplateVirtualTunerCredential(lineupID); err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "credential_rotation_failed", "The virtual tuner credential could not be rotated.", true)
+	}
+	streaming.DefaultManager.DisconnectAuthorizedClients("virtual_tuner", lineupID, 0)
+	auditSecurity(c, "virtual_tuner_credential_rotate", "success", "lineup", strconv.FormatInt(lineupID, 10), "existing tuner URLs revoked", nil)
+	return c.JSON(fiber.Map{"rotated": true})
 }
 
 func V2SetLineupFillMissingGuideSlots(c *fiber.Ctx) error {
@@ -134,7 +155,7 @@ func V2SetLineupFillMissingGuideSlots(c *fiber.Ctx) error {
 	request := struct {
 		Enabled *bool `json:"enabled"`
 	}{}
-	if err := c.BodyParser(&request); err != nil || request.Enabled == nil {
+	if err := decodeStrict(c, &request); err != nil || request.Enabled == nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_device_output", "An enabled value is required.", false)
 	}
 

@@ -17,8 +17,8 @@ import (
 const (
 	selectAllEpgsQuery = `SELECT * FROM epg`
 	selectEpgByIdQuery = `SELECT * FROM epg WHERE id = ?`
-	insertEpgQuery     = `INSERT INTO epg VALUES (null, ?, ?, ?, ?, ?)`
-	updateEpgQuery     = `UPDATE epg SET name = ?, url = ?, orderr = ?, updated_at = ? WHERE id = ?`
+	insertEpgQuery     = `INSERT INTO epg (name, url, url_cipher, orderr, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
+	updateEpgQuery     = `UPDATE epg SET name = ?, url = ?, url_cipher = ?, orderr = ?, updated_at = ? WHERE id = ?`
 	deleteEpgQuery     = `DELETE FROM epg WHERE id = ?`
 
 	selectAllEpgChannelsQuery        = `SELECT * FROM epgchannel`
@@ -100,6 +100,13 @@ func (q *EpgQueries) GetEpgs(ctx context.Context) (*[]models.Epg, error) {
 		log.Error().Err(err).Msg("Error retrieving EPG sources")
 		return nil, err
 	}
+	for index := range *epgs {
+		epgsURL, revealErr := revealProviderURL((*epgs)[index].URLCipher, (*epgs)[index].URL)
+		if revealErr != nil {
+			return nil, revealErr
+		}
+		(*epgs)[index].URL = epgsURL
+	}
 
 	return epgs, nil
 }
@@ -124,6 +131,10 @@ func (q *EpgQueries) GetEpg(ctx context.Context, id int64) (*models.Epg, error) 
 		log.Error().Err(err).Int64("id", id).Msg("Error retrieving EPG")
 		return nil, err
 	}
+	epg.URL, err = revealProviderURL(epg.URLCipher, epg.URL)
+	if err != nil {
+		return nil, err
+	}
 
 	return epg, nil
 }
@@ -131,14 +142,18 @@ func (q *EpgQueries) GetEpg(ctx context.Context, id int64) (*models.Epg, error) 
 // CreateEpg creates a new EPG source
 func (q *EpgQueries) CreateEpg(ctx context.Context, p *models.Epg) (int64, error) {
 	var id int64
+	placeholder, ciphertext, err := protectProviderURL(p.URL)
+	if err != nil {
+		return 0, err
+	}
 
-	err := q.WithContext(ctx, func(ctx context.Context) error {
+	err = q.WithContext(ctx, func(ctx context.Context) error {
 		stmt, err := q.GetPreparedStmt(insertEpgQuery)
 		if err != nil {
 			return err
 		}
 
-		res, err := stmt.ExecContext(ctx, p.Name, p.URL, p.Order, p.CreatedAt, p.UpdatedAt)
+		res, err := stmt.ExecContext(ctx, p.Name, placeholder, ciphertext, p.Order, p.CreatedAt, p.UpdatedAt)
 		if err != nil {
 			return err
 		}
@@ -161,13 +176,17 @@ func (q *EpgQueries) CreateEpg(ctx context.Context, p *models.Epg) (int64, error
 
 // UpdateEpg updates an EPG source
 func (q *EpgQueries) UpdateEpg(ctx context.Context, id int64, p *models.Epg) error {
+	placeholder, ciphertext, err := protectProviderURL(p.URL)
+	if err != nil {
+		return err
+	}
 	return q.WithContext(ctx, func(ctx context.Context) error {
 		stmt, err := q.GetPreparedStmt(updateEpgQuery)
 		if err != nil {
 			return err
 		}
 
-		_, err = stmt.ExecContext(ctx, p.Name, p.URL, p.Order, p.UpdatedAt, id)
+		_, err = stmt.ExecContext(ctx, p.Name, placeholder, ciphertext, p.Order, p.UpdatedAt, id)
 		if err != nil {
 			log.Error().Err(err).Int64("id", id).Msg("Error updating EPG")
 		}
@@ -330,7 +349,7 @@ func (q *EpgQueries) GetEpgChannel(ctx context.Context, id int64) (*models.EpgCh
 	}
 
 	// Debug log to check if Icon.Src is populated
-	log.Debug().Int64("id", id).Str("icon.src", epgchannel.Icon.Src).Msg("Retrieved EPG channel by ID")
+	log.Debug().Int64("id", id).Msg("Retrieved EPG channel by ID")
 
 	return epgchannel, nil
 }
@@ -394,7 +413,7 @@ func (q *EpgQueries) GetEpgChannelByChannelId(ctx context.Context, channelID str
 	}
 
 	// Debug log to check if Icon.Src is populated
-	log.Debug().Str("channelID", channelID).Str("icon.src", epgchannel.Icon.Src).Msg("Retrieved EPG channel by channel ID")
+	log.Debug().Str("channelID", channelID).Msg("Retrieved EPG channel by channel ID")
 
 	return epgchannel, nil
 }

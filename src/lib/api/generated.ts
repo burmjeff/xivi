@@ -4,6 +4,390 @@
  */
 
 export interface paths {
+	'/auth/bootstrap-status': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getBootstrapStatus'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/auth/login': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['login'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/auth/session': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSession'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/auth/logout': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['logout'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/auth/reauth': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['reauthenticate'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/auth/password': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['changePassword'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/auth/mfa/enroll': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['enrollMFA'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/auth/mfa/confirm': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['confirmMFA'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/auth/mfa': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['disableMFA'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/auth/mfa/recovery-codes': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['regenerateMFARecoveryCodes'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/auth/sessions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listAccountSessions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/auth/sessions/{session_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['revokeAccountSession'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/account/media-keys': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listMediaKeys'];
+		put?: never;
+		post: operations['createMediaKey'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/account/media-keys/{key_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['revokeMediaKey'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/users': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listUsers'];
+		put?: never;
+		post: operations['createUser'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/users/{user_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['deleteUser'];
+		options?: never;
+		head?: never;
+		patch: operations['updateUser'];
+		trace?: never;
+	};
+	'/studio/users/{user_id}/password-reset': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['resetUserPassword'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/users/{user_id}/mfa': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['resetUserMFA'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/users/{user_id}/sessions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['revokeUserSessions'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/users/{user_id}/media-keys': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listUserMediaKeys'];
+		put?: never;
+		post?: never;
+		delete: operations['revokeUserMediaKeys'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/users/{user_id}/media-keys/{key_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['revokeUserMediaKey'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/studio/security/audit': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listSecurityAudit'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/media/v1/lineups/{lineup_id}/playlist.m3u': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSecuredM3U'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/media/v1/lineups/{lineup_id}/guide.xml': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSecuredXMLTV'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/watch/lineups': {
 		parameters: {
 			query?: never;
@@ -324,6 +708,23 @@ export interface paths {
 		options?: never;
 		head?: never;
 		patch: operations['setLineupVirtualTunerEnabled'];
+		trace?: never;
+	};
+	'/studio/device-outputs/virtual-tuner/{lineup_id}/credential/rotate': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** @description Rotates the lineup-scoped LAN credential and immediately disconnects clients using the previous credential. */
+		post: operations['rotateLineupVirtualTunerCredential'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
 		trace?: never;
 	};
 	'/studio/device-outputs/fill-missing-guide-slots/{lineup_id}': {
@@ -680,6 +1081,23 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/studio/source-channels/{source_channel_id}/logo': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** @description Returns a normalized source logo through the authenticated outbound-fetch boundary. The provider URL is never exposed to the browser. */
+		get: operations['getSourceChannelLogo'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/studio/source-channels/enabled': {
 		parameters: {
 			query?: never;
@@ -946,6 +1364,134 @@ export interface components {
 				port: 65001;
 				devices: components['schemas']['VirtualTunerDevice'][];
 			};
+		};
+		SessionPrincipal: {
+			/** Format: int64 */
+			user_id: number;
+			username: string;
+			/** @enum {string} */
+			role: 'admin' | 'viewer';
+			must_change_password: boolean;
+			mfa_enabled: boolean;
+			mfa_required: boolean;
+			lineup_ids: number[];
+			/** @description Required on cookie-authenticated mutations. */
+			csrf_token?: string;
+		};
+		ReauthenticationRequest: {
+			/** Format: password */
+			password: string;
+		};
+		AuthSessionMetadata: {
+			/** Format: int64 */
+			id: number;
+			/** @enum {string} */
+			transport_scope: 'https' | 'lan_http';
+			/** Format: date-time */
+			created_at: string;
+			/** Format: date-time */
+			last_seen_at: string;
+			/** Format: date-time */
+			idle_expires_at: string;
+			/** Format: date-time */
+			absolute_expires_at: string;
+			/** Format: date-time */
+			revoked_at?: string;
+			client_ip: string;
+		};
+		UserSummary: {
+			/** Format: int64 */
+			id: number;
+			username: string;
+			/** @enum {string} */
+			role: 'admin' | 'viewer';
+			must_change_password: boolean;
+			mfa_enabled: boolean;
+			/** Format: date-time */
+			disabled_at?: string;
+			/** Format: date-time */
+			created_at: string;
+			/** Format: date-time */
+			updated_at: string;
+			lineup_ids: number[];
+		};
+		LineupGrant: {
+			/** Format: int64 */
+			id: number;
+			name: string;
+		};
+		UserWriteRequest: {
+			username: string;
+			/** Format: password */
+			password: string;
+			/** @enum {string} */
+			role: 'admin' | 'viewer';
+			disabled: boolean;
+			lineup_ids: number[];
+		};
+		UserUpdateRequest: {
+			/** @enum {string} */
+			role: 'admin' | 'viewer';
+			disabled: boolean;
+			lineup_ids: number[];
+		};
+		MediaAccessKeyMetadata: {
+			/** Format: int64 */
+			id: number;
+			/** Format: int64 */
+			user_id: number;
+			name: string;
+			token_prefix: string;
+			/** @enum {string} */
+			network_scope: 'public' | 'lan';
+			/** Format: date-time */
+			created_at: string;
+			/** Format: date-time */
+			expires_at?: string;
+			/** Format: date-time */
+			last_used_at?: string;
+			last_used_ip?: string;
+			/** Format: date-time */
+			revoked_at?: string;
+			lineup_ids: number[];
+			/** @description Credential-bearing output URLs available only to the key owner. Omitted for revoked, expired, and legacy hash-only keys. */
+			links?: {
+				[key: string]: {
+					[key: string]: string;
+				};
+			};
+		};
+		MediaKeyCreateRequest: {
+			name: string;
+			/** @enum {string} */
+			network_scope: 'public' | 'lan';
+			lineup_ids: number[];
+			/** Format: date-time */
+			expires_at?: string;
+		};
+		MediaKeyCreateResponse: {
+			key: components['schemas']['MediaAccessKeyMetadata'];
+		};
+		SecurityAuditEvent: {
+			/** Format: int64 */
+			id: number;
+			/** Format: int64 */
+			actor_user_id?: number;
+			actor_username?: string;
+			/** Format: int64 */
+			target_user_id?: number;
+			target_username?: string;
+			action: string;
+			outcome: string;
+			resource_type?: string;
+			resource_id?: string;
+			client_ip?: string;
+			detail?: string;
+			/** Format: date-time */
+			created_at: string;
+		};
+		SecurityAuditPage: components['schemas']['PageMetadata'] & {
+			items?: components['schemas']['SecurityAuditEvent'][];
 		};
 		APIError: {
 			code: string;
@@ -1574,6 +2120,7 @@ export interface components {
 		GroupIdPath: number;
 		ChannelId: number;
 		SourceId: number;
+		UserId: number;
 		SourceChannelId: number;
 		SourceGroupIdPath: number;
 		GroupId: number;
@@ -1589,6 +2136,668 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+	getBootstrapStatus: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description First-run administrator and password-change state. Detailed state is returned only to direct trusted-LAN clients; public callers receive a neutral response. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						bootstrap_required: boolean;
+						initial_password_change_required: boolean;
+						/** @description True only for direct trusted-LAN requests when the automatic temporary administrator is active and the transport is permitted. */
+						initial_login_allowed: boolean;
+					};
+				};
+			};
+		};
+	};
+	login: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': {
+					username: string;
+					/** Format: password */
+					password: string;
+					mfa_code?: string;
+				};
+			};
+		};
+		responses: {
+			/** @description Authenticated session. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['SessionPrincipal'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	getSession: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current principal and CSRF token. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['SessionPrincipal'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	logout: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Session revoked. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	reauthenticate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReauthenticationRequest'];
+			};
+		};
+		responses: {
+			/** @description Recent identity confirmation recorded. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	changePassword: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': {
+					/** Format: password */
+					current_password: string;
+					/** Format: password */
+					new_password: string;
+					mfa_code?: string;
+				};
+			};
+		};
+		responses: {
+			/** @description Password changed and replacement session created. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['SessionPrincipal'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	enrollMFA: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Pending TOTP secret shown only for confirmation. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						secret?: string;
+						otpauth_uri?: string;
+					};
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	confirmMFA: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': {
+					secret: string;
+					code: string;
+				};
+			};
+		};
+		responses: {
+			/** @description MFA enabled; recovery codes returned once. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						recovery_codes?: string[];
+					};
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	disableMFA: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description MFA disabled and sessions revoked. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	regenerateMFARecoveryCodes: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Replacement one-time recovery codes; previous codes are invalidated. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						recovery_codes?: string[];
+					};
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	listAccountSessions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Account sessions. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						items?: components['schemas']['AuthSessionMetadata'][];
+					};
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	revokeAccountSession: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				session_id: number;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Session revoked. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	listMediaKeys: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Key metadata; plaintext is never recoverable. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						/** @description Active credentials include reusable output links. The standalone credential is never returned. */
+						items?: components['schemas']['MediaAccessKeyMetadata'][];
+					};
+				};
+			};
+		};
+	};
+	createMediaKey: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['MediaKeyCreateRequest'];
+			};
+		};
+		responses: {
+			/** @description Named device access with reusable secured output links. The standalone credential is never returned. */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['MediaKeyCreateResponse'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	revokeMediaKey: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				key_id: number;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Key revoked and active clients disconnected. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	listUsers: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Users and grantable lineups. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						items?: components['schemas']['UserSummary'][];
+						lineups?: components['schemas']['LineupGrant'][];
+					};
+				};
+			};
+		};
+	};
+	createUser: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UserWriteRequest'];
+			};
+		};
+		responses: {
+			/** @description User created. */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['UserSummary'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	deleteUser: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				user_id: components['parameters']['UserId'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description User deleted. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	updateUser: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				user_id: components['parameters']['UserId'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UserUpdateRequest'];
+			};
+		};
+		responses: {
+			/** @description User updated and credentials revoked. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['UserSummary'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	resetUserPassword: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				user_id: components['parameters']['UserId'];
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': {
+					/** Format: password */
+					password: string;
+				};
+			};
+		};
+		responses: {
+			/** @description Temporary password set and credentials revoked. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	resetUserMFA: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				user_id: components['parameters']['UserId'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description MFA reset and sessions revoked. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	revokeUserSessions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				user_id: components['parameters']['UserId'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description All browser sessions revoked. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	listUserMediaKeys: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				user_id: components['parameters']['UserId'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Inspectable key metadata without recoverable plaintext credentials. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						items?: components['schemas']['MediaAccessKeyMetadata'][];
+					};
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	revokeUserMediaKeys: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				user_id: components['parameters']['UserId'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description All media keys revoked and affected viewers disconnected. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	revokeUserMediaKey: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				user_id: components['parameters']['UserId'];
+				key_id: number;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Selected media key revoked and affected viewers disconnected. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	listSecurityAudit: {
+		parameters: {
+			query?: {
+				cursor?: components['parameters']['Cursor'];
+				limit?: components['parameters']['Limit'];
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Bounded security event page. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['SecurityAuditPage'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	getSecuredM3U: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				lineup_id: components['parameters']['LineupId'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Dynamic secured playlist. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'audio/x-mpegurl': string;
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	getSecuredXMLTV: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				lineup_id: components['parameters']['LineupId'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Authorized dynamic XMLTV. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/xml': string;
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
 	listWatchLineups: {
 		parameters: {
 			query?: never;
@@ -2032,6 +3241,29 @@ export interface operations {
 		};
 		responses: {
 			/** @description Updated virtual tuner state. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['DeviceOutputs'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	rotateLineupVirtualTunerCredential: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				lineup_id: components['parameters']['LineupId'];
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Updated virtual tuner state and replacement URLs. */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -2700,6 +3932,30 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['SourceChannelPage'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	getSourceChannelLogo: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				source_channel_id: number;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Normalized source logo. */
+			200: {
+				headers: {
+					'Cache-Control'?: string;
+					[name: string]: unknown;
+				};
+				content: {
+					'image/png': string;
 				};
 			};
 			default: components['responses']['Error'];

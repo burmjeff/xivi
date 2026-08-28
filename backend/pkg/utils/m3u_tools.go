@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -23,6 +25,11 @@ type M3uTools struct {
 	// File cache to reduce I/O operations
 	fileCache    map[string][]string
 	fileCacheMux sync.RWMutex
+}
+
+func internalM3UPath(lineupName string) string {
+	sum := sha256.Sum256([]byte(lineupName))
+	return fmt.Sprintf("%s/internal-%s.m3u", settings.M3U_FILEPATH, hex.EncodeToString(sum[:12]))
 }
 
 // NewM3uTools creates a new instance with initialized cache
@@ -49,16 +56,16 @@ func (m *M3uTools) CreateM3u(template models.Template) error {
 	if !ok {
 		return fmt.Errorf("could not build the M3U export: unexpected buffer type %T", reader)
 	}
-	if err := os.MkdirAll(settings.M3U_FILEPATH, 0755); err != nil {
-		log.Error().Err(err).Str("path", settings.M3U_FILEPATH).Msg("Failed to create M3U directory")
+	if err := os.MkdirAll(settings.M3U_FILEPATH, 0700); err != nil {
+		log.Error().Err(err).Msg("Failed to create private M3U directory")
 		return fmt.Errorf("could not create the M3U output directory: %w", err)
 	}
-	filePath := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, template.Name)
+	filePath := internalM3UPath(template.Name)
 
 	// Write to a temporary file so a failed publish cannot corrupt the last good export.
 	f, err := os.CreateTemp(settings.M3U_FILEPATH, ".xivi-*.m3u.tmp")
 	if err != nil {
-		log.Error().Err(err).Str("path", settings.M3U_FILEPATH).Msg("Failed to create temporary M3U file")
+		log.Error().Err(err).Msg("Failed to create temporary M3U file")
 		return fmt.Errorf("could not create the M3U export: %w", err)
 	}
 	tempFilePath := f.Name()
@@ -66,25 +73,25 @@ func (m *M3uTools) CreateM3u(template models.Template) error {
 		_ = f.Close()
 		_ = os.Remove(tempFilePath)
 	}()
-	if err := f.Chmod(0644); err != nil {
+	if err := f.Chmod(0600); err != nil {
 		return fmt.Errorf("could not set M3U file permissions: %w", err)
 	}
 
 	w := bufio.NewWriter(f)
 	if _, err := w.Write(b.Bytes()); err != nil {
-		log.Error().Err(err).Str("path", tempFilePath).Msg("Failed to write M3U file")
+		log.Error().Err(err).Msg("Failed to write M3U file")
 		return fmt.Errorf("could not write the M3U export: %w", err)
 	}
 
 	if err := w.Flush(); err != nil {
-		log.Error().Err(err).Str("path", tempFilePath).Msg("Failed to flush M3U file")
+		log.Error().Err(err).Msg("Failed to flush M3U file")
 		return fmt.Errorf("could not finish writing the M3U export: %w", err)
 	}
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("could not close the M3U export: %w", err)
 	}
 	if err := os.Rename(tempFilePath, filePath); err != nil {
-		log.Error().Err(err).Str("from", tempFilePath).Str("to", filePath).Msg("Failed to publish M3U file")
+		log.Error().Err(err).Msg("Failed to publish M3U file")
 		return fmt.Errorf("could not replace the M3U export: %w", err)
 	}
 
@@ -106,7 +113,7 @@ func (m *M3uTools) getFileContent(templateName string) ([]string, error) {
 	}
 
 	// Not in cache, read from disk
-	filePath := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, templateName)
+	filePath := internalM3UPath(templateName)
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
@@ -123,7 +130,7 @@ func (m *M3uTools) getFileContent(templateName string) ([]string, error) {
 
 // writeFileContent writes the content back to the file
 func (m *M3uTools) writeFileContent(templateName string, lines []string) error {
-	filePath := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, templateName)
+	filePath := internalM3UPath(templateName)
 
 	// Use buffered writes
 	f, err := os.Create(filePath)
@@ -152,7 +159,7 @@ func (m *M3uTools) writeFileContent(templateName string, lines []string) error {
 }
 
 func (m *M3uTools) RenameTemplate(template *models.Template, oldTemplate string) {
-	oldfile := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, oldTemplate)
+	oldfile := internalM3UPath(oldTemplate)
 
 	// Read content from cache or file
 	lines, err := m.getFileContent(oldTemplate)
@@ -195,7 +202,7 @@ func (m *M3uTools) RenameTemplate(template *models.Template, oldTemplate string)
 }
 
 func (m *M3uTools) RemoveTemplate(template *models.Template) {
-	file := fmt.Sprintf("%s/%s.m3u", settings.M3U_FILEPATH, template.Name)
+	file := internalM3UPath(template.Name)
 	if err := os.Remove(file); err != nil {
 		log.Error().Msgf("Error removing file: %v", err)
 		return

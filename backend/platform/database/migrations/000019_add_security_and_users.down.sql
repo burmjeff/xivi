@@ -1,0 +1,17 @@
+DROP INDEX IF EXISTS idx_security_audit_actor;
+DROP INDEX IF EXISTS idx_security_audit_created;
+DROP TABLE IF EXISTS security_audit_event;
+DROP INDEX IF EXISTS idx_media_key_lineup_lineup;
+DROP TABLE IF EXISTS media_key_lineup;
+DROP INDEX IF EXISTS idx_media_key_user_active;
+DROP TABLE IF EXISTS media_access_key;
+DROP INDEX IF EXISTS idx_mfa_recovery_user_unused;
+DROP TABLE IF EXISTS user_mfa_recovery_code;
+DROP TABLE IF EXISTS user_mfa;
+DROP INDEX IF EXISTS idx_auth_session_expiry;
+DROP INDEX IF EXISTS idx_auth_session_user_active;
+DROP TABLE IF EXISTS auth_session;
+DROP INDEX IF EXISTS idx_user_lineup_lineup;
+DROP TABLE IF EXISTS user_lineup;
+DROP TABLE IF EXISTS app_user;
+ALTER TABLE template DROP COLUMN virtual_tuner_token_version;

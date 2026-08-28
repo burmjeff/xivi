@@ -8,6 +8,7 @@ import (
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/pkg/channelmatch"
+	"xivi/backend/pkg/security"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
@@ -25,6 +26,39 @@ func NewPlaylistQueries(db *sqlx.DB) *PlaylistQueries {
 	}
 }
 
+func revealPlaylistChannelLogo(channel *models.PlaylistChannel) error {
+	if channel == nil || channel.Logo == nil {
+		return nil
+	}
+	value, err := security.RevealString(*channel.Logo)
+	if err != nil {
+		return err
+	}
+	channel.Logo = &value
+	return nil
+}
+
+func revealPlaylistChannelLogos(channels []models.PlaylistChannel) error {
+	for index := range channels {
+		if err := revealPlaylistChannelLogo(&channels[index]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func protectPlaylistChannelLogo(channel *models.PlaylistChannel) error {
+	if channel == nil || channel.Logo == nil {
+		return nil
+	}
+	value, err := security.ProtectString(*channel.Logo)
+	if err != nil {
+		return err
+	}
+	channel.Logo = &value
+	return nil
+}
+
 // GetPlaylists method
 func (q *PlaylistQueries) GetPlaylists() (*[]models.Playlist, error) {
 	playlists := &[]models.Playlist{}
@@ -36,6 +70,13 @@ func (q *PlaylistQueries) GetPlaylists() (*[]models.Playlist, error) {
 		return nil, err
 	}
 
+	for index := range *playlists {
+		url, err := revealProviderURL((*playlists)[index].URLCipher, (*playlists)[index].URL)
+		if err != nil {
+			return nil, err
+		}
+		(*playlists)[index].URL = url
+	}
 	return playlists, nil
 }
 
@@ -50,14 +91,19 @@ func (q *PlaylistQueries) GetPlaylist(id int64) (*models.Playlist, error) {
 		return playlist, err
 	}
 
-	return playlist, nil
+	playlist.URL, err = revealProviderURL(playlist.URLCipher, playlist.URL)
+	return playlist, err
 }
 
 // CreatePlaylist method for creating a playlist by given Playlist object.
 func (q *PlaylistQueries) CreatePlaylist(p models.Playlist) (int64, error) {
-	query := `INSERT INTO playlist (name, url, connection_limit, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`
+	query := `INSERT INTO playlist (name, url, url_cipher, connection_limit, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
+	placeholder, ciphertext, err := protectProviderURL(p.URL)
+	if err != nil {
+		return 0, err
+	}
 
-	res, err := q.Exec(query, p.Name, p.URL, p.ConnectionLimit, p.CreatedAt, p.UpdatedAt)
+	res, err := q.Exec(query, p.Name, placeholder, ciphertext, p.ConnectionLimit, p.CreatedAt, p.UpdatedAt)
 	if err != sql.ErrNoRows && err != nil {
 		return 0, err
 	}
@@ -73,9 +119,13 @@ func (q *PlaylistQueries) CreatePlaylist(p models.Playlist) (int64, error) {
 
 // UpdatePlaylist method for updating playlist by given Playlist object.
 func (q *PlaylistQueries) UpdatePlaylist(id int64, p *models.Playlist) error {
-	query := `UPDATE playlist SET name = ?, url = ?, connection_limit = ?, updated_at = ? WHERE id = ?`
+	query := `UPDATE playlist SET name = ?, url = ?, url_cipher = ?, connection_limit = ?, updated_at = ? WHERE id = ?`
+	placeholder, ciphertext, err := protectProviderURL(p.URL)
+	if err != nil {
+		return err
+	}
 
-	_, err := q.Exec(query, p.Name, p.URL, p.ConnectionLimit, p.UpdatedAt, id)
+	_, err = q.Exec(query, p.Name, placeholder, ciphertext, p.ConnectionLimit, p.UpdatedAt, id)
 	if err != nil {
 		return err
 	}
@@ -277,6 +327,9 @@ func (q *PlaylistQueries) GetPlChannels(playlistId int64) (*[]models.PlaylistCha
 	if err != nil {
 		return nil, err
 	}
+	if err := revealPlaylistChannelLogos(*channels); err != nil {
+		return nil, err
+	}
 
 	return channels, nil
 }
@@ -290,6 +343,9 @@ func (q *PlaylistQueries) GetEnabledPlChannels(playlistID int64) ([]models.Playl
 	ORDER BY pc.id ASC`
 
 	if err := q.Select(&channels, query, playlistID); err != nil {
+		return nil, err
+	}
+	if err := revealPlaylistChannelLogos(channels); err != nil {
 		return nil, err
 	}
 	return channels, nil
@@ -306,6 +362,9 @@ func (q *PlaylistQueries) GetAllEnabledPlChannels() ([]models.PlaylistChannel, e
 	if err := q.Select(&channels, query); err != nil {
 		return nil, err
 	}
+	if err := revealPlaylistChannelLogos(channels); err != nil {
+		return nil, err
+	}
 	return channels, nil
 }
 
@@ -319,6 +378,9 @@ func (q *PlaylistQueries) GetChannelsByPl(id int64) (*[]models.PlaylistChannel, 
 
 	err := q.Select(channels, query, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := revealPlaylistChannelLogos(*channels); err != nil {
 		return nil, err
 	}
 
@@ -337,6 +399,9 @@ func (q *PlaylistQueries) GetPlGroupChannels(groupId int64) ([]models.PlaylistCh
 	if err != nil {
 		return nil, err
 	}
+	if err := revealPlaylistChannelLogos(channels); err != nil {
+		return nil, err
+	}
 
 	return channels, nil
 }
@@ -351,6 +416,9 @@ func (q *PlaylistQueries) GetPlChannel(id int64) (*models.PlaylistChannel, error
 	if err != nil {
 		return nil, err
 	}
+	if err := revealPlaylistChannelLogo(channel); err != nil {
+		return nil, err
+	}
 
 	return channel, nil
 }
@@ -363,6 +431,9 @@ func (q *PlaylistQueries) GetPlChannelsByName(name string) (*[]models.PlaylistCh
 
 	err := q.Select(channels, query, name)
 	if err != nil {
+		return nil, err
+	}
+	if err := revealPlaylistChannelLogos(*channels); err != nil {
 		return nil, err
 	}
 
@@ -383,6 +454,9 @@ func (q *PlaylistQueries) GetPlChannelsByTvgID(tvgid string) ([]models.PlaylistC
 		return nil, err
 	}
 	if len(channels) > 0 {
+		if err := revealPlaylistChannelLogos(channels); err != nil {
+			return nil, err
+		}
 		return channels, nil
 	}
 
@@ -403,6 +477,9 @@ func (q *PlaylistQueries) GetPlChannelsByTvgID(tvgid string) ([]models.PlaylistC
 			channels = append(channels, channel)
 		}
 	}
+	if err := revealPlaylistChannelLogos(channels); err != nil {
+		return nil, err
+	}
 
 	return channels, nil
 }
@@ -419,6 +496,9 @@ func (q *PlaylistQueries) GetM3UParseByTvgID(tvgId string, groupId int64, playli
 
 	err := q.Select(&channels, query, tvgId, groupId, playlistId)
 	if err != nil {
+		return nil, err
+	}
+	if err := revealPlaylistChannelLogos(channels); err != nil {
 		return nil, err
 	}
 
@@ -439,6 +519,9 @@ func (q *PlaylistQueries) GetM3UParseByTvgName(tvg_name string, groupId int64, p
 	if err != nil {
 		return nil, err
 	}
+	if err := revealPlaylistChannelLogos(channels); err != nil {
+		return nil, err
+	}
 
 	return channels, nil
 }
@@ -457,15 +540,22 @@ func (q *PlaylistQueries) GetM3UParseByTitle(title string, groupId int64, playli
 	if err != nil {
 		return nil, err
 	}
+	if err := revealPlaylistChannelLogos(channels); err != nil {
+		return nil, err
+	}
 
 	return channels, nil
 }
 
 // Create a channel by given Channel object.
 func (q *PlaylistQueries) CreatePlChannel(p models.PlaylistChannel) (int64, error) {
-	query := `INSERT INTO playlistchannel VALUES (null, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO playlistchannel (tvg_id, tvg_name, tvg_logo, title, group_id, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	if err := protectPlaylistChannelLogo(&p); err != nil {
+		return 0, err
+	}
 
-	res, err := q.Exec(query, p.GroupId, p.Title, p.TvgID, p.TvgName, p.Logo, p.Enabled, p.CreatedAt, p.UpdatedAt)
+	res, err := q.Exec(query, p.TvgID, p.TvgName, p.Logo, p.Title, p.GroupId, p.Enabled, p.CreatedAt, p.UpdatedAt)
 	if err != sql.ErrNoRows && err != nil {
 		return 0, err
 	}
@@ -481,6 +571,9 @@ func (q *PlaylistQueries) CreatePlChannel(p models.PlaylistChannel) (int64, erro
 // Update a channel by given Channel object.
 func (q *PlaylistQueries) UpdatePlChannel(id int64, p models.PlaylistChannel) error {
 	query := `UPDATE playlistchannel SET group_id = ?, title = ?, tvg_id = ?, tvg_name = ?, tvg_logo = ?, enabled = ?, updated_at = ? WHERE id = ?`
+	if err := protectPlaylistChannelLogo(&p); err != nil {
+		return err
+	}
 
 	_, err := q.Exec(query, p.GroupId, p.Title, p.TvgID, p.TvgName, p.Logo, p.Enabled, p.UpdatedAt, id)
 	if err != nil {
@@ -525,14 +618,19 @@ func (q *PlaylistQueries) GetChannelUrl(id int64) (*models.ChannelUrl, error) {
 		return nil, err
 	}
 
-	return channelUrl, nil
+	channelUrl.Url, err = revealProviderURL(channelUrl.URLCipher, channelUrl.Url)
+	return channelUrl, err
 }
 
 // Create a channel URL by given ChannelUrl object.
 func (q *PlaylistQueries) CreateChannelUrl(p models.ChannelUrl) error {
-	query := `INSERT INTO channelurl VALUES (null, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO channelurl (url, channel_id, orderr, created_at, updated_at, url_cipher) VALUES (?, ?, ?, ?, ?, ?)`
+	placeholder, ciphertext, err := protectProviderURL(p.Url)
+	if err != nil {
+		return err
+	}
 
-	_, err := q.Exec(query, p.Url, p.ChannelId, p.Order, p.CreatedAt, p.UpdatedAt)
+	_, err = q.Exec(query, placeholder, p.ChannelId, p.Order, p.CreatedAt, p.UpdatedAt, ciphertext)
 	if err != sql.ErrNoRows && err != nil {
 		return err
 	}
@@ -542,9 +640,13 @@ func (q *PlaylistQueries) CreateChannelUrl(p models.ChannelUrl) error {
 
 // Update a channel URL by given ChannelUrl object.
 func (q *PlaylistQueries) UpdateChannelUrl(id int64, p models.ChannelUrl) error {
-	query := `UPDATE channelurl SET url = ?, channel_id = ?, orderr = ?, updated_at = ? WHERE id = ?`
+	query := `UPDATE channelurl SET url = ?, url_cipher = ?, channel_id = ?, orderr = ?, updated_at = ? WHERE id = ?`
+	placeholder, ciphertext, err := protectProviderURL(p.Url)
+	if err != nil {
+		return err
+	}
 
-	_, err := q.Exec(query, p.Url, p.ChannelId, p.Order, p.UpdatedAt, id)
+	_, err = q.Exec(query, placeholder, ciphertext, p.ChannelId, p.Order, p.UpdatedAt, id)
 	if err != nil {
 		return err
 	}
