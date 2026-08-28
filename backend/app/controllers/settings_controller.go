@@ -1,13 +1,29 @@
 package controllers
 
 import (
+	"errors"
 	"xivi/backend/pkg/utils"
 	"xivi/backend/pkg/virtualtuner"
 	"xivi/backend/platform/cron"
 	"xivi/backend/platform/settings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/rs/zerolog/log"
 )
+
+func settingsError(c *fiber.Ctx, status int, code, message string, retryable bool, fieldErrors map[string]string) error {
+	response := fiber.Map{
+		"error":     true,
+		"msg":       message,
+		"code":      code,
+		"message":   message,
+		"retryable": retryable,
+	}
+	if len(fieldErrors) > 0 {
+		response["field_errors"] = fieldErrors
+	}
+	return c.Status(status).JSON(response)
+}
 
 // GetSettings
 // @Description Get all settings.
@@ -49,11 +65,7 @@ func UpdateSettings(c *fiber.Ctx) error {
 
 	// Check, if received JSON data is valid.
 	if err := decodeStrict(c, newSettings); err != nil {
-		// Return status 400 and error message.
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
+		return settingsError(c, fiber.StatusBadRequest, "invalid_settings_request", err.Error(), false, nil)
 	}
 	settings.PreserveDeploymentSettings(newSettings)
 
@@ -62,32 +74,28 @@ func UpdateSettings(c *fiber.Ctx) error {
 
 	// Validate playlist fields.
 	if err := validate.Struct(newSettings); err != nil {
-		// Return, if some fields are not valid.
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": true,
-			"msg":   utils.ValidatorErrors(err),
-		})
+		return settingsError(c, fiber.StatusBadRequest, "invalid_settings", "Some settings fields are invalid.", false, utils.ValidatorErrors(err))
 	}
 	if err := cron.ValidateConfiguration(newSettings); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
+		return settingsError(c, fiber.StatusBadRequest, "invalid_schedule_settings", err.Error(), false, nil)
 	}
 	if err := settings.ValidateStreamingSecurityLimits(newSettings.Streaming); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
+		return settingsError(c, fiber.StatusBadRequest, "invalid_streaming_settings", err.Error(), false, nil)
+	}
+	if err := settings.ValidateSecuritySettings(newSettings.Security); err != nil {
+		fieldErrors := map[string]string{}
+		var validation *settings.SecurityValidationError
+		if errors.As(err, &validation) {
+			fieldErrors[validation.Field] = validation.Message
+		}
+		return settingsError(c, fiber.StatusBadRequest, "invalid_security_settings", err.Error(), false, fieldErrors)
 	}
 
 	previous := settings.Current()
 	if err := settings.WriteSettings(newSettings); err != nil {
-		// Return status 500 and error message.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
+		log.Error().Err(err).Msg("Settings file could not be updated")
+		return settingsError(c, fiber.StatusInternalServerError, "settings_persistence_failed",
+			"The settings file could not be updated. Check that the configuration volume is writable.", true, nil)
 	}
 	rollback := func() {
 		_ = settings.WriteSettings(previous)
@@ -96,17 +104,15 @@ func UpdateSettings(c *fiber.Ctx) error {
 	}
 	if err := cron.Reconfigure(); err != nil {
 		rollback()
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "The background schedule could not be applied.",
-		})
+		log.Error().Err(err).Msg("Updated background schedule could not be applied")
+		return settingsError(c, fiber.StatusInternalServerError, "schedule_reconfigure_failed",
+			"The background schedule could not be applied.", true, nil)
 	}
 	if err := virtualtuner.Reconfigure(); err != nil {
 		rollback()
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Virtual tuner discovery could not be reconfigured.",
-		})
+		log.Error().Err(err).Msg("Virtual tuner discovery could not be reconfigured after settings update")
+		return settingsError(c, fiber.StatusInternalServerError, "virtual_tuner_reconfigure_failed",
+			"Virtual tuner discovery could not be reconfigured.", true, nil)
 	}
 	// Return status 201.
 	return c.SendStatus(fiber.StatusCreated)

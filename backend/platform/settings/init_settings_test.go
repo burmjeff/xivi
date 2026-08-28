@@ -81,7 +81,47 @@ func TestProductionPublicDeploymentRequiresTrustedProxy(t *testing.T) {
 		LocalBaseURL:  "http://127.0.0.1:3000",
 	}
 	err := ValidateSecuritySettings(security)
-	if err == nil || !strings.Contains(err.Error(), "TRUSTED_PROXY_CIDRS") {
+	if err == nil || !strings.Contains(err.Error(), "trusted reverse proxy CIDR or hostname") {
 		t.Fatalf("public production deployment did not require a trusted proxy: %v", err)
+	}
+	validation, ok := err.(*SecurityValidationError)
+	if !ok || validation.Field != "trusted_proxy_hosts" {
+		t.Fatalf("trusted proxy validation did not identify its field: %#v", err)
+	}
+}
+
+func TestProductionPublicDeploymentAcceptsTrustedProxyHostname(t *testing.T) {
+	t.Setenv("XIVI_PRODUCTION", "true")
+	security := Security{
+		PublicBaseURL:     "https://tv.example.com",
+		LocalBaseURL:      "http://192.168.1.10:4772",
+		TrustedProxyHosts: []string{"reverse-proxy"},
+	}
+	if err := ValidateSecuritySettings(security); err != nil {
+		t.Fatalf("valid hostname-based public deployment was rejected: %v", err)
+	}
+}
+
+func TestSecurityRejectsProxyHostnameWithURLSyntax(t *testing.T) {
+	security := Security{
+		LocalBaseURL:      "http://127.0.0.1:3000",
+		TrustedProxyHosts: []string{"http://reverse-proxy:8080"},
+	}
+	err := ValidateSecuritySettings(security)
+	validation, ok := err.(*SecurityValidationError)
+	if !ok || validation.Field != "trusted_proxy_hosts" {
+		t.Fatalf("invalid proxy hostname did not identify its field: %#v", err)
+	}
+}
+
+func TestProductionPublicDeploymentAcceptsTrustedProxy(t *testing.T) {
+	t.Setenv("XIVI_PRODUCTION", "true")
+	security := Security{
+		PublicBaseURL:     " https://tv.example.com/ ",
+		LocalBaseURL:      "http://192.168.1.10:4772",
+		TrustedProxyCIDRs: []string{"172.18.0.0/16"},
+	}
+	if err := ValidateSecuritySettings(security); err != nil {
+		t.Fatalf("valid public deployment was rejected: %v", err)
 	}
 }

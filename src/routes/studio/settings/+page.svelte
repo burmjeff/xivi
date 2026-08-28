@@ -13,7 +13,7 @@
 		HardDrive,
 		ShieldCheck
 	} from '@lucide/svelte';
-	import { api } from '$lib/api/client';
+	import { api, XiviAPIError } from '$lib/api/client';
 	import StudioHeader from '$lib/components/studio/StudioHeader.svelte';
 	import { preferences, setTheme, type ThemePreference } from '$lib/state/preferences.svelte';
 	const client = useQueryClient();
@@ -67,6 +67,7 @@
 			public_media_base_url: string;
 			local_base_url: string;
 			trusted_proxy_cidrs: string[];
+			trusted_proxy_hosts: string[];
 			trusted_lan_cidrs: string[];
 			allow_lan_http: boolean;
 			audit_retention_days: number;
@@ -102,9 +103,9 @@
 		if (section === 'security') {
 			if (
 				settings.security.public_base_url &&
-				!settings.security.public_base_url.startsWith('https://')
+				!/^https:\/\/[^/]+\/?$/.test(settings.security.public_base_url)
 			)
-				next.public_base_url = 'Public access must use HTTPS.';
+				next.public_base_url = 'Use only an HTTPS scheme and host.';
 			if (
 				settings.security.public_media_base_url &&
 				!/^https:\/\/[^/]+\/?$/.test(settings.security.public_media_base_url)
@@ -115,6 +116,16 @@
 			const cidr = /^(?:[0-9a-fA-F:.]+)\/\d{1,3}$/;
 			if (settings.security.trusted_proxy_cidrs.some((value) => !cidr.test(value)))
 				next.trusted_proxy_cidrs = 'Enter one CIDR per line.';
+			const hostname = /^(?=.{1,253}\.?$)(?:[a-zA-Z0-9_](?:[a-zA-Z0-9_-]{0,61}[a-zA-Z0-9_])?\.?)+$/;
+			if (settings.security.trusted_proxy_hosts.some((value) => !hostname.test(value)))
+				next.trusted_proxy_hosts = 'Enter one DNS or Docker service name per line.';
+			if (
+				(settings.security.public_base_url || settings.security.public_media_base_url) &&
+				settings.security.trusted_proxy_cidrs.length === 0 &&
+				settings.security.trusted_proxy_hosts.length === 0
+			)
+				next.trusted_proxy_hosts =
+					'Add the CIDR or private hostname your reverse proxy uses to connect to Xivi.';
 			if (settings.security.trusted_lan_cidrs.some((value) => !cidr.test(value)))
 				next.trusted_lan_cidrs = 'Enter one CIDR per line.';
 		}
@@ -214,8 +225,13 @@
 				await client.invalidateQueries({ queryKey: ['studio', 'device-outputs'] });
 			}
 			message = `${section[0].toUpperCase()}${section.slice(1)} settings saved.${section === 'streaming' ? ' New streams will use the updated pipeline; active streams continue uninterrupted.' : ' Changes are active now.'}`;
-		} catch {
-			message = 'Settings could not be saved.';
+		} catch (cause) {
+			if (cause instanceof XiviAPIError) {
+				message = cause.detail.message;
+				if (cause.detail.field_errors) errors = { ...errors, ...cause.detail.field_errors };
+			} else {
+				message = 'Settings could not be saved.';
+			}
 		} finally {
 			saving = '';
 		}
@@ -225,7 +241,10 @@
 		errors = {};
 		message = 'Unsaved changes reset.';
 	}
-	function updateSecurityCIDRs(key: 'trusted_proxy_cidrs' | 'trusted_lan_cidrs', value: string) {
+	function updateSecurityList(
+		key: 'trusted_proxy_cidrs' | 'trusted_proxy_hosts' | 'trusted_lan_cidrs',
+		value: string
+	) {
 		if (settings) settings.security[key] = value.split(/\s+/).filter(Boolean);
 	}
 	const themes: ThemePreference[] = ['system', 'light', 'dark'];
@@ -298,7 +317,7 @@
 			</header>
 			<div class="fields">
 				<p class="section-note">
-					Forwarded headers are trusted only from the proxy networks below. Direct LAN HTTP is a
+					Forwarded headers are trusted only from the reverse proxy identities below. Direct LAN HTTP is a
 					compatibility exception: use local TLS when confidentiality on your LAN matters.
 				</p>
 				<label
@@ -326,20 +345,36 @@
 				>
 				<div class="field-pair">
 					<label
-						>Trusted Caddy proxy CIDRs<textarea
+						>Trusted reverse proxy CIDRs <small>(optional)</small><textarea
 							rows="3"
 							value={settings.security.trusted_proxy_cidrs.join('\n')}
 							oninput={(event) =>
-								updateSecurityCIDRs('trusted_proxy_cidrs', event.currentTarget.value)}
+								updateSecurityList('trusted_proxy_cidrs', event.currentTarget.value)}
 						></textarea>{#if errors.trusted_proxy_cidrs}<em>{errors.trusted_proxy_cidrs}</em
-							>{/if}</label
+							>{/if}<small
+							>Use the direct network your proxy connects from, such as a Docker network CIDR or a
+							single proxy address ending in /32.</small
+						></label
+					>
+					<label
+						>Trusted reverse proxy hostnames <small>(optional)</small><textarea
+							rows="3"
+							placeholder="reverse-proxy"
+							value={settings.security.trusted_proxy_hosts.join('\n')}
+							oninput={(event) =>
+								updateSecurityList('trusted_proxy_hosts', event.currentTarget.value)}
+						></textarea>{#if errors.trusted_proxy_hosts}<em>{errors.trusted_proxy_hosts}</em
+							>{/if}<small
+							>Docker service names are refreshed automatically. Xivi and the proxy must share a
+							user-defined network; public DNS results are not trusted.</small
+						></label
 					>
 					<label
 						>Trusted LAN CIDRs <small>(optional)</small><textarea
 							rows="3"
 							value={settings.security.trusted_lan_cidrs.join('\n')}
 							oninput={(event) =>
-								updateSecurityCIDRs('trusted_lan_cidrs', event.currentTarget.value)}
+								updateSecurityList('trusted_lan_cidrs', event.currentTarget.value)}
 						></textarea>{#if errors.trusted_lan_cidrs}<em>{errors.trusted_lan_cidrs}</em>{/if}<small
 							>Leave blank to trust direct loopback and private-network clients. Add CIDRs to
 							replace that automatic trust with an explicit allowlist.</small

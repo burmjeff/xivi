@@ -23,12 +23,12 @@ func RequestNetworkInfo(c *fiber.Ctx) RequestNetwork {
 
 func requestNetworkInfo(c *fiber.Ctx, policy settings.Security) RequestNetwork {
 	direct := c.Context().RemoteIP()
-	trustedProxy := ipInCIDRs(direct, policy.TrustedProxyCIDRs)
+	trustedProxy := trustedProxyForPolicy(direct, policy)
 	forwardedRequest := hasForwardingHeaders(c)
 	clientIP := direct
 	// Derive the direct transport from the socket, never from request headers.
 	// Forwarded scheme and client IP are considered only after the direct peer
-	// has matched an explicit reverse-proxy CIDR.
+	// has matched an explicit reverse-proxy CIDR or resolved private hostname.
 	scheme := "http"
 	if c.Context().IsTLS() {
 		scheme = "https"
@@ -47,9 +47,14 @@ func requestNetworkInfo(c *fiber.Ctx, policy settings.Security) RequestNetwork {
 	// Without this check an unconfigured public proxy could inherit the automatic
 	// direct-LAN exception merely because its socket peer is private. Direct LAN
 	// clients remain automatic; proxy-shaped requests require an explicit trusted
-	// proxy CIDR before either forwarded metadata or HTTPS scope is accepted.
+	// proxy identity before either forwarded metadata or HTTPS scope is accepted.
 	trustedLAN := !trustedProxy && !forwardedRequest && trustedLANForPolicy(clientIP, policy)
 	return RequestNetwork{IP: clientIP, Scheme: scheme, TrustedProxy: trustedProxy, DirectTrustedLAN: trustedLAN}
+}
+
+func trustedProxyForPolicy(ip net.IP, policy settings.Security) bool {
+	return ipInCIDRs(ip, policy.TrustedProxyCIDRs) ||
+		trustedProxyHostnameResolver.contains(ip, policy.TrustedProxyHosts)
 }
 
 func hasForwardingHeaders(c *fiber.Ctx) bool {

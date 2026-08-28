@@ -56,6 +56,8 @@ PUBLIC_BASE_URL=https://tv.example.com
 PUBLIC_MEDIA_BASE_URL=https://media.example.com
 LOCAL_BASE_URL=http://192.168.1.10:3000
 TRUSTED_PROXY_CIDRS=192.168.1.20/32
+# Alternatively, for a shared user-defined Docker network:
+# TRUSTED_PROXY_HOSTS=reverse-proxy
 TRUSTED_LAN_CIDRS=192.168.1.0/24
 ALLOW_LAN_HTTP=true
 SERVER_HOST=0.0.0.0
@@ -65,27 +67,35 @@ SERVER_PORT=3000
 `PUBLIC_BASE_URL` and `PUBLIC_MEDIA_BASE_URL` are optional. Leave them unset
 for a local-only production container; Xivi will use `LOCAL_BASE_URL` and does
 not require a reverse proxy in that mode. When either public URL is configured,
-`TRUSTED_PROXY_CIDRS` is required so forwarded HTTPS and client-address headers
-can only be accepted from the actual proxy. `TRUSTED_LAN_CIDRS` is optional. If
-it is empty, directly connected loopback, RFC1918, and IPv6 ULA clients are
-trusted automatically. Adding any LAN CIDR replaces that automatic behavior
-with the explicit allowlist.
+one of `TRUSTED_PROXY_CIDRS` or `TRUSTED_PROXY_HOSTS` is required so forwarded
+HTTPS and client-address headers can only be accepted from the actual proxy.
+`TRUSTED_LAN_CIDRS` is optional. If it is empty, directly connected loopback,
+RFC1918, and IPv6 ULA clients are trusted automatically. Adding any LAN CIDR
+replaces that automatic behavior with the explicit allowlist.
 
-`TRUSTED_PROXY_CIDRS` contains only the direct IP/CIDR of Caddy, not client
-networks. Xivi ignores forwarded scheme and client-IP headers from any other
-peer. A request carrying proxy-forwarding headers is never granted automatic
-LAN trust, even when its direct Docker or LAN peer address is private. Every
-reverse proxy must therefore be listed explicitly. `TRUSTED_LAN_CIDRS` contains
-only networks permitted to use LAN sessions, LAN media keys, and tuner discovery.
-Set `ALLOW_LAN_HTTP=false` when local HTTPS is available.
+`TRUSTED_PROXY_CIDRS` contains only the direct IP/CIDR of the reverse proxy,
+not client networks. `TRUSTED_PROXY_HOSTS` accepts Docker service names or DNS
+names that resolve to private or loopback addresses from inside Xivi. Hostname
+results refresh every 15 seconds and fail closed when resolution fails. This is
+useful when Xivi and the proxy share a user-defined Docker network, where the
+service name remains stable while the container address changes. Public DNS
+results are intentionally ignored; use an explicit CIDR for a non-private proxy
+peer. Never use a hostname supplied by a request or reverse DNS as a trust signal.
+
+Xivi ignores forwarded scheme and client-IP headers from any other peer. A
+request carrying proxy-forwarding headers is never granted automatic LAN trust,
+even when its direct Docker or LAN peer address is private. Every reverse proxy
+must therefore be listed explicitly. `TRUSTED_LAN_CIDRS` contains only networks
+permitted to use LAN sessions, LAN media keys, and tuner discovery. Set
+`ALLOW_LAN_HTTP=false` when local HTTPS is available.
 
 Bind the direct port only to the LAN interface and block it at the public
-firewall. Public traffic must reach Xivi through the configured Caddy proxy and
-HTTPS. Caddy should redirect ordinary public HTTP traffic to HTTPS and add HSTS,
+firewall. Public traffic must reach Xivi through the configured reverse proxy and
+HTTPS. The proxy should redirect ordinary public HTTP traffic to HTTPS and add HSTS,
 but a credential-bearing `/media/`, stream, HLS, logo, or tuner request must not
 be redirected; reject it instead so its query credential cannot leak.
 
-Configure Caddy to overwrite forwarded client/scheme headers with values it
+Configure the reverse proxy to overwrite forwarded client/scheme headers with values it
 observes, and configure its access logger to omit URL query strings plus
 `Cookie`, `Authorization`, and `X-CSRF-Token` headers. Media keys necessarily
 travel in compatibility-client query strings; ordinary proxy logs must never
@@ -108,9 +118,9 @@ starts and concurrent downstream viewers. Configure the latter controls under
 **Studio → Settings → Streaming**. Large result pages and guide windows consume
 more budget, while ordinary HLS refreshes do not consume a stream-start slot.
 
-If Caddy itself performs rate limiting, confirm that the selected module is in
-the deployed Caddy build; it is not part of every standard package. Keep the
-Caddy administration endpoint bound to loopback or a protected local socket.
+If the reverse proxy performs rate limiting, confirm that the feature is present
+in the deployed build. Keep any proxy administration endpoint bound to loopback
+or a protected local socket.
 
 Direct LAN HTTP is a compatibility mode, not confidential transport. Anyone
 able to observe that LAN can read passwords and page data. Prefer local TLS.
@@ -133,12 +143,15 @@ docker run --name xivi --network host \
 
 Host networking is needed for automatic tuner broadcast discovery. If that is
 not required, publish the application port only on the selected LAN address.
-Do not publish the container directly on a public interface.
+Do not publish the container directly on a public interface. Docker service-name
+resolution requires Xivi and the reverse proxy to share a user-defined network;
+it is not available with the host-network example above. Use an explicit proxy
+CIDR when running Xivi with host networking.
 
 On first startup Xivi applies additive migrations and encrypts stored provider
 URLs. It fails closed in production when the authentication key cannot be
-created or read, when a configured public deployment has no trusted proxy
-CIDR, or when a configured network CIDR is invalid.
+created or read, when a configured public deployment has no trusted proxy CIDR
+or hostname, or when a configured network identity is invalid.
 
 ## 4. Complete the first-run password change and verify access
 
@@ -172,7 +185,7 @@ Before exposing the service, verify:
 
 - unauthenticated Watch, Studio, API, media, image, and stream requests fail;
 - viewer lineup grants apply to search, guide, playback, logos, and telemetry;
-- public keys fail on direct untrusted HTTP and LAN keys fail through Caddy;
+- public keys fail on direct untrusted HTTP and LAN keys fail through the reverse proxy;
 - disabling an account or revoking a key disconnects its downstream streams;
 - logs and diagnostics contain no session, CSRF, provider, or media secrets.
 
@@ -209,7 +222,8 @@ Treat Internet exposure as an ongoing process:
    updates; do not patch a running container by hand.
 4. Retain the SBOM with each release and scan the exact published image digest.
 5. Review security audit events, disabled accounts, active sessions, media-key
-   last-use data, trusted CIDRs, and Caddy access controls on a regular schedule.
+   last-use data, trusted proxy identities, and reverse-proxy access controls on
+   a regular schedule.
 6. Exercise database-and-key restoration and local admin recovery before an
    emergency. Report suspected credential exposure by revoking the affected
    sessions/media keys immediately and rotating upstream provider credentials.
@@ -220,7 +234,7 @@ pass or the recurring storage cleanup (every six hours by default). Deletion
 cascades to lineup grants; SQLite secure deletion and bounded compaction prevent
 the encrypted credential rows from accumulating indefinitely.
 
-No deployment is vulnerability-proof. Keep the host, Docker runtime, Caddy,
+No deployment is vulnerability-proof. Keep the host, Docker runtime, reverse proxy,
 browser clients, media servers, and Xivi dependencies patched, and repeat an
 authenticated application scan after material authorization or streaming
 changes.

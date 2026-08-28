@@ -37,7 +37,19 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 			retryable: response.status >= 500
 		};
 		try {
-			detail = await response.json();
+			const parsed = (await response.json()) as Partial<APIError> & { msg?: unknown };
+			detail = {
+				code: typeof parsed.code === 'string' ? parsed.code : detail.code,
+				message:
+					typeof parsed.message === 'string'
+						? parsed.message
+						: typeof parsed.msg === 'string'
+							? parsed.msg
+							: detail.message,
+				retryable: typeof parsed.retryable === 'boolean' ? parsed.retryable : detail.retryable,
+				...(parsed.field_errors ? { field_errors: parsed.field_errors } : {}),
+				...(parsed.challenge ? { challenge: parsed.challenge } : {})
+			};
 		} catch {
 			/* response was not JSON */
 		}

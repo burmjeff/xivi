@@ -89,10 +89,13 @@ func InitSettings() error {
 			appSettings.Security.LocalBaseURL = strings.TrimRight(strings.TrimSpace(env), "/")
 		}
 		if env, exists := os.LookupEnv("TRUSTED_PROXY_CIDRS"); exists {
-			appSettings.Security.TrustedProxyCIDRs = splitCIDRs(env)
+			appSettings.Security.TrustedProxyCIDRs = splitSettingList(env)
+		}
+		if env, exists := os.LookupEnv("TRUSTED_PROXY_HOSTS"); exists {
+			appSettings.Security.TrustedProxyHosts = splitSettingList(env)
 		}
 		if env, exists := os.LookupEnv("TRUSTED_LAN_CIDRS"); exists {
-			appSettings.Security.TrustedLANCIDRs = splitCIDRs(env)
+			appSettings.Security.TrustedLANCIDRs = splitSettingList(env)
 		}
 		if env, exists := os.LookupEnv("ALLOW_LAN_HTTP"); exists {
 			appSettings.Security.AllowLANHTTP, _ = strconv.ParseBool(env)
@@ -121,7 +124,7 @@ func InitSettings() error {
 	return nil
 }
 
-func splitCIDRs(value string) []string {
+func splitSettingList(value string) []string {
 	result := []string{}
 	for _, item := range strings.Split(value, ",") {
 		if item = strings.TrimSpace(item); item != "" {
@@ -268,7 +271,20 @@ func PreserveDeploymentSettings(next *AppSettings) {
 	next.Server = current.Server
 }
 
+// SecurityValidationError identifies the settings field that violated the
+// deployment boundary so API clients can present the correction inline.
+type SecurityValidationError struct {
+	Field   string
+	Message string
+}
+
+func (err *SecurityValidationError) Error() string { return err.Message }
+
 func ValidateSecuritySettings(security Security) error {
+	// Validate the same normalized representation that will be persisted so
+	// harmless surrounding whitespace and trailing slashes do not produce a
+	// different preflight result from WriteSettings.
+	normalizeSecurity(&security)
 	validateBase := func(raw string, requireHTTPS bool) error {
 		parsed, err := url.Parse(raw)
 		if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
@@ -285,25 +301,38 @@ func ValidateSecuritySettings(security Security) error {
 	production := strings.EqualFold(strings.TrimSpace(os.Getenv("XIVI_PRODUCTION")), "true")
 	if security.PublicBaseURL != "" {
 		if err := validateBase(security.PublicBaseURL, true); err != nil {
-			return err
+			return &SecurityValidationError{Field: "public_base_url", Message: err.Error()}
 		}
 	}
 	if security.PublicMediaBaseURL != "" {
 		if err := validateBase(security.PublicMediaBaseURL, true); err != nil {
-			return fmt.Errorf("public media base URL: %w", err)
+			return &SecurityValidationError{Field: "public_media_base_url", Message: "public media base URL: " + err.Error()}
 		}
 	}
 	if err := validateBase(security.LocalBaseURL, false); err != nil {
-		return err
+		return &SecurityValidationError{Field: "local_base_url", Message: err.Error()}
 	}
-	for _, item := range append(append([]string{}, security.TrustedProxyCIDRs...), security.TrustedLANCIDRs...) {
+	for _, item := range security.TrustedProxyCIDRs {
 		if _, _, err := net.ParseCIDR(strings.TrimSpace(item)); err != nil {
-			return fmt.Errorf("invalid trusted network CIDR")
+			return &SecurityValidationError{Field: "trusted_proxy_cidrs", Message: "trusted proxy entries must use CIDR notation"}
+		}
+	}
+	for _, item := range security.TrustedProxyHosts {
+		if !validProxyHostname(item) {
+			return &SecurityValidationError{Field: "trusted_proxy_hosts", Message: "trusted proxy hostnames must be DNS names without a scheme, port, or path"}
+		}
+	}
+	for _, item := range security.TrustedLANCIDRs {
+		if _, _, err := net.ParseCIDR(strings.TrimSpace(item)); err != nil {
+			return &SecurityValidationError{Field: "trusted_lan_cidrs", Message: "trusted LAN entries must use CIDR notation"}
 		}
 	}
 	publicHTTPSConfigured := security.PublicBaseURL != "" || security.PublicMediaBaseURL != ""
-	if production && publicHTTPSConfigured && len(security.TrustedProxyCIDRs) == 0 {
-		return fmt.Errorf("TRUSTED_PROXY_CIDRS is required when public HTTPS is configured in production")
+	if production && publicHTTPSConfigured && len(security.TrustedProxyCIDRs) == 0 && len(security.TrustedProxyHosts) == 0 {
+		return &SecurityValidationError{
+			Field:   "trusted_proxy_hosts",
+			Message: "add at least one trusted reverse proxy CIDR or hostname before enabling public HTTPS in production",
+		}
 	}
 	return nil
 }
@@ -325,6 +354,9 @@ func normalizeSecurity(security *Security) {
 	security.PublicBaseURL = strings.TrimRight(strings.TrimSpace(security.PublicBaseURL), "/")
 	security.PublicMediaBaseURL = strings.TrimRight(strings.TrimSpace(security.PublicMediaBaseURL), "/")
 	security.LocalBaseURL = strings.TrimRight(strings.TrimSpace(security.LocalBaseURL), "/")
+	security.TrustedProxyCIDRs = normalizeSettingList(security.TrustedProxyCIDRs, false)
+	security.TrustedProxyHosts = normalizeSettingList(security.TrustedProxyHosts, true)
+	security.TrustedLANCIDRs = normalizeSettingList(security.TrustedLANCIDRs, false)
 	if security.LocalBaseURL == "" {
 		security.LocalBaseURL = "http://127.0.0.1:3000"
 	}
@@ -334,6 +366,52 @@ func normalizeSecurity(security *Security) {
 	if security.MaximumAuditEvents < 1000 || security.MaximumAuditEvents > 1000000 {
 		security.MaximumAuditEvents = 100000
 	}
+}
+
+func normalizeSettingList(values []string, lowercase bool) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if lowercase {
+			value = strings.ToLower(strings.TrimSuffix(value, "."))
+		}
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func validProxyHostname(raw string) bool {
+	host := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(raw), "."))
+	if host == "" || len(host) > 253 || net.ParseIP(host) != nil {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if len(label) == 0 || len(label) > 63 {
+			return false
+		}
+		hasAlphanumeric := false
+		for _, character := range label {
+			switch {
+			case character >= 'a' && character <= 'z', character >= '0' && character <= '9':
+				hasAlphanumeric = true
+			case character == '-', character == '_':
+			default:
+				return false
+			}
+		}
+		if !hasAlphanumeric {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeMaintenance(maintenance *Maintenance) {

@@ -122,6 +122,7 @@ type Security struct {
 	PublicMediaBaseURL     string   `yaml:"public_media_base_url" json:"public_media_base_url"`
 	LocalBaseURL           string   `yaml:"local_base_url" json:"local_base_url"`
 	TrustedProxyCIDRs      []string `yaml:"trusted_proxy_cidrs" json:"trusted_proxy_cidrs"`
+	TrustedProxyHosts      []string `yaml:"trusted_proxy_hosts" json:"trusted_proxy_hosts"`
 	TrustedLANCIDRs        []string `yaml:"trusted_lan_cidrs" json:"trusted_lan_cidrs"`
 	AllowLANHTTP           bool     `yaml:"allow_lan_http" json:"allow_lan_http"`
 	AuditRetentionDays     int      `yaml:"audit_retention_days" json:"audit_retention_days"`
