@@ -127,7 +127,7 @@
 
 <style>
 	.directory {
-		padding: clamp(1.5rem, 5vw, 4.5rem);
+		padding: clamp(1.5rem, 5vw, 4.5rem) clamp(1.5rem, 5vw, 4.5rem) 0;
 	}
 	.directory-header {
 		display: flex;
