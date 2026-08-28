@@ -362,7 +362,7 @@
 	}
 	function outputLinkLabel(kind: string) {
 		const [network, format] = kind.split('_');
-		return `Copy ${network === 'public' ? 'public' : 'local'} ${format?.toUpperCase() ?? 'link'}`;
+		return `${network === 'public' ? 'Public' : 'Local'} ${format?.toUpperCase() ?? 'link'}`;
 	}
 	function orderedOutputLinks(outputLinks: Record<string, string>) {
 		const order = ['public_m3u', 'public_xmltv', 'local_m3u', 'local_xmltv'];
@@ -685,8 +685,10 @@
 					<div>
 						<h2>Device access</h2>
 						<p>
-							Reusable M3U and XMLTV links for TVs and player apps. The underlying credential stays
-							hidden and each device can be revoked independently. Revoked entries are deleted after
+							Short, reusable M3U and XMLTV links for TVs and player apps. M3U playlists already
+							include their guide link, so most players only need the M3U address. The underlying
+							credential stays hidden and each device can be revoked independently. Revoked entries
+							are deleted after
 							{keys.data?.retention_days ?? 'the configured retention period'}{keys.data
 								?.retention_days
 								? ' days'
@@ -772,9 +774,15 @@
 											<strong>{lineupName(lineupID)}</strong>
 											<div>
 												{#each orderedOutputLinks(outputLinks) as [kind, link]}
-													<button class="link-copy" onclick={() => copy(link)}
-														><Copy size={15} /><span>{outputLinkLabel(kind)}</span></button
-													>
+													<div class="output-link">
+														<span>{outputLinkLabel(kind)}</span>
+														<code>{link}</code>
+														<button
+															class="link-copy"
+															aria-label={`Copy ${outputLinkLabel(kind)}`}
+															onclick={() => copy(link)}><Copy size={15} /><span>Copy</span></button
+														>
+													</div>
 												{/each}
 											</div>
 										</div>
@@ -1147,15 +1155,41 @@
 		font-size: 0.75rem;
 	}
 	.lineup-links > div {
-		display: flex;
-		flex-wrap: wrap;
+		display: grid;
 		gap: 0.4rem;
+	}
+	.output-link {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 0.55rem;
+		border-radius: 0.7rem;
+		background: var(--surface-raised);
+		padding: 0.45rem 0.55rem;
+	}
+	.output-link > span {
+		color: var(--muted);
+		font-size: 0.68rem;
+		font-weight: 750;
+		text-transform: uppercase;
+	}
+	.output-link code {
+		overflow-wrap: anywhere;
+		font-size: 0.78rem;
 	}
 	.lineup-links .link-copy {
 		display: flex;
 		width: auto;
 		height: auto;
 		background: var(--surface-raised);
+	}
+	@media (max-width: 560px) {
+		.output-link {
+			grid-template-columns: minmax(0, 1fr) auto;
+		}
+		.output-link > span {
+			grid-column: 1 / -1;
+		}
 	}
 	.legacy-links {
 		margin: 0;

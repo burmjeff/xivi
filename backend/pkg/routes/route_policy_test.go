@@ -74,6 +74,8 @@ func TestAnonymousRequestsCannotReachProtectedSurfaces(t *testing.T) {
 		{fiber.MethodGet, "/api/v2/events", fiber.StatusUnauthorized},
 		{fiber.MethodGet, "/stream/channel-uuid", fiber.StatusUnauthorized},
 		{fiber.MethodGet, "/media/v1/lineups/1/playlist.m3u", fiber.StatusUnauthorized},
+		{fiber.MethodGet, "/m/ABCD-EFGH-JKMN-PQRS", fiber.StatusUnauthorized},
+		{fiber.MethodGet, "/x/ABCD-EFGH-JKMN-PQRS", fiber.StatusUnauthorized},
 		{fiber.MethodGet, "/images/channel.png?lineup_id=1", fiber.StatusUnauthorized},
 		{fiber.MethodGet, "/docs/", fiber.StatusSeeOther},
 		{fiber.MethodGet, "/docs/openapi.yaml", fiber.StatusUnauthorized},

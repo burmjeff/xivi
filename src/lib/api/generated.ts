@@ -500,6 +500,40 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/m/{code}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** @description Resolves a revocable, lineup-scoped short output alias. The alias is the bearer credential for this request; generated stream URLs retain the full internal media credential. */
+		get: operations['getShortSecuredM3U'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/x/{code}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** @description Resolves the XMLTV output for a revocable, lineup-scoped short output alias. */
+		get: operations['getShortSecuredXMLTV'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/watch/lineups': {
 		parameters: {
 			query?: never;
@@ -1609,7 +1643,7 @@ export interface components {
 			/** Format: date-time */
 			revoked_at?: string;
 			lineup_ids: number[];
-			/** @description Credential-bearing output URLs available only to the key owner. Omitted for revoked, expired, and legacy hash-only keys. */
+			/** @description Short, lineup-scoped output aliases available only to the key owner. Omitted for revoked, expired, and legacy hash-only keys. */
 			links?: {
 				[key: string]: {
 					[key: string]: string;
@@ -2329,6 +2363,7 @@ export interface components {
 		Search: string;
 		/** @description Restrict lineup channels to a match-health state. */
 		MatchHealth: 'unmatched' | 'low-confidence' | 'duplicate-tvg-id';
+		/** @description Opaque, expiring continuation token bound to the authenticated user, route, and active filters. */
 		Cursor: string;
 		Limit: number;
 	};
@@ -3089,6 +3124,7 @@ export interface operations {
 	listSecurityAudit: {
 		parameters: {
 			query?: {
+				/** @description Opaque, expiring continuation token bound to the authenticated user, route, and active filters. */
 				cursor?: components['parameters']['Cursor'];
 				limit?: components['parameters']['Limit'];
 			};
@@ -3198,6 +3234,54 @@ export interface operations {
 			default: components['responses']['Error'];
 		};
 	};
+	getShortSecuredM3U: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Case-insensitive 16-symbol Crockford Base32 code; display hyphens are optional. */
+				code: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Dynamic secured playlist with its XMLTV address embedded. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'audio/x-mpegurl': string;
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	getShortSecuredXMLTV: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Case-insensitive 16-symbol Crockford Base32 code; display hyphens are optional. */
+				code: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Authorized dynamic XMLTV. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/xml': string;
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
 	listWatchLineups: {
 		parameters: {
 			query?: never;
@@ -3215,6 +3299,7 @@ export interface operations {
 			query?: {
 				group_id?: components['parameters']['GroupId'];
 				q?: components['parameters']['Search'];
+				/** @description Opaque, expiring continuation token bound to the authenticated user, route, and active filters. */
 				cursor?: components['parameters']['Cursor'];
 				limit?: components['parameters']['Limit'];
 			};
@@ -3276,6 +3361,7 @@ export interface operations {
 				q?: components['parameters']['Search'];
 				from?: string;
 				to?: string;
+				/** @description Opaque, expiring continuation token bound to the authenticated user, route, and active filters. */
 				cursor?: components['parameters']['Cursor'];
 				limit?: components['parameters']['Limit'];
 			};
@@ -3815,6 +3901,7 @@ export interface operations {
 			query?: {
 				/** @description Include intentionally shared guide identities that have been reviewed. */
 				include_acknowledged?: boolean;
+				/** @description Opaque, expiring continuation token bound to the authenticated user, route, and active filters. */
 				cursor?: components['parameters']['Cursor'];
 				limit?: components['parameters']['Limit'];
 			};
@@ -3901,6 +3988,7 @@ export interface operations {
 				/** @description Return only enabled groups that contain enabled channels, and count only those channels. */
 				enabled_only?: boolean;
 				q?: components['parameters']['Search'];
+				/** @description Opaque, expiring continuation token bound to the authenticated user, route, and active filters. */
 				cursor?: components['parameters']['Cursor'];
 				limit?: components['parameters']['Limit'];
 			};
@@ -4126,6 +4214,7 @@ export interface operations {
 				q?: components['parameters']['Search'];
 				/** @description Restrict lineup channels to a match-health state. */
 				match?: components['parameters']['MatchHealth'];
+				/** @description Opaque, expiring continuation token bound to the authenticated user, route, and active filters. */
 				cursor?: components['parameters']['Cursor'];
 				limit?: components['parameters']['Limit'];
 			};
@@ -4316,6 +4405,7 @@ export interface operations {
 				/** @description Return only channels whose channel and parent group are enabled. */
 				enabled_only?: boolean;
 				q?: components['parameters']['Search'];
+				/** @description Opaque, expiring continuation token bound to the authenticated user, route, and active filters. */
 				cursor?: components['parameters']['Cursor'];
 				limit?: components['parameters']['Limit'];
 			};
@@ -4392,6 +4482,7 @@ export interface operations {
 			query?: {
 				channel_id?: number;
 				q?: components['parameters']['Search'];
+				/** @description Opaque, expiring continuation token bound to the authenticated user, route, and active filters. */
 				cursor?: components['parameters']['Cursor'];
 				limit?: components['parameters']['Limit'];
 			};
@@ -4416,6 +4507,7 @@ export interface operations {
 	listChannelMatches: {
 		parameters: {
 			query?: {
+				/** @description Opaque, expiring continuation token bound to the authenticated user, route, and active filters. */
 				cursor?: components['parameters']['Cursor'];
 				limit?: components['parameters']['Limit'];
 			};

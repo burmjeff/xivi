@@ -87,6 +87,13 @@ func securityTestQueries(t *testing.T) *SecurityQueries {
 		media_key_id INTEGER NOT NULL REFERENCES media_access_key(id) ON DELETE CASCADE,
 		lineup_id INTEGER NOT NULL REFERENCES template(id) ON DELETE CASCADE,
 		PRIMARY KEY(media_key_id, lineup_id))`)
+	db.MustExec(`CREATE TABLE media_output_alias (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		media_key_id INTEGER NOT NULL REFERENCES media_access_key(id) ON DELETE CASCADE,
+		lineup_id INTEGER NOT NULL REFERENCES template(id) ON DELETE CASCADE,
+		code_hash BLOB NOT NULL UNIQUE, code_cipher BLOB NOT NULL, created_at TIMESTAMP NOT NULL,
+		UNIQUE(media_key_id, lineup_id),
+		FOREIGN KEY(media_key_id, lineup_id) REFERENCES media_key_lineup(media_key_id, lineup_id) ON DELETE CASCADE)`)
 	return NewSecurityQueries(db)
 }
 
@@ -210,6 +217,8 @@ func TestMediaKeyRetainsEncryptedCredentialForReusableLinks(t *testing.T) {
 		UserID: userID, Name: "Living room", TokenPrefix: "xmk_example",
 		TokenHash: []byte("hash"), TokenCipher: []byte("encrypted-credential"),
 		NetworkScope: "lan", CreatedAt: time.Now().UTC(),
+		OutputAliases: []models.MediaOutputAlias{{LineupID: 7, CodeHash: []byte("alias-hash"),
+			CodeCipher: []byte("alias-cipher"), CreatedAt: time.Now().UTC()}},
 	}
 	if err := q.CreateMediaKey(ctx, key, []int64{7}); err != nil {
 		t.Fatal(err)
@@ -223,6 +232,14 @@ func TestMediaKeyRetainsEncryptedCredentialForReusableLinks(t *testing.T) {
 	}
 	if len(keys[0].LineupIDs) != 1 || keys[0].LineupIDs[0] != 7 {
 		t.Fatalf("device lineup access was not retained: %+v", keys[0].LineupIDs)
+	}
+	aliases, err := q.ListMediaOutputAliases(ctx, key.ID)
+	if err != nil || len(aliases) != 1 || aliases[0].LineupID != 7 || !bytes.Equal(aliases[0].CodeCipher, []byte("alias-cipher")) {
+		t.Fatalf("short output alias was not retained: aliases=%+v err=%v", aliases, err)
+	}
+	resolved, err := q.GetMediaOutputAliasByHash(ctx, []byte("alias-hash"))
+	if err != nil || resolved.MediaKeyID != key.ID || resolved.LineupID != 7 {
+		t.Fatalf("short output alias could not be resolved: alias=%+v err=%v", resolved, err)
 	}
 }
 
@@ -301,6 +318,10 @@ func TestSecurityRetentionDeletesOldDeviceKeysAndLineupGrants(t *testing.T) {
 			"prefix-"+item.name, []byte("hash-"+item.name), []byte("cipher-"+item.name),
 			now.AddDate(-1, 0, 0), item.expiresAt, item.revokedAt)
 		q.MustExec(`INSERT INTO media_key_lineup(media_key_id, lineup_id) VALUES (?, 7)`, item.id)
+		q.MustExec(`INSERT INTO media_output_alias
+			(media_key_id, lineup_id, code_hash, code_cipher, created_at)
+			VALUES (?, 7, ?, ?, ?)`, item.id, []byte("alias-hash-"+item.name),
+			[]byte("alias-cipher-"+item.name), now.AddDate(-1, 0, 0))
 	}
 	if err := q.PruneSecurityData(ctx, now, cutoff, 1000); err != nil {
 		t.Fatal(err)
@@ -315,6 +336,10 @@ func TestSecurityRetentionDeletesOldDeviceKeysAndLineupGrants(t *testing.T) {
 	var removedGrants int
 	if err := q.GetContext(ctx, &removedGrants, `SELECT COUNT(*) FROM media_key_lineup WHERE media_key_id IN (1, 3)`); err != nil || removedGrants != 0 {
 		t.Fatalf("deleted device-key grants remained: count=%d err=%v", removedGrants, err)
+	}
+	var removedAliases int
+	if err := q.GetContext(ctx, &removedAliases, `SELECT COUNT(*) FROM media_output_alias WHERE media_key_id IN (1, 3)`); err != nil || removedAliases != 0 {
+		t.Fatalf("deleted device-key aliases remained: count=%d err=%v", removedAliases, err)
 	}
 }
 

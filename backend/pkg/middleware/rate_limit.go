@@ -308,7 +308,7 @@ func LoginIngressRateLimit() fiber.Handler {
 
 func rejectInvalidMediaCredential(c *fiber.Ctx) error {
 	token := c.Query("access_token")
-	if token != "" {
+	if token != "" || c.Params("code") != "" {
 		allowed, retry := invalidMediaAttempts.allow(security.RequestNetworkInfo(c).IP.String(), 30, time.Minute)
 		if !allowed {
 			c.Set(fiber.HeaderRetryAfter, strconv.Itoa(max(1, int(retry.Seconds()))))

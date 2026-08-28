@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"crypto/tls"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -252,6 +253,98 @@ func TestMediaKeyNetworkScopes(t *testing.T) {
 	if !mediaKeyNetworkAllowed("lan", trustedLANTLS) || !mediaKeyNetworkAllowed("public", trustedLANTLS) {
 		t.Fatal("direct trusted-LAN HTTPS should remain available")
 	}
+}
+
+func TestShortMediaOutputAliasAuthenticatesOneLineupAndHonorsRevocation(t *testing.T) {
+	keyPath := filepath.Join(t.TempDir(), "auth.key")
+	t.Setenv("XIVI_AUTH_KEY_FILE", keyPath)
+	t.Setenv("XIVI_PRODUCTION", "false")
+	if err := security.GenerateKeyFile(keyPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.InitializeKey(); err != nil {
+		t.Fatal(err)
+	}
+	security.SetInitialSetupRequired(false)
+	originalSecurity := settings.Current().Security
+	settings.Current().Security.AllowLANHTTP = true
+	settings.Current().Security.TrustedLANCIDRs = []string{"0.0.0.0/0", "::/0"}
+	settings.Current().Security.LocalBaseURL = "http://xivi.test"
+	t.Cleanup(func() { settings.Current().Security = originalSecurity })
+
+	db := sqlx.MustOpen("sqlite3", ":memory:?_foreign_keys=on&_txlock=immediate")
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	db.MustExec(`CREATE TABLE app_user (
+		id INTEGER PRIMARY KEY, username TEXT NOT NULL, role TEXT NOT NULL, disabled_at TIMESTAMP NULL)`)
+	db.MustExec(`CREATE TABLE user_lineup (user_id INTEGER NOT NULL, lineup_id INTEGER NOT NULL)`)
+	db.MustExec(`CREATE TABLE media_access_key (
+		id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, name TEXT NOT NULL,
+		token_prefix TEXT NOT NULL UNIQUE, token_hash BLOB NOT NULL UNIQUE, token_cipher BLOB,
+		network_scope TEXT NOT NULL, created_at TIMESTAMP NOT NULL, expires_at TIMESTAMP NULL,
+		last_used_at TIMESTAMP NULL, last_used_ip TEXT NOT NULL DEFAULT '', revoked_at TIMESTAMP NULL)`)
+	db.MustExec(`CREATE TABLE media_key_lineup (media_key_id INTEGER NOT NULL, lineup_id INTEGER NOT NULL)`)
+	db.MustExec(`CREATE TABLE media_output_alias (
+		id INTEGER PRIMARY KEY, media_key_id INTEGER NOT NULL, lineup_id INTEGER NOT NULL,
+		code_hash BLOB NOT NULL UNIQUE, code_cipher BLOB NOT NULL, created_at TIMESTAMP NOT NULL)`)
+
+	const token = "xmk_internal.full-secret"
+	tokenHash, err := security.HashToken("media", token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenCipher, err := security.EncryptSecret([]byte(token))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compact, ok := security.NormalizeMediaOutputCode("ABCD-EFGH-JKMN-PQRS")
+	if !ok {
+		t.Fatal("test output code is invalid")
+	}
+	aliasHash, err := security.HashToken("media-output-alias", compact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	db.MustExec(`INSERT INTO app_user(id, username, role) VALUES (1, 'viewer', 'viewer')`)
+	db.MustExec(`INSERT INTO user_lineup(user_id, lineup_id) VALUES (1, 7)`)
+	db.MustExec(`INSERT INTO media_access_key
+		(id, user_id, name, token_prefix, token_hash, token_cipher, network_scope, created_at)
+		VALUES (2, 1, 'Living room', 'xmk_internal', ?, ?, 'public', ?)`, tokenHash, tokenCipher, now)
+	db.MustExec(`INSERT INTO media_key_lineup(media_key_id, lineup_id) VALUES (2, 7)`)
+	db.MustExec(`INSERT INTO media_output_alias
+		(id, media_key_id, lineup_id, code_hash, code_cipher, created_at)
+		VALUES (3, 2, 7, ?, X'01', ?)`, aliasHash, now)
+
+	originalDB := database.Db
+	database.Db = &database.Queries{SecurityQueries: queries.NewSecurityQueries(db)}
+	t.Cleanup(func() { database.Db = originalDB })
+	app := fiber.New()
+	app.Get("/m/:code", RequireMediaOutputAlias(), func(c *fiber.Ctx) error {
+		credential, found := CurrentMediaCredential(c)
+		if !found || credential.LineupID != 7 || credential.Token != token || credential.OutputCode != "ABCD-EFGH-JKMN-PQRS" {
+			return c.SendStatus(fiber.StatusInternalServerError)
+		}
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+
+	for _, path := range []string{"/m/ABCD-EFGH-JKMN-PQRS", "/m/abcdefghjkmnpqrs"} {
+		request := httptest.NewRequest(fiber.MethodGet, "https://xivi.test"+path, nil)
+		request.TLS = &tls.ConnectionState{}
+		response, err := app.Test(request, -1)
+		if err != nil || response.StatusCode != fiber.StatusNoContent {
+			t.Fatalf("short alias %s returned status %d, err %v", path, response.StatusCode, err)
+		}
+		_ = response.Body.Close()
+	}
+	db.MustExec(`UPDATE media_access_key SET revoked_at = ? WHERE id = 2`, now)
+	request := httptest.NewRequest(fiber.MethodGet, "https://xivi.test/m/ABCD-EFGH-JKMN-PQRS", nil)
+	request.TLS = &tls.ConnectionState{}
+	response, err := app.Test(request, -1)
+	if err != nil || response.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("revoked short alias returned status %d, err %v", response.StatusCode, err)
+	}
+	_ = response.Body.Close()
 }
 
 func TestCSRFRequiresSessionTokenAndSameOrigin(t *testing.T) {

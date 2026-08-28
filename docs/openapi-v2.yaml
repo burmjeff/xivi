@@ -590,6 +590,40 @@ paths:
             },
           default: { $ref: '#/components/responses/Error' }
         }
+  /m/{code}:
+    get:
+      operationId: getShortSecuredM3U
+      servers: [{ url: / }]
+      security: []
+      description: Resolves a revocable, lineup-scoped short output alias. The alias is the bearer credential for this request; generated stream URLs retain the full internal media credential.
+      parameters:
+        - name: code
+          in: path
+          required: true
+          description: Case-insensitive 16-symbol Crockford Base32 code; display hyphens are optional.
+          schema: { type: string, minLength: 16, maxLength: 19 }
+      responses:
+        '200':
+          description: Dynamic secured playlist with its XMLTV address embedded.
+          content: { audio/x-mpegurl: { schema: { type: string } } }
+        default: { $ref: '#/components/responses/Error' }
+  /x/{code}:
+    get:
+      operationId: getShortSecuredXMLTV
+      servers: [{ url: / }]
+      security: []
+      description: Resolves the XMLTV output for a revocable, lineup-scoped short output alias.
+      parameters:
+        - name: code
+          in: path
+          required: true
+          description: Case-insensitive 16-symbol Crockford Base32 code; display hyphens are optional.
+          schema: { type: string, minLength: 16, maxLength: 19 }
+      responses:
+        '200':
+          description: Authorized dynamic XMLTV.
+          content: { application/xml: { schema: { type: string } } }
+        default: { $ref: '#/components/responses/Error' }
   /watch/lineups:
     get:
       operationId: listWatchLineups
@@ -1424,7 +1458,7 @@ components:
       type: apiKey
       in: query
       name: access_token
-      description: Named, revocable device credential restricted by lineup and network scope. Authentication uses a keyed hash; the recoverable copy is encrypted at rest solely to rebuild owner-visible output URLs.
+      description: Full internal device credential restricted by lineup and network scope. Short owner-visible output aliases resolve to this credential without exposing it for manual entry.
   parameters:
     LineupId:
       { name: lineup_id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -1693,7 +1727,7 @@ components:
         lineup_ids: { type: array, items: { type: integer, format: int64 } }
         links:
           type: object
-          description: Credential-bearing output URLs available only to the key owner. Omitted for revoked, expired, and legacy hash-only keys.
+          description: Short, lineup-scoped output aliases available only to the key owner. Omitted for revoked, expired, and legacy hash-only keys.
           additionalProperties:
             type: object
             additionalProperties: { type: string, format: uri }

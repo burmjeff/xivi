@@ -607,6 +607,20 @@ func (q *SecurityQueries) CreateMediaKey(ctx context.Context, key *models.MediaA
 				return err
 			}
 		}
+		for index := range key.OutputAliases {
+			alias := &key.OutputAliases[index]
+			alias.MediaKeyID = key.ID
+			result, err := tx.ExecContext(ctx, `INSERT INTO media_output_alias
+				(media_key_id, lineup_id, code_hash, code_cipher, created_at)
+				VALUES (?, ?, ?, ?, ?)`, alias.MediaKeyID, alias.LineupID, alias.CodeHash, alias.CodeCipher, alias.CreatedAt)
+			if err != nil {
+				return err
+			}
+			alias.ID, err = result.LastInsertId()
+			if err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 }
@@ -633,6 +647,42 @@ func (q *SecurityQueries) GetMediaKeyByPrefix(ctx context.Context, prefix string
 	}
 	key.LineupIDs, _ = q.GetMediaKeyLineupIDs(ctx, key.ID)
 	return key, nil
+}
+
+func (q *SecurityQueries) GetMediaKeyByID(ctx context.Context, id int64) (*models.MediaAccessKey, error) {
+	key := &models.MediaAccessKey{}
+	if err := q.GetContext(ctx, key, `SELECT k.*, u.username FROM media_access_key k
+		JOIN app_user u ON u.id = k.user_id WHERE k.id = ? AND u.disabled_at IS NULL`, id); err != nil {
+		return nil, err
+	}
+	key.LineupIDs, _ = q.GetMediaKeyLineupIDs(ctx, key.ID)
+	return key, nil
+}
+
+func (q *SecurityQueries) ListMediaOutputAliases(ctx context.Context, keyID int64) ([]models.MediaOutputAlias, error) {
+	aliases := []models.MediaOutputAlias{}
+	err := q.SelectContext(ctx, &aliases, `SELECT * FROM media_output_alias
+		WHERE media_key_id = ? ORDER BY lineup_id`, keyID)
+	return aliases, err
+}
+
+func (q *SecurityQueries) CreateMediaOutputAlias(ctx context.Context, alias *models.MediaOutputAlias) error {
+	result, err := q.ExecContext(ctx, `INSERT OR IGNORE INTO media_output_alias
+		(media_key_id, lineup_id, code_hash, code_cipher, created_at)
+		VALUES (?, ?, ?, ?, ?)`, alias.MediaKeyID, alias.LineupID, alias.CodeHash, alias.CodeCipher, alias.CreatedAt)
+	if err != nil {
+		return err
+	}
+	alias.ID, err = result.LastInsertId()
+	return err
+}
+
+func (q *SecurityQueries) GetMediaOutputAliasByHash(ctx context.Context, hash []byte) (*models.MediaOutputAlias, error) {
+	alias := &models.MediaOutputAlias{}
+	if err := q.GetContext(ctx, alias, `SELECT * FROM media_output_alias WHERE code_hash = ?`, hash); err != nil {
+		return nil, err
+	}
+	return alias, nil
 }
 
 func (q *SecurityQueries) GetMediaKeyLineupIDs(ctx context.Context, keyID int64) ([]int64, error) {

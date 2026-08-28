@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/json"
@@ -1310,6 +1311,83 @@ func V2StudioUserMediaKeys(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"items": items})
 }
 
+func newMediaOutputAlias(lineupID int64) (models.MediaOutputAlias, error) {
+	code, err := security.GenerateMediaOutputCode()
+	if err != nil {
+		return models.MediaOutputAlias{}, err
+	}
+	compact, ok := security.NormalizeMediaOutputCode(code)
+	if !ok {
+		return models.MediaOutputAlias{}, errors.New("generated media output code is invalid")
+	}
+	hash, err := security.HashToken("media-output-alias", compact)
+	if err != nil {
+		return models.MediaOutputAlias{}, err
+	}
+	ciphertext, err := security.EncryptSecret([]byte(code))
+	if err != nil {
+		return models.MediaOutputAlias{}, err
+	}
+	return models.MediaOutputAlias{LineupID: lineupID, CodeHash: hash, CodeCipher: ciphertext, CreatedAt: time.Now().UTC()}, nil
+}
+
+func buildMediaOutputAliases(lineupIDs []int64) ([]models.MediaOutputAlias, error) {
+	aliases := make([]models.MediaOutputAlias, 0, len(lineupIDs))
+	for _, lineupID := range lineupIDs {
+		alias, err := newMediaOutputAlias(lineupID)
+		if err != nil {
+			return nil, err
+		}
+		aliases = append(aliases, alias)
+	}
+	return aliases, nil
+}
+
+func ensureMediaOutputAliases(ctx context.Context, key *models.MediaAccessKey) error {
+	if key.RevokedAt != nil || (key.ExpiresAt != nil && !key.ExpiresAt.After(time.Now().UTC())) || len(key.TokenCipher) == 0 {
+		return nil
+	}
+	aliases, err := database.Db.ListMediaOutputAliases(ctx, key.ID)
+	if err != nil {
+		return err
+	}
+	existing := make(map[int64]struct{}, len(aliases))
+	for _, alias := range aliases {
+		existing[alias.LineupID] = struct{}{}
+	}
+	for _, lineupID := range key.LineupIDs {
+		if _, found := existing[lineupID]; found {
+			continue
+		}
+		alias, err := newMediaOutputAlias(lineupID)
+		if err != nil {
+			return err
+		}
+		alias.MediaKeyID = key.ID
+		if err := database.Db.CreateMediaOutputAlias(ctx, &alias); err != nil {
+			return err
+		}
+	}
+	key.OutputAliases, err = database.Db.ListMediaOutputAliases(ctx, key.ID)
+	return err
+}
+
+func mediaOutputAliasCode(alias models.MediaOutputAlias) (string, error) {
+	plaintext, err := security.DecryptSecret(alias.CodeCipher)
+	if err != nil {
+		return "", err
+	}
+	compact, ok := security.NormalizeMediaOutputCode(string(plaintext))
+	if !ok {
+		return "", errors.New("encrypted media output code is invalid")
+	}
+	hash, err := security.HashToken("media-output-alias", compact)
+	if err != nil || !hmac.Equal(hash, alias.CodeHash) {
+		return "", errors.New("encrypted media output code does not match its authentication hash")
+	}
+	return security.FormatMediaOutputCode(compact), nil
+}
+
 func mediaKeyOutputLinks(key *models.MediaAccessKey) (map[string]map[string]string, error) {
 	if key.RevokedAt != nil || (key.ExpiresAt != nil && !key.ExpiresAt.After(time.Now().UTC())) || len(key.TokenCipher) == 0 {
 		return nil, nil
@@ -1335,18 +1413,28 @@ func mediaKeyOutputLinks(key *models.MediaAccessKey) (map[string]map[string]stri
 	localBase, _ := url.Parse(policy.LocalBaseURL)
 	localTransportAvailable := localBase != nil &&
 		(localBase.Scheme == "https" || policy.AllowLANHTTP)
+	aliases := make(map[int64]string, len(key.OutputAliases))
+	for _, alias := range key.OutputAliases {
+		code, err := mediaOutputAliasCode(alias)
+		if err != nil {
+			return nil, err
+		}
+		aliases[alias.LineupID] = code
+	}
 	links := make(map[string]map[string]string, len(key.LineupIDs))
 	for _, lineupID := range key.LineupIDs {
 		id := strconv.FormatInt(lineupID, 10)
-		suffix := "?access_token=" + url.QueryEscape(token)
 		values := map[string]string{}
-		if key.NetworkScope == "public" && publicMediaBase != "" {
-			values["public_m3u"] = publicMediaBase + "/media/v1/lineups/" + id + "/playlist.m3u" + suffix
-			values["public_xmltv"] = publicMediaBase + "/media/v1/lineups/" + id + "/guide.xml" + suffix
-		}
-		if localTransportAvailable {
-			values["local_m3u"] = policy.LocalBaseURL + "/media/v1/lineups/" + id + "/playlist.m3u" + suffix
-			values["local_xmltv"] = policy.LocalBaseURL + "/media/v1/lineups/" + id + "/guide.xml" + suffix
+		if code := aliases[lineupID]; code != "" {
+			escaped := url.PathEscape(code)
+			if key.NetworkScope == "public" && publicMediaBase != "" {
+				values["public_m3u"] = publicMediaBase + "/m/" + escaped
+				values["public_xmltv"] = publicMediaBase + "/x/" + escaped
+			}
+			if localTransportAvailable {
+				values["local_m3u"] = policy.LocalBaseURL + "/m/" + escaped
+				values["local_xmltv"] = policy.LocalBaseURL + "/x/" + escaped
+			}
 		}
 		links[id] = values
 	}
@@ -1378,6 +1466,9 @@ func V2AccountMediaKeys(c *fiber.Ctx) error {
 		return v2Error(c, 500, "media_keys_unavailable", "Media keys could not be loaded.", true)
 	}
 	for index := range keys {
+		if err = ensureMediaOutputAliases(c.UserContext(), &keys[index]); err != nil {
+			return v2Error(c, 500, "media_key_links_unavailable", "Device output links could not be loaded.", true)
+		}
 		keys[index].Links, err = mediaKeyOutputLinks(&keys[index])
 		if err != nil {
 			return v2Error(c, 500, "media_key_links_unavailable", "Device output links could not be loaded.", true)
@@ -1445,11 +1536,15 @@ func V2CreateAccountMediaKey(c *fiber.Ctx) error {
 	}
 	key := &models.MediaAccessKey{UserID: principal.UserID, Name: request.Name, TokenPrefix: "xmk_" + prefixRandom, TokenHash: hash, TokenCipher: ciphertext, NetworkScope: request.NetworkScope, CreatedAt: time.Now().UTC(), ExpiresAt: request.ExpiresAt}
 	key.LineupIDs = lineupIDs
-	key.Links, err = mediaKeyOutputLinks(key)
+	key.OutputAliases, err = buildMediaOutputAliases(lineupIDs)
 	if err != nil {
 		return v2Error(c, 500, "media_key_create_failed", "The media key could not be created.", true)
 	}
 	if err := database.Db.CreateMediaKey(c.UserContext(), key, lineupIDs); err != nil {
+		return v2Error(c, 500, "media_key_create_failed", "The media key could not be created.", true)
+	}
+	key.Links, err = mediaKeyOutputLinks(key)
+	if err != nil {
 		return v2Error(c, 500, "media_key_create_failed", "The media key could not be created.", true)
 	}
 	auditSecurity(c, "media_key_create", "success", "media_key", strconv.FormatInt(key.ID, 10), request.NetworkScope, &principal.UserID)

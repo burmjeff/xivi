@@ -96,10 +96,11 @@ but a credential-bearing `/media/`, stream, HLS, logo, or tuner request must not
 be redirected; reject it instead so its query credential cannot leak.
 
 Configure the reverse proxy to overwrite forwarded client/scheme headers with values it
-observes, and configure its access logger to omit URL query strings plus
-`Cookie`, `Authorization`, and `X-CSRF-Token` headers. Media keys necessarily
-travel in compatibility-client query strings; ordinary proxy logs must never
-become a second credential store.
+observes, and configure its access logger to omit URL query strings, redact the
+credential-bearing portion of `/m/*` and `/x/*`, and omit `Cookie`,
+`Authorization`, and `X-CSRF-Token` headers. Full media keys necessarily travel
+in generated compatibility-client query strings, while short output aliases are
+path credentials; ordinary proxy logs must never become a second credential store.
 
 `PUBLIC_MEDIA_BASE_URL` is optional. When it is configured, route both public
 hostnames to the same Xivi port but apply different edge policy:
@@ -173,8 +174,10 @@ MFA. In Studio, create viewer accounts and grant only their intended lineups.
 Verify that a viewer cannot open Studio or enumerate another lineup.
 
 Create named device access from **Account → Device access** after password
-reauthentication. Xivi never displays the standalone credential; reusable M3U
-and XMLTV copy actions remain on the device entry until it is revoked or expires.
+reauthentication. Xivi never displays the standalone credential; readable
+`/m/ABCD-EFGH-JKMN-PQRS` and `/x/ABCD-EFGH-JKMN-PQRS` output aliases remain on
+the device entry until it is revoked or expires. Most players need only the M3U
+address because it embeds the corresponding XMLTV address.
 Replace every saved M3U/XMLTV player URL with the generated public or LAN URL;
 old bare URLs are not supported. The credential used in those links is retained
 encrypted under `auth.key`, while request authentication continues to use its

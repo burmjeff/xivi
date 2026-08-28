@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+	"xivi/backend/app/models"
 	"xivi/backend/pkg/security"
 	"xivi/backend/platform/settings"
 )
@@ -57,5 +59,29 @@ func TestOpenDatabaseRemainsUsableAfterMigrations(t *testing.T) {
 	t.Cleanup(func() { _ = CloseDBConnection() })
 	if _, err := opened.UserCount(context.Background()); err != nil {
 		t.Fatalf("database pool was not usable after migrations: %v", err)
+	}
+	var aliasTable string
+	if err := opened.SecurityQueries.GetContext(context.Background(), &aliasTable,
+		`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'media_output_alias'`); err != nil || aliasTable != "media_output_alias" {
+		t.Fatalf("short media output alias migration was not applied: table=%q err=%v", aliasTable, err)
+	}
+	ctx := context.Background()
+	userID, err := opened.CreateUser(ctx, "alias-migration-owner", "", "hash", "viewer", false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := opened.SecurityQueries.ExecContext(ctx, `INSERT INTO template(id, name) VALUES (700, 'Migration lineup')`); err != nil {
+		t.Fatal(err)
+	}
+	key := &models.MediaAccessKey{UserID: userID, Name: "Migration device", TokenPrefix: "migration-prefix",
+		TokenHash: []byte("migration-hash"), TokenCipher: []byte("migration-cipher"), NetworkScope: "lan",
+		CreatedAt: time.Now().UTC(), OutputAliases: []models.MediaOutputAlias{{LineupID: 700,
+			CodeHash: []byte("migration-alias-hash"), CodeCipher: []byte("migration-alias-cipher"), CreatedAt: time.Now().UTC()}}}
+	if err := opened.CreateMediaKey(ctx, key, []int64{700}); err != nil {
+		t.Fatalf("short alias could not be inserted into migrated schema: %v", err)
+	}
+	aliases, err := opened.ListMediaOutputAliases(ctx, key.ID)
+	if err != nil || len(aliases) != 1 || aliases[0].LineupID != 700 {
+		t.Fatalf("short alias could not be read from migrated schema: aliases=%+v err=%v", aliases, err)
 	}
 }

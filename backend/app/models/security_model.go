@@ -166,21 +166,31 @@ type LineupGrant struct {
 }
 
 type MediaAccessKey struct {
-	ID           int64                        `db:"id" json:"id"`
-	UserID       int64                        `db:"user_id" json:"user_id"`
-	Username     string                       `db:"username" json:"username,omitempty"`
-	Name         string                       `db:"name" json:"name"`
-	TokenPrefix  string                       `db:"token_prefix" json:"token_prefix"`
-	TokenHash    []byte                       `db:"token_hash" json:"-"`
-	TokenCipher  []byte                       `db:"token_cipher" json:"-"`
-	NetworkScope string                       `db:"network_scope" json:"network_scope"`
-	CreatedAt    time.Time                    `db:"created_at" json:"created_at"`
-	ExpiresAt    *time.Time                   `db:"expires_at" json:"expires_at,omitempty"`
-	LastUsedAt   *time.Time                   `db:"last_used_at" json:"last_used_at,omitempty"`
-	LastUsedIP   string                       `db:"last_used_ip" json:"last_used_ip,omitempty"`
-	RevokedAt    *time.Time                   `db:"revoked_at" json:"revoked_at,omitempty"`
-	LineupIDs    []int64                      `json:"lineup_ids"`
-	Links        map[string]map[string]string `db:"-" json:"links,omitempty"`
+	ID            int64                        `db:"id" json:"id"`
+	UserID        int64                        `db:"user_id" json:"user_id"`
+	Username      string                       `db:"username" json:"username,omitempty"`
+	Name          string                       `db:"name" json:"name"`
+	TokenPrefix   string                       `db:"token_prefix" json:"token_prefix"`
+	TokenHash     []byte                       `db:"token_hash" json:"-"`
+	TokenCipher   []byte                       `db:"token_cipher" json:"-"`
+	NetworkScope  string                       `db:"network_scope" json:"network_scope"`
+	CreatedAt     time.Time                    `db:"created_at" json:"created_at"`
+	ExpiresAt     *time.Time                   `db:"expires_at" json:"expires_at,omitempty"`
+	LastUsedAt    *time.Time                   `db:"last_used_at" json:"last_used_at,omitempty"`
+	LastUsedIP    string                       `db:"last_used_ip" json:"last_used_ip,omitempty"`
+	RevokedAt     *time.Time                   `db:"revoked_at" json:"revoked_at,omitempty"`
+	LineupIDs     []int64                      `json:"lineup_ids"`
+	Links         map[string]map[string]string `db:"-" json:"links,omitempty"`
+	OutputAliases []MediaOutputAlias           `db:"-" json:"-"`
+}
+
+type MediaOutputAlias struct {
+	ID         int64     `db:"id" json:"-"`
+	MediaKeyID int64     `db:"media_key_id" json:"-"`
+	LineupID   int64     `db:"lineup_id" json:"-"`
+	CodeHash   []byte    `db:"code_hash" json:"-"`
+	CodeCipher []byte    `db:"code_cipher" json:"-"`
+	CreatedAt  time.Time `db:"created_at" json:"-"`
 }
 
 type SecurityAuditEvent struct {

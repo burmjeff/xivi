@@ -31,7 +31,9 @@ const (
 type MediaCredential struct {
 	Key             *models.MediaAccessKey
 	VirtualLineupID int64
+	LineupID        int64
 	Token           string
+	OutputCode      string
 }
 
 func Principal(c *fiber.Ctx) (models.SessionPrincipal, bool) {
@@ -374,6 +376,50 @@ func authenticateMediaToken(c *fiber.Ctx) (MediaCredential, error) {
 	return MediaCredential{Key: key, Token: token}, nil
 }
 
+func authenticateMediaOutputAlias(c *fiber.Ctx) (MediaCredential, error) {
+	if security.InitialSetupRequired() {
+		return MediaCredential{}, sql.ErrNoRows
+	}
+	compact, ok := security.NormalizeMediaOutputCode(c.Params("code"))
+	if !ok {
+		return MediaCredential{}, sql.ErrNoRows
+	}
+	hash, err := security.HashToken("media-output-alias", compact)
+	if err != nil {
+		return MediaCredential{}, sql.ErrNoRows
+	}
+	alias, err := database.Db.GetMediaOutputAliasByHash(c.UserContext(), hash)
+	if err != nil {
+		return MediaCredential{}, sql.ErrNoRows
+	}
+	key, err := database.Db.GetMediaKeyByID(c.UserContext(), alias.MediaKeyID)
+	if err != nil || key.RevokedAt != nil || (key.ExpiresAt != nil && time.Now().UTC().After(*key.ExpiresAt)) ||
+		!mediaKeyNetworkAllowed(key.NetworkScope, security.RequestNetworkInfo(c)) {
+		return MediaCredential{}, sql.ErrNoRows
+	}
+	allowed, err := database.Db.MediaKeyAllowsLineup(c.UserContext(), key.ID, alias.LineupID)
+	if err != nil || !allowed {
+		return MediaCredential{}, sql.ErrNoRows
+	}
+	plaintext, err := security.DecryptSecret(key.TokenCipher)
+	if err != nil {
+		return MediaCredential{}, sql.ErrNoRows
+	}
+	token := string(plaintext)
+	if !strings.HasPrefix(token, key.TokenPrefix+".") {
+		return MediaCredential{}, sql.ErrNoRows
+	}
+	tokenHash, err := security.HashToken("media", token)
+	if err != nil || !hmac.Equal(tokenHash, key.TokenHash) {
+		return MediaCredential{}, sql.ErrNoRows
+	}
+	if key.LastUsedAt == nil || time.Since(*key.LastUsedAt) >= 5*time.Minute {
+		_ = database.Db.TouchMediaKey(c.UserContext(), key.ID, security.RequestNetworkInfo(c).IP.String())
+	}
+	return MediaCredential{Key: key, LineupID: alias.LineupID, Token: token,
+		OutputCode: security.FormatMediaOutputCode(compact)}, nil
+}
+
 func mediaKeyNetworkAllowed(scope string, network security.RequestNetwork) bool {
 	trustedLANTransport := network.DirectTrustedLAN &&
 		(network.Scheme == "https" || settings.Current().Security.AllowLANHTTP)
@@ -482,6 +528,17 @@ func RequireLineupMediaAccess(param string) fiber.Handler {
 		}
 		if err != nil || !allowed {
 			return securityError(c, fiber.StatusNotFound, "lineup_not_found", "The lineup was not found.")
+		}
+		storeMediaCredential(c, credential)
+		return c.Next()
+	}
+}
+
+func RequireMediaOutputAlias() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		credential, err := authenticateMediaOutputAlias(c)
+		if err != nil {
+			return rejectInvalidMediaCredential(c)
 		}
 		storeMediaCredential(c, credential)
 		return c.Next()

@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
@@ -29,9 +31,22 @@ func FiberMiddleware(a *fiber.App) {
 		}
 		return c.Next()
 	})
+	a.Use(func(c *fiber.Ctx) error {
+		c.Locals("request_log_path", safeRequestLogPath(c.Path()))
+		return c.Next()
+	})
 	a.Use(logger.New(logger.Config{
-		Format: "${time} ${status} ${latency} ${method} ${path} request_id=${locals:requestid}\n",
+		Format: "${time} ${status} ${latency} ${method} ${locals:request_log_path} request_id=${locals:requestid}\n",
 	}))
 	a.Use(AuthenticateSession)
 	a.Use(ObserveAutomationSignals)
+}
+
+func safeRequestLogPath(path string) string {
+	for _, prefix := range []string{"/m/", "/x/"} {
+		if strings.HasPrefix(path, prefix) {
+			return prefix + "[redacted]"
+		}
+	}
+	return path
 }

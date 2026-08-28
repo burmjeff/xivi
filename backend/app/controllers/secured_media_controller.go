@@ -68,6 +68,18 @@ func GetDynamicM3U(c *fiber.Ctx) error {
 	if !ok {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_lineup", "The lineup id is invalid.", false)
 	}
+	return getDynamicM3U(c, lineupID)
+}
+
+func GetShortM3U(c *fiber.Ctx) error {
+	credential, ok := middleware.CurrentMediaCredential(c)
+	if !ok || credential.LineupID <= 0 {
+		return v2Error(c, fiber.StatusUnauthorized, "media_authentication_required", "A valid media output code is required.", false)
+	}
+	return getDynamicM3U(c, credential.LineupID)
+}
+
+func getDynamicM3U(c *fiber.Ctx, lineupID int64) error {
 	token, ok := securedQueryToken(c)
 	if !ok {
 		return v2Error(c, fiber.StatusUnauthorized, "media_authentication_required", "A media key is required.", false)
@@ -80,6 +92,9 @@ func GetDynamicM3U(c *fiber.Ctx) error {
 	var buffer bytes.Buffer
 	writer := bufio.NewWriter(&buffer)
 	xmltv := mediaURL(base, "/media/v1/lineups/"+strconv.FormatInt(lineupID, 10)+"/guide.xml", token)
+	if credential, aliasRequest := middleware.CurrentMediaCredential(c); aliasRequest && credential.OutputCode != "" {
+		xmltv = strings.TrimRight(base, "/") + "/x/" + url.PathEscape(credential.OutputCode)
+	}
 	_, _ = fmt.Fprintf(writer, "#EXTM3U url-tvg=\"%s\" x-tvg-url=\"%s\"\n", xmltv, xmltv)
 	groups, err := database.Db.GetTmplGroups(lineupID)
 	if err != nil {
@@ -129,6 +144,18 @@ func GetDynamicXMLTV(c *fiber.Ctx) error {
 	if !ok {
 		return v2Error(c, 400, "invalid_lineup", "The lineup id is invalid.", false)
 	}
+	return getDynamicXMLTV(c, lineupID)
+}
+
+func GetShortXMLTV(c *fiber.Ctx) error {
+	credential, ok := middleware.CurrentMediaCredential(c)
+	if !ok || credential.LineupID <= 0 {
+		return v2Error(c, fiber.StatusUnauthorized, "media_authentication_required", "A valid media output code is required.", false)
+	}
+	return getDynamicXMLTV(c, credential.LineupID)
+}
+
+func getDynamicXMLTV(c *fiber.Ctx, lineupID int64) error {
 	token, credentialOK := securedQueryToken(c)
 	if !credentialOK {
 		return v2Error(c, fiber.StatusUnauthorized, "media_authentication_required", "A media key is required.", false)

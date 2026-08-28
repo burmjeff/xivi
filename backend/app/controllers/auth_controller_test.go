@@ -237,23 +237,31 @@ func TestMediaKeyOutputLinksRemainAvailableWithoutStandaloneKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	alias, err := newMediaOutputAlias(42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := mediaOutputAliasCode(alias)
+	if err != nil {
+		t.Fatal(err)
+	}
 	key := &models.MediaAccessKey{
 		TokenPrefix: "xmk_persistent", TokenHash: hash, TokenCipher: ciphertext,
-		NetworkScope: "public", LineupIDs: []int64{42},
+		NetworkScope: "public", LineupIDs: []int64{42}, OutputAliases: []models.MediaOutputAlias{alias},
 	}
 	links, err := mediaKeyOutputLinks(key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"public_m3u", "public_xmltv", "local_m3u", "local_xmltv"} {
-		if !strings.Contains(links["42"][name], "access_token="+token) {
-			t.Fatalf("%s was not reconstructed with the encrypted credential: %q", name, links["42"][name])
+		if !strings.Contains(links["42"][name], code) || strings.Contains(links["42"][name], "access_token=") {
+			t.Fatalf("%s was not reconstructed with the short output code: %q", name, links["42"][name])
 		}
 	}
-	if !strings.HasPrefix(links["42"]["public_m3u"], "https://media.example.com/") ||
-		!strings.HasPrefix(links["42"]["public_xmltv"], "https://media.example.com/") ||
-		!strings.HasPrefix(links["42"]["local_m3u"], "http://192.168.1.10:3000/") ||
-		!strings.HasPrefix(links["42"]["local_xmltv"], "http://192.168.1.10:3000/") {
+	if !strings.HasPrefix(links["42"]["public_m3u"], "https://media.example.com/m/") ||
+		!strings.HasPrefix(links["42"]["public_xmltv"], "https://media.example.com/x/") ||
+		!strings.HasPrefix(links["42"]["local_m3u"], "http://192.168.1.10:3000/m/") ||
+		!strings.HasPrefix(links["42"]["local_xmltv"], "http://192.168.1.10:3000/x/") {
 		t.Fatalf("public and local output links did not use their configured endpoints: %#v", links["42"])
 	}
 	lanKey := *key

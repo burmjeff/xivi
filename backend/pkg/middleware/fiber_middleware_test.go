@@ -25,3 +25,15 @@ func TestGlobalCSPLeavesApplicationHashesToStaticDocument(t *testing.T) {
 		t.Fatalf("frame denial header = %q, want DENY", got)
 	}
 }
+
+func TestMediaOutputAliasIsRedactedFromRequestLogPath(t *testing.T) {
+	for _, test := range []struct{ path, want string }{
+		{path: "/m/ABCD-EFGH-JKMN-PQRS", want: "/m/[redacted]"},
+		{path: "/x/ABCD-EFGH-JKMN-PQRS", want: "/x/[redacted]"},
+		{path: "/channels", want: "/channels"},
+	} {
+		if got := safeRequestLogPath(test.path); got != test.want {
+			t.Fatalf("safeRequestLogPath(%q) = %q, want %q", test.path, got, test.want)
+		}
+	}
+}
