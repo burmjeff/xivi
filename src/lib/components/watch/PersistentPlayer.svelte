@@ -310,15 +310,12 @@
 			{ ...details, rebuild: hlsRebuilds }
 		);
 		if (retryTimer) clearTimeout(retryTimer);
-		retryTimer = setTimeout(
-			() => {
-				retryTimer = undefined;
-				if (attachedUrl === url && (playerRoute || pipActive)) {
-					void attach(url, { force: true, recovery: true });
-				}
-			},
-			300 * hlsRebuilds
-		);
+		retryTimer = setTimeout(() => {
+			retryTimer = undefined;
+			if (attachedUrl === url && (playerRoute || pipActive)) {
+				void attach(url, { force: true, recovery: true });
+			}
+		}, 300 * hlsRebuilds);
 		return true;
 	}
 	function onVideoError() {
@@ -343,10 +340,7 @@
 		if (attachedUrl)
 			void reportPlayerEvent(attachedUrl, 'error', 'native_media_error', error, details);
 	}
-	async function attach(
-		url: string,
-		options: { force?: boolean; recovery?: boolean } = {}
-	) {
+	async function attach(url: string, options: { force?: boolean; recovery?: boolean } = {}) {
 		if (!video || !url || (!options.force && attachedUrl === url)) return;
 		cleanup();
 		if (!options.recovery) {
@@ -572,7 +566,7 @@
 					onerror={onVideoError}
 					aria-label={`${activeChannel?.name ?? 'Xivi'} live stream`}
 				></video>
-				<media-control-bar
+				<media-control-bar class="media-control-bar"
 					><media-play-button></media-play-button><media-mute-button
 					></media-mute-button><media-volume-range></media-volume-range><media-time-range
 					></media-time-range><media-pip-button></media-pip-button><media-fullscreen-button
@@ -717,8 +711,11 @@
 	}
 	.media-controller {
 		position: absolute;
+		z-index: 1;
 		inset: 0;
 		display: block;
+		width: 100%;
+		height: 100%;
 		--media-control-background: linear-gradient(transparent, rgb(0 0 0/0.8));
 		--media-primary-color: #f7f7f2;
 		--media-secondary-color: #ff6b5e;
@@ -727,6 +724,12 @@
 		width: 100%;
 		height: 100%;
 		object-fit: contain;
+	}
+	.media-control-bar {
+		position: relative;
+		z-index: 2;
+		width: 100%;
+		min-height: 3.25rem;
 	}
 	.player-loading,
 	.player-error,

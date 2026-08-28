@@ -1,5 +1,25 @@
 import adapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+import { createHash } from 'node:crypto';
+import * as mediaChrome from 'media-chrome';
+
+// Media Chrome creates its web-component styles inside shadow roots at runtime,
+// outside SvelteKit's normal CSP hash collection. Generate exact hashes from the
+// installed package instead of broadly enabling arbitrary inline styles. A
+// dependency update therefore refreshes the allowlist during the next build.
+const mediaChromeStyleHashes = new Set();
+for (const component of Object.values(mediaChrome)) {
+	if (typeof component?.getTemplateHTML !== 'function') continue;
+	let template = '';
+	try {
+		template = component.getTemplateHTML({});
+	} catch {
+		continue;
+	}
+	for (const match of template.matchAll(/<style>([\s\S]*?)<\/style>/g)) {
+		mediaChromeStyleHashes.add(`sha256-${createHash('sha256').update(match[1]).digest('base64')}`);
+	}
+}
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -27,7 +47,7 @@ const config = {
 				'object-src': ['none'],
 				'form-action': ['self'],
 				'script-src': ['self'],
-				'style-src': ['self'],
+				'style-src': ['self', ...mediaChromeStyleHashes],
 				'style-src-attr': ['unsafe-inline'],
 				'font-src': ['self'],
 				'img-src': ['self', 'data:', 'blob:'],
