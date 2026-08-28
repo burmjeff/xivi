@@ -219,11 +219,23 @@
 		});
 	}
 	async function logout() {
+		error = '';
+		status = '';
 		try {
 			await api('/api/v2/auth/logout', { method: 'POST' });
-		} finally {
+			client.clear();
 			clearSession();
 			await goto('/login', { replaceState: true });
+		} catch (caught) {
+			// A 401 means middleware already confirmed that the session is gone.
+			// For CSRF, network, or server failures, remain on the page and expose
+			// the failure instead of pretending that navigation ended the session.
+			if (!auth.principal) {
+				client.clear();
+				await goto('/login', { replaceState: true });
+				return;
+			}
+			error = errorMessage(caught);
 		}
 	}
 	function toggleLineup(id: number, checked: boolean) {

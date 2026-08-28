@@ -9,6 +9,7 @@ import (
 	"time"
 	"xivi/backend/app/models"
 	"xivi/backend/app/queries"
+	"xivi/backend/pkg/middleware"
 	"xivi/backend/pkg/security"
 	"xivi/backend/platform/database"
 	"xivi/backend/platform/settings"
@@ -123,5 +124,47 @@ func TestReauthenticationUsesPasswordOnlyForMFAAccount(t *testing.T) {
 	}
 	if audit.ActorUsername != "viewer" || audit.TargetUsername != "viewer" {
 		t.Fatalf("reauthentication audit did not identify the user: %+v", audit)
+	}
+}
+
+func TestLogoutRevokesServerSessionAndExpiresBrowserCookie(t *testing.T) {
+	db := sqlx.MustOpen("sqlite3", ":memory:?_foreign_keys=on&_txlock=immediate")
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	db.MustExec(`CREATE TABLE auth_session (
+		id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, revoked_at TIMESTAMP NULL)`)
+	db.MustExec(`CREATE TABLE security_audit_event (
+		id INTEGER PRIMARY KEY, actor_user_id INTEGER, actor_username TEXT NOT NULL DEFAULT '',
+		target_user_id INTEGER, target_username TEXT NOT NULL DEFAULT '',
+		action TEXT NOT NULL, outcome TEXT NOT NULL, resource_type TEXT NOT NULL,
+		resource_id TEXT NOT NULL, client_ip TEXT NOT NULL, detail TEXT NOT NULL,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+	db.MustExec(`INSERT INTO auth_session (id, user_id) VALUES (19, 7)`)
+
+	original := database.Db
+	database.Db = &database.Queries{SecurityQueries: queries.NewSecurityQueries(db)}
+	t.Cleanup(func() { database.Db = original })
+
+	app := fiber.New()
+	app.Post("/logout", func(c *fiber.Ctx) error {
+		c.Locals("xivi_principal", models.SessionPrincipal{UserID: 7, Username: "viewer", Role: models.RoleViewer})
+		c.Locals("xivi_session", &models.AuthSession{ID: 19, UserID: 7, TransportScope: "lan_http"})
+		return V2Logout(c)
+	})
+	response, err := app.Test(httptest.NewRequest(fiber.MethodPost, "/logout", nil), -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("logout returned %d", response.StatusCode)
+	}
+	var revokedAt *time.Time
+	if err := db.Get(&revokedAt, `SELECT revoked_at FROM auth_session WHERE id = 19`); err != nil || revokedAt == nil {
+		t.Fatalf("server session was not revoked: revoked_at=%v err=%v", revokedAt, err)
+	}
+	cookies := response.Cookies()
+	if len(cookies) != 1 || cookies[0].Name != middleware.LANSessionCookie || cookies[0].Value != "" || cookies[0].MaxAge >= 0 {
+		t.Fatalf("browser session cookie was not expired: %#v", cookies)
 	}
 }

@@ -287,20 +287,19 @@ func V2Session(c *fiber.Ctx) error {
 }
 
 func V2Logout(c *fiber.Ctx) error {
-	var sessionID int64
-	if session, ok := middleware.CurrentSession(c); ok {
-		sessionID = session.ID
+	session, ok := middleware.CurrentSession(c)
+	if !ok {
+		return v2Error(c, fiber.StatusUnauthorized, "authentication_required", "Sign in to continue.", false)
 	}
-	if token := middleware.CurrentSessionToken(c); token != "" {
-		hash, _ := security.HashToken("session", token)
-		_ = database.Db.RevokeSessionByHash(c.UserContext(), hash)
+	_, err := database.Db.RevokeUserSessionByID(c.UserContext(), session.ID, session.UserID)
+	if err != nil {
+		return v2Error(c, fiber.StatusInternalServerError, "logout_failed", "The session could not be ended. Try again.", true)
 	}
-	if session, ok := middleware.CurrentSession(c); ok {
-		middleware.ClearSessionCookie(c, session.TransportScope)
-	}
-	if sessionID > 0 {
-		streaming.DefaultManager.DisconnectAuthorizedClients("session", sessionID, 0)
-	}
+	// A concurrent revocation is already the desired terminal state. Clear the
+	// browser credential only after the database has confirmed that this session
+	// is invalid, so the UI never presents a navigation as a successful logout.
+	middleware.ClearSessionCookie(c, session.TransportScope)
+	streaming.DefaultManager.DisconnectAuthorizedClients("session", session.ID, 0)
 	auditSecurity(c, "logout", "success", "session", "", "", nil)
 	return c.SendStatus(fiber.StatusNoContent)
 }

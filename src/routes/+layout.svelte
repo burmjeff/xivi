@@ -6,7 +6,7 @@
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 	import AppShell from '$lib/components/layout/AppShell.svelte';
 	import { loadPreferences } from '$lib/state/preferences.svelte';
-	import { auth, loadSession } from '$lib/state/auth.svelte';
+	import { auth, loadSession, refreshSession } from '$lib/state/auth.svelte';
 	let { children } = $props();
 	const queryClient = new QueryClient({
 		defaultOptions: { queries: { staleTime: 20_000, retry: 1, refetchOnWindowFocus: false } }
@@ -14,9 +14,26 @@
 	onMount(() => {
 		loadPreferences();
 		void loadSession();
+		const validateActivity = () => {
+			if (document.visibilityState === 'visible') void refreshSession();
+		};
+		const interval = window.setInterval(() => void refreshSession(true), 30_000);
+		window.addEventListener('focus', validateActivity);
+		document.addEventListener('visibilitychange', validateActivity);
+		return () => {
+			window.clearInterval(interval);
+			window.removeEventListener('focus', validateActivity);
+			document.removeEventListener('visibilitychange', validateActivity);
+		};
 	});
+	let cachedUserID: number | null | undefined;
 	$effect(() => {
 		if (auth.status === 'loading') return;
+		const userID = auth.principal?.user_id ?? null;
+		if (userID === null || (cachedUserID !== undefined && cachedUserID !== userID)) {
+			queryClient.clear();
+		}
+		cachedUserID = userID;
 		const login = page.url.pathname === '/login';
 		if (!auth.principal && !login) {
 			const next = `${page.url.pathname}${page.url.search}`;

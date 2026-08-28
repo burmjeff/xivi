@@ -2,22 +2,31 @@ package middleware
 
 import (
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 	"xivi/backend/app/models"
+	"xivi/backend/app/queries"
 	"xivi/backend/pkg/security"
+	"xivi/backend/platform/database"
 	"xivi/backend/platform/settings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestSessionCookieScopesAndLifetimes(t *testing.T) {
 	app := fiber.New()
 	app.Get("/:scope", func(c *fiber.Ctx) error {
 		SetSessionCookie(c, c.Params("scope"), "opaque", time.Now().Add(time.Hour))
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	app.Delete("/:scope", func(c *fiber.Ctx) error {
+		ClearSessionCookie(c, c.Params("scope"))
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	for _, test := range []struct {
@@ -35,6 +44,16 @@ func TestSessionCookieScopesAndLifetimes(t *testing.T) {
 		cookies := response.Cookies()
 		if len(cookies) != 1 || cookies[0].Name != test.name || !cookies[0].HttpOnly || cookies[0].Secure != test.wantSecure || cookies[0].SameSite != 3 || cookies[0].Path != "/" || strings.Contains(strings.ToLower(response.Header.Get("Set-Cookie")), "domain=") {
 			t.Fatalf("unexpected %s cookie: %#v", test.path, cookies)
+		}
+		_ = response.Body.Close()
+
+		response, err = app.Test(httptest.NewRequest(fiber.MethodDelete, test.path, nil), -1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cookies = response.Cookies()
+		if len(cookies) != 1 || cookies[0].Name != test.name || cookies[0].Value != "" || cookies[0].MaxAge >= 0 || cookies[0].Expires.After(time.Now()) {
+			t.Fatalf("%s cookie was not explicitly expired: %#v", test.path, cookies)
 		}
 		_ = response.Body.Close()
 	}
@@ -62,6 +81,106 @@ func TestAnonymousSessionMiddlewareContinuesToTheRoute(t *testing.T) {
 	if response.StatusCode != fiber.StatusOK || response.ContentLength == 0 {
 		t.Fatalf("anonymous route returned status=%d content_length=%d", response.StatusCode, response.ContentLength)
 	}
+}
+
+func TestSessionMiddlewareRejectsRevocationAndExpiry(t *testing.T) {
+	keyPath := filepath.Join(t.TempDir(), "auth.key")
+	t.Setenv("XIVI_AUTH_KEY_FILE", keyPath)
+	t.Setenv("XIVI_PRODUCTION", "false")
+	if err := security.GenerateKeyFile(keyPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.InitializeKey(); err != nil {
+		t.Fatal(err)
+	}
+	originalSecurity := settings.APP_SETTINGS.Security
+	settings.APP_SETTINGS.Security.AllowLANHTTP = true
+	settings.APP_SETTINGS.Security.TrustedLANCIDRs = []string{"0.0.0.0/0"}
+	settings.APP_SETTINGS.Security.LocalBaseURL = "http://xivi.test"
+	t.Cleanup(func() { settings.APP_SETTINGS.Security = originalSecurity })
+
+	db := sqlx.MustOpen("sqlite3", ":memory:?_foreign_keys=on&_txlock=immediate")
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	db.MustExec(`CREATE TABLE app_user (
+		id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL,
+		role TEXT NOT NULL, must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+		initial_password BOOLEAN NOT NULL DEFAULT FALSE, auth_version INTEGER NOT NULL DEFAULT 1,
+		disabled_at TIMESTAMP, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL)`)
+	db.MustExec(`CREATE TABLE user_mfa (user_id INTEGER PRIMARY KEY)`)
+	db.MustExec(`CREATE TABLE user_lineup (user_id INTEGER NOT NULL, lineup_id INTEGER NOT NULL)`)
+	db.MustExec(`CREATE TABLE auth_session (
+		id INTEGER PRIMARY KEY, token_hash BLOB NOT NULL UNIQUE, user_id INTEGER NOT NULL,
+		auth_version INTEGER NOT NULL, transport_scope TEXT NOT NULL, mfa_verified BOOLEAN NOT NULL,
+		reauthenticated_at TIMESTAMP NOT NULL, created_at TIMESTAMP NOT NULL,
+		last_seen_at TIMESTAMP NOT NULL, idle_expires_at TIMESTAMP NOT NULL,
+		absolute_expires_at TIMESTAMP NOT NULL, revoked_at TIMESTAMP NULL,
+		client_ip TEXT NOT NULL, user_agent_hash BLOB)`)
+
+	const token = "test-public-browser-session"
+	tokenHash, err := security.HashToken("session", token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	idleExpiry := now.Add(time.Hour)
+	db.MustExec(`INSERT INTO app_user
+		(id, username, password_hash, role, created_at, updated_at)
+		VALUES (7, 'admin', 'unused', 'admin', ?, ?)`, now, now)
+	db.MustExec(`INSERT INTO auth_session
+		(id, token_hash, user_id, auth_version, transport_scope, mfa_verified,
+		 reauthenticated_at, created_at, last_seen_at, idle_expires_at,
+		 absolute_expires_at, client_ip)
+		VALUES (19, ?, 7, 1, 'lan_http', TRUE, ?, ?, ?, ?, ?, '192.0.2.1')`,
+		tokenHash, now, now, now.Add(-2*time.Minute), idleExpiry, now.Add(2*time.Hour))
+
+	originalDB := database.Db
+	database.Db = &database.Queries{SecurityQueries: queries.NewSecurityQueries(db)}
+	t.Cleanup(func() { database.Db = originalDB })
+
+	app := fiber.New()
+	app.Use(AuthenticateSession)
+	app.Get("/protected", RequireAuthenticated(), func(c *fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	request := func() *http.Request {
+		req := httptest.NewRequest(fiber.MethodGet, "http://xivi.test/protected", nil)
+		req.AddCookie(&http.Cookie{Name: LANSessionCookie, Value: token, Path: "/"})
+		return req
+	}
+
+	passiveRequest := request()
+	passiveRequest.Header.Set(passiveCheckHeader, "passive")
+	response, err := app.Test(passiveRequest, -1)
+	if err != nil || response.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("valid session returned status %d, err %v", response.StatusCode, err)
+	}
+	_ = response.Body.Close()
+	var storedIdleExpiry time.Time
+	if err := db.Get(&storedIdleExpiry, `SELECT idle_expires_at FROM auth_session WHERE id = 19`); err != nil || !storedIdleExpiry.Equal(idleExpiry) {
+		t.Fatalf("passive validation extended idle expiry: got=%v want=%v err=%v", storedIdleExpiry, idleExpiry, err)
+	}
+
+	db.MustExec(`UPDATE auth_session SET revoked_at = ? WHERE id = 19`, now)
+	response, err = app.Test(request(), -1)
+	if err != nil || response.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("revoked session returned status %d, err %v", response.StatusCode, err)
+	}
+	if cookies := response.Cookies(); len(cookies) != 1 || cookies[0].Name != LANSessionCookie || cookies[0].MaxAge >= 0 {
+		t.Fatalf("revoked session cookie was not expired: %#v", cookies)
+	}
+	_ = response.Body.Close()
+
+	db.MustExec(`UPDATE auth_session SET revoked_at = NULL, idle_expires_at = ? WHERE id = 19`, now.Add(-time.Second))
+	response, err = app.Test(request(), -1)
+	if err != nil || response.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("expired session returned status %d, err %v", response.StatusCode, err)
+	}
+	var revokedAt *time.Time
+	if err := db.Get(&revokedAt, `SELECT revoked_at FROM auth_session WHERE id = 19`); err != nil || revokedAt == nil {
+		t.Fatalf("expired session was not revoked: revoked_at=%v err=%v", revokedAt, err)
+	}
+	_ = response.Body.Close()
 }
 
 func TestMediaKeyNetworkScopes(t *testing.T) {

@@ -34,12 +34,6 @@ export default defineConfig({
 				changeOrigin: true,
 				secure: false,
 				ws: true,
-				configure(proxy) {
-					// Browser requests are same-origin to Vite. Present the proxied
-					// backend origin so development exercises the same strict origin
-					// validation as production.
-					proxy.on('proxyReq', (request) => request.setHeader('Origin', backend));
-				},
 				// Add timeout to prevent hanging requests
 				timeout: 5000
 			},

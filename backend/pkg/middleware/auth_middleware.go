@@ -18,6 +18,7 @@ import (
 const (
 	PublicSessionCookie = "__Host-xivi_session"
 	LANSessionCookie    = "xivi_lan_session"
+	passiveCheckHeader  = "X-Xivi-Session-Check"
 	principalLocal      = "xivi_principal"
 	sessionLocal        = "xivi_session"
 	sessionTokenLocal   = "xivi_session_token"
@@ -70,7 +71,16 @@ func SetSessionCookie(c *fiber.Ctx, scope, token string, expires time.Time) {
 }
 
 func ClearSessionCookie(c *fiber.Ctx, scope string) {
-	SetSessionCookie(c, scope, "", time.Unix(1, 0).UTC())
+	c.Cookie(&fiber.Cookie{
+		Name:     SessionCookieName(scope),
+		Value:    "",
+		Path:     "/",
+		HTTPOnly: true,
+		Secure:   scope == "https",
+		SameSite: "Strict",
+		Expires:  time.Unix(1, 0).UTC(),
+		MaxAge:   -1,
+	})
 }
 
 func AuthenticateSession(c *fiber.Ctx) error {
@@ -97,7 +107,7 @@ func AuthenticateSession(c *fiber.Ctx) error {
 	now := time.Now().UTC()
 	invalid := session.RevokedAt != nil || session.UserDisabledAt != nil || session.TransportScope != scope ||
 		session.AuthVersion <= 0 || (session.MFAEnabled && !session.MFAVerified) ||
-		now.After(session.IdleExpiresAt) || now.After(session.AbsoluteExpiresAt)
+		!now.Before(session.IdleExpiresAt) || !now.Before(session.AbsoluteExpiresAt)
 	if !invalid {
 		user, userErr := database.Db.GetUserByID(c.UserContext(), session.UserID)
 		invalid = userErr != nil || user.AuthVersion != session.AuthVersion
@@ -120,7 +130,7 @@ func AuthenticateSession(c *fiber.Ctx) error {
 	c.Locals(principalLocal, principal)
 	c.Locals(sessionLocal, session)
 	c.Locals(sessionTokenLocal, token)
-	if now.Sub(session.LastSeenAt) >= time.Minute {
+	if !strings.EqualFold(c.Get(passiveCheckHeader), "passive") && now.Sub(session.LastSeenAt) >= time.Minute {
 		idleExpiry := now.Add(sessionIdleDuration(session.Role, scope))
 		if idleExpiry.After(session.AbsoluteExpiresAt) {
 			idleExpiry = session.AbsoluteExpiresAt
