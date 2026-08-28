@@ -19,7 +19,11 @@ func FiberMiddleware(a *fiber.App) {
 		c.Set("Referrer-Policy", "no-referrer")
 		c.Set("X-Robots-Tag", "noindex, nofollow, noarchive")
 		c.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
-		c.Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:")
+		// The static SvelteKit document carries its build-specific CSP hashes in
+		// a meta policy. Keep frame denial in an HTTP header because browsers do
+		// not honor frame-ancestors from a meta-delivered CSP. Documentation routes
+		// replace this with their own complete, external-resource-only policy.
+		c.Set("Content-Security-Policy", "frame-ancestors 'none'")
 		if len(c.Path()) >= 4 && c.Path()[:4] == "/api" {
 			c.Set(fiber.HeaderCacheControl, "no-store")
 		}

@@ -2,6 +2,10 @@
 @import '@fontsource-variable/bricolage-grotesque';
 @import '@fontsource-variable/manrope';
 
+#xivi-app {
+	display: contents;
+}
+
 @theme {
 	--font-display: 'Bricolage Grotesque Variable', ui-rounded, sans-serif;
 	--font-sans: 'Manrope Variable', ui-sans-serif, system-ui, sans-serif;
