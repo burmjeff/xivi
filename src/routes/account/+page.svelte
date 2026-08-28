@@ -44,6 +44,10 @@
 		revoked_at?: string;
 		client_ip: string;
 	};
+	type MediaKeyList = {
+		items: MediaKey[];
+		public_https_available: boolean;
+	};
 
 	const client = useQueryClient();
 	const lineups = createQuery(() => ({
@@ -53,7 +57,7 @@
 	}));
 	const keys = createQuery(() => ({
 		queryKey: ['account', 'media-keys'],
-		queryFn: () => api<{ items: MediaKey[] }>('/api/v2/account/media-keys'),
+		queryFn: () => api<MediaKeyList>('/api/v2/account/media-keys'),
 		enabled: !auth.principal?.must_change_password
 	}));
 	const sessions = createQuery(() => ({
@@ -81,7 +85,14 @@
 	let recoveryCodes = $state<string[]>([]);
 	let keyName = $state('Living room player');
 	let keyScope = $state<'public' | 'lan'>('lan');
+	let keyScopeSelected = $state(false);
 	let keyLineups = $state<number[]>([]);
+	$effect(() => {
+		if (!keyScopeSelected && keys.data) {
+			keyScope = keys.data.public_https_available ? 'public' : 'lan';
+			keyScopeSelected = true;
+		}
+	});
 
 	async function perform(action: () => Promise<void>) {
 		error = '';
@@ -249,6 +260,10 @@
 	function outputLinkLabel(kind: string) {
 		const [network, format] = kind.split('_');
 		return `Copy ${network === 'public' ? 'public' : 'local'} ${format?.toUpperCase() ?? 'link'}`;
+	}
+	function orderedOutputLinks(outputLinks: Record<string, string>) {
+		const order = ['public_m3u', 'public_xmltv', 'local_m3u', 'local_xmltv'];
+		return order.flatMap((kind) => (outputLinks[kind] ? [[kind, outputLinks[kind]] as const] : []));
 	}
 	async function copy(value: string) {
 		await perform(async () => {
@@ -457,12 +472,21 @@
 				<form class="key-form" onsubmit={createKey}>
 					<label>Device name<input bind:value={keyName} maxlength="80" required /></label>
 					<label
-						>Network scope<select bind:value={keyScope}
-							><option value="lan">Trusted LAN only</option><option value="public"
-								>Public HTTPS and trusted LAN</option
-							></select
+						>Network scope<select
+							value={keyScope}
+							onchange={(event) => {
+								keyScope = event.currentTarget.value as 'public' | 'lan';
+								keyScopeSelected = true;
+							}}
+							>{#if keys.data?.public_https_available}<option value="public"
+									>Public HTTPS + local network</option
+								>{/if}<option value="lan">Local network only</option></select
 						></label
 					>
+					{#if keys.data && !keys.data.public_https_available}<p class="scope-note">
+							Public copy links become available after an administrator configures the Public HTTPS
+							base URL and restarts Xivi.
+						</p>{/if}
 					<fieldset>
 						<legend>Allowed lineups</legend>{#each lineups.data?.items ?? [] as lineup}<label
 								class="check"
@@ -483,8 +507,12 @@
 							<div class="key-summary">
 								<strong>{key.name}</strong>
 								<span
-									>{key.network_scope === 'public' ? 'Public HTTPS + trusted LAN' : 'Trusted LAN'} · {key
-										.lineup_ids.length} lineup{key.lineup_ids.length === 1 ? '' : 's'}</span
+									>{key.network_scope === 'public'
+										? 'Public HTTPS + local network'
+										: 'Local network only'} · {key.lineup_ids.length} lineup{key.lineup_ids
+										.length === 1
+										? ''
+										: 's'}</span
 								>
 								<small
 									>{key.last_used_at
@@ -502,7 +530,7 @@
 										<div class="lineup-links">
 											<strong>{lineupName(lineupID)}</strong>
 											<div>
-												{#each Object.entries(outputLinks) as [kind, link]}
+												{#each orderedOutputLinks(outputLinks) as [kind, link]}
 													<button class="link-copy" onclick={() => copy(link)}
 														><Copy size={15} /><span>{outputLinkLabel(kind)}</span></button
 													>
@@ -511,6 +539,11 @@
 										</div>
 									{/each}
 								</div>
+								{#if key.network_scope === 'lan' && keys.data?.public_https_available}<small
+										class="scope-help"
+										>This key is local-only. Add Public HTTPS device access to create public M3U and
+										XMLTV links.</small
+									>{/if}
 							{:else if !key.revoked_at}
 								<p class="legacy-links">
 									Reusable links are unavailable for this older credential. Add replacement device
@@ -769,8 +802,16 @@
 		grid-template-columns: 1fr 1fr;
 	}
 	.key-form fieldset,
-	.key-form button {
+	.key-form button,
+	.scope-note {
 		grid-column: 1/-1;
+	}
+	.scope-note,
+	.scope-help {
+		margin: 0;
+		color: var(--muted);
+		font-size: 0.7rem;
+		line-height: 1.45;
 	}
 	.link-copy {
 		display: flex;
@@ -817,7 +858,8 @@
 		cursor: pointer;
 	}
 	.key-links,
-	.legacy-links {
+	.legacy-links,
+	.scope-help {
 		grid-column: 1/-1;
 	}
 	.key-links {
@@ -897,7 +939,8 @@
 			grid-template-columns: 1fr;
 		}
 		.key-form fieldset,
-		.key-form button {
+		.key-form button,
+		.scope-note {
 			grid-column: auto;
 		}
 		header {

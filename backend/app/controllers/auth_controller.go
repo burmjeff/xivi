@@ -815,7 +815,10 @@ func V2AccountMediaKeys(c *fiber.Ctx) error {
 			return v2Error(c, 500, "media_key_links_unavailable", "Device output links could not be loaded.", true)
 		}
 	}
-	return c.JSON(fiber.Map{"items": keys})
+	return c.JSON(fiber.Map{
+		"items":                  keys,
+		"public_https_available": settings.APP_SETTINGS.Security.PublicBaseURL != "",
+	})
 }
 
 func V2CreateAccountMediaKey(c *fiber.Ctx) error {

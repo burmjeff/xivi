@@ -58,6 +58,24 @@ func TestMediaKeyOutputLinksRemainAvailableWithoutStandaloneKey(t *testing.T) {
 			t.Fatalf("%s was not reconstructed with the encrypted credential: %q", name, links["42"][name])
 		}
 	}
+	if !strings.HasPrefix(links["42"]["public_m3u"], "https://tv.example.com/") ||
+		!strings.HasPrefix(links["42"]["public_xmltv"], "https://tv.example.com/") ||
+		!strings.HasPrefix(links["42"]["local_m3u"], "http://192.168.1.10:3000/") ||
+		!strings.HasPrefix(links["42"]["local_xmltv"], "http://192.168.1.10:3000/") {
+		t.Fatalf("public and local output links did not use their configured endpoints: %#v", links["42"])
+	}
+	lanKey := *key
+	lanKey.NetworkScope = "lan"
+	lanLinks, err := mediaKeyOutputLinks(&lanKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lanLinks["42"]["local_m3u"] == "" || lanLinks["42"]["local_xmltv"] == "" {
+		t.Fatal("LAN-scoped key did not receive local output links")
+	}
+	if lanLinks["42"]["public_m3u"] != "" || lanLinks["42"]["public_xmltv"] != "" {
+		t.Fatal("LAN-scoped key received public links that its network policy would reject")
+	}
 	legacyLinks, err := mediaKeyOutputLinks(&models.MediaAccessKey{TokenPrefix: "xmk_legacy"})
 	if err != nil || legacyLinks != nil {
 		t.Fatalf("legacy hash-only key returned links=%v err=%v", legacyLinks, err)

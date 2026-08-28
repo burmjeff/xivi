@@ -1469,6 +1469,12 @@ export interface components {
 			/** Format: date-time */
 			expires_at?: string;
 		};
+		MediaKeyListResponse: {
+			/** @description Active credentials include reusable output links. The standalone credential is never returned. */
+			items: components['schemas']['MediaAccessKeyMetadata'][];
+			/** @description Whether Xivi has a configured public HTTPS base URL and can issue public output links for public-scoped keys. */
+			public_https_available: boolean;
+		};
 		MediaKeyCreateResponse: {
 			key: components['schemas']['MediaAccessKeyMetadata'];
 		};
@@ -2440,10 +2446,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': {
-						/** @description Active credentials include reusable output links. The standalone credential is never returned. */
-						items?: components['schemas']['MediaAccessKeyMetadata'][];
-					};
+					'application/json': components['schemas']['MediaKeyListResponse'];
 				};
 			};
 		};

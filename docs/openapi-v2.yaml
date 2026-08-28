@@ -255,22 +255,7 @@ paths:
             description: Key metadata; plaintext is never recoverable.,
             content:
               {
-                application/json:
-                  {
-                    schema:
-                      {
-                        type: object,
-                        properties:
-                          {
-                            items:
-                              {
-                                type: array,
-                                items: { $ref: '#/components/schemas/MediaAccessKeyMetadata' },
-                                description: Active credentials include reusable output links. The standalone credential is never returned.
-                              }
-                          }
-                      }
-                  }
+                application/json: { schema: { $ref: '#/components/schemas/MediaKeyListResponse' } }
               }
           }
     post:
@@ -1520,6 +1505,17 @@ components:
         network_scope: { type: string, enum: [public, lan] }
         lineup_ids: { type: array, minItems: 1, items: { type: integer, format: int64 } }
         expires_at: { type: string, format: date-time }
+    MediaKeyListResponse:
+      type: object
+      required: [items, public_https_available]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/MediaAccessKeyMetadata' }
+          description: Active credentials include reusable output links. The standalone credential is never returned.
+        public_https_available:
+          type: boolean
+          description: Whether Xivi has a configured public HTTPS base URL and can issue public output links for public-scoped keys.
     MediaKeyCreateResponse:
       type: object
       required: [key]
