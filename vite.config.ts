@@ -31,7 +31,10 @@ export default defineConfig({
 			},
 			'/api': {
 				target: backend,
-				changeOrigin: true,
+				// CSRF validation compares the browser Origin with the effective
+				// request host. Preserve the browser-facing Vite host instead of
+				// replacing it with the backend's private development address.
+				changeOrigin: false,
 				secure: false,
 				ws: true,
 				// Add timeout to prevent hanging requests

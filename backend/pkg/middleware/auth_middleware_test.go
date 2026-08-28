@@ -268,6 +268,56 @@ func TestCSRFRequiresSessionTokenAndSameOrigin(t *testing.T) {
 		}
 		_ = response.Body.Close()
 	}
+
+	settings.APP_SETTINGS.Security.LocalBaseURL = "http://127.0.0.1:5173"
+	settings.APP_SETTINGS.Security.TrustedLANCIDRs = []string{"0.0.0.0/0", "::/0"}
+	request = httptest.NewRequest(fiber.MethodPost, "http://localhost:5173/change", nil)
+	request.RemoteAddr = "127.0.0.1:41000"
+	request.Header.Set("Origin", "http://localhost:5173")
+	request.Header.Set("Sec-Fetch-Site", "same-origin")
+	request.Header.Set("X-CSRF-Token", csrf)
+	response, err = app.Test(request, -1)
+	if err != nil || response.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("same-origin loopback alias returned status %d, err %v", response.StatusCode, err)
+	}
+	_ = response.Body.Close()
+
+	request = httptest.NewRequest(fiber.MethodPost, "http://attacker.example/change", nil)
+	request.RemoteAddr = "127.0.0.1:41000"
+	request.Header.Set("Origin", "http://attacker.example")
+	request.Header.Set("Sec-Fetch-Site", "same-origin")
+	request.Header.Set("X-CSRF-Token", csrf)
+	response, err = app.Test(request, -1)
+	if err != nil || response.StatusCode != fiber.StatusForbidden {
+		t.Fatalf("unconfigured direct hostname returned status %d, err %v", response.StatusCode, err)
+	}
+	_ = response.Body.Close()
+
+	settings.APP_SETTINGS.Security.PublicBaseURL = "https://tv.example.com"
+	settings.APP_SETTINGS.Security.TrustedProxyCIDRs = []string{"0.0.0.0/0", "::/0"}
+	request = httptest.NewRequest(fiber.MethodPost, "http://backend.internal/change", nil)
+	request.Header.Set("Origin", "https://tv.example.com")
+	request.Header.Set("X-Forwarded-Proto", "https")
+	request.Header.Set("X-Forwarded-For", "198.51.100.20")
+	request.Header.Set("Sec-Fetch-Site", "same-origin")
+	request.Header.Set("X-CSRF-Token", csrf)
+	response, err = app.Test(request, -1)
+	if err != nil || response.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("configured public proxy origin returned status %d, err %v", response.StatusCode, err)
+	}
+	_ = response.Body.Close()
+
+	request = httptest.NewRequest(fiber.MethodPost, "http://backend.internal/change", nil)
+	request.Header.Set("Origin", "https://other.example.com")
+	request.Header.Set("X-Forwarded-Proto", "https")
+	request.Header.Set("X-Forwarded-For", "198.51.100.20")
+	request.Header.Set("Sec-Fetch-Site", "same-origin")
+	request.Header.Set("X-CSRF-Token", csrf)
+	response, err = app.Test(request, -1)
+	if err != nil || response.StatusCode != fiber.StatusForbidden {
+		t.Fatalf("unconfigured public proxy origin returned status %d, err %v", response.StatusCode, err)
+	}
+	_ = response.Body.Close()
 }
 
 func TestRoleAndPasswordGuards(t *testing.T) {

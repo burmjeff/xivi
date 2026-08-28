@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"database/sql"
 	"errors"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -253,7 +254,34 @@ func ValidRequestOrigin(c *fiber.Ctx) bool {
 		value = c.Get("Referer")
 	}
 	got, err := url.Parse(value)
-	return err == nil && strings.EqualFold(got.Scheme, want.Scheme) && strings.EqualFold(got.Host, want.Host)
+	if err != nil || got.User != nil || got.Host == "" {
+		return false
+	}
+	if strings.EqualFold(got.Scheme, want.Scheme) && strings.EqualFold(got.Host, want.Host) {
+		return true
+	}
+
+	// A public reverse-proxy request must always use the single configured
+	// public origin. Direct trusted-LAN access may use the exact host the browser
+	// reached, which supports safe loopback aliases and configured LAN IPs without
+	// weakening the public boundary.
+	network := security.RequestNetworkInfo(c)
+	if network.TrustedProxy || !network.DirectTrustedLAN || !strings.EqualFold(got.Scheme, network.Scheme) {
+		return false
+	}
+	requestHost := strings.TrimSpace(string(c.Context().Host()))
+	if requestHost == "" || !strings.EqualFold(got.Host, requestHost) {
+		return false
+	}
+	hostname := got.Hostname()
+	if strings.EqualFold(hostname, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(hostname); ip != nil {
+		return security.IsTrustedLAN(ip)
+	}
+	local, localErr := url.Parse(settings.APP_SETTINGS.Security.LocalBaseURL)
+	return localErr == nil && strings.EqualFold(got.Host, local.Host)
 }
 
 func authenticateMediaToken(c *fiber.Ctx) (MediaCredential, error) {
