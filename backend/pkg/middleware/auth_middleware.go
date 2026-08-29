@@ -25,6 +25,7 @@ const (
 	principalLocal             = "xivi_principal"
 	sessionLocal               = "xivi_session"
 	sessionTokenLocal          = "xivi_session_token"
+	mobileSessionLocal         = "xivi_mobile_session"
 	mediaKeyLocal              = "xivi_media_key"
 )
 
@@ -49,6 +50,11 @@ func CurrentSession(c *fiber.Ctx) (*models.AuthSession, bool) {
 func CurrentSessionToken(c *fiber.Ctx) string {
 	value, _ := c.Locals(sessionTokenLocal).(string)
 	return value
+}
+
+func CurrentMobileSession(c *fiber.Ctx) (*models.MobileSession, bool) {
+	session, ok := c.Locals(mobileSessionLocal).(*models.MobileSession)
+	return session, ok
 }
 
 func CurrentMediaCredential(c *fiber.Ctx) (MediaCredential, bool) {
@@ -134,6 +140,9 @@ func ClearTrustedBrowserCookie(c *fiber.Ctx, scope string) {
 }
 
 func AuthenticateSession(c *fiber.Ctx) error {
+	if strings.HasPrefix(strings.TrimSpace(c.Get(fiber.HeaderAuthorization)), "Bearer ") {
+		return authenticateMobileSession(c)
+	}
 	scope, allowed := security.TransportScope(c)
 	if !allowed {
 		return c.Next()
@@ -186,6 +195,68 @@ func AuthenticateSession(c *fiber.Ctx) error {
 			idleExpiry = session.AbsoluteExpiresAt
 		}
 		_ = database.Db.TouchSession(c.UserContext(), session.ID, now, idleExpiry)
+	}
+	return c.Next()
+}
+
+func mobileBearerPathAllowed(path string) bool {
+	return strings.HasPrefix(path, "/api/v2/mobile/") ||
+		path == "/api/v2/auth/session" ||
+		strings.HasPrefix(path, "/api/v2/watch/") ||
+		path == "/api/v2/watch/lineups" ||
+		path == "/api/v2/search" ||
+		strings.HasPrefix(path, "/api/v2/stream/") ||
+		strings.HasPrefix(path, "/stream/") ||
+		strings.HasPrefix(path, "/images/")
+}
+
+func authenticateMobileSession(c *fiber.Ctx) error {
+	if !mobileBearerPathAllowed(c.Path()) || security.RequestNetworkInfo(c).Scheme != "https" {
+		return c.Next()
+	}
+	authorization := strings.TrimSpace(c.Get(fiber.HeaderAuthorization))
+	token := strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
+	if !strings.HasPrefix(token, "xma_") || len(token) > 256 {
+		return c.Next()
+	}
+	hash, err := security.HashToken("mobile-access", token)
+	if err != nil {
+		return err
+	}
+	session, err := database.Db.GetMobileSessionByAccessHash(c.UserContext(), hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return c.Next()
+		}
+		return err
+	}
+	now := time.Now().UTC()
+	invalid := session.RevokedAt != nil || session.UserDisabledAt != nil ||
+		session.AuthVersion <= 0 || (session.MFAEnabled && !session.MFAVerified) ||
+		!now.Before(session.AccessExpiresAt) || !now.Before(session.RefreshExpiresAt)
+	if !invalid {
+		user, userErr := database.Db.GetUserByID(c.UserContext(), session.UserID)
+		invalid = userErr != nil || user.AuthVersion != session.AuthVersion
+	}
+	if invalid {
+		if session.RevokedAt == nil && (session.UserDisabledAt != nil || !now.Before(session.RefreshExpiresAt)) {
+			_, _ = database.Db.RevokeMobileSession(c.UserContext(), session.ID, session.UserID)
+		}
+		return c.Next()
+	}
+	lineupIDs := []int64{}
+	if session.Role != models.RoleAdmin {
+		lineupIDs, _ = database.Db.GetUserLineupIDs(c.UserContext(), session.UserID)
+	}
+	principal := models.SessionPrincipal{
+		UserID: session.UserID, Username: session.Username, DisplayName: session.DisplayName, Role: session.Role,
+		MustChangePassword: session.MustChangePassword, MFAEnabled: session.MFAEnabled,
+		MFARequired: session.MFAEnabled && !session.MFAVerified, LineupIDs: lineupIDs,
+	}
+	c.Locals(principalLocal, principal)
+	c.Locals(mobileSessionLocal, session)
+	if now.Sub(session.LastSeenAt) >= time.Minute {
+		_ = database.Db.TouchMobileSession(c.UserContext(), session.ID, now)
 	}
 	return c.Next()
 }
@@ -276,6 +347,9 @@ func CSRFProtected() fiber.Handler {
 		}
 		if _, ok := Principal(c); !ok {
 			return securityError(c, fiber.StatusUnauthorized, "authentication_required", "Sign in to continue.")
+		}
+		if _, ok := CurrentMobileSession(c); ok {
+			return c.Next()
 		}
 		token := CurrentSessionToken(c)
 		want, err := security.CSRFToken(token)

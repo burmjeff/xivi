@@ -146,6 +146,16 @@ type HLSProducer interface {
 	HLSPlaylistSnapshot() (*HLSPlaylistSnapshot, error)
 }
 
+var ErrAudioTrackUnavailable = errors.New("audio track unavailable")
+
+// AudioHLSProducer is optional so test producers and alternate ingest
+// implementations can continue to provide video HLS only.
+type AudioHLSProducer interface {
+	AudioHLSReady() <-chan struct{}
+	AudioHLSPlaylistSnapshot() (*HLSPlaylistSnapshot, error)
+	AudioAvailable() bool
+}
+
 type Manager struct {
 	mu                sync.RWMutex
 	sessions          map[string]*Session
@@ -205,6 +215,7 @@ type Session struct {
 	observer           func(Observation)
 	connections        *connectionCoordinator
 	hls                hlsTimeline
+	audioHLS           hlsTimeline
 	hlsIssueSince      time.Time
 	hlsIssueReportedAt time.Time
 	hlsIssueLast       string
@@ -763,7 +774,7 @@ func (s *Session) hasActiveHLSClient() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, client := range s.clients {
-		if client.endReason == "" && client.metadata.Protocol == "hls" {
+		if client.endReason == "" && (client.metadata.Protocol == "hls" || client.metadata.Protocol == "hls-audio") {
 			return true
 		}
 	}
@@ -1242,6 +1253,45 @@ func (s *Session) WaitHLS(ctx context.Context) error {
 			return ctx.Err()
 		case <-s.done:
 			return errors.New("stream session stopped before HLS became ready")
+		}
+	}
+}
+
+func (s *Session) WaitAudioHLS(ctx context.Context) error {
+	for {
+		s.mu.RLock()
+		producer := s.current
+		s.mu.RUnlock()
+		if producer == nil {
+			select {
+			case <-time.After(50 * time.Millisecond):
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-s.done:
+				return errors.New("stream session stopped before audio HLS became ready")
+			}
+		}
+		audio, ok := producer.(AudioHLSProducer)
+		if !ok {
+			return ErrAudioTrackUnavailable
+		}
+		select {
+		case <-producer.Ready():
+			if !audio.AudioAvailable() {
+				return ErrAudioTrackUnavailable
+			}
+		default:
+		}
+		select {
+		case <-audio.AudioHLSReady():
+			s.touch()
+			return nil
+		case <-time.After(100 * time.Millisecond):
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-s.done:
+			return errors.New("stream session stopped before audio HLS became ready")
 		}
 	}
 }

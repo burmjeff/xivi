@@ -1,0 +1,84 @@
+apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+android {
+    namespace = "com.xivi.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.xivi.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+		buildConfigField "boolean", "PARKED_VIDEO_ENABLED", "false"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+	buildFeatures {
+		buildConfig = true
+	}
+	def releaseStore = System.getenv("XIVI_KEYSTORE_PATH")
+	if (releaseStore) {
+		signingConfigs {
+			xiviRelease {
+				storeFile file(releaseStore)
+				storePassword System.getenv("XIVI_KEYSTORE_PASSWORD")
+				keyAlias System.getenv("XIVI_KEY_ALIAS")
+				keyPassword System.getenv("XIVI_KEY_PASSWORD")
+			}
+		}
+		buildTypes.release.signingConfig signingConfigs.xiviRelease
+	}
+	applicationVariants.all { variant ->
+		variant.outputs.all {
+			outputFileName = "Xivi-${variant.versionName}-${variant.buildType.name}.apk"
+		}
+	}
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+	implementation "org.jetbrains.kotlin:kotlin-stdlib"
+	implementation "androidx.media3:media3-exoplayer:$media3Version"
+	implementation "androidx.media3:media3-exoplayer-hls:$media3Version"
+	implementation "androidx.media3:media3-session:$media3Version"
+	implementation "androidx.media3:media3-ui:$media3Version"
+	implementation "androidx.media3:media3-datasource-okhttp:$media3Version"
+	implementation "com.squareup.okhttp3:okhttp:$okhttpVersion"
+	testImplementation "com.squareup.okhttp3:mockwebserver:$okhttpVersion"
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

@@ -71,6 +71,8 @@ type AuthSession struct {
 
 type AuthSessionMetadata struct {
 	ID                int64      `db:"id" json:"id"`
+	ClientType        string     `db:"-" json:"client_type"`
+	DeviceName        string     `db:"-" json:"device_name,omitempty"`
 	TransportScope    string     `db:"transport_scope" json:"transport_scope"`
 	CreatedAt         time.Time  `db:"created_at" json:"created_at"`
 	LastSeenAt        time.Time  `db:"last_seen_at" json:"last_seen_at"`
@@ -78,6 +80,49 @@ type AuthSessionMetadata struct {
 	AbsoluteExpiresAt time.Time  `db:"absolute_expires_at" json:"absolute_expires_at"`
 	RevokedAt         *time.Time `db:"revoked_at" json:"revoked_at,omitempty"`
 	ClientIP          string     `db:"client_ip" json:"client_ip"`
+}
+
+type MobileSession struct {
+	ID                 int64      `db:"id" json:"id"`
+	UserID             int64      `db:"user_id" json:"-"`
+	AuthVersion        int64      `db:"auth_version" json:"-"`
+	DeviceName         string     `db:"device_name" json:"device_name"`
+	AccessTokenHash    []byte     `db:"access_token_hash" json:"-"`
+	RefreshTokenHash   []byte     `db:"refresh_token_hash" json:"-"`
+	MFAVerified        bool       `db:"mfa_verified" json:"-"`
+	ReauthenticatedAt  time.Time  `db:"reauthenticated_at" json:"-"`
+	CreatedAt          time.Time  `db:"created_at" json:"created_at"`
+	LastSeenAt         time.Time  `db:"last_seen_at" json:"last_seen_at"`
+	AccessExpiresAt    time.Time  `db:"access_expires_at" json:"access_expires_at"`
+	RefreshExpiresAt   time.Time  `db:"refresh_expires_at" json:"refresh_expires_at"`
+	RevokedAt          *time.Time `db:"revoked_at" json:"revoked_at,omitempty"`
+	ClientIP           string     `db:"client_ip" json:"client_ip"`
+	UserAgentHash      []byte     `db:"user_agent_hash" json:"-"`
+	Username           string     `db:"username" json:"-"`
+	DisplayName        string     `db:"display_name" json:"-"`
+	Role               string     `db:"role" json:"-"`
+	MustChangePassword bool       `db:"must_change_password" json:"-"`
+	UserDisabledAt     *time.Time `db:"user_disabled_at" json:"-"`
+	MFAEnabled         bool       `db:"mfa_enabled" json:"-"`
+}
+
+type MobileSessionMetadata struct {
+	ID               int64      `db:"id" json:"id"`
+	ClientType       string     `db:"-" json:"client_type"`
+	DeviceName       string     `db:"device_name" json:"device_name"`
+	CreatedAt        time.Time  `db:"created_at" json:"created_at"`
+	LastSeenAt       time.Time  `db:"last_seen_at" json:"last_seen_at"`
+	RefreshExpiresAt time.Time  `db:"refresh_expires_at" json:"absolute_expires_at"`
+	RevokedAt        *time.Time `db:"revoked_at" json:"revoked_at,omitempty"`
+	ClientIP         string     `db:"client_ip" json:"client_ip"`
+}
+
+type MobileSessionEnvelope struct {
+	Principal        SessionPrincipal `json:"principal"`
+	AccessToken      string           `json:"access_token"`
+	AccessExpiresAt  time.Time        `json:"access_expires_at"`
+	RefreshToken     string           `json:"refresh_token"`
+	RefreshExpiresAt time.Time        `json:"refresh_expires_at"`
 }
 
 type LoginChallenge struct {

@@ -17,6 +17,13 @@ func V2Routes(a *fiber.App) {
 	v2.Get("/auth/bootstrap-status", middleware.DeclareRoutePolicy("anonymous"), middleware.BoundedRateLimit(60, time.Minute, false), controllers.V2BootstrapStatus)
 	v2.Post("/auth/login", middleware.DeclareRoutePolicy("anonymous"), middleware.LoginIngressRateLimit(), controllers.V2Login)
 	v2.Post("/auth/login/mfa", middleware.DeclareRoutePolicy("anonymous"), middleware.LoginIngressRateLimit(), controllers.V2CompleteMFALogin)
+	v2.Post("/mobile/auth/login", middleware.DeclareRoutePolicy("anonymous-mobile"), middleware.LoginIngressRateLimit(), controllers.V2MobileLogin)
+	v2.Post("/mobile/auth/login/mfa", middleware.DeclareRoutePolicy("anonymous-mobile"), middleware.LoginIngressRateLimit(), controllers.V2MobileCompleteMFALogin)
+	v2.Post("/mobile/auth/refresh", middleware.DeclareRoutePolicy("anonymous-mobile"), middleware.BoundedRateLimit(120, time.Minute, false), controllers.V2MobileRefresh)
+
+	mobile := v2.Group("/mobile/auth", middleware.DeclareRoutePolicy("mobile-authenticated"), middleware.RequireAuthenticated(), middleware.CSRFProtected())
+	mobile.Post("/logout", controllers.V2MobileLogout)
+	mobile.Post("/password", controllers.V2MobileChangePassword)
 
 	auth := v2.Group("", middleware.DeclareRoutePolicy("authenticated"), middleware.RequireAuthenticated())
 	auth.Get("/auth/session", controllers.V2Session)
@@ -31,6 +38,7 @@ func V2Routes(a *fiber.App) {
 	ready.Post("/auth/mfa/recovery-codes", middleware.CSRFProtected(), middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2MFARegenerateRecoveryCodes)
 	ready.Get("/auth/sessions", controllers.V2AccountSessions)
 	ready.Delete("/auth/sessions/:session_id", middleware.CSRFProtected(), controllers.V2RevokeAccountSession)
+	ready.Delete("/auth/sessions/:session_type/:session_id", middleware.CSRFProtected(), controllers.V2RevokeAccountSession)
 	ready.Get("/auth/trusted-browsers", controllers.V2AccountTrustedBrowsers)
 	ready.Delete("/auth/trusted-browsers", middleware.CSRFProtected(), controllers.V2RevokeAllAccountTrustedBrowsers)
 	ready.Delete("/auth/trusted-browsers/:browser_id", middleware.CSRFProtected(), controllers.V2RevokeAccountTrustedBrowser)

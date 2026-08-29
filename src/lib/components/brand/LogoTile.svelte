@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolveArtwork } from '$lib/platform/native';
 	let {
 		src,
 		name,
@@ -13,11 +14,16 @@
 		unbounded?: boolean;
 	}>();
 	let failed = $state(false);
+	let renderedSrc = $state<string>();
+	$effect(() => {
+		failed = false;
+		void resolveArtwork(src).then((value) => (renderedSrc = value));
+	});
 </script>
 
 <span class="logo-tile {size}" class:contrast class:unbounded title={name}>
-	{#if src && !failed}
-		<img {src} alt="" onerror={() => (failed = true)} />
+	{#if renderedSrc && !failed}
+		<img src={renderedSrc} alt="" onerror={() => (failed = true)} />
 	{:else}
 		<img src="/brand/signal-tile.svg" alt="" />
 	{/if}

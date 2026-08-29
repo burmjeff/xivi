@@ -1,5 +1,6 @@
 import type { APIError } from './types';
 import { clearSession, csrfToken } from '$lib/state/auth.svelte';
+import { apiTransport } from './transport';
 
 export class XiviAPIError extends Error {
 	constructor(
@@ -19,10 +20,8 @@ const sessionInvalidatingCodes = new Set([
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 	const method = (init?.method ?? 'GET').toUpperCase();
 	const mutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
-	const response = await fetch(path, {
+	const response = await apiTransport().request(path, {
 		...init,
-		credentials: 'same-origin',
-		cache: 'no-store',
 		headers: {
 			Accept: 'application/json',
 			...(init?.body ? { 'Content-Type': 'application/json' } : {}),

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import {
 		Copy,
 		KeyRound,
@@ -25,6 +26,7 @@
 		type SessionPrincipal
 	} from '$lib/state/auth.svelte';
 	import { copyText } from '$lib/browser/clipboard';
+	import { configuredServer, configureServer, isNativePlatform } from '$lib/platform/native';
 
 	type MediaKey = {
 		id: number;
@@ -40,7 +42,9 @@
 	};
 	type Session = {
 		id: number;
-		transport_scope: string;
+		client_type: 'browser' | 'mobile';
+		device_name?: string;
+		transport_scope?: string;
 		created_at: string;
 		last_seen_at: string;
 		absolute_expires_at: string;
@@ -73,25 +77,26 @@
 	};
 
 	const client = useQueryClient();
+	const mobile = isNativePlatform();
 	const lineups = createQuery(() => ({
 		queryKey: ['watch', 'lineups'],
 		queryFn: () => api<{ items: LineupSummary[] }>('/api/v2/watch/lineups'),
-		enabled: !auth.principal?.must_change_password
+		enabled: !mobile && !auth.principal?.must_change_password
 	}));
 	const keys = createQuery(() => ({
 		queryKey: ['account', 'media-keys'],
 		queryFn: () => api<MediaKeyList>('/api/v2/account/media-keys'),
-		enabled: !auth.principal?.must_change_password
+		enabled: !mobile && !auth.principal?.must_change_password
 	}));
 	const sessions = createQuery(() => ({
 		queryKey: ['account', 'sessions'],
 		queryFn: () => api<{ items: Session[] }>('/api/v2/auth/sessions'),
-		enabled: !auth.principal?.must_change_password
+		enabled: !mobile && !auth.principal?.must_change_password
 	}));
 	const trustedBrowsers = createQuery(() => ({
 		queryKey: ['account', 'trusted-browsers'],
 		queryFn: () => api<{ items: TrustedBrowser[] }>('/api/v2/auth/trusted-browsers'),
-		enabled: !auth.principal?.must_change_password && !!auth.principal?.mfa_enabled
+		enabled: !mobile && !auth.principal?.must_change_password && !!auth.principal?.mfa_enabled
 	}));
 
 	let currentPassword = $state('');
@@ -119,6 +124,10 @@
 	});
 	let status = $state('');
 	let error = $state('');
+	let mobileServerUrl = $state('');
+	onMount(() => {
+		if (mobile) void configuredServer().then((value) => (mobileServerUrl = value ?? ''));
+	});
 	let enrollment = $state<{ secret: string; otpauth_uri: string } | null>(null);
 	let enrollmentQRCode = $state('');
 	let confirmCode = $state('');
@@ -271,9 +280,9 @@
 			status = 'New recovery codes created. Every older recovery code is now invalid.';
 		});
 	}
-	async function revokeSession(id: number) {
+	async function revokeSession(id: number, type: Session['client_type'] = 'browser') {
 		await perform(async () => {
-			await api(`/api/v2/auth/sessions/${id}`, { method: 'DELETE' });
+			await api(`/api/v2/auth/sessions/${type}/${id}`, { method: 'DELETE' });
 			await client.invalidateQueries({ queryKey: ['account', 'sessions'] });
 			await loadSession();
 			if (!auth.principal) {
@@ -282,6 +291,15 @@
 				return;
 			}
 			status = 'Session revoked.';
+		});
+	}
+	async function changeMobileServer(event: SubmitEvent) {
+		event.preventDefault();
+		await perform(async () => {
+			mobileServerUrl = await configureServer(mobileServerUrl);
+			client.clear();
+			clearSession();
+			await goto('/login', { replaceState: true });
 		});
 	}
 	async function revokeTrustedBrowser(id: number) {
@@ -403,7 +421,7 @@
 				choose your own passphrase.</span
 			>
 		</div>{/if}
-	{#if auth.principal?.role === 'admin' && !auth.principal.mfa_enabled && !auth.principal.must_change_password}<div
+	{#if !mobile && auth.principal?.role === 'admin' && !auth.principal.mfa_enabled && !auth.principal.must_change_password}<div
 			class="warning"
 			role="alert"
 		>
@@ -416,7 +434,7 @@
 	{#if error}<p class="error" role="alert">{error}</p>{/if}
 
 	<div class:password-only={auth.principal?.must_change_password} class="account-grid">
-		{#if !auth.principal?.must_change_password}
+		{#if !mobile && !auth.principal?.must_change_password}
 			<article class="profile-card">
 				<div class="card-title">
 					<UserRound size={20} />
@@ -498,8 +516,30 @@
 				<button class="app-button app-button--primary" type="submit">Change password</button>
 			</form>
 		</article>
+		{#if mobile && !auth.principal?.must_change_password}
+			<article class="profile-card">
+				<div class="card-title">
+					<MonitorSmartphone size={20} />
+					<div>
+						<h2>Xivi server</h2>
+						<p>Changing servers signs this device out and clears cached artwork.</p>
+					</div>
+				</div>
+				<form onsubmit={changeMobileServer}>
+					<label
+						>HTTPS server<input
+							bind:value={mobileServerUrl}
+							type="url"
+							inputmode="url"
+							required
+						/></label
+					>
+					<button class="app-button app-button--primary" type="submit">Change server</button>
+				</form>
+			</article>
+		{/if}
 
-		{#if !auth.principal?.must_change_password}
+		{#if !mobile && !auth.principal?.must_change_password}
 			<article id="multi-factor" class="mfa-card">
 				<div class="card-title">
 					<ShieldCheck size={20} />
@@ -601,7 +641,11 @@
 						>
 							<div>
 								<strong
-									>{session.transport_scope === 'https' ? 'Public HTTPS' : 'Direct LAN'}</strong
+									>{session.client_type === 'mobile'
+										? session.device_name || 'Mobile device'
+										: session.transport_scope === 'https'
+											? 'Public HTTPS'
+											: 'Direct LAN'}</strong
 								><span
 									>{session.client_ip} · Last seen {new Date(
 										session.last_seen_at
@@ -613,9 +657,9 @@
 									onclick={() =>
 										requestConfirmation({
 											title: 'Revoke this session?',
-											description: `The ${session.transport_scope === 'https' ? 'Public HTTPS' : 'Direct LAN'} session from ${session.client_ip} will be signed out immediately.`,
+											description: `The ${session.client_type === 'mobile' ? session.device_name || 'mobile device' : session.transport_scope === 'https' ? 'Public HTTPS' : 'Direct LAN'} session from ${session.client_ip} will be signed out immediately.`,
 											confirmLabel: 'Revoke session',
-											action: () => revokeSession(session.id)
+											action: () => revokeSession(session.id, session.client_type)
 										})}>Revoke</button
 								>{:else}<span>Revoked</span>{/if}
 						</div>{/each}

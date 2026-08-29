@@ -25,6 +25,7 @@
 	import type { GuideChannel, Paginated } from '$lib/api/types';
 	import { auth } from '$lib/state/auth.svelte';
 	import { preferences } from '$lib/state/preferences.svelte';
+	import { isNativePlatform } from '$lib/platform/native';
 
 	let {
 		compact = false,
@@ -86,7 +87,10 @@
 			icon: Settings
 		}
 	];
-	let allowedStudioEntries = $derived(auth.principal?.role === 'admin' ? studioEntries : []);
+	const mobile = isNativePlatform();
+	let allowedStudioEntries = $derived(
+		!mobile && auth.principal?.role === 'admin' ? studioEntries : []
+	);
 	let entries = $derived(
 		studio ? [...allowedStudioEntries, ...watchEntries] : [...watchEntries, ...allowedStudioEntries]
 	);

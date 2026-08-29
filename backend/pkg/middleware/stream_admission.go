@@ -33,6 +33,9 @@ var streamReservations = struct {
 func streamAdmissionIdentity(c *fiber.Ctx) (kind string, id, ownerID int64) {
 	if principal, ok := Principal(c); ok {
 		ownerID = principal.UserID
+		if session, sessionOK := CurrentMobileSession(c); sessionOK {
+			return "mobile_session", session.ID, ownerID
+		}
 		if session, sessionOK := CurrentSession(c); sessionOK {
 			return "session", session.ID, ownerID
 		}

@@ -638,6 +638,7 @@ func V2ChangePassword(c *fiber.Ctx) error {
 		security.SetInitialSetupRequired(false)
 	}
 	_ = database.Db.RevokeUserSessions(c.UserContext(), user.ID)
+	_ = database.Db.RevokeUserMobileSessions(c.UserContext(), user.ID)
 	_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), user.ID)
 	_ = database.Db.RevokeUserMediaKeys(c.UserContext(), user.ID)
 	if session, ok := middleware.CurrentSession(c); ok {
@@ -689,6 +690,7 @@ func V2MFAConfirm(c *fiber.Ctx) error {
 		return v2Error(c, 500, "recovery_codes_failed", "Recovery codes could not be created.", true)
 	}
 	_ = database.Db.RevokeUserSessions(c.UserContext(), principal.UserID)
+	_ = database.Db.RevokeUserMobileSessions(c.UserContext(), principal.UserID)
 	_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), principal.UserID)
 	if session, ok := middleware.CurrentSession(c); ok {
 		middleware.ClearTrustedBrowserCookie(c, session.TransportScope)
@@ -708,6 +710,7 @@ func V2MFADisable(c *fiber.Ctx) error {
 		return v2Error(c, 500, "mfa_disable_failed", "MFA could not be disabled.", true)
 	}
 	_ = database.Db.RevokeUserSessions(c.UserContext(), principal.UserID)
+	_ = database.Db.RevokeUserMobileSessions(c.UserContext(), principal.UserID)
 	_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), principal.UserID)
 	streaming.DefaultManager.DisconnectAuthorizedClients("", 0, principal.UserID)
 	if session, ok := middleware.CurrentSession(c); ok {
@@ -733,9 +736,20 @@ func V2MFARegenerateRecoveryCodes(c *fiber.Ctx) error {
 
 func V2AccountSessions(c *fiber.Ctx) error {
 	principal, _ := middleware.Principal(c)
-	items, err := database.Db.ListUserSessions(c.UserContext(), principal.UserID)
+	browserItems, err := database.Db.ListUserSessions(c.UserContext(), principal.UserID)
 	if err != nil {
 		return v2Error(c, 500, "sessions_unavailable", "Sessions could not be loaded.", true)
+	}
+	mobileItems, err := database.Db.ListUserMobileSessions(c.UserContext(), principal.UserID)
+	if err != nil {
+		return v2Error(c, 500, "sessions_unavailable", "Sessions could not be loaded.", true)
+	}
+	items := make([]any, 0, len(browserItems)+len(mobileItems))
+	for _, item := range browserItems {
+		items = append(items, item)
+	}
+	for _, item := range mobileItems {
+		items = append(items, item)
 	}
 	return c.JSON(fiber.Map{"items": items})
 }
@@ -746,18 +760,30 @@ func V2RevokeAccountSession(c *fiber.Ctx) error {
 		return v2Error(c, 400, "invalid_session", "The session id is invalid.", false)
 	}
 	principal, _ := middleware.Principal(c)
-	revoked, err := database.Db.RevokeUserSessionByID(c.UserContext(), id, principal.UserID)
+	sessionType := strings.ToLower(strings.TrimSpace(c.Params("session_type", "browser")))
+	var revoked bool
+	var err error
+	resourceType := "session"
+	switch sessionType {
+	case "", "browser":
+		revoked, err = database.Db.RevokeUserSessionByID(c.UserContext(), id, principal.UserID)
+	case "mobile":
+		resourceType = "mobile_session"
+		revoked, err = database.Db.RevokeMobileSession(c.UserContext(), id, principal.UserID)
+	default:
+		return v2Error(c, 400, "invalid_session_type", "The session type is invalid.", false)
+	}
 	if err != nil {
 		return v2Error(c, 500, "session_revoke_failed", "The session could not be revoked.", true)
 	}
 	if !revoked {
 		return v2Error(c, 404, "session_not_found", "The session was not found.", false)
 	}
-	streaming.DefaultManager.DisconnectAuthorizedClients("session", id, 0)
+	streaming.DefaultManager.DisconnectAuthorizedClients(resourceType, id, 0)
 	if current, currentOK := middleware.CurrentSession(c); currentOK && current.ID == id {
 		middleware.ClearSessionCookie(c, current.TransportScope)
 	}
-	auditSecurity(c, "session_revoke", "success", "session", strconv.FormatInt(id, 10), "", &principal.UserID)
+	auditSecurity(c, "session_revoke", "success", resourceType, strconv.FormatInt(id, 10), "", &principal.UserID)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -902,8 +928,9 @@ func V2UpdateAccountProfile(c *fiber.Ctx) error {
 	if usernameChanged {
 		currentSession, sessionOK := middleware.CurrentSession(c)
 		_ = database.Db.RevokeUserSessions(c.UserContext(), user.ID)
+		_ = database.Db.RevokeUserMobileSessions(c.UserContext(), user.ID)
 		_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), user.ID)
-		streaming.DefaultManager.DisconnectUserSessionClients(user.ID)
+		streaming.DefaultManager.DisconnectAuthorizedClients("", 0, user.ID)
 		updated, loadErr := database.Db.GetUserByID(c.UserContext(), user.ID)
 		if loadErr != nil || !sessionOK {
 			return v2Error(c, fiber.StatusInternalServerError, "session_rotation_failed", "The username changed. Sign in again to continue.", true)
@@ -1133,6 +1160,7 @@ func V2UpdateStudioUser(c *fiber.Ctx) error {
 		return v2Error(c, 409, "user_update_failed", "The user could not be updated.", false)
 	}
 	_ = database.Db.RevokeUserSessions(c.UserContext(), id)
+	_ = database.Db.RevokeUserMobileSessions(c.UserContext(), id)
 	_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), id)
 	_ = database.Db.RevokeUserMediaKeys(c.UserContext(), id)
 	streaming.DefaultManager.DisconnectAuthorizedClients("", 0, id)
@@ -1177,8 +1205,9 @@ func V2UpdateStudioUserProfile(c *fiber.Ctx) error {
 	}
 	if usernameChanged {
 		_ = database.Db.RevokeUserSessions(c.UserContext(), id)
+		_ = database.Db.RevokeUserMobileSessions(c.UserContext(), id)
 		_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), id)
-		streaming.DefaultManager.DisconnectUserSessionClients(id)
+		streaming.DefaultManager.DisconnectAuthorizedClients("", 0, id)
 	}
 	auditSecurity(c, "user_profile_update", "success", "user", strconv.FormatInt(id, 10),
 		identityDetail(usernameChanged, displayNameChanged), &id)
@@ -1212,6 +1241,7 @@ func V2ResetStudioUserPassword(c *fiber.Ctx) error {
 		return v2Error(c, 500, "password_reset_failed", "The password could not be reset.", true)
 	}
 	_ = database.Db.RevokeUserSessions(c.UserContext(), id)
+	_ = database.Db.RevokeUserMobileSessions(c.UserContext(), id)
 	_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), id)
 	_ = database.Db.RevokeUserMediaKeys(c.UserContext(), id)
 	streaming.DefaultManager.DisconnectAuthorizedClients("", 0, id)
@@ -1231,6 +1261,7 @@ func V2ResetStudioUserMFA(c *fiber.Ctx) error {
 		return v2Error(c, 500, "mfa_reset_failed", "MFA could not be reset.", true)
 	}
 	_ = database.Db.RevokeUserSessions(c.UserContext(), id)
+	_ = database.Db.RevokeUserMobileSessions(c.UserContext(), id)
 	_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), id)
 	streaming.DefaultManager.DisconnectAuthorizedClients("", 0, id)
 	auditSecurity(c, "mfa_reset", "success", "user", strconv.FormatInt(id, 10), "", &id)
@@ -1276,6 +1307,7 @@ func V2RevokeStudioUserSessions(c *fiber.Ctx) error {
 		return v2Error(c, 404, "user_not_found", "The user was not found.", false)
 	}
 	_ = database.Db.RevokeUserSessions(c.UserContext(), id)
+	_ = database.Db.RevokeUserMobileSessions(c.UserContext(), id)
 	_ = database.Db.RevokeUserTrustedBrowsers(c.UserContext(), id)
 	streaming.DefaultManager.DisconnectAuthorizedClients("", 0, id)
 	auditSecurity(c, "user_sessions_revoke", "success", "user", strconv.FormatInt(id, 10), "sessions_and_trusted_browsers_revoked", &id)

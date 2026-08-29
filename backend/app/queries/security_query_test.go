@@ -37,6 +37,19 @@ func securityTestQueries(t *testing.T) *SecurityQueries {
 	db.MustExec(`CREATE TABLE auth_session (
 		id INTEGER PRIMARY KEY, absolute_expires_at TIMESTAMP NOT NULL,
 		revoked_at TIMESTAMP NULL)`)
+	db.MustExec(`CREATE TABLE mobile_session (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+		auth_version INTEGER NOT NULL, device_name TEXT NOT NULL,
+		access_token_hash BLOB NOT NULL UNIQUE, refresh_token_hash BLOB NOT NULL UNIQUE,
+		mfa_verified BOOLEAN NOT NULL, reauthenticated_at TIMESTAMP NOT NULL,
+		created_at TIMESTAMP NOT NULL, last_seen_at TIMESTAMP NOT NULL,
+		access_expires_at TIMESTAMP NOT NULL, refresh_expires_at TIMESTAMP NOT NULL,
+		revoked_at TIMESTAMP NULL, client_ip TEXT NOT NULL, user_agent_hash BLOB)`)
+	db.MustExec(`CREATE TABLE mobile_refresh_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		mobile_session_id INTEGER NOT NULL REFERENCES mobile_session(id) ON DELETE CASCADE,
+		token_hash BLOB NOT NULL UNIQUE, used_at TIMESTAMP NOT NULL, expires_at TIMESTAMP NOT NULL)`)
 	db.MustExec(`CREATE TABLE auth_login_challenge (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, token_hash BLOB NOT NULL UNIQUE,
 		user_id INTEGER NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
@@ -95,6 +108,41 @@ func securityTestQueries(t *testing.T) *SecurityQueries {
 		UNIQUE(media_key_id, lineup_id),
 		FOREIGN KEY(media_key_id, lineup_id) REFERENCES media_key_lineup(media_key_id, lineup_id) ON DELETE CASCADE)`)
 	return NewSecurityQueries(db)
+}
+
+func TestMobileSessionRefreshRotationAndReplayRevocation(t *testing.T) {
+	ctx := context.Background()
+	q := securityTestQueries(t)
+	userID, err := q.CreateUser(ctx, "mobile-viewer", "Mobile Viewer", "hash", models.RoleViewer, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	session := &models.MobileSession{
+		UserID: userID, AuthVersion: 1, DeviceName: "Pixel Test",
+		AccessTokenHash: []byte("access-one"), RefreshTokenHash: []byte("refresh-one"), MFAVerified: true,
+		ReauthenticatedAt: now, CreatedAt: now, LastSeenAt: now,
+		AccessExpiresAt: now.Add(15 * time.Minute), RefreshExpiresAt: now.Add(30 * 24 * time.Hour),
+		ClientIP: "203.0.113.9", UserAgentHash: []byte("agent"),
+	}
+	if err := q.CreateMobileSession(ctx, session); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.RotateMobileSession(ctx, session, []byte("refresh-one"), []byte("access-two"),
+		[]byte("refresh-two"), now.Add(16*time.Minute), now.Add(time.Minute)); err != nil {
+		t.Fatalf("rotate current refresh token: %v", err)
+	}
+	if _, err := q.GetMobileSessionByRefreshHash(ctx, []byte("refresh-two")); err != nil {
+		t.Fatalf("rotated refresh token was not current: %v", err)
+	}
+	if err := q.RotateMobileSession(ctx, session, []byte("refresh-one"), []byte("access-replay"),
+		[]byte("refresh-replay"), now.Add(17*time.Minute), now.Add(2*time.Minute)); !errors.Is(err, ErrMobileRefreshReplay) {
+		t.Fatalf("rotated token replay was not detected: %v", err)
+	}
+	revoked, err := q.GetMobileSessionByRefreshHash(ctx, []byte("refresh-two"))
+	if err != nil || revoked.RevokedAt == nil {
+		t.Fatalf("refresh replay did not revoke the mobile session: session=%+v err=%v", revoked, err)
+	}
 }
 
 func TestAdaptiveAuthThrottlePersistsAccountCooldownAndResetsOnlyActiveCounters(t *testing.T) {

@@ -75,6 +75,7 @@ func RunAuthCLI(args []string) error {
 			return err
 		}
 		_ = database.Db.RevokeUserSessions(context.Background(), user.ID)
+		_ = database.Db.RevokeUserMobileSessions(context.Background(), user.ID)
 		_ = database.Db.RevokeUserMediaKeys(context.Background(), user.ID)
 		fmt.Printf("Password reset for %s. The account must change it after signing in.\n", user.Username)
 		return nil
@@ -99,7 +100,8 @@ func RunAuthCLI(args []string) error {
 			return err
 		}
 		_ = database.Db.RevokeUserSessions(context.Background(), user.ID)
-		fmt.Printf("MFA disabled for %s; all browser sessions were revoked.\n", user.Username)
+		_ = database.Db.RevokeUserMobileSessions(context.Background(), user.ID)
+		fmt.Printf("MFA disabled for %s; all browser and mobile sessions were revoked.\n", user.Username)
 		return nil
 	default:
 		return fmt.Errorf("unknown auth command %q", args[1])

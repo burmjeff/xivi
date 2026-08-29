@@ -42,6 +42,10 @@ controls the startup race, recovery hedge, prewarm pool, and browser HLS
 compatibility mode. The compatibility mode transcodes only codecs browsers
 commonly reject and leaves the canonical MPEG-TS branch unchanged.
 
+### Android and Android Auto
+
+The Capacitor Android client lives in `android/` and uses the shared Svelte Watch UI with native Kotlin authentication, Media3 playback, and an audio-only Android Auto library. Build and signing instructions are in [docs/android-release.md](docs/android-release.md). The base application does not advertise parked-video support.
+
 ### Virtual tuner device outputs
 
 Enable **Tuner** on an individual lineup in Studio's Device outputs panel to advertise only that lineup as a virtual network tuner. Each enabled lineup receives a stable device ID and rotatable signed credential for its own `discover.json`, `lineup.json`, and MPEG-TS stream URLs. Plex, Emby, and Jellyfin can therefore add the lineups independently.

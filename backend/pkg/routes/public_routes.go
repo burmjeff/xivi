@@ -86,6 +86,8 @@ func PublicRoutes(a *fiber.App) {
 	router.Get("/stream/:stream_id", middleware.DeclareRoutePolicy("media-or-viewer"), middleware.RequirePlayback(), controllers.GetStream)
 	router.Get("/stream/hls/:stream_id", middleware.DeclareRoutePolicy("media-or-viewer"), middleware.RequirePlayback(), controllers.GetHlsStream)
 	router.Get("/stream/hls/:stream_id/:asset", middleware.DeclareRoutePolicy("media-or-viewer"), middleware.RequirePlayback(), controllers.GetHlsAsset)
+	router.Get("/stream/hls-audio/:stream_id", middleware.DeclareRoutePolicy("media-or-viewer"), middleware.RequirePlayback(), controllers.GetAudioHlsStream)
+	router.Get("/stream/hls-audio/:stream_id/:asset", middleware.DeclareRoutePolicy("media-or-viewer"), middleware.RequirePlayback(), controllers.GetAudioHlsAsset)
 	api.Get("/channels/hls/:group_id", controllers.GetHlsChannels)
 
 	// Each enabled lineup is exposed as an independent virtual network tuner.

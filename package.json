@@ -18,6 +18,8 @@
 		"lint": "prettier --check src package.json docs/openapi-v2.yaml vite.config.ts tsconfig.json svelte.config.js && eslint ./src/**/*.{ts,svelte}",
 		"format": "prettier --write . && go fmt ./...",
 		"build": "npx vite build",
+		"build:mobile": "vite build --mode mobile && cap sync android",
+		"android": "npm run build:mobile && cap open android",
 		"api:types": "openapi-typescript docs/openapi-v2.yaml -o src/lib/api/generated.ts && prettier --write src/lib/api/generated.ts",
 		"build-all": "npm run build && echo \"Building Golang binary...\" && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags \"-linkmode 'external' -extldflags '-lstdc++ -lssl -lcrypto' -s -w\" -buildvcs=false -mod=readonly -v -o xivi .",
 		"build-all-win": "npm run build && echo \"Building Golang binary...\" && go build -trimpath -ldflags \"-linkmode 'external' -extldflags '-lstdc++ -lssl -lcrypto' -s -w\" -buildvcs=false -mod=readonly -v -o xivi .",
@@ -27,6 +29,7 @@
 		"docker-run": "open-cli http://localhost:3000 && docker run -p 3000:3000 -v serve:/xivi/serve -v config:/xivi/config --rm xivi"
 	},
 	"devDependencies": {
+		"@capacitor/cli": "^8.5.0",
 		"@sveltejs/kit": "^2.49.0",
 		"@sveltejs/vite-plugin-svelte": "^6.2.1",
 		"@types/node": "^24.10.1",
@@ -53,6 +56,8 @@
 	"dependencies": {
 		"@atlaskit/pragmatic-drag-and-drop": "^3.0.0",
 		"@atlaskit/pragmatic-drag-and-drop-live-region": "^2.0.0",
+		"@capacitor/android": "^8.5.0",
+		"@capacitor/core": "^8.5.0",
 		"@fontsource-variable/bricolage-grotesque": "^5.3.0",
 		"@fontsource-variable/manrope": "^5.3.0",
 		"@lucide/svelte": "^1.33.0",

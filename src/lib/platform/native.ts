@@ -1,0 +1,76 @@
+import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
+
+export interface NativeResponse {
+	status: number;
+	headers: Record<string, string>;
+	body: string;
+}
+
+export interface NativePlaybackItem {
+	channelId: number;
+	lineupId: number;
+	name: string;
+	programme?: string;
+	logoUrl?: string;
+	streamUrl: string;
+	audioStreamUrl?: string | null;
+}
+
+export interface NativePlaybackState {
+	active: boolean;
+	channelId?: number;
+	name?: string;
+	programme?: string;
+	playing: boolean;
+	audioOnly: boolean;
+}
+
+interface XiviNativePlugin {
+	getServer(): Promise<{ url: string | null }>;
+	setServer(options: { url: string }): Promise<{ url: string }>;
+	clearServer(): Promise<void>;
+	request(options: {
+		path: string;
+		method: string;
+		headers: Record<string, string>;
+		body?: string;
+	}): Promise<NativeResponse>;
+	login(options: { body: string }): Promise<NativeResponse>;
+	completeMfa(options: { body: string }): Promise<NativeResponse>;
+	refreshSession(): Promise<{ authenticated: boolean }>;
+	logout(): Promise<void>;
+	cacheArtwork(options: { path: string }): Promise<{ url: string }>;
+	playVideo(options: NativePlaybackItem): Promise<void>;
+	playAudio(options: NativePlaybackItem): Promise<void>;
+	reopenPlayer(): Promise<void>;
+	stopPlayback(): Promise<void>;
+	getPlaybackState(): Promise<NativePlaybackState>;
+	addListener(
+		eventName: 'playbackState',
+		listener: (state: NativePlaybackState) => void
+	): Promise<PluginListenerHandle>;
+}
+
+export const XiviNative = registerPlugin<XiviNativePlugin>('XiviNative');
+
+export function isNativePlatform() {
+	return Capacitor.isNativePlatform();
+}
+
+export async function configuredServer() {
+	if (!isNativePlatform()) return null;
+	return (await XiviNative.getServer()).url;
+}
+
+export async function configureServer(url: string) {
+	return (await XiviNative.setServer({ url })).url;
+}
+
+export async function resolveArtwork(path?: string) {
+	if (!path || !isNativePlatform() || !path.startsWith('/images/')) return path;
+	try {
+		return (await XiviNative.cacheArtwork({ path })).url;
+	} catch {
+		return undefined;
+	}
+}

@@ -66,7 +66,7 @@ func (m *Manager) acquirePlaybackSources(ctx context.Context, playbackID, stream
 	// HLS repeatedly reloads one media playlist. Those requests belong to the
 	// same tune generation. MPEG-TS reconnects get a fresh generation so an old
 	// response writer cannot close the replacement connection by ID.
-	if hasPrevious && previous.StreamID == streamID && previous.Protocol == protocol && protocol == "hls" {
+	if hasPrevious && previous.StreamID == streamID && previous.Protocol == protocol && (protocol == "hls" || protocol == "hls-audio") {
 		session, err := m.acquirePlaybackSession(ctx, streamID, sources, waitReady)
 		if err != nil {
 			return session, PlaybackHandle{}, err

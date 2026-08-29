@@ -114,6 +114,33 @@ func (s *Session) HLSPlaylistSnapshot() (*HLSPlaylistSnapshot, error) {
 	return s.hls.current()
 }
 
+func (s *Session) AudioHLSPlaylistSnapshot() (*HLSPlaylistSnapshot, error) {
+	s.mu.RLock()
+	producer := s.current
+	length := s.config.HLSPlaylistLength
+	s.mu.RUnlock()
+	if provider, ok := producer.(AudioHLSProducer); ok {
+		if !provider.AudioAvailable() {
+			return nil, ErrAudioTrackUnavailable
+		}
+		if snapshot, err := provider.AudioHLSPlaylistSnapshot(); err == nil {
+			return s.audioHLS.update(producerGeneration(producer), snapshot, length), nil
+		} else if current, currentErr := s.audioHLS.current(); currentErr == nil {
+			return current, nil
+		} else {
+			return nil, err
+		}
+	}
+	return nil, ErrAudioTrackUnavailable
+}
+
+func producerGeneration(producer Producer) uint64 {
+	if provider, ok := producer.(HLSProducer); ok {
+		return provider.HLSGeneration()
+	}
+	return 0
+}
+
 // recordHLSPlaylistResult reports only persistent manifest delays. Transient
 // partial rewrites are expected while the sink atomically advances a live
 // playlist and should not flood diagnostics.

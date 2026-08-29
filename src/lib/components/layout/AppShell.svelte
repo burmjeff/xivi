@@ -23,7 +23,9 @@
 	import CommandMenu from './CommandMenu.svelte';
 	import ThemeSwitcher from '$lib/components/ui/ThemeSwitcher.svelte';
 	import { preferences, setStudioNavCollapsed } from '$lib/state/preferences.svelte';
+	import { isNativePlatform } from '$lib/platform/native';
 	let { children } = $props();
+	const mobile = isNativePlatform();
 	let playerComponent = $state<Component | null>(null);
 	let playerLoading = false;
 	$effect(() => {
@@ -120,7 +122,9 @@
 			</nav>
 			<div class="header-actions">
 				<CommandMenu compact iconOnly triggerLabel="Search Xivi" />
-				{#if auth.principal?.role === 'admin'}<a class="studio-link" href="/studio">Studio</a>{/if}
+				{#if !mobile && auth.principal?.role === 'admin'}<a class="studio-link" href="/studio"
+						>Studio</a
+					>{/if}
 				<a
 					class="account-link"
 					href="/account"
@@ -142,14 +146,14 @@
 	</main>
 
 	{#if !studio}<nav
-			class:admin-nav={auth.principal?.role === 'admin'}
+			class:admin-nav={!mobile && auth.principal?.role === 'admin'}
 			class="watch-bottom"
 			aria-label="Watch"
 		>
 			{#each watchNav as item}{@const Icon = item.icon}<a
 					href={item.href}
 					class:active={active(item.href)}><Icon size={21} /><span>{item.label}</span></a
-				>{/each}{#if auth.principal?.role === 'admin'}<a href="/studio"
+				>{/each}{#if !mobile && auth.principal?.role === 'admin'}<a href="/studio"
 					><PanelsTopLeft size={21} /><span>Studio</span></a
 				>{/if}<a href="/account" class:active={active('/account')}
 				><CircleUserRound size={21} /><span>Account</span></a

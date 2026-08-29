@@ -52,6 +52,86 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/mobile/auth/login': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['mobileLogin'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/mobile/auth/login/mfa': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['completeMobileMFALogin'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/mobile/auth/refresh': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['refreshMobileSession'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/mobile/auth/logout': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['mobileLogout'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/mobile/auth/password': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['changeMobilePassword'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/auth/session': {
 		parameters: {
 			query?: never;
@@ -207,6 +287,22 @@ export interface paths {
 		put?: never;
 		post?: never;
 		delete: operations['revokeAccountSession'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/auth/sessions/{session_type}/{session_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['revokeTypedAccountSession'];
 		options?: never;
 		head?: never;
 		patch?: never;
@@ -509,6 +605,38 @@ export interface paths {
 		};
 		/** @description Resolves a revocable, lineup-scoped short output alias. The alias is the bearer credential for this request; generated stream URLs retain the full internal media credential. */
 		get: operations['getShortSecuredM3U'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/stream/hls-audio/{stream_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getAudioHLSPlaylist'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/stream/hls-audio/{stream_id}/{asset}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getAudioHLSAsset'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -1543,6 +1671,15 @@ export interface components {
 			/** Format: date-time */
 			expires_at: string;
 		};
+		MobileSessionEnvelope: {
+			principal: components['schemas']['SessionPrincipal'];
+			access_token: string;
+			/** Format: date-time */
+			access_expires_at: string;
+			refresh_token: string;
+			/** Format: date-time */
+			refresh_expires_at: string;
+		};
 		ReauthenticationRequest: {
 			/** Format: password */
 			password: string;
@@ -1550,6 +1687,9 @@ export interface components {
 		AuthSessionMetadata: {
 			/** Format: int64 */
 			id: number;
+			/** @enum {string} */
+			client_type?: 'browser' | 'mobile';
+			device_name?: string;
 			/** @enum {string} */
 			transport_scope: 'https' | 'lan_http';
 			/** Format: date-time */
@@ -1789,6 +1929,7 @@ export interface components {
 			group_id: number;
 			group_name: string;
 			stream_url: string;
+			audio_stream_url: string | null;
 			programmes: components['schemas']['Programme'][];
 			current?: components['schemas']['Programme'];
 			next?: components['schemas']['Programme'];
@@ -2472,6 +2613,155 @@ export interface operations {
 			default: components['responses']['Error'];
 		};
 	};
+	mobileLogin: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': {
+					username: string;
+					/** Format: password */
+					password: string;
+					device_name: string;
+					bot_challenge_token?: string;
+					bot_challenge_nonce?: string;
+				};
+			};
+		};
+		responses: {
+			/** @description Mobile session created. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['MobileSessionEnvelope'];
+				};
+			};
+			/** @description MFA required. */
+			202: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['LoginChallenge'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	completeMobileMFALogin: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': {
+					challenge_token: string;
+					code: string;
+					device_name: string;
+					bot_challenge_token?: string;
+					bot_challenge_nonce?: string;
+				};
+			};
+		};
+		responses: {
+			/** @description Mobile MFA verified. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['MobileSessionEnvelope'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	refreshMobileSession: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': {
+					refresh_token: string;
+				};
+			};
+		};
+		responses: {
+			/** @description Both opaque tokens rotated. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['MobileSessionEnvelope'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	mobileLogout: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Mobile session revoked. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	changeMobilePassword: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': {
+					/** Format: password */
+					current_password: string;
+					/** Format: password */
+					new_password: string;
+					mfa_code?: string;
+				};
+			};
+		};
+		responses: {
+			/** @description Password changed and replacement mobile session created. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['MobileSessionEnvelope'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
 	getSession: {
 		parameters: {
 			query?: never;
@@ -2690,6 +2980,28 @@ export interface operations {
 			query?: never;
 			header?: never;
 			path: {
+				session_id: number;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Session revoked. */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	revokeTypedAccountSession: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				session_type: 'browser' | 'mobile';
 				session_id: number;
 			};
 			cookie?: never;
@@ -3254,6 +3566,60 @@ export interface operations {
 				content: {
 					'audio/x-mpegurl': string;
 				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	getAudioHLSPlaylist: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				stream_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Authenticated live audio-only HLS playlist. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/vnd.apple.mpegurl': string;
+				};
+			};
+			/** @description Channel has no usable audio track. */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['APIError'];
+				};
+			};
+			default: components['responses']['Error'];
+		};
+	};
+	getAudioHLSAsset: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				stream_id: string;
+				asset: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Authenticated audio-only HLS segment or manifest. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
 			};
 			default: components['responses']['Error'];
 		};

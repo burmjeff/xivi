@@ -7,10 +7,12 @@
 	import AppShell from '$lib/components/layout/AppShell.svelte';
 	import { loadPreferences } from '$lib/state/preferences.svelte';
 	import { auth, loadSession, refreshSession } from '$lib/state/auth.svelte';
+	import { isNativePlatform } from '$lib/platform/native';
 	let { children } = $props();
 	const queryClient = new QueryClient({
 		defaultOptions: { queries: { staleTime: 20_000, retry: 1, refetchOnWindowFocus: false } }
 	});
+	const mobile = isNativePlatform();
 	let dismissedSecurityNotice = $state(false);
 	$effect(() => {
 		if (auth.principal?.security_notice) dismissedSecurityNotice = false;
@@ -48,7 +50,7 @@
 			void goto('/account?password-change=required', { replaceState: true });
 			return;
 		}
-		if (auth.principal?.role !== 'admin' && page.url.pathname.startsWith('/studio')) {
+		if ((mobile || auth.principal?.role !== 'admin') && page.url.pathname.startsWith('/studio')) {
 			void goto('/', { replaceState: true });
 		}
 	});
@@ -64,7 +66,7 @@
 		{@render children?.()}
 	{:else if auth.principal?.must_change_password && page.url.pathname === '/account'}
 		{@render children?.()}
-	{:else if auth.principal && (!page.url.pathname.startsWith('/studio') || auth.principal.role === 'admin')}
+	{:else if auth.principal && (!page.url.pathname.startsWith('/studio') || (!mobile && auth.principal.role === 'admin'))}
 		<AppShell>
 			{#if auth.principal.security_notice && !dismissedSecurityNotice}
 				<div class="security-notice" role="alert">

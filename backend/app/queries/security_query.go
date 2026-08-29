@@ -15,9 +15,10 @@ import (
 type SecurityQueries struct{ BaseQueries }
 
 var (
-	ErrLastEnabledAdmin = errors.New("the final enabled administrator cannot be changed")
-	ErrUsernameInUse    = errors.New("the username is already in use")
-	authThrottleWrites  atomic.Uint64
+	ErrLastEnabledAdmin    = errors.New("the final enabled administrator cannot be changed")
+	ErrUsernameInUse       = errors.New("the username is already in use")
+	ErrMobileRefreshReplay = errors.New("the mobile refresh token was already used")
+	authThrottleWrites     atomic.Uint64
 )
 
 func NewSecurityQueries(db *sqlx.DB) *SecurityQueries {
@@ -383,6 +384,9 @@ func (q *SecurityQueries) ListUserSessions(ctx context.Context, userID int64) ([
 	err := q.SelectContext(ctx, &items, `SELECT id, transport_scope, created_at, last_seen_at,
 		idle_expires_at, absolute_expires_at, revoked_at, client_ip
 		FROM auth_session WHERE user_id = ? ORDER BY created_at DESC, id DESC`, userID)
+	for index := range items {
+		items[index].ClientType = "browser"
+	}
 	return items, err
 }
 
@@ -394,6 +398,154 @@ func (q *SecurityQueries) RevokeUserSessionByID(ctx context.Context, sessionID, 
 	}
 	rows, err := result.RowsAffected()
 	return rows == 1, err
+}
+
+const mobileSessionSelect = `SELECT s.*, u.username, u.display_name, u.role,
+	u.must_change_password, u.disabled_at AS user_disabled_at,
+	EXISTS(SELECT 1 FROM user_mfa m WHERE m.user_id = u.id) AS mfa_enabled
+	FROM mobile_session s JOIN app_user u ON u.id = s.user_id`
+
+func (q *SecurityQueries) CreateMobileSession(ctx context.Context, session *models.MobileSession) error {
+	result, err := q.ExecContext(ctx, `INSERT INTO mobile_session
+		(user_id, auth_version, device_name, access_token_hash, refresh_token_hash,
+		 mfa_verified, reauthenticated_at, created_at, last_seen_at, access_expires_at,
+		 refresh_expires_at, client_ip, user_agent_hash)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, session.UserID,
+		session.AuthVersion, session.DeviceName, session.AccessTokenHash, session.RefreshTokenHash,
+		session.MFAVerified, session.ReauthenticatedAt, session.CreatedAt, session.LastSeenAt,
+		session.AccessExpiresAt, session.RefreshExpiresAt, session.ClientIP, session.UserAgentHash)
+	if err == nil {
+		session.ID, err = result.LastInsertId()
+	}
+	return err
+}
+
+func (q *SecurityQueries) GetMobileSessionByAccessHash(ctx context.Context, hash []byte) (*models.MobileSession, error) {
+	session := &models.MobileSession{}
+	err := q.GetContext(ctx, session, mobileSessionSelect+` WHERE s.access_token_hash = ?`, hash)
+	return session, err
+}
+
+func (q *SecurityQueries) GetMobileSessionByRefreshHash(ctx context.Context, hash []byte) (*models.MobileSession, error) {
+	session := &models.MobileSession{}
+	err := q.GetContext(ctx, session, mobileSessionSelect+` WHERE s.refresh_token_hash = ?`, hash)
+	return session, err
+}
+
+func (q *SecurityQueries) GetMobileSessionByRefreshHistory(ctx context.Context, hash []byte) (*models.MobileSession, error) {
+	session := &models.MobileSession{}
+	err := q.GetContext(ctx, session, mobileSessionSelect+`
+		JOIN mobile_refresh_history h ON h.mobile_session_id = s.id
+		WHERE h.token_hash = ?`, hash)
+	return session, err
+}
+
+// RotateMobileSession performs a compare-and-swap on the current refresh hash.
+// If a concurrent or later caller presents a recorded hash, the transaction
+// commits revocation before returning ErrMobileRefreshReplay.
+func (q *SecurityQueries) RotateMobileSession(ctx context.Context, session *models.MobileSession, oldRefreshHash,
+	newAccessHash, newRefreshHash []byte, accessExpiresAt, now time.Time) error {
+	replay := false
+	err := q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		result, err := tx.ExecContext(ctx, `UPDATE mobile_session
+			SET access_token_hash = ?, refresh_token_hash = ?, access_expires_at = ?, last_seen_at = ?
+			WHERE id = ? AND refresh_token_hash = ? AND revoked_at IS NULL AND refresh_expires_at > ?`,
+			newAccessHash, newRefreshHash, accessExpiresAt, now, session.ID, oldRefreshHash, now)
+		if err != nil {
+			return err
+		}
+		rows, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if rows == 1 {
+			_, err = tx.ExecContext(ctx, `INSERT INTO mobile_refresh_history
+				(mobile_session_id, token_hash, used_at, expires_at) VALUES (?, ?, ?, ?)`,
+				session.ID, oldRefreshHash, now, session.RefreshExpiresAt)
+			return err
+		}
+		var known bool
+		if err := tx.GetContext(ctx, &known, `SELECT EXISTS(SELECT 1 FROM mobile_refresh_history
+			WHERE mobile_session_id = ? AND token_hash = ?)`, session.ID, oldRefreshHash); err != nil {
+			return err
+		}
+		if known {
+			replay = true
+			_, err = tx.ExecContext(ctx, `UPDATE mobile_session SET revoked_at = ?
+				WHERE id = ? AND revoked_at IS NULL`, now, session.ID)
+			return err
+		}
+		return sql.ErrNoRows
+	})
+	if err != nil {
+		return err
+	}
+	if replay {
+		return ErrMobileRefreshReplay
+	}
+	session.AccessTokenHash = newAccessHash
+	session.RefreshTokenHash = newRefreshHash
+	session.AccessExpiresAt = accessExpiresAt
+	session.LastSeenAt = now
+	return nil
+}
+
+func (q *SecurityQueries) TouchMobileSession(ctx context.Context, id int64, at time.Time) error {
+	_, err := q.ExecContext(ctx, `UPDATE mobile_session SET last_seen_at = ?
+		WHERE id = ? AND revoked_at IS NULL`, at, id)
+	return err
+}
+
+func (q *SecurityQueries) RevokeMobileSession(ctx context.Context, id, userID int64) (bool, error) {
+	result, err := q.ExecContext(ctx, `UPDATE mobile_session SET revoked_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND user_id = ? AND revoked_at IS NULL`, id, userID)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
+
+func (q *SecurityQueries) RevokeUserMobileSessions(ctx context.Context, userID int64) error {
+	_, err := q.ExecContext(ctx, `UPDATE mobile_session SET revoked_at = CURRENT_TIMESTAMP
+		WHERE user_id = ? AND revoked_at IS NULL`, userID)
+	return err
+}
+
+func (q *SecurityQueries) ListUserMobileSessions(ctx context.Context, userID int64) ([]models.MobileSessionMetadata, error) {
+	items := []models.MobileSessionMetadata{}
+	err := q.SelectContext(ctx, &items, `SELECT id, device_name, created_at, last_seen_at,
+		refresh_expires_at, revoked_at, client_ip FROM mobile_session
+		WHERE user_id = ? ORDER BY created_at DESC, id DESC`, userID)
+	for index := range items {
+		items[index].ClientType = "mobile"
+	}
+	return items, err
+}
+
+func (q *SecurityQueries) MobileSessionCanAccessChannel(ctx context.Context, sessionID int64, uuid string) (bool, error) {
+	var allowed bool
+	err := q.GetContext(ctx, &allowed, `SELECT EXISTS(
+		SELECT 1 FROM mobile_session s
+		JOIN app_user u ON u.id = s.user_id
+		WHERE s.id = ? AND s.revoked_at IS NULL
+		  AND s.access_expires_at > CURRENT_TIMESTAMP
+		  AND s.refresh_expires_at > CURRENT_TIMESTAMP
+		  AND s.auth_version = u.auth_version
+		  AND u.disabled_at IS NULL
+		  AND (NOT EXISTS(SELECT 1 FROM user_mfa m WHERE m.user_id = u.id) OR s.mfa_verified = 1)
+		  AND (
+			u.role = 'admin' AND EXISTS(SELECT 1 FROM templatechannel tc WHERE tc.uuid = ?)
+			OR u.role = 'viewer' AND EXISTS(
+				SELECT 1 FROM user_lineup ul
+				JOIN template_group_item tgi ON tgi.template_id = ul.lineup_id
+				JOIN template_group_channel tgc ON tgc.group_id = tgi.group_id
+				JOIN templatechannel tc ON tc.id = tgc.channel_id
+				WHERE ul.user_id = u.id AND tc.uuid = ?
+			)
+		  )
+	)`, sessionID, uuid, uuid)
+	return allowed, err
 }
 
 func (q *SecurityQueries) CreateLoginChallenge(ctx context.Context, challenge *models.LoginChallenge) error {
@@ -1101,6 +1253,13 @@ func (q *SecurityQueries) ListSecurityAuditEvents(ctx context.Context, beforeID 
 func (q *SecurityQueries) PruneSecurityData(ctx context.Context, sessionBefore, auditBefore time.Time, maxAudit int) error {
 	return q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM auth_session WHERE absolute_expires_at < ? OR revoked_at < ?`, sessionBefore, sessionBefore); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM mobile_refresh_history WHERE expires_at < ?`, sessionBefore); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM mobile_session
+			WHERE refresh_expires_at < ? OR revoked_at < ?`, sessionBefore, sessionBefore); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM auth_login_challenge

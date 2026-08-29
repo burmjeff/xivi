@@ -3,6 +3,8 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { createHash } from 'node:crypto';
 import * as mediaChrome from 'media-chrome';
 
+const mobileBuild = process.argv.includes('mobile') || process.env.XIVI_MOBILE === '1';
+
 // Media Chrome creates its web-component styles inside shadow roots at runtime,
 // outside SvelteKit's normal CSP hash collection. Generate exact hashes from the
 // installed package instead of broadly enabling arbitrary inline styles. A
@@ -32,7 +34,7 @@ const config = {
 			pages: 'build',
 			assets: 'build',
 			fallback: 'index.html',
-			precompress: true,
+			precompress: !mobileBuild,
 			strict: true
 		}),
 		alias: {

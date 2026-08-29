@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { LockKeyhole } from '@lucide/svelte';
+	import { onMount } from 'svelte';
+	import { LockKeyhole, Server } from '@lucide/svelte';
 	import SignalMark from '$lib/components/brand/SignalMark.svelte';
 	import { api, XiviAPIError } from '$lib/api/client';
 	import { auth, setSession, type SessionPrincipal } from '$lib/state/auth.svelte';
 	import { solveLoginChallenge } from '$lib/security/proof-of-work';
+	import { configuredServer, configureServer, isNativePlatform } from '$lib/platform/native';
 
 	let username = $state('');
 	let password = $state('');
@@ -16,6 +18,18 @@
 	let submitting = $state(false);
 	let checkingBrowser = $state(false);
 	let error = $state('');
+	const mobile = isNativePlatform();
+	let serverUrl = $state('');
+	let serverReady = $state(!mobile);
+	let checkingServer = $state(mobile);
+	onMount(() => {
+		if (!mobile) return;
+		void configuredServer().then((value) => {
+			serverUrl = value ?? '';
+			serverReady = !!value;
+			checkingServer = false;
+		});
+	});
 	$effect(() => {
 		if (auth.initialPasswordChangeRequired && !username) username = 'xivi';
 	});
@@ -138,6 +152,21 @@
 		trustBrowser = false;
 		error = '';
 	}
+
+	async function saveServer(event: SubmitEvent) {
+		event.preventDefault();
+		checkingServer = true;
+		error = '';
+		try {
+			serverUrl = await configureServer(serverUrl);
+			serverReady = true;
+		} catch (caught) {
+			error =
+				caught instanceof Error ? caught.message : 'Xivi could not validate that HTTPS server.';
+		} finally {
+			checkingServer = false;
+		}
+	}
 </script>
 
 <svelte:head><title>Sign in · Xivi</title></svelte:head>
@@ -147,104 +176,138 @@
 		<SignalMark />
 		<div class="story-copy">
 			<h1>Live Streams,<br /><em>for your people.</em></h1>
-			<p>Watch your channels. Organize the signal in Studio.</p>
+			<p>
+				{mobile
+					? 'Your live channels, ready for the road.'
+					: 'Watch your channels. Organize the signal in Studio.'}
+			</p>
 		</div>
 	</section>
 
 	<section class="login-panel">
-		<form onsubmit={step === 'password' ? login : verifyMFA}>
-			<div class="form-heading">
-				<div class="lock-tile"><LockKeyhole size={23} /></div>
-				<div>
-					<p>{step === 'password' ? 'Welcome back' : 'One more step'}</p>
-					<h2>{step === 'password' ? 'Sign in to Xivi' : 'Verify your identity'}</h2>
+		{#if mobile && !serverReady}
+			<form onsubmit={saveServer}>
+				<div class="form-heading">
+					<div class="lock-tile"><Server size={23} /></div>
+					<div>
+						<p>Connect your app</p>
+						<h2>Xivi server</h2>
+					</div>
 				</div>
-			</div>
-			{#if step === 'password' && auth.bootstrapRequired}
-				<div class="bootstrap" role="alert">
-					<strong>First-run account is still initializing</strong>
-					Restart Xivi if this message remains visible.
-				</div>
-			{:else if step === 'password' && auth.initialPasswordChangeRequired}
-				<div class="bootstrap" role="alert">
-					<strong>First sign-in</strong>
-					{#if auth.initialLoginAllowed}
-						<span
-							>Use <code>xivi</code> / <code>xivi</code>. You will immediately choose a private
-							passphrase.</span
-						>
-					{:else}
-						<span
-							>Open Xivi through its configured public HTTPS or trusted-LAN address to replace the
-							temporary password.</span
-						>
-					{/if}
-				</div>
-			{/if}
-			{#if step === 'password'}
+				<p class="mfa-guidance">Enter the trusted public HTTPS address for your Xivi server.</p>
 				<label
-					>Username<input
-						bind:value={username}
-						autocomplete="username"
+					>Server address<input
+						bind:value={serverUrl}
+						type="url"
+						inputmode="url"
+						autocomplete="url"
+						placeholder="https://tv.example.com"
 						required
-						maxlength="64"
 					/></label
 				>
-				<label
-					>Password<input
-						bind:value={password}
-						type="password"
-						autocomplete="current-password"
-						required
-						maxlength="128"
-					/></label
+				{#if error}<p class="error" role="alert">{error}</p>{/if}
+				<button type="submit" disabled={checkingServer}
+					>{checkingServer ? 'Checking server…' : 'Connect securely'}</button
 				>
-			{:else}
-				<p class="mfa-guidance">
-					Enter the current code from your authenticator app, or use one of your recovery codes.
+				<p class="transport">
+					HTTP, self-signed certificates, and multiple servers are not supported in this release.
 				</p>
-				<label
-					>Verification or recovery code<input
-						bind:value={mfaCode}
-						autocomplete="one-time-code"
-						inputmode="numeric"
-						required
-						maxlength="32"
-					/></label
-				>
-				<label class="remember">
-					<input type="checkbox" bind:checked={trustBrowser} />
-					<span
-						><strong>Trust this browser for 30 days</strong><small
-							>Only use this on a private device. Your password is still required at every new
-							sign-in.</small
-						></span
+			</form>
+		{:else}
+			<form onsubmit={step === 'password' ? login : verifyMFA}>
+				<div class="form-heading">
+					<div class="lock-tile"><LockKeyhole size={23} /></div>
+					<div>
+						<p>{step === 'password' ? 'Welcome back' : 'One more step'}</p>
+						<h2>{step === 'password' ? 'Sign in to Xivi' : 'Verify your identity'}</h2>
+					</div>
+				</div>
+				{#if step === 'password' && auth.bootstrapRequired}
+					<div class="bootstrap" role="alert">
+						<strong>First-run account is still initializing</strong>
+						Restart Xivi if this message remains visible.
+					</div>
+				{:else if step === 'password' && auth.initialPasswordChangeRequired}
+					<div class="bootstrap" role="alert">
+						<strong>First sign-in</strong>
+						{#if auth.initialLoginAllowed}
+							<span
+								>Use <code>xivi</code> / <code>xivi</code>. You will immediately choose a private
+								passphrase.</span
+							>
+						{:else}
+							<span
+								>Open Xivi through its configured public HTTPS or trusted-LAN address to replace the
+								temporary password.</span
+							>
+						{/if}
+					</div>
+				{/if}
+				{#if step === 'password'}
+					<label
+						>Username<input
+							bind:value={username}
+							autocomplete="username"
+							required
+							maxlength="64"
+						/></label
 					>
-				</label>
-			{/if}
-			{#if error}<p class="error" role="alert">{error}</p>{/if}
-			<button
-				type="submit"
-				disabled={submitting ||
-					auth.bootstrapRequired ||
-					(auth.initialPasswordChangeRequired && !auth.initialLoginAllowed)}
-				>{checkingBrowser
-					? 'Please wait…'
-					: submitting
-						? step === 'password'
-							? 'Signing in…'
-							: 'Verifying…'
-						: step === 'password'
-							? 'Sign in'
-							: 'Verify and continue'}</button
-			>
-			{#if step === 'mfa'}<button class="back" type="button" onclick={restartLogin}
-					>Back to password</button
-				>{/if}
-			<p class="transport">
-				Use the public HTTPS address whenever you are outside your trusted home network.
-			</p>
-		</form>
+					<label
+						>Password<input
+							bind:value={password}
+							type="password"
+							autocomplete="current-password"
+							required
+							maxlength="128"
+						/></label
+					>
+				{:else}
+					<p class="mfa-guidance">
+						Enter the current code from your authenticator app, or use one of your recovery codes.
+					</p>
+					<label
+						>Verification or recovery code<input
+							bind:value={mfaCode}
+							autocomplete="one-time-code"
+							inputmode="numeric"
+							required
+							maxlength="32"
+						/></label
+					>
+					{#if !mobile}<label class="remember">
+							<input type="checkbox" bind:checked={trustBrowser} />
+							<span
+								><strong>Trust this browser for 30 days</strong><small
+									>Only use this on a private device. Your password is still required at every new
+									sign-in.</small
+								></span
+							>
+						</label>{/if}
+				{/if}
+				{#if error}<p class="error" role="alert">{error}</p>{/if}
+				<button
+					type="submit"
+					disabled={submitting ||
+						auth.bootstrapRequired ||
+						(auth.initialPasswordChangeRequired && !auth.initialLoginAllowed)}
+					>{checkingBrowser
+						? 'Please wait…'
+						: submitting
+							? step === 'password'
+								? 'Signing in…'
+								: 'Verifying…'
+							: step === 'password'
+								? 'Sign in'
+								: 'Verify and continue'}</button
+				>
+				{#if step === 'mfa'}<button class="back" type="button" onclick={restartLogin}
+						>Back to password</button
+					>{/if}
+				<p class="transport">
+					Use the public HTTPS address whenever you are outside your trusted home network.
+				</p>
+			</form>
+		{/if}
 	</section>
 </main>
 

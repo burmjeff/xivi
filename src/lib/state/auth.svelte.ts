@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { apiTransport } from '$lib/api/transport';
 
 export interface SessionPrincipal {
 	user_id: number;
@@ -9,7 +10,7 @@ export interface SessionPrincipal {
 	mfa_enabled: boolean;
 	mfa_required: boolean;
 	lineup_ids: number[];
-	csrf_token: string;
+	csrf_token?: string;
 	security_notice?: {
 		kind: string;
 		count: number;
@@ -60,8 +61,7 @@ async function requestSession(
 ) {
 	if (!browser) return;
 	try {
-		const response = await fetch('/api/v2/auth/session', {
-			credentials: 'same-origin',
+		const response = await apiTransport().request('/api/v2/auth/session', {
 			headers: {
 				Accept: 'application/json',
 				...(passive ? { 'X-Xivi-Session-Check': 'passive' } : {})
@@ -74,8 +74,7 @@ async function requestSession(
 		}
 		if (response.status === 401) {
 			if (checkBootstrap) {
-				const bootstrapResponse = await fetch('/api/v2/auth/bootstrap-status', {
-					credentials: 'same-origin',
+				const bootstrapResponse = await apiTransport().request('/api/v2/auth/bootstrap-status', {
 					headers: { Accept: 'application/json' },
 					cache: 'no-store'
 				});

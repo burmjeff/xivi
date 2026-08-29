@@ -104,6 +104,124 @@ paths:
           content:
             application/json: { schema: { $ref: '#/components/schemas/SessionPrincipal' } }
         default: { $ref: '#/components/responses/Error' }
+  /mobile/auth/login:
+    post:
+      operationId: mobileLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [username, password, device_name]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+                device_name: { type: string, minLength: 2, maxLength: 80 }
+                bot_challenge_token: { type: string }
+                bot_challenge_nonce: { type: string }
+      responses:
+        '200':
+          {
+            description: Mobile session created.,
+            content:
+              {
+                application/json: { schema: { $ref: '#/components/schemas/MobileSessionEnvelope' } }
+              }
+          }
+        '202':
+          {
+            description: MFA required.,
+            content:
+              { application/json: { schema: { $ref: '#/components/schemas/LoginChallenge' } } }
+          }
+        default: { $ref: '#/components/responses/Error' }
+  /mobile/auth/login/mfa:
+    post:
+      operationId: completeMobileMFALogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [challenge_token, code, device_name]
+              properties:
+                challenge_token: { type: string }
+                code: { type: string }
+                device_name: { type: string, minLength: 2, maxLength: 80 }
+                bot_challenge_token: { type: string }
+                bot_challenge_nonce: { type: string }
+      responses:
+        '200':
+          {
+            description: Mobile MFA verified.,
+            content:
+              {
+                application/json: { schema: { $ref: '#/components/schemas/MobileSessionEnvelope' } }
+              }
+          }
+        default: { $ref: '#/components/responses/Error' }
+  /mobile/auth/refresh:
+    post:
+      operationId: refreshMobileSession
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [refresh_token]
+              properties: { refresh_token: { type: string } }
+      responses:
+        '200':
+          {
+            description: Both opaque tokens rotated.,
+            content:
+              {
+                application/json: { schema: { $ref: '#/components/schemas/MobileSessionEnvelope' } }
+              }
+          }
+        default: { $ref: '#/components/responses/Error' }
+  /mobile/auth/logout:
+    post:
+      operationId: mobileLogout
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Mobile session revoked. }
+        default: { $ref: '#/components/responses/Error' }
+  /mobile/auth/password:
+    post:
+      operationId: changeMobilePassword
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string, format: password }
+                new_password: { type: string, format: password, minLength: 8, maxLength: 128 }
+                mfa_code: { type: string }
+      responses:
+        '200':
+          {
+            description: Password changed and replacement mobile session created.,
+            content:
+              {
+                application/json: { schema: { $ref: '#/components/schemas/MobileSessionEnvelope' } }
+              }
+          }
+        default: { $ref: '#/components/responses/Error' }
   /auth/session:
     get:
       operationId: getSession
@@ -279,6 +397,21 @@ paths:
       operationId: revokeAccountSession
       security: [{ cookieAuth: [], csrfToken: [] }]
       parameters:
+        - { name: session_id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204': { description: Session revoked. }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/sessions/{session_type}/{session_id}:
+    delete:
+      operationId: revokeTypedAccountSession
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      parameters:
+        - {
+            name: session_type,
+            in: path,
+            required: true,
+            schema: { type: string, enum: [browser, mobile] }
+          }
         - { name: session_id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
         '204': { description: Session revoked. }
@@ -606,6 +739,36 @@ paths:
         '200':
           description: Dynamic secured playlist with its XMLTV address embedded.
           content: { audio/x-mpegurl: { schema: { type: string } } }
+        default: { $ref: '#/components/responses/Error' }
+  /stream/hls-audio/{stream_id}:
+    get:
+      operationId: getAudioHLSPlaylist
+      servers: [{ url: / }]
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }, { mediaKey: [] }]
+      parameters:
+        - { name: stream_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          {
+            description: Authenticated live audio-only HLS playlist.,
+            content: { application/vnd.apple.mpegurl: { schema: { type: string } } }
+          }
+        '422':
+          {
+            description: Channel has no usable audio track.,
+            content: { application/json: { schema: { $ref: '#/components/schemas/APIError' } } }
+          }
+        default: { $ref: '#/components/responses/Error' }
+  /stream/hls-audio/{stream_id}/{asset}:
+    get:
+      operationId: getAudioHLSAsset
+      servers: [{ url: / }]
+      security: [{ bearerAuth: [] }, { cookieAuth: [] }, { mediaKey: [] }]
+      parameters:
+        - { name: stream_id, in: path, required: true, schema: { type: string } }
+        - { name: asset, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Authenticated audio-only HLS segment or manifest. }
         default: { $ref: '#/components/responses/Error' }
   /x/{code}:
     get:
@@ -1454,6 +1617,11 @@ components:
       in: header
       name: X-CSRF-Token
       description: Session-bound token returned by GET /auth/session.
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Short-lived opaque access token issued to the native mobile app. Bearer authentication is accepted only on viewer and media surfaces.
     mediaKey:
       type: apiKey
       in: query
@@ -1597,6 +1765,15 @@ components:
           type: string
           description: Single-use, short-lived opaque credential for completing MFA login. It is not a session.
         expires_at: { type: string, format: date-time }
+    MobileSessionEnvelope:
+      type: object
+      required: [principal, access_token, access_expires_at, refresh_token, refresh_expires_at]
+      properties:
+        principal: { $ref: '#/components/schemas/SessionPrincipal' }
+        access_token: { type: string }
+        access_expires_at: { type: string, format: date-time }
+        refresh_token: { type: string }
+        refresh_expires_at: { type: string, format: date-time }
     ReauthenticationRequest:
       type: object
       additionalProperties: false
@@ -1617,6 +1794,8 @@ components:
         ]
       properties:
         id: { type: integer, format: int64 }
+        client_type: { type: string, enum: [browser, mobile] }
+        device_name: { type: string }
         transport_scope: { type: string, enum: [https, lan_http] }
         created_at: { type: string, format: date-time }
         last_seen_at: { type: string, format: date-time }
@@ -1879,7 +2058,7 @@ components:
         end: { type: string, format: date-time }
     GuideChannel:
       type: object
-      required: [id, number, name, group_id, group_name, stream_url, programmes]
+      required: [id, number, name, group_id, group_name, stream_url, audio_stream_url, programmes]
       properties:
         id: { type: integer, format: int64 }
         number: { type: integer, format: int64 }
@@ -1889,6 +2068,7 @@ components:
         group_id: { type: integer, format: int64 }
         group_name: { type: string }
         stream_url: { type: string }
+        audio_stream_url: { type: [string, 'null'] }
         programmes: { type: array, items: { $ref: '#/components/schemas/Programme' } }
         current: { $ref: '#/components/schemas/Programme' }
         next: { $ref: '#/components/schemas/Programme' }

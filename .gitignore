@@ -20,7 +20,8 @@ xivi.exe
 !/docs/openapi.go
 !/docs/openapi-v2.yaml
 !/docs/security-deployment.md
-xivi
+!/docs/android-release.md
+/xivi
 lib_build/
 serve/
 local_cache/

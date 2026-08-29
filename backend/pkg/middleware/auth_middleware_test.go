@@ -383,6 +383,18 @@ func TestCSRFRequiresSessionTokenAndSameOrigin(t *testing.T) {
 	}
 	_ = response.Body.Close()
 
+	mobileApp := fiber.New()
+	mobileApp.Post("/change", func(c *fiber.Ctx) error {
+		c.Locals(principalLocal, models.SessionPrincipal{Role: models.RoleViewer})
+		c.Locals(mobileSessionLocal, &models.MobileSession{ID: 22, UserID: 7})
+		return c.Next()
+	}, CSRFProtected(), func(c *fiber.Ctx) error { return c.SendStatus(fiber.StatusNoContent) })
+	mobileResponse, mobileErr := mobileApp.Test(httptest.NewRequest(fiber.MethodPost, "https://xivi.test/change", nil), -1)
+	if mobileErr != nil || mobileResponse.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("authenticated mobile bearer mutation returned status %d, err %v", mobileResponse.StatusCode, mobileErr)
+	}
+	_ = mobileResponse.Body.Close()
+
 	for _, candidate := range []struct {
 		name   string
 		origin string
@@ -452,6 +464,32 @@ func TestCSRFRequiresSessionTokenAndSameOrigin(t *testing.T) {
 		t.Fatalf("unconfigured public proxy origin returned status %d, err %v", response.StatusCode, err)
 	}
 	_ = response.Body.Close()
+}
+
+func TestMobileBearerSurfaceAllowlist(t *testing.T) {
+	for _, path := range []string{
+		"/api/v2/mobile/auth/logout",
+		"/api/v2/auth/session",
+		"/api/v2/watch/lineups",
+		"/api/v2/search",
+		"/api/v2/stream/telemetry",
+		"/stream/hls-audio/channel",
+		"/images/channel.png",
+	} {
+		if !mobileBearerPathAllowed(path) {
+			t.Errorf("expected mobile bearer access to %s", path)
+		}
+	}
+	for _, path := range []string{
+		"/api/v2/studio/overview",
+		"/api/v2/account/media-keys",
+		"/api/v2/auth/mfa/enroll",
+		"/docs/openapi.yaml",
+	} {
+		if mobileBearerPathAllowed(path) {
+			t.Errorf("mobile bearer unexpectedly allowed on %s", path)
+		}
+	}
 }
 
 func TestRoleAndPasswordGuards(t *testing.T) {

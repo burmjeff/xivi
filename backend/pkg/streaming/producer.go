@@ -30,37 +30,44 @@ type gstProducer struct {
 	config     Config
 	hub        *Hub
 
-	mu                   sync.Mutex
-	lifecycle            sync.Mutex
-	graphMu              sync.Mutex
-	pipeline             *gst.Pipeline
-	ready                chan struct{}
-	hlsReady             chan struct{}
-	errors               chan error
-	readyOnce            sync.Once
-	hlsOnce              sync.Once
-	errorOnce            sync.Once
-	stopOnce             sync.Once
-	stopping             atomic.Bool
-	lastDataNS           atomic.Int64
-	probe                tsProbe
-	busDone              chan struct{}
-	playlist             string
-	hlsSink              *gst.Element
-	sourceBin            *gst.Element
-	inputTSOnce          sync.Once
-	routeMu              sync.Mutex
-	routed               map[string]bool
-	expectedMedia        map[string]bool
-	lastRouteChange      time.Time
-	mediaMu              sync.RWMutex
-	mediaTracks          []string
-	compatibilityActions []string
-	hlsStartupMu         sync.Mutex
-	hlsBootstrapReady    bool
-	hlsSuppressed        map[string]struct{}
-	hlsMediaMu           sync.Mutex
-	hlsMediaInspections  map[string]cachedHLSSegmentInspection
+	mu                     sync.Mutex
+	lifecycle              sync.Mutex
+	graphMu                sync.Mutex
+	pipeline               *gst.Pipeline
+	ready                  chan struct{}
+	hlsReady               chan struct{}
+	audioHLSReady          chan struct{}
+	errors                 chan error
+	readyOnce              sync.Once
+	hlsOnce                sync.Once
+	audioHLSOnce           sync.Once
+	errorOnce              sync.Once
+	stopOnce               sync.Once
+	stopping               atomic.Bool
+	lastDataNS             atomic.Int64
+	probe                  tsProbe
+	busDone                chan struct{}
+	playlist               string
+	audioPlaylist          string
+	hlsSink                *gst.Element
+	audioHLSSink           *gst.Element
+	sourceBin              *gst.Element
+	inputTSOnce            sync.Once
+	routeMu                sync.Mutex
+	routed                 map[string]bool
+	expectedMedia          map[string]bool
+	lastRouteChange        time.Time
+	mediaMu                sync.RWMutex
+	mediaTracks            []string
+	compatibilityActions   []string
+	hlsStartupMu           sync.Mutex
+	hlsBootstrapReady      bool
+	hlsSuppressed          map[string]struct{}
+	hlsMediaMu             sync.Mutex
+	hlsMediaInspections    map[string]cachedHLSSegmentInspection
+	audioHLSStartupMu      sync.Mutex
+	audioHLSBootstrapReady bool
+	audioHLSSuppressed     map[string]struct{}
 }
 
 type cachedHLSSegmentInspection struct {
@@ -78,6 +85,7 @@ func newGSTProducer(id, source string, generation uint64, config Config, hub *Hu
 		hub:           hub,
 		ready:         make(chan struct{}),
 		hlsReady:      make(chan struct{}),
+		audioHLSReady: make(chan struct{}),
 		errors:        make(chan error, 1),
 		busDone:       make(chan struct{}),
 		routed:        make(map[string]bool),
@@ -85,9 +93,16 @@ func newGSTProducer(id, source string, generation uint64, config Config, hub *Hu
 	}
 }
 
-func (p *gstProducer) Ready() <-chan struct{}    { return p.ready }
-func (p *gstProducer) HLSReady() <-chan struct{} { return p.hlsReady }
-func (p *gstProducer) Errors() <-chan error      { return p.errors }
+func (p *gstProducer) Ready() <-chan struct{}         { return p.ready }
+func (p *gstProducer) HLSReady() <-chan struct{}      { return p.hlsReady }
+func (p *gstProducer) AudioHLSReady() <-chan struct{} { return p.audioHLSReady }
+func (p *gstProducer) Errors() <-chan error           { return p.errors }
+
+func (p *gstProducer) AudioAvailable() bool {
+	p.routeMu.Lock()
+	defer p.routeMu.Unlock()
+	return p.routed["audio"]
+}
 
 func (p *gstProducer) LastDataAt() time.Time {
 	nanoseconds := p.lastDataNS.Load()
@@ -165,27 +180,75 @@ func (p *gstProducer) HLSPlaylistSnapshot() (*HLSPlaylistSnapshot, error) {
 	return ready, nil
 }
 
+func (p *gstProducer) AudioHLSPlaylistSnapshot() (*HLSPlaylistSnapshot, error) {
+	select {
+	case <-p.ready:
+	default:
+		return nil, fmt.Errorf("%w: canonical media layout is not ready", ErrHLSPlaylistNotReady)
+	}
+	if !p.AudioAvailable() {
+		return nil, ErrAudioTrackUnavailable
+	}
+	snapshot, err := ReadHLSPlaylist(p.audioPlaylist)
+	if err != nil {
+		return nil, err
+	}
+	directory := filepath.Dir(p.audioPlaylist)
+	if err := snapshot.ValidateSegments(directory); err != nil {
+		return nil, err
+	}
+	p.audioHLSStartupMu.Lock()
+	defer p.audioHLSStartupMu.Unlock()
+	if p.audioHLSBootstrapReady {
+		steady := steadyHLSWindowWithSuppression(snapshot, p.audioHLSSuppressed)
+		if len(steady.Media) == 0 {
+			return nil, fmt.Errorf("%w: no completed audio segment remains after startup filtering", ErrHLSPlaylistNotReady)
+		}
+		return steady, nil
+	}
+	ready, err := snapshot.decoderReadyStartupWindow(directory, hlsMediaExpectation{Audio: true}, p.inspectHLSSegment)
+	if err != nil {
+		return nil, err
+	}
+	p.audioHLSSuppressed = make(map[string]struct{})
+	readyNames := make(map[string]struct{}, len(ready.Media))
+	for _, media := range ready.Media {
+		readyNames[media.Name] = struct{}{}
+	}
+	for _, media := range snapshot.Media {
+		if _, retained := readyNames[media.Name]; !retained {
+			p.audioHLSSuppressed[media.Name] = struct{}{}
+		}
+	}
+	p.audioHLSBootstrapReady = true
+	return ready, nil
+}
+
 // steadyHLSWindow removes only the fragments rejected before the first safe
 // decoder bootstrap. Every completed fragment created after that point is
 // published monotonically without a per-segment track-payload requirement.
 func (p *gstProducer) steadyHLSWindow(snapshot *HLSPlaylistSnapshot) *HLSPlaylistSnapshot {
-	if len(p.hlsSuppressed) == 0 {
+	return steadyHLSWindowWithSuppression(snapshot, p.hlsSuppressed)
+}
+
+func steadyHLSWindowWithSuppression(snapshot *HLSPlaylistSnapshot, suppressed map[string]struct{}) *HLSPlaylistSnapshot {
+	if len(suppressed) == 0 {
 		return snapshot
 	}
 	current := make(map[string]struct{}, len(snapshot.Media))
 	result := &HLSPlaylistSnapshot{}
 	for _, media := range snapshot.Media {
 		current[media.Name] = struct{}{}
-		if _, suppressed := p.hlsSuppressed[media.Name]; suppressed {
+		if _, rejected := suppressed[media.Name]; rejected {
 			continue
 		}
 		result.Media = append(result.Media, media)
 		result.Segments = append(result.Segments, media.Name)
 		result.Duration += media.Duration
 	}
-	for name := range p.hlsSuppressed {
+	for name := range suppressed {
 		if _, advertised := current[name]; !advertised {
-			delete(p.hlsSuppressed, name)
+			delete(suppressed, name)
 		}
 	}
 	return result
@@ -343,6 +406,12 @@ func (p *gstProducer) Start() error {
 		return err
 	}
 	p.hlsSink = hlsSink
+	audioHLSSink, err := p.addAudioHLSOutput()
+	if err != nil {
+		p.disposePipeline()
+		return err
+	}
+	p.audioHLSSink = audioHLSSink
 
 	if _, err := source.Connect("pad-added", func(self *gst.Element, pad *gst.Pad) {
 		if p.stopping.Load() {
@@ -652,15 +721,58 @@ func (p *gstProducer) routePadToMux(pad *gst.Pad, parserName, capsString, media 
 			}
 			hlsTail = element
 		}
-		hlsPad := p.hlsSink.GetRequestPad(media)
-		if hlsPad == nil {
-			return nil, fmt.Errorf("request HLS %s input pad", media)
-		}
-		if result := hlsTail.GetStaticPad("src").Link(hlsPad); result != gst.PadLinkOK {
-			return nil, fmt.Errorf("link %s to HLS segmenter: %s", media, result.String())
-		}
 		elements = append(elements, hlsQueue)
 		elements = append(elements, compatibility...)
+		if media == "audio" && p.audioHLSSink != nil {
+			normalizedTee, teeErr := gst.NewElement("tee")
+			if teeErr != nil {
+				return nil, fmt.Errorf("create normalized audio tee: %w", teeErr)
+			}
+			mainQueue, mainQueueErr := gst.NewElement("queue")
+			if mainQueueErr != nil {
+				return nil, fmt.Errorf("create main HLS audio queue: %w", mainQueueErr)
+			}
+			audioQueue, audioQueueErr := gst.NewElement("queue")
+			if audioQueueErr != nil {
+				return nil, fmt.Errorf("create audio-only HLS queue: %w", audioQueueErr)
+			}
+			for _, branchQueue := range []*gst.Element{mainQueue, audioQueue} {
+				_ = branchQueue.Set("max-size-time", uint64(10*time.Second))
+				_ = branchQueue.Set("max-size-bytes", uint(0))
+				_ = branchQueue.Set("max-size-buffers", uint(0))
+				p.pipeline.Add(branchQueue)
+			}
+			p.pipeline.Add(normalizedTee)
+			if err := hlsTail.Link(normalizedTee); err != nil {
+				return nil, fmt.Errorf("link normalized audio to shared HLS outputs: %w", err)
+			}
+			if err := normalizedTee.Link(mainQueue); err != nil {
+				return nil, fmt.Errorf("link normalized audio to main HLS: %w", err)
+			}
+			if err := normalizedTee.Link(audioQueue); err != nil {
+				return nil, fmt.Errorf("link normalized audio to audio-only HLS: %w", err)
+			}
+			mainPad := p.hlsSink.GetRequestPad("audio")
+			audioPad := p.audioHLSSink.GetRequestPad("audio")
+			if mainPad == nil || audioPad == nil {
+				return nil, errors.New("request HLS audio input pads")
+			}
+			if result := mainQueue.GetStaticPad("src").Link(mainPad); result != gst.PadLinkOK {
+				return nil, fmt.Errorf("link audio to main HLS segmenter: %s", result.String())
+			}
+			if result := audioQueue.GetStaticPad("src").Link(audioPad); result != gst.PadLinkOK {
+				return nil, fmt.Errorf("link audio to audio-only HLS segmenter: %s", result.String())
+			}
+			elements = append(elements, normalizedTee, mainQueue, audioQueue)
+		} else {
+			hlsPad := p.hlsSink.GetRequestPad(media)
+			if hlsPad == nil {
+				return nil, fmt.Errorf("request HLS %s input pad", media)
+			}
+			if result := hlsTail.GetStaticPad("src").Link(hlsPad); result != gst.PadLinkOK {
+				return nil, fmt.Errorf("link %s to HLS segmenter: %s", media, result.String())
+			}
+		}
 		if action != "" {
 			p.rememberCompatibilityAction(action)
 		}
@@ -858,6 +970,35 @@ func (p *gstProducer) addHLSOutput() (*gst.Element, error) {
 	return sink, nil
 }
 
+func (p *gstProducer) addAudioHLSOutput() (*gst.Element, error) {
+	sink, err := gst.NewElement("hlssink2")
+	if err != nil {
+		return nil, fmt.Errorf("create audio HLS segmenter: %w", err)
+	}
+	hlsDirectory := filepath.Join(p.config.StreamRoot, p.id)
+	p.audioPlaylist = filepath.Join(hlsDirectory, fmt.Sprintf("audio-playlist.%d.m3u8", p.generation))
+	if err := setRequired(sink, "playlist-location", p.audioPlaylist); err != nil {
+		return nil, err
+	}
+	if err := setRequired(sink, "location", filepath.Join(hlsDirectory, fmt.Sprintf("audio-segment.%d.%%05d.ts", p.generation))); err != nil {
+		return nil, err
+	}
+	if err := setRequired(sink, "playlist-root", fmt.Sprintf("/stream/hls-audio/%s", p.id)); err != nil {
+		return nil, err
+	}
+	if err := setRequired(sink, "target-duration", uint(p.config.HLSSegmentSeconds)); err != nil {
+		return nil, err
+	}
+	if err := setRequired(sink, "playlist-length", uint(p.config.HLSPlaylistLength)); err != nil {
+		return nil, err
+	}
+	if err := setRequired(sink, "max-files", uint(p.config.HLSPlaylistLength+6)); err != nil {
+		return nil, err
+	}
+	p.pipeline.Add(sink)
+	return sink, nil
+}
+
 // Repeating video parameter sets at each keyframe makes every HLS fragment
 // independently decodable, including when a viewer joins after the producer
 // has been running for a while.
@@ -969,17 +1110,37 @@ func (p *gstProducer) stallLoop() {
 func (p *gstProducer) playlistLoop() {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+	mainReady := false
 	for !p.stopping.Load() {
 		<-ticker.C
-		snapshot, err := p.HLSPlaylistSnapshot()
-		// One independently decodable segment with the canonical audio/video
-		// layout is enough to start. Waiting for three makes startup depend on
-		// upstream keyframe cadence and can turn a healthy stream into a timeout.
-		if err != nil || len(snapshot.Segments) < 1 || snapshot.Duration <= 0 {
+		if !mainReady {
+			snapshot, err := p.HLSPlaylistSnapshot()
+			// One independently decodable segment with the canonical audio/video
+			// layout is enough to start. Waiting for three makes startup depend on
+			// upstream keyframe cadence and can turn a healthy stream into a timeout.
+			if err == nil && len(snapshot.Segments) >= 1 && snapshot.Duration > 0 {
+				p.hlsOnce.Do(func() { close(p.hlsReady) })
+				mainReady = true
+			}
+		}
+		select {
+		case <-p.ready:
+			if !p.AudioAvailable() {
+				if mainReady {
+					return
+				}
+				continue
+			}
+		default:
 			continue
 		}
-		p.hlsOnce.Do(func() { close(p.hlsReady) })
-		return
+		audioSnapshot, audioErr := p.AudioHLSPlaylistSnapshot()
+		if audioErr == nil && len(audioSnapshot.Segments) >= 1 && audioSnapshot.Duration > 0 {
+			p.audioHLSOnce.Do(func() { close(p.audioHLSReady) })
+			if mainReady {
+				return
+			}
+		}
 	}
 }
 
@@ -1004,8 +1165,9 @@ func (p *gstProducer) prepareHLSDirectory() error {
 		}
 		for _, entry := range entries {
 			name := entry.Name()
-			isPlaylist := strings.HasPrefix(name, "playlist.") && strings.HasSuffix(name, ".m3u8")
-			if entry.IsDir() || (!isPlaylist && name != "playlist.m3u8" && !(strings.HasPrefix(name, "segment.") && strings.HasSuffix(name, ".ts"))) {
+			isPlaylist := (strings.HasPrefix(name, "playlist.") || strings.HasPrefix(name, "audio-playlist.")) && strings.HasSuffix(name, ".m3u8")
+			isSegment := (strings.HasPrefix(name, "segment.") || strings.HasPrefix(name, "audio-segment.")) && strings.HasSuffix(name, ".ts")
+			if entry.IsDir() || (!isPlaylist && name != "playlist.m3u8" && name != "audio-playlist.m3u8" && !isSegment) {
 				continue
 			}
 			if err := os.Remove(filepath.Join(directory, name)); err != nil && !os.IsNotExist(err) {

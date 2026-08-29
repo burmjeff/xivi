@@ -15,6 +15,8 @@
 	} from '$lib/api/types';
 	import { preferences, selectLineup } from '$lib/state/preferences.svelte';
 	import LogoTile from '$lib/components/brand/LogoTile.svelte';
+	import { playbackController } from '$lib/playback/controller';
+	import type { NativePlaybackState } from '$lib/platform/native';
 
 	let routeMatch = $derived(page.url.pathname.match(/^\/watch\/channel\/(\d+)\/?$/));
 	let channelId = $derived(routeMatch ? Number(routeMatch[1]) : 0);
@@ -63,6 +65,21 @@
 		retryTimer: ReturnType<typeof setTimeout> | undefined,
 		stallTimer: ReturnType<typeof setTimeout> | undefined;
 	let pipActive = $state(false);
+	let nativeState = $state<NativePlaybackState>({
+		active: false,
+		playing: false,
+		audioOnly: false
+	});
+	let nativeRequestedStream = '';
+	let removeNativeListener: (() => void) | undefined;
+	if (playbackController.native) {
+		void playbackController.state().then((state) => (nativeState = state));
+		void playbackController
+			.subscribe((state) => (nativeState = state))
+			.then((remove) => {
+				removeNativeListener = remove;
+			});
+	}
 	function ensureViewerId() {
 		if (!viewerId) {
 			viewerId =
@@ -514,17 +531,37 @@
 	$effect(() => {
 		if (!playerRoute || !channelQuery.data) return;
 		activeChannel = channelQuery.data;
-		if (video && channelQuery.data.stream_url) void attach(channelQuery.data.stream_url);
+		if (playbackController.native && lineupId) {
+			loading = false;
+			error = '';
+			if (nativeRequestedStream === channelQuery.data.stream_url) return;
+			nativeRequestedStream = channelQuery.data.stream_url;
+			void playbackController
+				.playVideo({
+					channelId: channelQuery.data.id,
+					lineupId,
+					name: channelQuery.data.name,
+					programme: channelQuery.data.current?.title,
+					logoUrl: channelQuery.data.logo_url,
+					streamUrl: channelQuery.data.stream_url,
+					audioStreamUrl: channelQuery.data.audio_stream_url
+				})
+				.catch(() => {
+					nativeRequestedStream = '';
+					error = 'The native player could not start this channel.';
+				});
+		} else if (video && channelQuery.data.stream_url) void attach(channelQuery.data.stream_url);
 	});
 	$effect(() => {
-		if (playerRoute || !attachedUrl || pipActive) return;
+		if (playbackController.native || playerRoute || !attachedUrl || pipActive) return;
 		// Internal navigation updates the root shell without unmounting this
 		// component. Stop ordinary background playback, but leave an active PiP
 		// session and its exact video element untouched.
 		stopPlayback();
 	});
 	onDestroy(() => {
-		stopPlayback();
+		removeNativeListener?.();
+		if (!playbackController.native) stopPlayback();
 	});
 	function programmeTime(value?: string) {
 		return value
@@ -549,30 +586,50 @@
 			><span class="live-pill">Live</span>
 		</div>
 		<div class="player-stage">
-			<media-controller class="media-controller">
-				<!-- svelte-ignore a11y_media_has_caption: live streams do not expose a separate VTT captions track -->
-				<video
-					slot="media"
-					bind:this={video}
-					autoplay
-					playsinline
-					use:pictureInPictureEvents
-					oncanplay={onCanPlay}
-					onplay={() => (playbackPaused = false)}
-					onplaying={onPlaying}
-					onpause={() => (playbackPaused = true)}
-					onwaiting={onWaiting}
-					onstalled={onWaiting}
-					onerror={onVideoError}
-					aria-label={`${activeChannel?.name ?? 'Xivi'} live stream`}
-				></video>
-				<media-control-bar class="media-control-bar"
-					><media-play-button></media-play-button><media-mute-button
-					></media-mute-button><media-volume-range></media-volume-range><media-time-range
-					></media-time-range><media-pip-button></media-pip-button><media-fullscreen-button
-					></media-fullscreen-button></media-control-bar
-				>
-			</media-controller>
+			{#if playbackController.native}
+				<div class="native-player-launch">
+					<Radio size={38} />
+					<h2>{nativeState.audioOnly ? 'Playing audio in the car' : 'Native player active'}</h2>
+					<p>
+						Video, picture-in-picture, media controls, and audio focus are handled securely by
+						Android.
+					</p>
+					<div>
+						<button
+							class="app-button app-button--primary"
+							onclick={() => void playbackController.reopen()}>Open player</button
+						><button
+							class="app-button app-button--secondary"
+							onclick={() => void playbackController.stop()}>Stop</button
+						>
+					</div>
+				</div>
+			{:else}
+				<media-controller class="media-controller">
+					<!-- svelte-ignore a11y_media_has_caption: live streams do not expose a separate VTT captions track -->
+					<video
+						slot="media"
+						bind:this={video}
+						autoplay
+						playsinline
+						use:pictureInPictureEvents
+						oncanplay={onCanPlay}
+						onplay={() => (playbackPaused = false)}
+						onplaying={onPlaying}
+						onpause={() => (playbackPaused = true)}
+						onwaiting={onWaiting}
+						onstalled={onWaiting}
+						onerror={onVideoError}
+						aria-label={`${activeChannel?.name ?? 'Xivi'} live stream`}
+					></video>
+					<media-control-bar class="media-control-bar"
+						><media-play-button></media-play-button><media-mute-button
+						></media-mute-button><media-volume-range></media-volume-range><media-time-range
+						></media-time-range><media-pip-button></media-pip-button><media-fullscreen-button
+						></media-fullscreen-button></media-control-bar
+					>
+				</media-controller>
+			{/if}
 			{#if playerRoute && channelQuery.isPending}<div class="player-loading">
 					<Radio size={40} />
 					<p>Tuning the signal…</p>
@@ -645,12 +702,79 @@
 			</div>{/if}
 	</div>
 </section>
+{#if playbackController.native && !playerRoute && nativeState.active}
+	<aside class="native-now-playing" aria-label="Now playing">
+		<div>
+			<span>Live{nativeState.audioOnly ? ' · Audio' : ''}</span><strong>{nativeState.name}</strong
+			><small>{nativeState.programme ?? 'Schedule unavailable'}</small>
+		</div>
+		<button class="app-button app-button--primary" onclick={() => void playbackController.reopen()}
+			>Open</button
+		>
+		<button class="app-button app-button--quiet" onclick={() => void playbackController.stop()}
+			>Stop</button
+		>
+	</aside>
+{/if}
 
 <style>
 	.player-page {
 		min-height: calc(100dvh - 4.6rem);
 		background: rgb(4 5 8 / 0.95);
 		padding: clamp(1rem, 3vw, 2.5rem);
+	}
+	.native-player-launch {
+		display: grid;
+		min-height: 24rem;
+		place-items: center;
+		align-content: center;
+		gap: 0.75rem;
+		padding: 2rem;
+		text-align: center;
+	}
+	.native-player-launch h2,
+	.native-player-launch p {
+		margin: 0;
+	}
+	.native-player-launch p {
+		max-width: 34rem;
+		color: var(--muted);
+	}
+	.native-player-launch > div {
+		display: flex;
+		gap: 0.7rem;
+	}
+	.native-now-playing {
+		position: fixed;
+		z-index: 70;
+		right: 1rem;
+		bottom: calc(5rem + env(safe-area-inset-bottom));
+		left: 1rem;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto auto;
+		align-items: center;
+		gap: 0.7rem;
+		border: 1px solid var(--line);
+		border-radius: 1rem;
+		background: color-mix(in oklch, var(--surface-raised) 94%, transparent);
+		box-shadow: 0 18px 50px rgb(0 0 0 / 0.4);
+		padding: 0.7rem;
+		backdrop-filter: blur(18px);
+	}
+	.native-now-playing div {
+		display: grid;
+		min-width: 0;
+	}
+	.native-now-playing span,
+	.native-now-playing small {
+		color: var(--muted);
+		font-size: 0.72rem;
+	}
+	.native-now-playing strong,
+	.native-now-playing small {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.player-page.pip-background {
 		position: fixed;
