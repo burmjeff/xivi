@@ -29,7 +29,7 @@
 		"docker-run": "open-cli http://localhost:3000 && docker run -p 3000:3000 -v serve:/xivi/serve -v config:/xivi/config --rm xivi"
 	},
 	"devDependencies": {
-		"@capacitor/cli": "^8.5.0",
+		"@capacitor/cli": "8.4.3",
 		"@sveltejs/kit": "^2.49.0",
 		"@sveltejs/vite-plugin-svelte": "^6.2.1",
 		"@types/node": "^24.10.1",
