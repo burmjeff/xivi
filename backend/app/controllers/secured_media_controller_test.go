@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -40,7 +41,7 @@ func TestSecuredImageRejectsPathTraversal(t *testing.T) {
 	}
 	app := fiber.New()
 	app.Get("/images/:asset", GetSecuredImage)
-	for _, target := range []string{"/images/..%2Fsecret.png", "/images/%2e%2e%2fsecret.png"} {
+	for _, target := range []string{"/images/..%2Fsecret.png", "/images/%2e%2e%2fsecret.png", "/images/%252e%252e%252fsecret.png"} {
 		response, err := app.Test(httptest.NewRequest(fiber.MethodGet, target, nil), -1)
 		if err != nil {
 			t.Fatal(err)
@@ -49,6 +50,34 @@ func TestSecuredImageRejectsPathTraversal(t *testing.T) {
 			t.Fatalf("path traversal %q returned the external file", target)
 		}
 		_ = response.Body.Close()
+	}
+}
+
+func TestSecuredImageServesValidatedLiteralPath(t *testing.T) {
+	original := settings.LOGO_FILEPATH
+	settings.LOGO_FILEPATH = t.TempDir()
+	t.Cleanup(func() { settings.LOGO_FILEPATH = original })
+	for name, body := range map[string]string{"%61dmin.png": "authorized logo", "admin.png": "different logo"} {
+		if err := os.WriteFile(filepath.Join(settings.LOGO_FILEPATH, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	app := fiber.New()
+	app.Get("/images/:asset", GetSecuredImage)
+	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/images/%61dmin.png", nil), -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || string(body) != "authorized logo" {
+		t.Fatalf("served a different file than the validated path: status=%d body=%q", response.StatusCode, body)
+	}
+	if response.Header.Get("Cache-Control") != "private, no-store" || response.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("lost private image headers: %v", response.Header)
 	}
 }
 

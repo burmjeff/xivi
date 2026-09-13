@@ -54,7 +54,7 @@ jobs:
           exit-code: '1'
           ignore-unfixed: true
           severity: CRITICAL,HIGH
-          version: v0.70.0
+          version: v0.74.0
           cache: true
           token-setup-trivy: ${{ github.token }}
       - name: Generate SBOM

@@ -8,7 +8,7 @@ require (
 	github.com/go-co-op/gocron v1.37.0
 	github.com/go-gst/go-gst v1.4.0
 	github.com/go-playground/validator/v10 v10.28.0
-	github.com/gofiber/fiber/v2 v2.52.12
+	github.com/gofiber/fiber/v2 v2.52.13
 	github.com/google/uuid v1.6.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/joho/godotenv v1.5.1
@@ -59,14 +59,14 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/exp v0.0.0-20251113190631-e25ba8c21ef6 // indirect
-	golang.org/x/image v0.43.0 // indirect
+	golang.org/x/image v0.45.0 // indirect
 	golang.org/x/mod v0.40.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 )
 
 require (
 	github.com/KyleBanks/depth v1.2.1 // indirect
-	github.com/andybalholm/brotli v1.2.0 // indirect
+	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/go-openapi/jsonpointer v0.22.3 // indirect
 	github.com/go-openapi/jsonreference v0.21.3 // indirect
 	github.com/go-openapi/spec v0.22.1 // indirect
@@ -77,7 +77,7 @@ require (
 	github.com/klauspost/compress v1.19.2 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/valyala/fasthttp v1.68.0 // indirect
+	github.com/valyala/fasthttp v1.70.0 // indirect
 	golang.org/x/crypto v0.55.0
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect

@@ -764,7 +764,7 @@ func V2StudioSourceChannelLogo(c *fiber.Ctx) error {
 	}
 	c.Set(fiber.HeaderContentType, "image/png")
 	c.Set(fiber.HeaderCacheControl, "private, no-store")
-	return c.SendFile(path)
+	return security.SendFileLiteral(c, path)
 }
 
 func V2SetStudioSourceChannelsEnabled(c *fiber.Ctx) error {

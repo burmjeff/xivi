@@ -582,7 +582,7 @@ func sendHLSFile(c *fiber.Ctx, streamID, asset string) error {
 		}
 		session.AddClientBytes(clientID, int(info.Size()))
 	}
-	return c.SendFile(path)
+	return security.SendFileLiteral(c, path)
 }
 
 // V2StreamingStatus exposes enough state to diagnose startup, failover, stalls

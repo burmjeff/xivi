@@ -120,6 +120,7 @@ func TestMFALoginUsesSecondStepAndRevocableTrustedBrowser(t *testing.T) {
 	app.Post("/login/mfa", V2CompleteMFALogin)
 	request := func(path, body string) *http.Request {
 		req := httptest.NewRequest(fiber.MethodPost, "http://xivi.test"+path, bytes.NewBufferString(body))
+		req.RequestURI = req.URL.RequestURI()
 		req.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
 		req.Header.Set(fiber.HeaderOrigin, "http://xivi.test")
 		req.Header.Set(fiber.HeaderUserAgent, "Xivi MFA integration test")

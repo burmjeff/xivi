@@ -12,7 +12,7 @@ func TestGlobalCSPLeavesApplicationHashesToStaticDocument(t *testing.T) {
 	FiberMiddleware(app)
 	app.Get("/", func(c *fiber.Ctx) error { return c.SendString("ok") })
 
-	response, err := app.Test(httptest.NewRequest(fiber.MethodGet, "http://xivi.test/", nil), -1)
+	response, err := app.Test(httptest.NewRequest(fiber.MethodGet, "/", nil), -1)
 	if err != nil {
 		t.Fatal(err)
 	}

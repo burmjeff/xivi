@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"xivi/backend/pkg/middleware"
+	"xivi/backend/pkg/security"
 )
 
 // Svelte Routes
@@ -22,15 +23,15 @@ func SvelteRoutes(a *fiber.App) {
 
 	// Routes for GET method:
 	router.Get("/", func(c *fiber.Ctx) error {
-		return c.SendFile("./build/index.html")
+		return security.SendFileLiteral(c, "./build/index.html")
 	})
 	router.Get("/channels", func(c *fiber.Ctx) error {
-		return c.SendFile("./build/index.html")
+		return security.SendFileLiteral(c, "./build/index.html")
 	})
-	router.Get("/guide", func(c *fiber.Ctx) error { return c.SendFile("./build/index.html") })
-	router.Get("/login", func(c *fiber.Ctx) error { return c.SendFile("./build/index.html") })
-	router.Get("/account", func(c *fiber.Ctx) error { return c.SendFile("./build/index.html") })
-	router.Get("/watch/channel/:id", func(c *fiber.Ctx) error { return c.SendFile("./build/index.html") })
-	router.Get("/studio", func(c *fiber.Ctx) error { return c.SendFile("./build/index.html") })
-	router.Get("/studio/*", func(c *fiber.Ctx) error { return c.SendFile("./build/index.html") })
+	router.Get("/guide", func(c *fiber.Ctx) error { return security.SendFileLiteral(c, "./build/index.html") })
+	router.Get("/login", func(c *fiber.Ctx) error { return security.SendFileLiteral(c, "./build/index.html") })
+	router.Get("/account", func(c *fiber.Ctx) error { return security.SendFileLiteral(c, "./build/index.html") })
+	router.Get("/watch/channel/:id", func(c *fiber.Ctx) error { return security.SendFileLiteral(c, "./build/index.html") })
+	router.Get("/studio", func(c *fiber.Ctx) error { return security.SendFileLiteral(c, "./build/index.html") })
+	router.Get("/studio/*", func(c *fiber.Ctx) error { return security.SendFileLiteral(c, "./build/index.html") })
 }

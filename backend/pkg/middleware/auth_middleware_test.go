@@ -187,6 +187,7 @@ func TestSessionMiddlewareRejectsRevocationAndExpiry(t *testing.T) {
 	})
 	request := func() *http.Request {
 		req := httptest.NewRequest(fiber.MethodGet, "http://xivi.test/protected", nil)
+		req.RequestURI = req.URL.RequestURI()
 		req.AddCookie(&http.Cookie{Name: LANSessionCookie, Value: token, Path: "/"})
 		return req
 	}
@@ -330,6 +331,7 @@ func TestShortMediaOutputAliasAuthenticatesOneLineupAndHonorsRevocation(t *testi
 
 	for _, path := range []string{"/m/ABCD-EFGH-JKMN-PQRS", "/m/abcdefghjkmnpqrs"} {
 		request := httptest.NewRequest(fiber.MethodGet, "https://xivi.test"+path, nil)
+		request.RequestURI = request.URL.RequestURI()
 		request.TLS = &tls.ConnectionState{}
 		response, err := app.Test(request, -1)
 		if err != nil || response.StatusCode != fiber.StatusNoContent {
@@ -339,6 +341,7 @@ func TestShortMediaOutputAliasAuthenticatesOneLineupAndHonorsRevocation(t *testi
 	}
 	db.MustExec(`UPDATE media_access_key SET revoked_at = ? WHERE id = 2`, now)
 	request := httptest.NewRequest(fiber.MethodGet, "https://xivi.test/m/ABCD-EFGH-JKMN-PQRS", nil)
+	request.RequestURI = request.URL.RequestURI()
 	request.TLS = &tls.ConnectionState{}
 	response, err := app.Test(request, -1)
 	if err != nil || response.StatusCode != fiber.StatusUnauthorized {
@@ -374,6 +377,8 @@ func TestCSRFRequiresSessionTokenAndSameOrigin(t *testing.T) {
 	}, CSRFProtected(), func(c *fiber.Ctx) error { return c.SendStatus(fiber.StatusNoContent) })
 
 	request := httptest.NewRequest(fiber.MethodPost, "http://xivi.test/change", nil)
+	// Origin-form requests retain Host when Fiber dumps them for its test server.
+	request.RequestURI = request.URL.RequestURI()
 	request.Header.Set("Origin", "http://xivi.test")
 	request.Header.Set("Sec-Fetch-Site", "same-origin")
 	request.Header.Set("X-CSRF-Token", csrf)
@@ -389,7 +394,9 @@ func TestCSRFRequiresSessionTokenAndSameOrigin(t *testing.T) {
 		c.Locals(mobileSessionLocal, &models.MobileSession{ID: 22, UserID: 7})
 		return c.Next()
 	}, CSRFProtected(), func(c *fiber.Ctx) error { return c.SendStatus(fiber.StatusNoContent) })
-	mobileResponse, mobileErr := mobileApp.Test(httptest.NewRequest(fiber.MethodPost, "https://xivi.test/change", nil), -1)
+	mobileRequest := httptest.NewRequest(fiber.MethodPost, "https://xivi.test/change", nil)
+	mobileRequest.RequestURI = mobileRequest.URL.RequestURI()
+	mobileResponse, mobileErr := mobileApp.Test(mobileRequest, -1)
 	if mobileErr != nil || mobileResponse.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("authenticated mobile bearer mutation returned status %d, err %v", mobileResponse.StatusCode, mobileErr)
 	}
@@ -405,6 +412,7 @@ func TestCSRFRequiresSessionTokenAndSameOrigin(t *testing.T) {
 		{name: "foreign origin", origin: "https://attacker.example", csrf: csrf, site: "cross-site"},
 	} {
 		request = httptest.NewRequest(fiber.MethodPost, "http://xivi.test/change", nil)
+		request.RequestURI = request.URL.RequestURI()
 		request.Header.Set("Origin", candidate.origin)
 		request.Header.Set("Sec-Fetch-Site", candidate.site)
 		request.Header.Set("X-CSRF-Token", candidate.csrf)
@@ -418,6 +426,7 @@ func TestCSRFRequiresSessionTokenAndSameOrigin(t *testing.T) {
 	settings.Current().Security.LocalBaseURL = "http://127.0.0.1:5173"
 	settings.Current().Security.TrustedLANCIDRs = []string{"0.0.0.0/0", "::/0"}
 	request = httptest.NewRequest(fiber.MethodPost, "http://localhost:5173/change", nil)
+	request.RequestURI = request.URL.RequestURI()
 	request.RemoteAddr = "127.0.0.1:41000"
 	request.Header.Set("Origin", "http://localhost:5173")
 	request.Header.Set("Sec-Fetch-Site", "same-origin")
@@ -429,6 +438,7 @@ func TestCSRFRequiresSessionTokenAndSameOrigin(t *testing.T) {
 	_ = response.Body.Close()
 
 	request = httptest.NewRequest(fiber.MethodPost, "http://attacker.example/change", nil)
+	request.RequestURI = request.URL.RequestURI()
 	request.RemoteAddr = "127.0.0.1:41000"
 	request.Header.Set("Origin", "http://attacker.example")
 	request.Header.Set("Sec-Fetch-Site", "same-origin")
@@ -442,6 +452,7 @@ func TestCSRFRequiresSessionTokenAndSameOrigin(t *testing.T) {
 	settings.Current().Security.PublicBaseURL = "https://tv.example.com"
 	settings.Current().Security.TrustedProxyCIDRs = []string{"0.0.0.0/0", "::/0"}
 	request = httptest.NewRequest(fiber.MethodPost, "http://backend.internal/change", nil)
+	request.RequestURI = request.URL.RequestURI()
 	request.Header.Set("Origin", "https://tv.example.com")
 	request.Header.Set("X-Forwarded-Proto", "https")
 	request.Header.Set("X-Forwarded-For", "198.51.100.20")
@@ -454,6 +465,7 @@ func TestCSRFRequiresSessionTokenAndSameOrigin(t *testing.T) {
 	_ = response.Body.Close()
 
 	request = httptest.NewRequest(fiber.MethodPost, "http://backend.internal/change", nil)
+	request.RequestURI = request.URL.RequestURI()
 	request.Header.Set("Origin", "https://other.example.com")
 	request.Header.Set("X-Forwarded-Proto", "https")
 	request.Header.Set("X-Forwarded-For", "198.51.100.20")

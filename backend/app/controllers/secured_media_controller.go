@@ -244,5 +244,5 @@ func GetSecuredImage(c *fiber.Ctx) error {
 	// Revalidate authorization on every request so revoking a key or lineup grant
 	// cannot leave a usable protected logo in a shared browser cache.
 	c.Set(fiber.HeaderCacheControl, "private, no-store")
-	return c.SendFile(path)
+	return security.SendFileLiteral(c, path)
 }
