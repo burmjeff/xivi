@@ -13,7 +13,6 @@ export interface NativePlaybackItem {
 	programme?: string;
 	logoUrl?: string;
 	streamUrl: string;
-	audioStreamUrl?: string | null;
 }
 
 export interface NativePlaybackState {
@@ -22,7 +21,6 @@ export interface NativePlaybackState {
 	name?: string;
 	programme?: string;
 	playing: boolean;
-	audioOnly: boolean;
 }
 
 interface XiviNativePlugin {
@@ -41,7 +39,6 @@ interface XiviNativePlugin {
 	logout(): Promise<void>;
 	cacheArtwork(options: { path: string }): Promise<{ url: string }>;
 	playVideo(options: NativePlaybackItem): Promise<void>;
-	playAudio(options: NativePlaybackItem): Promise<void>;
 	reopenPlayer(): Promise<void>;
 	stopPlayback(): Promise<void>;
 	getPlaybackState(): Promise<NativePlaybackState>;

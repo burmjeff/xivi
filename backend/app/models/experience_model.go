@@ -105,19 +105,18 @@ type Programme struct {
 }
 
 type GuideChannel struct {
-	ID             int64       `db:"id" json:"id"`
-	Number         int64       `db:"number" json:"number"`
-	Name           string      `db:"name" json:"name"`
-	TVGID          *string     `db:"tvgid" json:"tvg_id,omitempty"`
-	UUID           string      `db:"uuid" json:"-"`
-	Logo           string      `db:"logo" json:"logo_url,omitempty"`
-	GroupID        int64       `db:"group_id" json:"group_id"`
-	GroupName      string      `db:"group_name" json:"group_name"`
-	StreamURL      string      `json:"stream_url"`
-	AudioStreamURL *string     `json:"audio_stream_url"`
-	Programmes     []Programme `json:"programmes"`
-	Current        *Programme  `json:"current,omitempty"`
-	Next           *Programme  `json:"next,omitempty"`
+	ID         int64       `db:"id" json:"id"`
+	Number     int64       `db:"number" json:"number"`
+	Name       string      `db:"name" json:"name"`
+	TVGID      *string     `db:"tvgid" json:"tvg_id,omitempty"`
+	UUID       string      `db:"uuid" json:"-"`
+	Logo       string      `db:"logo" json:"logo_url,omitempty"`
+	GroupID    int64       `db:"group_id" json:"group_id"`
+	GroupName  string      `db:"group_name" json:"group_name"`
+	StreamURL  string      `json:"stream_url"`
+	Programmes []Programme `json:"programmes"`
+	Current    *Programme  `json:"current,omitempty"`
+	Next       *Programme  `json:"next,omitempty"`
 }
 
 // WatchChannelNeighbors contains only the adjacent playable channels in a

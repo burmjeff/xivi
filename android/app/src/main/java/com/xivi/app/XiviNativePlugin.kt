@@ -88,13 +88,7 @@ class XiviNativePlugin : Plugin() {
 
     @PluginMethod
     fun playVideo(call: PluginCall) {
-        PlaybackCoordinator.play(context, playbackItem(call), audioOnly = false, openPlayer = true)
-        call.resolve()
-    }
-
-    @PluginMethod
-    fun playAudio(call: PluginCall) {
-        PlaybackCoordinator.play(context, playbackItem(call), audioOnly = true, openPlayer = false)
+        PlaybackCoordinator.play(context, playbackItem(call), openPlayer = true)
         call.resolve()
     }
 
@@ -121,8 +115,7 @@ class XiviNativePlugin : Plugin() {
         call.getString("name") ?: "Live channel",
         call.getString("programme"),
         call.getString("logoUrl"),
-        call.getString("streamUrl") ?: throw IllegalArgumentException("Stream URL is required."),
-        call.getString("audioStreamUrl")
+        call.getString("streamUrl") ?: throw IllegalArgumentException("Stream URL is required.")
     )
 
     private fun requiredBody(call: PluginCall): String =

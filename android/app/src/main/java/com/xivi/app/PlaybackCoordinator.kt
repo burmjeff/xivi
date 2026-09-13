@@ -11,8 +11,7 @@ data class PlaybackItem(
     val name: String,
     val programme: String?,
     val logoUrl: String?,
-    val streamUrl: String,
-    val audioStreamUrl: String?
+    val streamUrl: String
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("channelId", channelId)
@@ -21,7 +20,6 @@ data class PlaybackItem(
         .put("programme", programme)
         .put("logoUrl", logoUrl)
         .put("streamUrl", streamUrl)
-        .put("audioStreamUrl", audioStreamUrl)
 
     companion object {
         fun fromJson(json: JSONObject) = PlaybackItem(
@@ -30,8 +28,7 @@ data class PlaybackItem(
             json.getString("name"),
             json.optString("programme").takeIf { it.isNotBlank() && it != "null" },
             json.optString("logoUrl").takeIf { it.isNotBlank() && it != "null" },
-            json.getString("streamUrl"),
-            json.optString("audioStreamUrl").takeIf { it.isNotBlank() && it != "null" }
+            json.getString("streamUrl")
         )
     }
 }
@@ -41,8 +38,7 @@ data class PlaybackState(
     val channelId: Long? = null,
     val name: String? = null,
     val programme: String? = null,
-    val playing: Boolean = false,
-    val audioOnly: Boolean = false
+    val playing: Boolean = false
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("active", active)
@@ -50,15 +46,12 @@ data class PlaybackState(
         .put("name", name)
         .put("programme", programme)
         .put("playing", playing)
-        .put("audioOnly", audioOnly)
 }
 
 object PlaybackCoordinator {
     const val ACTION_PLAY = "com.xivi.app.PLAY"
     const val ACTION_STOP = "com.xivi.app.STOP"
-    const val ACTION_CAR_CONNECTED = "com.xivi.app.CAR_CONNECTED"
     const val EXTRA_ITEM = "item"
-    const val EXTRA_AUDIO_ONLY = "audio_only"
 
     private val listeners = CopyOnWriteArraySet<(PlaybackState) -> Unit>()
     @Volatile private var state = PlaybackState()
@@ -73,17 +66,16 @@ object PlaybackCoordinator {
     fun state(): PlaybackState = state
     fun item(): PlaybackItem? = currentItem
 
-    fun play(context: Context, item: PlaybackItem, audioOnly: Boolean, openPlayer: Boolean) {
+    fun play(context: Context, item: PlaybackItem, openPlayer: Boolean) {
         currentItem = item
         context.getSharedPreferences("xivi_playback", Context.MODE_PRIVATE).edit()
             .putString("item", item.toJson().toString()).apply()
-        val intent = Intent(context, XiviMediaLibraryService::class.java)
+        val intent = Intent(context, XiviPlaybackService::class.java)
             .setAction(ACTION_PLAY)
             .putExtra(EXTRA_ITEM, item.toJson().toString())
-            .putExtra(EXTRA_AUDIO_ONLY, audioOnly)
         context.startService(intent)
-        update(PlaybackState(true, item.channelId, item.name, item.programme, true, audioOnly))
-        if (openPlayer && !audioOnly) {
+        update(PlaybackState(true, item.channelId, item.name, item.programme, true))
+        if (openPlayer) {
             context.startActivity(Intent(context, PlayerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         }
     }
@@ -95,35 +87,20 @@ object PlaybackCoordinator {
     }
 
     fun reopen(context: Context) {
-        if (state.active && !state.audioOnly) {
+        if (state.active) {
             context.startActivity(Intent(context, PlayerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         }
     }
 
     fun stop(context: Context) {
-        context.startService(Intent(context, XiviMediaLibraryService::class.java).setAction(ACTION_STOP))
+        context.startService(Intent(context, XiviPlaybackService::class.java).setAction(ACTION_STOP))
         currentItem = null
         context.getSharedPreferences("xivi_playback", Context.MODE_PRIVATE).edit().remove("item").apply()
         update(PlaybackState())
-    }
-
-    fun switchVideoToCarAudio(context: Context) {
-        val item = currentItem ?: restore(context) ?: return
-        if (!state.active || state.audioOnly || item.audioStreamUrl.isNullOrBlank()) return
-        play(context, item, audioOnly = true, openPlayer = false)
-        context.sendBroadcast(Intent(ACTION_CAR_CONNECTED).setPackage(context.packageName))
     }
 
     fun update(next: PlaybackState) {
         state = next
         listeners.forEach { it(next) }
     }
-}
-
-interface ParkedVideoCapability {
-    val enabled: Boolean
-}
-
-object DisabledParkedVideoCapability : ParkedVideoCapability {
-    override val enabled: Boolean = false
 }

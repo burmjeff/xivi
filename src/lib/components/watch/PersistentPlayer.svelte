@@ -67,8 +67,7 @@
 	let pipActive = $state(false);
 	let nativeState = $state<NativePlaybackState>({
 		active: false,
-		playing: false,
-		audioOnly: false
+		playing: false
 	});
 	let nativeRequestedStream = '';
 	let removeNativeListener: (() => void) | undefined;
@@ -543,8 +542,7 @@
 					name: channelQuery.data.name,
 					programme: channelQuery.data.current?.title,
 					logoUrl: channelQuery.data.logo_url,
-					streamUrl: channelQuery.data.stream_url,
-					audioStreamUrl: channelQuery.data.audio_stream_url
+					streamUrl: channelQuery.data.stream_url
 				})
 				.catch(() => {
 					nativeRequestedStream = '';
@@ -589,7 +587,7 @@
 			{#if playbackController.native}
 				<div class="native-player-launch">
 					<Radio size={38} />
-					<h2>{nativeState.audioOnly ? 'Playing audio in the car' : 'Native player active'}</h2>
+					<h2>Native player active</h2>
 					<p>
 						Video, picture-in-picture, media controls, and audio focus are handled securely by
 						Android.
@@ -705,8 +703,9 @@
 {#if playbackController.native && !playerRoute && nativeState.active}
 	<aside class="native-now-playing" aria-label="Now playing">
 		<div>
-			<span>Live{nativeState.audioOnly ? ' · Audio' : ''}</span><strong>{nativeState.name}</strong
-			><small>{nativeState.programme ?? 'Schedule unavailable'}</small>
+			<span>Live</span><strong>{nativeState.name}</strong><small
+				>{nativeState.programme ?? 'Schedule unavailable'}</small
+			>
 		</div>
 		<button class="app-button app-button--primary" onclick={() => void playbackController.reopen()}
 			>Open</button

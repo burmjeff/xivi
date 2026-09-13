@@ -11,7 +11,7 @@ import (
 // PublicRoutes func for describe group of public routes.
 func PublicRoutes(a *fiber.App) {
 	a.Get("/healthz", middleware.DeclareRoutePolicy("anonymous"), func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok"})
+		return c.JSON(fiber.Map{"status": "ok", "mobile_api_version": 1})
 	})
 	// Create routes group.
 	api := a.Group("/api", middleware.DeclareRoutePolicy("admin"), middleware.RequireAdmin(), middleware.RequirePasswordChanged(), middleware.BoundedRateLimit(240, time.Minute, true), middleware.CSRFProtected(), middleware.SanitizeLegacyServerErrors())
@@ -86,8 +86,6 @@ func PublicRoutes(a *fiber.App) {
 	router.Get("/stream/:stream_id", middleware.DeclareRoutePolicy("media-or-viewer"), middleware.RequirePlayback(), controllers.GetStream)
 	router.Get("/stream/hls/:stream_id", middleware.DeclareRoutePolicy("media-or-viewer"), middleware.RequirePlayback(), controllers.GetHlsStream)
 	router.Get("/stream/hls/:stream_id/:asset", middleware.DeclareRoutePolicy("media-or-viewer"), middleware.RequirePlayback(), controllers.GetHlsAsset)
-	router.Get("/stream/hls-audio/:stream_id", middleware.DeclareRoutePolicy("media-or-viewer"), middleware.RequirePlayback(), controllers.GetAudioHlsStream)
-	router.Get("/stream/hls-audio/:stream_id/:asset", middleware.DeclareRoutePolicy("media-or-viewer"), middleware.RequirePlayback(), controllers.GetAudioHlsAsset)
 	api.Get("/channels/hls/:group_id", controllers.GetHlsChannels)
 
 	// Each enabled lineup is exposed as an independent virtual network tuner.

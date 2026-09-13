@@ -613,38 +613,6 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/stream/hls-audio/{stream_id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['getAudioHLSPlaylist'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/stream/hls-audio/{stream_id}/{asset}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['getAudioHLSAsset'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
 	'/x/{code}': {
 		parameters: {
 			query?: never;
@@ -1929,7 +1897,6 @@ export interface components {
 			group_id: number;
 			group_name: string;
 			stream_url: string;
-			audio_stream_url: string | null;
 			programmes: components['schemas']['Programme'][];
 			current?: components['schemas']['Programme'];
 			next?: components['schemas']['Programme'];
@@ -3566,60 +3533,6 @@ export interface operations {
 				content: {
 					'audio/x-mpegurl': string;
 				};
-			};
-			default: components['responses']['Error'];
-		};
-	};
-	getAudioHLSPlaylist: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				stream_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Authenticated live audio-only HLS playlist. */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/vnd.apple.mpegurl': string;
-				};
-			};
-			/** @description Channel has no usable audio track. */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['APIError'];
-				};
-			};
-			default: components['responses']['Error'];
-		};
-	};
-	getAudioHLSAsset: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				stream_id: string;
-				asset: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Authenticated audio-only HLS segment or manifest. */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
 			};
 			default: components['responses']['Error'];
 		};

@@ -147,34 +147,6 @@ func TestGSTProducerSharesMPEGTSAndCreatesHLS(t *testing.T) {
 	if len(snapshot.Segments) < 1 || snapshot.Duration <= 0 {
 		t.Fatalf("HLS became ready without a complete playable segment: %#v", snapshot)
 	}
-
-	select {
-	case <-producer.(*gstProducer).AudioHLSReady():
-	case err := <-producer.Errors():
-		t.Fatalf("producer failed before audio HLS readiness: %v", err)
-	case <-context.Done():
-		t.Fatal("shared audio branch did not create an audio-only HLS playlist")
-	}
-	audioPlaylistPath := producer.(*gstProducer).audioPlaylist
-	audioPlaylist, err := os.ReadFile(audioPlaylistPath)
-	if err != nil {
-		t.Fatalf("read generated audio HLS playlist: %v", err)
-	}
-	if !bytes.Contains(audioPlaylist, []byte("/stream/hls-audio/integration-channel/audio-segment.")) {
-		t.Fatalf("audio playlist did not contain route-safe segment URLs:\n%s", audioPlaylist)
-	}
-	audioSnapshot, err := ReadHLSPlaylist(audioPlaylistPath)
-	if err != nil || len(audioSnapshot.Segments) == 0 {
-		t.Fatalf("read playable audio HLS snapshot: snapshot=%#v err=%v", audioSnapshot, err)
-	}
-	audioSegment, err := os.ReadFile(filepath.Join(filepath.Dir(audioPlaylistPath), audioSnapshot.Segments[0]))
-	if err != nil {
-		t.Fatalf("read audio HLS segment: %v", err)
-	}
-	audioProbe := tsProbe{}
-	if !audioProbe.Push(audioSegment) || !audioProbe.HasAudio() || audioProbe.HasVideo() {
-		t.Fatalf("audio HLS segment was not audio-only PAT/PMT transport: audio=%v video=%v", audioProbe.HasAudio(), audioProbe.HasVideo())
-	}
 	if _, err := os.Stat(staleSegment); !os.IsNotExist(err) {
 		t.Fatalf("stale HLS generation was not cleaned after the replacement became ready: %v", err)
 	}

@@ -63,12 +63,22 @@ class AuthRepository private constructor(context: Context) {
         baseClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IllegalArgumentException("That server did not return a healthy Xivi response.")
             val body = response.body?.string().orEmpty()
-            if (!body.contains("\"status\"")) throw IllegalArgumentException("That address is not a Xivi server.")
+            val health = runCatching { JSONObject(body) }.getOrNull()
+                ?: throw IllegalArgumentException("That address is not a Xivi server.")
+            if (health.optString("status") != "ok") {
+                throw IllegalArgumentException("That server did not return a healthy Xivi response.")
+            }
+            if (!MobileApiContract.healthIsCompatible(
+                    health.optString("status"),
+                    health.optInt("mobile_api_version", 0)
+                )
+            ) {
+                throw IllegalArgumentException("Update and restart the Xivi server before connecting the Android app.")
+            }
         }
         if (tokens.server() != normalized) {
             clearSession()
             ArtworkCache.clear(applicationContext)
-            BrowseRepository.clear(applicationContext)
         }
         tokens.setServer(normalized)
         return normalized
@@ -77,7 +87,6 @@ class AuthRepository private constructor(context: Context) {
     fun clearServer() {
         clearSession()
         ArtworkCache.clear(applicationContext)
-        BrowseRepository.clear(applicationContext)
         tokens.setServer(null)
     }
 
@@ -127,13 +136,25 @@ class AuthRepository private constructor(context: Context) {
         builder.method(method.uppercase(), if (method.equals("GET", true) || method.equals("HEAD", true)) null else requestBody)
         val response = client.newCall(builder.build()).execute()
         response.use {
+            var status = response.code
             var body = response.body?.string().orEmpty()
             if (response.isSuccessful && body.isNotBlank()) {
                 body = persistEnvelope(body, mapping.unwrapPrincipal)
             }
+            val errorCode = if (body.isBlank()) null else runCatching {
+                JSONObject(body).optString("code").ifBlank { null }
+            }.getOrNull()
+            if (MobileApiContract.loginRequiresServerUpdate(mapping.mobileLogin, status, errorCode)) {
+                status = 426
+                body = JSONObject()
+                    .put("code", "mobile_api_unavailable")
+                    .put("message", "Update and restart the Xivi server before signing in with the Android app.")
+                    .put("retryable", false)
+                    .toString()
+            }
             if (mapping.logout && response.code < 500) clearSession()
             return NativeHttpResponse(
-                response.code,
+                status,
                 response.headers.toMultimap().mapValues { it.value.joinToString(", ") },
                 body
             )
@@ -191,7 +212,8 @@ class AuthRepository private constructor(context: Context) {
         val path: String,
         val body: String?,
         val unwrapPrincipal: Boolean = false,
-        val logout: Boolean = false
+        val logout: Boolean = false,
+        val mobileLogin: Boolean = false
     )
 
     private fun mapWebAuthRequest(path: String, body: String?): RequestMapping {
@@ -212,7 +234,13 @@ class AuthRepository private constructor(context: Context) {
             }.toString()
         }
         val fullPath = if (query.isNullOrBlank()) mapped else "$mapped?$query"
-        return RequestMapping(fullPath, mappedBody, unwrap, mapped == "/api/v2/mobile/auth/logout")
+        return RequestMapping(
+            fullPath,
+            mappedBody,
+            unwrap,
+            mapped == "/api/v2/mobile/auth/logout",
+            mapped == "/api/v2/mobile/auth/login" || mapped == "/api/v2/mobile/auth/login/mfa"
+        )
     }
 
     private fun normalizeServer(raw: String): String {

@@ -197,8 +197,6 @@ func (q *ExperienceQueries) enrichGuideChannels(ctx context.Context, channels []
 	tvgIDs := make([]string, 0, len(channels))
 	for i := range channels {
 		channels[i].StreamURL = "/stream/hls/" + channels[i].UUID
-		audioStreamURL := "/stream/hls-audio/" + channels[i].UUID
-		channels[i].AudioStreamURL = &audioStreamURL
 		channels[i].Programmes = []models.Programme{}
 		if channels[i].Logo == "xivi_channel" {
 			channels[i].Logo = ""

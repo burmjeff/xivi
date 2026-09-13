@@ -473,7 +473,7 @@ func TestMobileBearerSurfaceAllowlist(t *testing.T) {
 		"/api/v2/watch/lineups",
 		"/api/v2/search",
 		"/api/v2/stream/telemetry",
-		"/stream/hls-audio/channel",
+		"/stream/hls/channel",
 		"/images/channel.png",
 	} {
 		if !mobileBearerPathAllowed(path) {

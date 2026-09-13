@@ -11,10 +11,6 @@
 		android:usesCleartextTraffic="false"
 		android:theme="@style/AppTheme">
 
-		<meta-data
-			android:name="com.google.android.gms.car.application"
-			android:resource="@xml/automotive_app_desc" />
-
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"
@@ -40,15 +36,9 @@
 			android:theme="@style/AppTheme.NoActionBar" />
 
 		<service
-			android:name=".XiviMediaLibraryService"
-			android:exported="true"
-			android:foregroundServiceType="mediaPlayback">
-			<intent-filter>
-				<action android:name="androidx.media3.session.MediaLibraryService" />
-				<action android:name="android.media.browse.MediaBrowserService" />
-				<action android:name="android.intent.action.MEDIA_BUTTON" />
-			</intent-filter>
-		</service>
+			android:name=".XiviPlaybackService"
+			android:exported="false"
+			android:foregroundServiceType="mediaPlayback" />
 
 		<provider
 			android:name=".ArtworkProvider"

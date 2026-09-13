@@ -8,7 +8,6 @@ import {
 export interface PlaybackController {
 	readonly native: boolean;
 	playVideo(item: NativePlaybackItem): Promise<void>;
-	playAudio(item: NativePlaybackItem): Promise<void>;
 	reopen(): Promise<void>;
 	stop(): Promise<void>;
 	state(): Promise<NativePlaybackState>;
@@ -19,9 +18,6 @@ class NativePlaybackController implements PlaybackController {
 	readonly native = true;
 	playVideo(item: NativePlaybackItem) {
 		return XiviNative.playVideo(item);
-	}
-	playAudio(item: NativePlaybackItem) {
-		return XiviNative.playAudio(item);
 	}
 	reopen() {
 		return XiviNative.reopenPlayer();
@@ -41,11 +37,10 @@ class NativePlaybackController implements PlaybackController {
 class BrowserPlaybackController implements PlaybackController {
 	readonly native = false;
 	async playVideo() {}
-	async playAudio() {}
 	async reopen() {}
 	async stop() {}
 	async state(): Promise<NativePlaybackState> {
-		return { active: false, playing: false, audioOnly: false };
+		return { active: false, playing: false };
 	}
 	async subscribe() {
 		return () => {};

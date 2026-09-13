@@ -740,36 +740,6 @@ paths:
           description: Dynamic secured playlist with its XMLTV address embedded.
           content: { audio/x-mpegurl: { schema: { type: string } } }
         default: { $ref: '#/components/responses/Error' }
-  /stream/hls-audio/{stream_id}:
-    get:
-      operationId: getAudioHLSPlaylist
-      servers: [{ url: / }]
-      security: [{ bearerAuth: [] }, { cookieAuth: [] }, { mediaKey: [] }]
-      parameters:
-        - { name: stream_id, in: path, required: true, schema: { type: string } }
-      responses:
-        '200':
-          {
-            description: Authenticated live audio-only HLS playlist.,
-            content: { application/vnd.apple.mpegurl: { schema: { type: string } } }
-          }
-        '422':
-          {
-            description: Channel has no usable audio track.,
-            content: { application/json: { schema: { $ref: '#/components/schemas/APIError' } } }
-          }
-        default: { $ref: '#/components/responses/Error' }
-  /stream/hls-audio/{stream_id}/{asset}:
-    get:
-      operationId: getAudioHLSAsset
-      servers: [{ url: / }]
-      security: [{ bearerAuth: [] }, { cookieAuth: [] }, { mediaKey: [] }]
-      parameters:
-        - { name: stream_id, in: path, required: true, schema: { type: string } }
-        - { name: asset, in: path, required: true, schema: { type: string } }
-      responses:
-        '200': { description: Authenticated audio-only HLS segment or manifest. }
-        default: { $ref: '#/components/responses/Error' }
   /x/{code}:
     get:
       operationId: getShortSecuredXMLTV
@@ -2058,7 +2028,7 @@ components:
         end: { type: string, format: date-time }
     GuideChannel:
       type: object
-      required: [id, number, name, group_id, group_name, stream_url, audio_stream_url, programmes]
+      required: [id, number, name, group_id, group_name, stream_url, programmes]
       properties:
         id: { type: integer, format: int64 }
         number: { type: integer, format: int64 }
@@ -2068,7 +2038,6 @@ components:
         group_id: { type: integer, format: int64 }
         group_name: { type: string }
         stream_url: { type: string }
-        audio_stream_url: { type: [string, 'null'] }
         programmes: { type: array, items: { $ref: '#/components/schemas/Programme' } }
         current: { $ref: '#/components/schemas/Programme' }
         next: { $ref: '#/components/schemas/Programme' }

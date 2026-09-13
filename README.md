@@ -42,9 +42,9 @@ controls the startup race, recovery hedge, prewarm pool, and browser HLS
 compatibility mode. The compatibility mode transcodes only codecs browsers
 commonly reject and leaves the canonical MPEG-TS branch unchanged.
 
-### Android and Android Auto
+### Android
 
-The Capacitor Android client lives in `android/` and uses the shared Svelte Watch UI with native Kotlin authentication, Media3 playback, and an audio-only Android Auto library. Build and signing instructions are in [docs/android-release.md](docs/android-release.md). The base application does not advertise parked-video support.
+The Capacitor Android client lives in `android/` and uses the shared Svelte Watch UI with native Kotlin authentication and Media3 playback. Build and signing instructions are in [docs/android-release.md](docs/android-release.md).
 
 ### Virtual tuner device outputs
 

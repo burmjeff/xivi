@@ -1,11 +1,7 @@
 package com.xivi.app
 
 import android.app.PictureInPictureParams
-import android.content.BroadcastReceiver
 import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.util.Rational
@@ -24,12 +20,6 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var playerView: PlayerView
     private var controllerFuture: ListenableFuture<MediaController>? = null
 
-    private val carReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == PlaybackCoordinator.ACTION_CAR_CONNECTED) finishAndRemoveTask()
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -39,11 +29,7 @@ class PlayerActivity : AppCompatActivity() {
             hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
             systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
-        ContextCompat.registerReceiver(
-            this, carReceiver, IntentFilter(PlaybackCoordinator.ACTION_CAR_CONNECTED),
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
-        val token = SessionToken(this, ComponentName(this, XiviMediaLibraryService::class.java))
+        val token = SessionToken(this, ComponentName(this, XiviPlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener(
                 { runCatching { playerView.player = future.get() } },
@@ -52,14 +38,9 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (PlaybackCoordinator.state().audioOnly) finishAndRemoveTask()
-    }
-
     override fun onUserLeaveHint() {
         val player = playerView.player
-        if (player != null && player.playWhenReady && !PlaybackCoordinator.state().audioOnly) {
+        if (player != null && player.playWhenReady) {
             enterPictureInPictureMode(
                 PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()
             )
@@ -72,7 +53,6 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        unregisterReceiver(carReceiver)
         playerView.player = null
         controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onDestroy()

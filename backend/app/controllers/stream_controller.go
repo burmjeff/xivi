@@ -67,7 +67,7 @@ func acquireStreamSession(ctx context.Context, streamID, playbackID, protocol st
 		var session *streaming.Session
 		var handle streaming.PlaybackHandle
 		var acquireErr error
-		if protocol == "mpegts" || protocol == "hls" || protocol == "hls-audio" {
+		if protocol == "mpegts" || protocol == "hls" {
 			session, handle, acquireErr = streaming.DefaultManager.StartPlaybackSources(ctx, playbackID, streamID, protocol, streamSources(*channels))
 		} else {
 			session, handle, acquireErr = streaming.DefaultManager.AcquirePlaybackSources(ctx, playbackID, streamID, protocol, streamSources(*channels))
@@ -75,7 +75,7 @@ func acquireStreamSession(ctx context.Context, streamID, playbackID, protocol st
 		return session, *channels, handle.ClientID, acquireErr
 	}
 	var session *streaming.Session
-	if protocol == "mpegts" || protocol == "hls" || protocol == "hls-audio" {
+	if protocol == "mpegts" || protocol == "hls" {
 		session, err = streaming.DefaultManager.StartSources(ctx, streamID, streamSources(*channels))
 	} else {
 		session, err = streaming.DefaultManager.AcquireSources(ctx, streamID, streamSources(*channels))
@@ -198,7 +198,7 @@ func requestPlaybackID(c *fiber.Ctx) string {
 		}
 	}
 	for _, key := range []string{"playback_id", "viewer_id"} {
-		if candidate := c.Query(key); candidate != "" && !strings.HasPrefix(candidate, "hls_") && !strings.HasPrefix(candidate, "hlsa_") {
+		if candidate := c.Query(key); candidate != "" && !strings.HasPrefix(candidate, "hls_") {
 			return normalizedPlaybackID("viewer", candidate)
 		}
 	}
@@ -224,14 +224,6 @@ func requestPlaybackID(c *fiber.Ctx) string {
 }
 
 func hlsViewerID(c *fiber.Ctx, streamID string) string {
-	return hlsViewerIDForProtocol(c, streamID, "hls")
-}
-
-func hlsAudioViewerID(c *fiber.Ctx, streamID string) string {
-	return hlsViewerIDForProtocol(c, streamID, "hls-audio")
-}
-
-func hlsViewerIDForProtocol(c *fiber.Ctx, streamID, protocol string) string {
 	if candidate := c.Query("viewer_id"); len(candidate) > 0 && len(candidate) <= 128 {
 		valid := true
 		for _, character := range candidate {
@@ -244,12 +236,8 @@ func hlsViewerIDForProtocol(c *fiber.Ctx, streamID, protocol string) string {
 			return strings.Clone(candidate)
 		}
 	}
-	sum := sha256.Sum256([]byte(protocol + "|" + streamID + "|" + c.IP() + "|" + c.Get(fiber.HeaderUserAgent)))
-	prefix := "hls_"
-	if protocol == "hls-audio" {
-		prefix = "hlsa_"
-	}
-	return prefix + hex.EncodeToString(sum[:8])
+	sum := sha256.Sum256([]byte(streamID + "|" + c.IP() + "|" + c.Get(fiber.HeaderUserAgent)))
+	return "hls_" + hex.EncodeToString(sum[:8])
 }
 
 func activeViewerForRequest(c *fiber.Ctx, streamID, playbackID, protocol string) (string, bool) {
@@ -260,11 +248,8 @@ func activeViewerForRequest(c *fiber.Ctx, streamID, playbackID, protocol string)
 			}
 		}
 	}
-	if protocol == "hls" || protocol == "hls-audio" {
+	if protocol == "hls" {
 		viewerID := hlsViewerID(c, streamID)
-		if protocol == "hls-audio" {
-			viewerID = hlsAudioViewerID(c, streamID)
-		}
 		if session, active := streaming.DefaultManager.Get(streamID); active && session.HasActiveClient(viewerID) {
 			return viewerID, true
 		}
@@ -496,107 +481,13 @@ func GetHlsAsset(c *fiber.Ctx) error {
 	return sendHLSFile(c, streamID, asset)
 }
 
-// GetAudioHlsStream reuses the channel's existing producer and publishes only
-// its normalized audio branch. It never reserves another upstream connection.
-func GetAudioHlsStream(c *fiber.Ctx) error {
-	streamID := strings.Clone(c.Params("stream_id"))
-	if streamID == "" {
-		return streamError(c, fiber.StatusBadRequest, "A stream id is required.", nil)
-	}
-	if !settings.Current().Streaming.Proxy {
-		return streamErrorForSession(c, fiber.StatusServiceUnavailable,
-			"Secure playback requires stream proxying to be enabled.", errors.New("stream proxy is disabled"), "")
-	}
-	ctx, cancel := context.WithTimeout(c.UserContext(), streamOperationTimeout)
-	defer cancel()
-	playbackID := requestPlaybackID(c)
-	admission, admissionErr := beginStreamAdmission(c, streamID, playbackID, "hls-audio")
-	if admissionErr != nil {
-		if errors.Is(admissionErr, errStreamAdmissionDenied) {
-			return nil
-		}
-		return admissionErr
-	}
-	defer admission.Release()
-	session, _, trackedClientID, err := acquireStreamSession(ctx, streamID, playbackID, "hls-audio")
-	if err != nil {
-		incidentID := ""
-		if session != nil {
-			incidentID = session.IncidentID()
-		}
-		return streamErrorForSession(c, fiber.StatusBadGateway, "The audio stream could not start.", err, incidentID)
-	}
-	viewerID := trackedClientID
-	if viewerID == "" {
-		viewerID = hlsAudioViewerID(c, streamID)
-	}
-	if _, allowed := session.RegisterClient(streamClientMetadata(c, "hls-audio", viewerID), nil); !allowed {
-		return c.SendStatus(fiber.StatusGone)
-	}
-	admission.Release()
-	c.Set("X-Xivi-Incident-ID", session.IncidentID())
-	c.Set("X-Xivi-Connection-ID", viewerID)
-	c.Locals("stream_client_id", viewerID)
-	c.Locals("stream_playback_id", playbackID)
-	if err := session.WaitReady(ctx); err != nil {
-		session.CloseClient(viewerID, "hls_audio_start_failed")
-		return streamErrorForSession(c, fiber.StatusBadGateway, "The audio stream could not start.", err, session.IncidentID())
-	}
-	if err := session.WaitAudioHLS(ctx); err != nil {
-		session.CloseClient(viewerID, "hls_audio_unavailable")
-		if errors.Is(err, streaming.ErrAudioTrackUnavailable) {
-			return c.Status(fiber.StatusUnprocessableEntity).JSON(models.APIError{
-				Code: "audio_track_unavailable", Message: "This channel does not provide an audio track.", Retryable: false,
-			})
-		}
-		return streamErrorForSession(c, fiber.StatusGatewayTimeout, "The audio playlist did not become ready.", err, session.IncidentID())
-	}
-	return sendAudioHLSFile(c, streamID, "audio-playlist.m3u8")
-}
-
-func GetAudioHlsAsset(c *fiber.Ctx) error {
-	streamID := c.Params("stream_id")
-	asset := c.Params("asset")
-	if filepath.Base(asset) != asset || (!strings.HasPrefix(asset, "audio-segment.") && asset != "audio-playlist.m3u8") ||
-		(!strings.HasSuffix(asset, ".ts") && asset != "audio-playlist.m3u8") {
-		return c.SendStatus(fiber.StatusNotFound)
-	}
-	session, ok := streaming.DefaultManager.Get(streamID)
-	if !ok || !streaming.DefaultManager.Touch(streamID) {
-		return c.SendStatus(fiber.StatusNotFound)
-	}
-	playbackID := requestPlaybackID(c)
-	viewerID := ""
-	if playbackID != "" {
-		handle, current := streaming.DefaultManager.ResolvePlayback(playbackID, streamID)
-		if !current {
-			return c.SendStatus(fiber.StatusGone)
-		}
-		viewerID = handle.ClientID
-	} else {
-		viewerID = hlsAudioViewerID(c, streamID)
-	}
-	if _, allowed := session.RegisterClient(streamClientMetadata(c, "hls-audio", viewerID), nil); !allowed {
-		return c.SendStatus(fiber.StatusGone)
-	}
-	c.Set("X-Xivi-Incident-ID", session.IncidentID())
-	c.Set("X-Xivi-Connection-ID", viewerID)
-	c.Locals("stream_client_id", viewerID)
-	c.Locals("stream_playback_id", playbackID)
-	return sendAudioHLSFile(c, streamID, asset)
-}
-
 // scopeHLSPlaylist makes every segment URI independent of the URL used to
 // request the manifest. The public entry point intentionally omits a trailing
 // slash (/stream/hls/:id), so a bare segment name would otherwise resolve to
 // /stream/hls/segment.ts and lose the stream id entirely.
 func scopeHLSPlaylist(content []byte, streamID, identityKey, identityValue string) []byte {
-	return scopeHLSPlaylistForRoute(content, streamID, "/stream/hls/", identityKey, identityValue)
-}
-
-func scopeHLSPlaylistForRoute(content []byte, streamID, routeRoot, identityKey, identityValue string) []byte {
 	lines := strings.Split(string(content), "\n")
-	segmentRoot := routeRoot + url.PathEscape(streamID) + "/"
+	segmentRoot := "/stream/hls/" + url.PathEscape(streamID) + "/"
 	for index, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
@@ -630,26 +521,14 @@ func scopeHLSPlaylistForRoute(content []byte, streamID, routeRoot, identityKey, 
 }
 
 func sendHLSFile(c *fiber.Ctx, streamID, asset string) error {
-	return sendManagedHLSFile(c, streamID, asset, false)
-}
-
-func sendAudioHLSFile(c *fiber.Ctx, streamID, asset string) error {
-	return sendManagedHLSFile(c, streamID, asset, true)
-}
-
-func sendManagedHLSFile(c *fiber.Ctx, streamID, asset string, audioOnly bool) error {
 	path := filepath.Join(settings.STREAM_FILEPATH, streamID, asset)
-	if asset == "playlist.m3u8" || asset == "audio-playlist.m3u8" {
+	if asset == "playlist.m3u8" {
 		var snapshot *streaming.HLSPlaylistSnapshot
 		var err error
 		for attempt := 0; attempt < 4; attempt++ {
 			session, active := streaming.DefaultManager.Get(streamID)
 			if active {
-				if audioOnly {
-					snapshot, err = session.AudioHLSPlaylistSnapshot()
-				} else {
-					snapshot, err = session.HLSPlaylistSnapshot()
-				}
+				snapshot, err = session.HLSPlaylistSnapshot()
 			} else {
 				// The media routes require a managed session; this fallback keeps
 				// the stable-file helper independently testable.
@@ -665,15 +544,8 @@ func sendManagedHLSFile(c *fiber.Ctx, streamID, asset string, audioOnly bool) er
 					identityKey, identityValue = "playback_token", token
 				} else if _, active := streaming.DefaultManager.Get(streamID); active || c.Query("viewer_id") != "" {
 					identityKey, identityValue = "viewer_id", hlsViewerID(c, streamID)
-					if audioOnly {
-						identityValue = hlsAudioViewerID(c, streamID)
-					}
 				}
-				routeRoot := "/stream/hls/"
-				if audioOnly {
-					routeRoot = "/stream/hls-audio/"
-				}
-				content := scopeHLSPlaylistForRoute(snapshot.Content, streamID, routeRoot, identityKey, identityValue)
+				content := scopeHLSPlaylist(snapshot.Content, streamID, identityKey, identityValue)
 				c.Set(fiber.HeaderContentType, "application/vnd.apple.mpegurl")
 				c.Set(fiber.HeaderCacheControl, "no-cache, no-store, must-revalidate")
 				c.Set("Pragma", "no-cache")
@@ -682,9 +554,6 @@ func sendManagedHLSFile(c *fiber.Ctx, streamID, asset string, audioOnly bool) er
 					clientID, _ := c.Locals("stream_client_id").(string)
 					if clientID == "" {
 						clientID = hlsViewerID(c, streamID)
-						if audioOnly {
-							clientID = hlsAudioViewerID(c, streamID)
-						}
 					}
 					session.AddClientBytes(clientID, len(content))
 				}
@@ -710,9 +579,6 @@ func sendManagedHLSFile(c *fiber.Ctx, streamID, asset string, audioOnly bool) er
 		clientID, _ := c.Locals("stream_client_id").(string)
 		if clientID == "" {
 			clientID = hlsViewerID(c, streamID)
-			if audioOnly {
-				clientID = hlsAudioViewerID(c, streamID)
-			}
 		}
 		session.AddClientBytes(clientID, int(info.Size()))
 	}
