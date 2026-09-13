@@ -1,9 +1,77 @@
 package streaming
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestProducerHLSInputsWaitForCompleteTrackDiscovery(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name     string
+		routed   map[string]bool
+		expected map[string]bool
+		changed  time.Time
+		want     bool
+	}{
+		{name: "no tracks"},
+		{name: "discovery still active", routed: map[string]bool{"video": true}, changed: now},
+		{name: "audio not routed", routed: map[string]bool{"video": true}, expected: map[string]bool{"video": true, "audio": true}, changed: now.Add(-time.Second)},
+		{name: "video only", routed: map[string]bool{"video": true}, changed: now.Add(-time.Second), want: true},
+		{name: "audio only", routed: map[string]bool{"audio": true}, changed: now.Add(-time.Second), want: true},
+		{name: "audio and video", routed: map[string]bool{"video": true, "audio": true}, expected: map[string]bool{"video": true, "audio": true}, changed: now.Add(-time.Second), want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			producer := &gstProducer{routed: test.routed, expectedMedia: test.expected, lastRouteChange: test.changed}
+			if got := producer.startHLSInputs(now); got != test.want || producer.hlsInputsStarted != test.want {
+				t.Fatalf("startHLSInputs = %v, sealed = %v; want %v", got, producer.hlsInputsStarted, test.want)
+			}
+		})
+	}
+}
+
+func TestProducerRejectsLateHLSMediaTrack(t *testing.T) {
+	producer := &gstProducer{hlsInputsStarted: true, routed: map[string]bool{"video": true}}
+	// Nil native objects are deliberate: neither an extra pad nor a duplicate
+	// track may touch the running native muxer after its layout is sealed.
+	if err := producer.routeElementaryPad(nil, "video/x-h264", nil); err != nil {
+		t.Fatalf("duplicate video track should be ignored: %v", err)
+	}
+	err := producer.routeElementaryPad(nil, "audio/mpeg, mpegversion=(int)4", nil)
+	if err == nil || !strings.Contains(err.Error(), "restart required") {
+		t.Fatalf("late audio did not request a new producer: %v", err)
+	}
+	if producer.routed["audio"] {
+		t.Fatal("late audio changed the running muxer layout")
+	}
+}
+
+func TestProducerHLSInputsDoNotStartDuringStop(t *testing.T) {
+	producer := &gstProducer{routed: map[string]bool{"video": true}, lastRouteChange: time.Now().Add(-time.Second)}
+	producer.stopping.Store(true)
+	if !producer.startHLSInputs(time.Now()) || producer.hlsInputsStarted {
+		t.Fatal("stopping producer must exit discovery without unblocking HLS inputs")
+	}
+}
+
+func TestProducerStallLoopExitsWhenBusStops(t *testing.T) {
+	producer := &gstProducer{ready: make(chan struct{}), busDone: make(chan struct{})}
+	close(producer.ready)
+	done := make(chan struct{})
+	go func() {
+		producer.stallLoop()
+		close(done)
+	}()
+	close(producer.busDone)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		producer.stopping.Store(true)
+		t.Fatal("stall monitor did not exit when the bus stopped")
+	}
+}
 
 func TestProducerReadinessRequiresEveryRoutedTrack(t *testing.T) {
 	hub := NewHub(1024 * 1024)

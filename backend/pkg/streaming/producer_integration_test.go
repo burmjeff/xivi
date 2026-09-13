@@ -11,7 +11,105 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-gst/go-gst/gst"
 )
+
+// Keep a native shutdown regression from hiding the original assertion behind
+// the package's ten-minute timeout. The test still fails if Stop cannot finish.
+func stopGSTProducer(t *testing.T, producer Producer) bool {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		producer.Stop()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(5 * time.Second):
+		t.Error("GStreamer producer did not stop within five seconds")
+		return false
+	}
+}
+
+func gstFixtureCommand(t *testing.T, args ...string) *exec.Cmd {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	return exec.CommandContext(ctx, "gst-launch-1.0", args...)
+}
+
+func closeGSTSource(server *httptest.Server) {
+	server.CloseClientConnections()
+	server.Close()
+}
+
+func TestGSTProducerStopsWithBlockedHLSInput(t *testing.T) {
+	if _, err := exec.LookPath("gst-launch-1.0"); err != nil {
+		t.Skip("gst-launch-1.0 is not installed")
+	}
+	gstInit.Do(func() { gst.Init(nil) })
+	pipeline, err := gst.NewPipelineFromString(
+		"videotestsrc is-live=true ! video/x-raw,format=I420,framerate=30/1,width=320,height=180 ! " +
+			"x264enc tune=zerolatency speed-preset=ultrafast key-int-max=30 ! h264parse name=input " +
+			"mpegtsmux name=mux ! tee name=transport")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := testConfig(t.TempDir())
+	producer := newGSTProducer("blocked-hls", "unused", 1, config, NewHub(config.ClientBufferBytes)).(*gstProducer)
+	producer.pipeline = pipeline
+	defer stopGSTProducer(t, producer)
+	if err := producer.prepareHLSDirectory(); err != nil {
+		t.Fatal(err)
+	}
+	tee, err := pipeline.GetElementByName("transport")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := producer.addTransportOutput(tee); err != nil {
+		t.Fatal(err)
+	}
+	producer.hlsSink, err = producer.addHLSOutput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := pipeline.GetElementByName("input")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux, err := pipeline.GetElementByName("mux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	producer.expectMedia("audio") // Simulate an advertised track still being discovered.
+	if err := producer.routeElementaryPad(input.GetStaticPad("src"), "video/x-h264", mux); err != nil {
+		t.Fatal(err)
+	}
+	if err := pipeline.SetState(gst.StatePlaying); err != nil {
+		t.Fatal(err)
+	}
+	go producer.busLoop(pipeline.GetPipelineBus())
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for !producer.hlsInputs[0].pad.IsBlocking() {
+		select {
+		case err := <-producer.Errors():
+			t.Fatalf("pipeline failed before HLS input blocked: %v", err)
+		case <-deadline.C:
+			t.Fatal("HLS input never reached its startup barrier")
+		case <-ticker.C:
+		}
+	}
+	if producer.startHLSInputs(time.Now().Add(trackDiscoverySettle)) {
+		t.Fatal("HLS started while an advertised audio track was still missing")
+	}
+	// Deferred cleanup must finish while a real streaming thread is blocked,
+	// without making the missing track appear or releasing the input probe.
+}
 
 func TestGSTProducerSharesMPEGTSAndCreatesHLS(t *testing.T) {
 	if _, err := exec.LookPath("gst-launch-1.0"); err != nil {
@@ -19,8 +117,8 @@ func TestGSTProducerSharesMPEGTSAndCreatesHLS(t *testing.T) {
 	}
 	temporary := t.TempDir()
 	fixture := filepath.Join(temporary, "live.ts")
-	command := exec.Command(
-		"gst-launch-1.0", "-q",
+	command := gstFixtureCommand(t,
+		"-q",
 		"mpegtsmux", "name=mux",
 		"!", "filesink", "location="+fixture,
 		"videotestsrc", "num-buffers=90", "pattern=smpte",
@@ -61,7 +159,7 @@ func TestGSTProducerSharesMPEGTSAndCreatesHLS(t *testing.T) {
 			}
 		}
 	}))
-	defer server.Close()
+	defer closeGSTSource(server)
 
 	config := testConfig(filepath.Join(temporary, "hls"))
 	config.StartupTimeout = 8 * time.Second
@@ -79,7 +177,7 @@ func TestGSTProducerSharesMPEGTSAndCreatesHLS(t *testing.T) {
 	if err := producer.Start(); err != nil {
 		t.Fatalf("start GStreamer producer: %v", err)
 	}
-	defer producer.Stop()
+	defer stopGSTProducer(t, producer)
 
 	context, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
@@ -151,7 +249,9 @@ func TestGSTProducerSharesMPEGTSAndCreatesHLS(t *testing.T) {
 		t.Fatalf("stale HLS generation was not cleaned after the replacement became ready: %v", err)
 	}
 
-	producer.Stop()
+	if !stopGSTProducer(t, producer) {
+		return
+	}
 	concrete := producer.(*gstProducer)
 	concrete.mu.Lock()
 	pipeline := concrete.pipeline
@@ -170,13 +270,16 @@ func TestGSTProducerRemuxesHLSIntoSharedOutputs(t *testing.T) {
 	if err := os.MkdirAll(sourceDirectory, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command(
-		"gst-launch-1.0", "-q",
+	// Use the transport-stream segmenter for the input fixture so fixture
+	// generation does not depend on the hlssink2/splitmuxsink under test.
+	command := gstFixtureCommand(t,
+		"-q",
 		"videotestsrc", "num-buffers=300", "pattern=ball",
 		"!", "video/x-raw,framerate=30/1,width=320,height=180",
 		"!", "x264enc", "tune=zerolatency", "speed-preset=ultrafast", "key-int-max=30",
 		"!", "h264parse", "config-interval=-1",
-		"!", "hlssink2", "target-duration=1", "playlist-length=0", "max-files=0",
+		"!", "mpegtsmux",
+		"!", "hlssink", "target-duration=1", "playlist-length=0", "max-files=0",
 		"location="+filepath.Join(sourceDirectory, "source.%05d.ts"),
 		"playlist-location="+filepath.Join(sourceDirectory, "source.m3u8"),
 	)
@@ -185,7 +288,7 @@ func TestGSTProducerRemuxesHLSIntoSharedOutputs(t *testing.T) {
 	}
 
 	server := httptest.NewServer(http.FileServer(http.Dir(sourceDirectory)))
-	defer server.Close()
+	defer closeGSTSource(server)
 	config := testConfig(filepath.Join(temporary, "output"))
 	config.StartupTimeout = 12 * time.Second
 	config.StallTimeout = 5 * time.Second
@@ -194,7 +297,7 @@ func TestGSTProducerRemuxesHLSIntoSharedOutputs(t *testing.T) {
 	if err := producer.Start(); err != nil {
 		t.Fatalf("start HLS GStreamer producer: %v", err)
 	}
-	defer producer.Stop()
+	defer stopGSTProducer(t, producer)
 
 	timeout := time.NewTimer(15 * time.Second)
 	defer timeout.Stop()
@@ -220,8 +323,8 @@ func TestGSTProducerNormalizesH265ForBrowserHLS(t *testing.T) {
 	}
 	temporary := t.TempDir()
 	fixture := filepath.Join(temporary, "h265.ts")
-	command := exec.Command(
-		"gst-launch-1.0", "-q",
+	command := gstFixtureCommand(t,
+		"-q",
 		"videotestsrc", "num-buffers=90", "pattern=ball",
 		"!", "video/x-raw,format=I420,framerate=30/1,width=320,height=180",
 		"!", "x265enc", "speed-preset=ultrafast", "key-int-max=30",
@@ -254,7 +357,7 @@ func TestGSTProducerNormalizesH265ForBrowserHLS(t *testing.T) {
 			time.Sleep(25 * time.Millisecond)
 		}
 	}))
-	defer server.Close()
+	defer closeGSTSource(server)
 
 	config := testConfig(filepath.Join(temporary, "output"))
 	config.HLSCompatibility = true
@@ -265,7 +368,7 @@ func TestGSTProducerNormalizesH265ForBrowserHLS(t *testing.T) {
 	if err := producer.Start(); err != nil {
 		t.Fatalf("start H.265 producer: %v", err)
 	}
-	defer producer.Stop()
+	defer stopGSTProducer(t, producer)
 	timeout := time.NewTimer(15 * time.Second)
 	defer timeout.Stop()
 	select {

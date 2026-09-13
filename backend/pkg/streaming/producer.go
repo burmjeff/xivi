@@ -47,6 +47,8 @@ type gstProducer struct {
 	busDone              chan struct{}
 	playlist             string
 	hlsSink              *gst.Element
+	hlsInputs            []blockedHLSInput // protected by graphMu
+	hlsInputsStarted     bool              // protected by graphMu
 	sourceBin            *gst.Element
 	inputTSOnce          sync.Once
 	routeMu              sync.Mutex
@@ -67,6 +69,11 @@ type cachedHLSSegmentInspection struct {
 	size       int64
 	modifiedNS int64
 	status     BootstrapStatus
+}
+
+type blockedHLSInput struct {
+	pad   *gst.Pad
+	probe uint64
 }
 
 func newGSTProducer(id, source string, generation uint64, config Config, hub *Hub) Producer {
@@ -361,6 +368,7 @@ func (p *gstProducer) Start() error {
 		return fmt.Errorf("start GStreamer pipeline: %w", err)
 	}
 	go p.busLoop(pipeline.GetPipelineBus())
+	go p.hlsInputLoop()
 	go p.stallLoop()
 	go p.playlistLoop()
 	return nil
@@ -376,6 +384,13 @@ func (p *gstProducer) attachSourcePad(pad *gst.Pad, mux *gst.Element) error {
 	}()
 	if p.stopping.Load() {
 		return nil
+	}
+	// Record an advertised elementary track before its queued typefind
+	// callback runs, so a slow branch cannot be mistaken for an absent one.
+	if caps := pad.GetCurrentCaps(); caps != nil && caps.IsFixed() {
+		if _, media, ok := parserForCaps(caps.String()); ok {
+			p.expectMedia(media)
+		}
 	}
 	queue, err := gst.NewElement("queue")
 	if err != nil {
@@ -527,6 +542,13 @@ func (p *gstProducer) routeElementaryPad(pad *gst.Pad, capsString string, mux *g
 		p.graphMu.Unlock()
 		return nil
 	}
+	if p.hlsInputsStarted {
+		p.routeMu.Unlock()
+		p.graphMu.Unlock()
+		// A changed track layout needs a fresh producer generation. Mutating a
+		// running hlssink2 can race splitmuxsink's fragment-switch pad iterator.
+		return fmt.Errorf("source added %s after HLS track discovery; restart required", media)
+	}
 	p.routed[media] = true
 	p.lastRouteChange = time.Now()
 	p.routeMu.Unlock()
@@ -637,6 +659,14 @@ func (p *gstProducer) routePadToMux(pad *gst.Pad, parserName, capsString, media 
 		_ = hlsQueue.Set("max-size-bytes", uint(0))
 		_ = hlsQueue.Set("max-size-buffers", uint(0))
 		p.pipeline.Add(hlsQueue)
+		// Let discovery and the canonical branch run, but do not send buffers
+		// into hlssink2 until every initial input has been attached. In
+		// GStreamer 1.28, adding a pad during splitmuxsink's first fragment
+		// flush can leave its iterator spinning on RESYNC, even during Stop.
+		hlsOutput := hlsQueue.GetStaticPad("src")
+		probe := hlsOutput.AddProbe(gst.PadProbeTypeBlock|gst.PadProbeTypeBuffer|gst.PadProbeTypeBufferList,
+			func(_ *gst.Pad, _ *gst.PadProbeInfo) gst.PadProbeReturn { return gst.PadProbeOK })
+		p.hlsInputs = append(p.hlsInputs, blockedHLSInput{pad: hlsOutput, probe: probe})
 		if err := tee.Link(hlsQueue); err != nil {
 			return nil, fmt.Errorf("link %s to HLS queue: %w", media, err)
 		}
@@ -828,6 +858,48 @@ func (p *gstProducer) enableSteadyBuffering() {
 	}
 }
 
+// The graph lock makes sealing the layout atomic with routing another track.
+// Waiting only for a quiet window without sealing would leave the same race
+// for a late track. Such a layout change is reported through the normal
+// producer error/failover path instead of changing an active HLS muxer.
+func (p *gstProducer) startHLSInputs(now time.Time) bool {
+	p.graphMu.Lock()
+	defer p.graphMu.Unlock()
+	if p.stopping.Load() || p.hlsInputsStarted {
+		return true
+	}
+	p.routeMu.Lock()
+	settled := len(p.routed) > 0 && !p.lastRouteChange.IsZero() && now.Sub(p.lastRouteChange) >= trackDiscoverySettle
+	for media := range p.expectedMedia {
+		settled = settled && p.routed[media]
+	}
+	p.routeMu.Unlock()
+	if !settled {
+		return false
+	}
+	p.hlsInputsStarted = true
+	for _, input := range p.hlsInputs {
+		input.pad.RemoveProbe(input.probe)
+	}
+	p.hlsInputs = nil
+	return true
+}
+
+func (p *gstProducer) hlsInputLoop() {
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case now := <-ticker.C:
+			if p.startHLSInputs(now) {
+				return
+			}
+		case <-p.busDone:
+			return
+		}
+	}
+}
+
 func (p *gstProducer) addHLSOutput() (*gst.Element, error) {
 	sink, err := gst.NewElement("hlssink2")
 	if err != nil {
@@ -950,10 +1022,14 @@ func (p *gstProducer) stallLoop() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	ready := false
+	readySignal := p.ready
 	for !p.stopping.Load() {
 		select {
-		case <-p.ready:
+		case <-readySignal:
 			ready = true
+			readySignal = nil // A closed channel must not busy-spin on every iteration.
+		case <-p.busDone:
+			return
 		case <-ticker.C:
 			if ready {
 				last := p.LastDataAt()
@@ -1030,7 +1106,10 @@ func (p *gstProducer) Stop() {
 			}
 		}
 		if graphLocked {
-			defer p.graphMu.Unlock()
+			// Drain graph edits, but release the lock before native teardown:
+			// GStreamer waits for callbacks which may still need to acquire it
+			// to observe stopping and return without changing the graph.
+			p.graphMu.Unlock()
 		} else {
 			// A dynamic-pad callback must never prevent shutdown indefinitely.
 			// The session-level cleanup watchdog keeps the source lease reserved
