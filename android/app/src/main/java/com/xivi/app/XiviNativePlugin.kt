@@ -87,21 +87,19 @@ class XiviNativePlugin : Plugin() {
     }
 
     @PluginMethod
-    fun playVideo(call: PluginCall) {
-        PlaybackCoordinator.play(context, playbackItem(call), openPlayer = true)
-        call.resolve()
+    fun playVideo(call: PluginCall) = playbackCommand(call) {
+        val item = playbackItem(call)
+        PlaybackCoordinator.play(context, item, openPlayer = true)
     }
 
     @PluginMethod
-    fun reopenPlayer(call: PluginCall) {
+    fun reopenPlayer(call: PluginCall) = playbackCommand(call) {
         PlaybackCoordinator.reopen(context)
-        call.resolve()
     }
 
     @PluginMethod
-    fun stopPlayback(call: PluginCall) {
+    fun stopPlayback(call: PluginCall) = playbackCommand(call) {
         PlaybackCoordinator.stop(context)
-        call.resolve()
     }
 
     @PluginMethod
@@ -109,14 +107,27 @@ class XiviNativePlugin : Plugin() {
         call.resolve(JSObject(PlaybackCoordinator.state().toJson().toString()))
     }
 
-    private fun playbackItem(call: PluginCall) = PlaybackItem(
-        call.getLong("channelId") ?: throw IllegalArgumentException("Channel id is required."),
-        call.getLong("lineupId") ?: throw IllegalArgumentException("Lineup id is required."),
+    internal fun playbackItem(call: PluginCall) = PlaybackItem(
+        requiredId(call, "channelId", "Channel id is required."),
+        requiredId(call, "lineupId", "Lineup id is required."),
         call.getString("name") ?: "Live channel",
         call.getString("programme"),
         call.getString("logoUrl"),
         call.getString("streamUrl") ?: throw IllegalArgumentException("Stream URL is required.")
     )
+
+    private fun requiredId(call: PluginCall, name: String, message: String): Long =
+        // Capacitor's getLong only accepts boxed Longs; JSON decodes smaller IDs as Integers.
+        call.getLong(name) ?: call.getInt(name)?.toLong() ?: throw IllegalArgumentException(message)
+
+    private fun playbackCommand(call: PluginCall, operation: () -> Unit) {
+        try {
+            operation()
+            call.resolve()
+        } catch (error: Exception) {
+            call.reject(error.message ?: "The native playback operation failed.", error)
+        }
+    }
 
     private fun requiredBody(call: PluginCall): String =
         call.getString("body") ?: throw IllegalArgumentException("A JSON request body is required.")
