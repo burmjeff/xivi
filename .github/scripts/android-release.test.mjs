@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import {
 	assertApprovalPolicy,
@@ -128,3 +131,65 @@ test('release workflow is manual and signing depends on all verification jobs', 
 	assert.match(workflow, /cancel-in-progress: false/);
 	assert.match(workflow, /artifact-ids: \$\{\{ needs\.unsigned-apk\.outputs\.artifact_id \}\}/);
 });
+
+// Execute the actual workflow step with an SDK deliberately absent from PATH.
+// These Linux-runner checks also run in preflight, before approval or signing.
+for (const sdkExit of [0, 42]) {
+	test(
+		`signing tools use the installed SDK and JDK 21, preserving sdkmanager exit ${sdkExit}`,
+		{ skip: process.platform !== 'linux' },
+		(t) => {
+			const workflow = readFileSync('.github/workflows/android-release.yml', 'utf8');
+			const step = workflow.match(
+				/      - name: Prepare Android signing tools without secrets\r?\n        run: \|\r?\n((?:          [^\r\n]*\r?\n)+)/
+			);
+			assert.ok(step, 'Missing signing-tool preparation step');
+			const script = step[1].replace(/^          /gm, '').replace(/\r/g, '');
+			const directory = mkdtempSync(join(tmpdir(), 'xivi-signing-tools-'));
+			t.after(() => rmSync(directory, { recursive: true, force: true }));
+			const sdk = join(directory, 'Android SDK');
+			const jdk = join(directory, 'JDK 21');
+			const sdkBin = join(sdk, 'cmdline-tools/latest/bin');
+			const javaBin = join(jdk, 'bin');
+			mkdirSync(sdkBin, { recursive: true });
+			mkdirSync(javaBin, { recursive: true });
+			writeFileSync(join(javaBin, 'java'), '#!/bin/bash\nprintf "mock JDK 21\\n"\n', {
+				mode: 0o755
+			});
+			writeFileSync(
+				join(sdkBin, 'sdkmanager'),
+				`#!/bin/bash
+set -euo pipefail
+[[ "$JAVA_HOME" == "$JAVA_HOME_21_X64" ]]
+[[ "$(command -v java)" == "$JAVA_HOME_21_X64/bin/java" ]]
+[[ "$(java)" == "mock JDK 21" ]]
+[[ "$#" == 2 && "$1" == "--sdk_root=$ANDROID_HOME" && "$2" == 'build-tools;36.0.0' ]]
+printf 'sdkmanager invoked\\n'
+exit ${sdkExit}
+`,
+				{ mode: 0o755 }
+			);
+			const envFile = join(directory, 'github-env');
+			const pathFile = join(directory, 'github-path');
+			const result = spawnSync(
+				'/bin/bash',
+				['--noprofile', '--norc', '-eo', 'pipefail', '-c', script],
+				{
+					encoding: 'utf8',
+					env: {
+						PATH: '/usr/bin:/bin',
+						JAVA_HOME: '/not-jdk-21',
+						JAVA_HOME_21_X64: jdk,
+						ANDROID_HOME: sdk,
+						GITHUB_ENV: envFile,
+						GITHUB_PATH: pathFile
+					}
+				}
+			);
+			assert.equal(result.status, sdkExit, result.stderr);
+			assert.match(result.stdout, /sdkmanager invoked/);
+			assert.equal(readFileSync(envFile, 'utf8'), `JAVA_HOME=${jdk}\n`);
+			assert.equal(readFileSync(pathFile, 'utf8'), `${javaBin}\n`);
+		}
+	);
+}

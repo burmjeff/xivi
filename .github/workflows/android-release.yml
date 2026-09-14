@@ -137,9 +137,13 @@ jobs:
           merge-multiple: true
       - name: Prepare Android signing tools without secrets
         run: |
-          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
-          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
-          sdkmanager 'build-tools;36.0.0'
+          # GITHUB_ENV/PATH apply to later steps; sdkmanager needs this JDK now too.
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          echo "JAVA_HOME=$JAVA_HOME" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME/bin" >> "$GITHUB_PATH"
+          # Hosted runners install command-line tools without guaranteeing them on PATH.
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" 'build-tools;36.0.0'
       - name: Verify artifact, sign and pin the existing certificate
         env:
           VERSION: ${{ needs.preflight.outputs.version }}
