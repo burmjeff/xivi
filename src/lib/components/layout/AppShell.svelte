@@ -159,9 +159,7 @@
 					class:active={active(item.href)}><Icon size={21} /><span>{item.label}</span></a
 				>{/each}{#if !mobile && auth.principal?.role === 'admin'}<a href="/studio"
 					><PanelsTopLeft size={21} /><span>Studio</span></a
-				>{/if}<a href="/account" class:active={active('/account')}
-				><CircleUserRound size={21} /><span>Account</span></a
-			>
+				>{/if}
 		</nav>{/if}
 </div>
 
