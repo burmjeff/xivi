@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
 	assertApprovalPolicy,
 	assertNewVersion,
+	assertSourceCompliance,
 	buildVersion,
 	fingerprint
 } from './android-release-policy.mjs';
@@ -17,6 +18,31 @@ const environment = {
 	deployment_branch_policy: { custom_branch_policies: true }
 };
 const branches = { total_count: 1, branch_policies: [{ name: 'main', type: 'branch' }] };
+
+// These contracts read files excluded from Docker's build context. Keep them
+// in the release suite run by both preflight and Android TV verification.
+test('binary publication requires explicit source-compliance confirmation', () => {
+	assertSourceCompliance('true');
+	for (const value of [undefined, '', 'false', '1', true])
+		assert.throws(() => assertSourceCompliance(value));
+});
+
+test('release retains approval gate and publishes exact-source links and legal assets', () => {
+	const read = (path) => readFileSync(path, 'utf8');
+	const workflow = read('.github/workflows/android-release.yml');
+	assert.match(workflow, /environment:\s+name: android-release/);
+	assert.match(
+		workflow,
+		/VITE_XIVI_SOURCE_URL: https:\/\/github.com\/\$\{\{ github.repository \}\}\/archive\/\$\{\{ github.sha \}\}.tar.gz/
+	);
+	const signing = read('.github/scripts/sign-android-release.sh');
+	assert.match(signing, /assets\/public\/legal\/LICENSE.txt \| cmp -s LICENSE -/);
+	assert.match(signing, /sourceArchive:/);
+	for (const file of ['LICENSE.txt', 'NOTICE.txt', 'THIRD_PARTY_NOTICES.md', 'LICENSING.md']) {
+		assert.ok(signing.includes(file));
+		assert.ok(read('.github/scripts/publish-android-release.mjs').includes(`'${file}'`));
+	}
+});
 
 test('reads explicit APK versions, not npm/server versions', () => {
 	assert.deepEqual(buildVersion(source()), {

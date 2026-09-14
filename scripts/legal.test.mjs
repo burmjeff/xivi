@@ -2,14 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { legalPlugin, npmNotices, sourceInfo } from './legal.mjs';
-import { assertSourceCompliance } from '../.github/scripts/android-release-policy.mjs';
 
+// This suite runs in Docker, whose context deliberately excludes .github.
+// Release-workflow contracts belong in .github/scripts/android-release.test.mjs.
 const read = (path) => readFileSync(path, 'utf8');
-test('binary publication requires explicit source-compliance confirmation', () => {
-	assertSourceCompliance('true');
-	for (const value of [undefined, '', 'false', '1', true])
-		assert.throws(() => assertSourceCompliance(value));
-});
 test('only Xivi root metadata changes license; bundled dependencies retain their licenses', () => {
 	assert.equal(JSON.parse(read('package.json')).license, 'AGPL-3.0-only');
 	const packages = JSON.parse(read('package-lock.json')).packages;
@@ -61,19 +57,4 @@ test('web and native TV receive the same complete bundled license and source off
 		read('android/app/src/main/java/com/xivi/app/tv/TvLegal.kt'),
 		/public\/legal\/source.json/
 	);
-});
-test('release retains approval gate and publishes exact-source links and legal assets', () => {
-	const workflow = read('.github/workflows/android-release.yml');
-	assert.match(workflow, /environment:\s+name: android-release/);
-	assert.match(
-		workflow,
-		/VITE_XIVI_SOURCE_URL: https:\/\/github.com\/\$\{\{ github.repository \}\}\/archive\/\$\{\{ github.sha \}\}.tar.gz/
-	);
-	const signing = read('.github/scripts/sign-android-release.sh');
-	assert.match(signing, /assets\/public\/legal\/LICENSE.txt \| cmp -s LICENSE -/);
-	assert.match(signing, /sourceArchive:/);
-	for (const file of ['LICENSE.txt', 'NOTICE.txt', 'THIRD_PARTY_NOTICES.md', 'LICENSING.md']) {
-		assert.ok(signing.includes(file));
-		assert.ok(read('.github/scripts/publish-android-release.mjs').includes(`'${file}'`));
-	}
 });
