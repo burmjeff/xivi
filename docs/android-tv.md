@@ -177,7 +177,8 @@ cover SQL grants/retry delivery, expiry, revocation, replay, preferences, typed
 authorized search and the controller/middleware pairing boundary.
 
 `android-tv.yml` adds pinned-action CI for an API 28 Android TV emulator and an
-API 35 Google APIs emulator with TV-sized geometry, using JDK 21 and Node 24.
+API 35 Google APIs emulator with TV-sized geometry, using Node 24 and JDK 21
+to launch Gradle (the checked-in daemon criteria select JetBrains JDK 25).
 It builds both entry points, runs native unit/lint checks and executes the TV
 instrumentation package. This workflow still needs its first hosted run after
 the changes are pushed. Signing and publication are separate: see the manual,
@@ -202,13 +203,6 @@ Before releasing, complete and record these **hardware acceptance gates**:
 - Full security CI, including Semgrep and final-image Trivy/SBOM in addition to
   the Docker test target. Do not bypass dependency/security failures.
 
-For release, configure `XIVI_KEYSTORE_PATH`, `XIVI_KEYSTORE_PASSWORD`,
-`XIVI_KEY_ALIAS`, `XIVI_KEY_PASSWORD` through the existing secure environment,
-then build `:app:assembleRelease`. Do not put these values or the keystore in Git.
-Verify the APK certificate with `apksigner verify --print-certs`, retain its
-SHA-256, and install with `adb install -r` over the prior **release-signed** APK.
-Confirm both pairing and preferences survive before distributing the versioned
-APK. This implementation does not add an updater or publish to a store.
 
 Emulator tests and debug APKs are development evidence, not a signed/hardware-
 accepted release. Never uninstall or clear data as an update test: that correctly

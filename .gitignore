@@ -20,7 +20,6 @@ xivi.exe
 !/docs/openapi.go
 !/docs/openapi-v2.yaml
 !/docs/security-deployment.md
-!/docs/android-release.md
 !/docs/android-tv.md
 /xivi
 lib_build/

@@ -29,6 +29,26 @@ test('reads explicit APK versions, not npm/server versions', () => {
 		/^\d+\.\d+\.\d+$/
 	);
 });
+test('AGP built-in Kotlin uses compatible processors and compiler versions', () => {
+	const root = readFileSync('android/build.gradle', 'utf8');
+	const app = readFileSync('android/app/build.gradle', 'utf8');
+	const dependencyVersion = (coordinate) => {
+		const match = root.match(new RegExp(`classpath '${coordinate}:([^']+)'`));
+		assert.ok(match, `Missing build dependency: ${coordinate}`);
+		return match[1];
+	};
+	assert.equal(
+		dependencyVersion('com.android.tools.build:gradle-kotlin'),
+		dependencyVersion('com.android.tools.build:gradle')
+	);
+	assert.equal(
+		dependencyVersion('org.jetbrains.kotlin:compose-compiler-gradle-plugin'),
+		dependencyVersion('org.jetbrains.kotlin:kotlin-gradle-plugin')
+	);
+	assert.match(app, /apply plugin: 'com\.android\.legacy-kapt'/);
+	assert.doesNotMatch(app, /apply plugin: 'org\.jetbrains\.kotlin\.(android|kapt)'/);
+	assert.doesNotMatch(app, /applicationVariants|testVariants|unitTestVariants/);
+});
 test('rejects unsafe, ambiguous or noncanonical versions', () => {
 	for (const value of [
 		source('1.01.0'),
