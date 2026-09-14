@@ -132,6 +132,25 @@ test('release workflow is manual and signing depends on all verification jobs', 
 	assert.match(workflow, /artifact-ids: \$\{\{ needs\.unsigned-apk\.outputs\.artifact_id \}\}/);
 });
 
+test('TV verification preserves per-device reports without ignoring failing tests', () => {
+	const workflow = readFileSync('.github/workflows/android-tv.yml', 'utf8');
+	assert.match(workflow, /:app:connectedDebugAndroidTest[^\r\n]*--info --stacktrace/);
+	assert.match(
+		workflow,
+		/name: Preserve instrumented test reports, including failures\s+if: always\(\)/
+	);
+	assert.match(workflow, /uses: actions\/upload-artifact@[0-9a-f]{40}/);
+	assert.ok(
+		workflow.includes(
+			'name: android-tv-tests-api-${{ matrix.api }}-${{ matrix.target }}-${{ matrix.arch }}-${{ github.run_attempt }}'
+		)
+	);
+	assert.ok(workflow.includes('android/app/build/reports/androidTests/connected/'));
+	assert.ok(workflow.includes('android/app/build/outputs/androidTest-results/connected/'));
+	assert.match(workflow, /retention-days: 7/);
+	assert.doesNotMatch(workflow, /continue-on-error: true|\|\| true/);
+});
+
 // Execute the actual workflow step with an SDK deliberately absent from PATH.
 // These Linux-runner checks also run in preflight, before approval or signing.
 for (const sdkExit of [0, 42]) {
