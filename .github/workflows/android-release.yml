@@ -1,0 +1,150 @@
+name: Android release
+run-name: Android ${{ inputs.channel }} release requested by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Preview for testing, or stable after hardware acceptance and matching server deployment'
+        type: choice
+        options: [preview, stable]
+        default: preview
+        required: true
+
+permissions:
+  contents: read
+
+# Serialize all releases, including approval waits. Never cancel a signing run.
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      version_code: ${{ steps.plan.outputs.version_code }}
+      tag: ${{ steps.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test release policy
+        run: node --test .github/scripts/android-release.test.mjs
+      - name: Require main, a new version and configured approval protection
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_CHANNEL: ${{ inputs.channel }}
+        run: node .github/scripts/android-release-policy.mjs
+
+  security:
+    needs: preflight
+    uses: ./.github/workflows/security.yml
+    permissions:
+      contents: read
+
+  native-tv:
+    needs: preflight
+    uses: ./.github/workflows/android-tv.yml
+    permissions:
+      contents: read
+
+  unsigned-apk:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      sha256: ${{ steps.digest.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Select JDK 21
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+      - name: Build unsigned phone and TV APK without signing secrets
+        env:
+          XIVI_KEYSTORE_PATH: ''
+        run: |
+          npm ci
+          npm run build:mobile
+          bash android/gradlew -p android :app:lintRelease :app:assembleRelease --no-daemon
+      - name: Stage the exact unsigned artifact
+        id: digest
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/android-unsigned"
+          install -m 644 "android/app/build/outputs/apk/release/Xivi-$VERSION-release.apk" "$RUNNER_TEMP/android-unsigned/Xivi-unsigned.apk"
+          echo "sha256=$(sha256sum "$RUNNER_TEMP/android-unsigned/Xivi-unsigned.apk" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: upload
+        with:
+          name: android-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/android-unsigned/Xivi-unsigned.apk
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  sign-and-release:
+    needs: [preflight, security, native-tv, unsigned-apk]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: android-release
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Recheck protection and version after approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_CHANNEL: ${{ inputs.channel }}
+        run: node .github/scripts/android-release-policy.mjs
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.unsigned-apk.outputs.artifact_id }}
+          path: ${{ runner.temp }}/android-unsigned
+          merge-multiple: true
+      - name: Prepare Android signing tools without secrets
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+          sdkmanager 'build-tools;36.0.0'
+      - name: Verify artifact, sign and pin the existing certificate
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          VERSION_CODE: ${{ needs.preflight.outputs.version_code }}
+          RELEASE_CHANNEL: ${{ inputs.channel }}
+          EXPECTED_APK_SHA256: ${{ needs.unsigned-apk.outputs.sha256 }}
+          XIVI_KEYSTORE_BASE64: ${{ secrets.XIVI_KEYSTORE_BASE64 }}
+          XIVI_KEYSTORE_PASSWORD: ${{ secrets.XIVI_KEYSTORE_PASSWORD }}
+          XIVI_KEY_ALIAS: ${{ secrets.XIVI_KEY_ALIAS }}
+          XIVI_KEY_PASSWORD: ${{ secrets.XIVI_KEY_PASSWORD }}
+          XIVI_SIGNING_CERT_SHA256: ${{ vars.XIVI_SIGNING_CERT_SHA256 }}
+        run: bash .github/scripts/sign-android-release.sh
+      - name: Upload all assets to a draft, then publish the approved release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_CHANNEL: ${{ inputs.channel }}
+        run: node .github/scripts/publish-android-release.mjs

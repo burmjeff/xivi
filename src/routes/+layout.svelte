@@ -47,7 +47,10 @@
 			return;
 		}
 		if (auth.principal?.must_change_password && page.url.pathname !== '/account' && !login) {
-			void goto('/account?password-change=required', { replaceState: true });
+			void goto(
+				`/account?password-change=required&next=${encodeURIComponent(page.url.pathname + page.url.search)}`,
+				{ replaceState: true }
+			);
 			return;
 		}
 		if ((mobile || auth.principal?.role !== 'admin') && page.url.pathname.startsWith('/studio')) {

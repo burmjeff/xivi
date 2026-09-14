@@ -138,6 +138,19 @@ func BaseURLForRequest(c *fiber.Ctx) string {
 	return policy.LocalBaseURL
 }
 
+// DPoPRequestURL reconstructs the HTTPS resource URI, trusting forwarded host
+// only from the same explicitly configured peers as forwarded transport.
+func DPoPRequestURL(c *fiber.Ctx) string {
+	network := RequestNetworkInfo(c)
+	host := string(c.Context().Host())
+	if network.TrustedProxy {
+		if forwarded := lastForwardedValue(c.Get("X-Forwarded-Host")); forwarded != "" {
+			host = forwarded
+		}
+	}
+	return network.Scheme + "://" + host + string(c.Request().URI().PathOriginal())
+}
+
 // MediaBaseURLForRequest optionally separates compatibility-player traffic
 // from the browser/WAF hostname. Browser playback continues to use same-origin
 // paths, while generated device outputs use this key-authenticated media host.

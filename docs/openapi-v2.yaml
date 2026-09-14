@@ -8,6 +8,214 @@ servers:
 security:
   - cookieAuth: []
 paths:
+  /tv/auth/device:
+    post:
+      operationId: beginTVPairing
+      security: []
+      description: HTTPS only. Begin a ten-minute key-bound pairing request. ES256 DPoP and a server nonce are required. No credentials are included in the approval URL.
+      parameters:
+        - $ref: '#/components/parameters/DPoPProof'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_name]
+              properties:
+                device_name: { type: string, minLength: 2, maxLength: 80 }
+      responses:
+        '200':
+          description: Display the code and QR approval URL, then poll no faster than interval.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [
+                    device_code,
+                    user_code,
+                    verification_uri,
+                    verification_uri_complete,
+                    expires_in,
+                    interval
+                  ]
+                properties:
+                  device_code:
+                    {
+                      type: string,
+                      description: Short-lived secret for the TV polling exchange; never include it in the QR code.
+                    }
+                  user_code: { type: string }
+                  verification_uri: { type: string, format: uri }
+                  verification_uri_complete: { type: string, format: uri }
+                  expires_in: { type: integer, const: 600 }
+                  interval: { type: integer, const: 5 }
+        '400':
+          description: Invalid proof or use_dpop_nonce. Retry the latter with a fresh proof containing the returned nonce.
+          headers:
+            DPoP-Nonce: { schema: { type: string } }
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/APIError' } }
+        default: { $ref: '#/components/responses/Error' }
+  /tv/auth/decision:
+    get:
+      operationId: previewTVPairing
+      description: Signed-in HTTPS browser only; preview never approves the TV.
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string, maxLength: 9 } }
+      responses:
+        '200':
+          description: Display the TV name and code for explicit confirmation.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [device_name, user_code, expires_at]
+                properties:
+                  device_name: { type: string }
+                  user_code: { type: string }
+                  expires_at: { type: string, format: date-time }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: decideTVPairing
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      description: Explicit browser approval or rejection. Existing password/MFA and forced-password-change policy applies. CSRF and origin checks are unchanged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_code, approve]
+              properties:
+                user_code: { type: string, maxLength: 9 }
+                approve: { type: boolean }
+      responses:
+        '204': { description: Decision saved. }
+        default: { $ref: '#/components/responses/Error' }
+  /tv/auth/token:
+    post:
+      operationId: renewTVSession
+      security: []
+      description: Exchange an approved device code or renew a durable device-bound credential. Initial delivery is retry-safe until pairing expiry. Renewal does not rotate or expire the durable credential. Access tokens expire after fifteen minutes. Never retry using unbound Bearer authentication.
+      parameters:
+        - $ref: '#/components/parameters/DPoPProof'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [grant_type]
+              properties:
+                grant_type:
+                  {
+                    type: string,
+                    enum: ['urn:ietf:params:oauth:grant-type:device_code', refresh_token]
+                  }
+                device_code: { type: string, maxLength: 256, writeOnly: true }
+                refresh_token: { type: string, maxLength: 256, writeOnly: true }
+      responses:
+        '200':
+          description: Key-bound TV session; refresh credentials have no scheduled or inactivity expiry.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/TVSessionEnvelope' } }
+        '400':
+          description: authorization_pending, slow_down, use_dpop_nonce, invalid_dpop_proof or invalid_grant. Only invalid_grant establishes that pairing is no longer usable. Transport and clock failures must not erase credentials.
+          headers:
+            DPoP-Nonce: { schema: { type: string } }
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/APIError' } }
+        default: { $ref: '#/components/responses/Error' }
+  /tv/auth/logout:
+    post:
+      operationId: revokeCurrentTV
+      security: [{ tvDPoP: [] }]
+      parameters:
+        - $ref: '#/components/parameters/DPoPProof'
+      responses:
+        '204': { description: TV grant revoked and its active viewers disconnected. }
+        default: { $ref: '#/components/responses/Error' }
+  /watch/preferences:
+    get:
+      operationId: getViewerPreferences
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }, { tvDPoP: [] }]
+      responses:
+        '200':
+          description: Account-synced favorites, hidden channels and ordering, separate from TV-local display controls and history.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/ViewerPreferences' } }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      operationId: saveViewerPreferences
+      security: [{ cookieAuth: [], csrfToken: [] }, { bearerAuth: [] }, { tvDPoP: [] }]
+      description: Replace the viewer preference document using its last-seen revision. Channel keys are lineup_id:channel_id and must be accessible. At most 20 lists and 10000 distinct channels. Reload on conflict rather than overwriting another device.
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/ViewerPreferences' } }
+      responses:
+        '200':
+          description: Saved document with incremented revision.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/ViewerPreferences' } }
+        '409':
+          description: Revision conflict; current contains the latest document.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: string, const: preference_conflict }
+                  message: { type: string }
+                  current: { $ref: '#/components/schemas/ViewerPreferences' }
+        default: { $ref: '#/components/responses/Error' }
+  /watch/search:
+    get:
+      operationId: searchWatch
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }, { tvDPoP: [] }]
+      description: Typed channel and current/upcoming programme search through seven days of supplied EPG. Omitting lineup_id searches all accessible lineups. Existing /search behavior is unchanged.
+      parameters:
+        - {
+            name: q,
+            in: query,
+            required: true,
+            schema: { type: string, minLength: 2, maxLength: 128 }
+          }
+        - { name: lineup_id, in: query, schema: { type: integer, format: int64 } }
+        - $ref: '#/components/parameters/Cursor'
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 100, default: 100 }
+          }
+      responses:
+        '200':
+          description: Authorized search page. Expired cursors should restart the query without losing the selected channel.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, next_cursor]
+                properties:
+                  total: { type: integer }
+                  next_cursor: { type: [string, 'null'] }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [kind, lineup_id, channel_id, programme_id, title]
+                      properties:
+                        kind: { type: string, enum: [channel, programme] }
+                        lineup_id: { type: integer, format: int64 }
+                        channel_id: { type: integer, format: int64 }
+                        programme_id: { type: integer, format: int64 }
+                        title: { type: string }
+                        start: { type: [string, 'null'], format: date-time }
+                        end: { type: [string, 'null'], format: date-time }
+        default: { $ref: '#/components/responses/Error' }
   /auth/bootstrap-status:
     get:
       operationId: getBootstrapStatus
@@ -410,7 +618,7 @@ paths:
             name: session_type,
             in: path,
             required: true,
-            schema: { type: string, enum: [browser, mobile] }
+            schema: { type: string, enum: [browser, mobile, tv] }
           }
         - { name: session_id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
@@ -619,12 +827,44 @@ paths:
         '204': { description: MFA reset and sessions revoked. }
         default: { $ref: '#/components/responses/Error' }
   /studio/users/{user_id}/sessions:
+    get:
+      operationId: listUserSessions
+      description: Administrator-only listing of browser, phone and paired TV sessions; no credentials are returned.
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      responses:
+        '200':
+          description: Session metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    { type: array, items: { $ref: '#/components/schemas/AuthSessionMetadata' } }
+        default: { $ref: '#/components/responses/Error' }
     delete:
       operationId: revokeUserSessions
       security: [{ cookieAuth: [], csrfToken: [] }]
       parameters: [{ $ref: '#/components/parameters/UserId' }]
       responses:
-        '204': { description: All browser sessions revoked. }
+        '204': { description: All browser, mobile and TV sessions revoked. }
+        default: { $ref: '#/components/responses/Error' }
+  /studio/users/{user_id}/sessions/{session_type}/{session_id}:
+    delete:
+      operationId: revokeUserSession
+      description: Revoke one session owned by this user. Requires administrator browser authentication and reauthentication within five minutes.
+      security: [{ cookieAuth: [], csrfToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - {
+            name: session_type,
+            in: path,
+            required: true,
+            schema: { type: string, enum: [browser, mobile, tv] }
+          }
+        - { name: session_id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204': { description: Session revoked and its viewers disconnected. }
         default: { $ref: '#/components/responses/Error' }
   /studio/users/{user_id}/media-keys:
     get:
@@ -766,6 +1006,19 @@ paths:
     get:
       operationId: listWatchChannels
       parameters:
+        - {
+            name: metadata_only,
+            in: query,
+            schema: { type: boolean, default: false },
+            description: 'Skip programme loading while retaining identities, scoped stream URLs and logos.'
+          }
+        - {
+            name: on_now_category,
+            in: query,
+            schema: { type: string, maxLength: 80 },
+            description: Filter channels by an exact case-insensitive category of a programme currently on air.
+          }
+        - $ref: '#/components/parameters/VisibleChannelIDs'
         - $ref: '#/components/parameters/LineupId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/Search'
@@ -777,6 +1030,7 @@ paths:
   /watch/lineups/{lineup_id}/groups:
     get:
       operationId: listWatchLineupGroups
+      description: Authorized lineup groups plus on_now_categories metadata across the lineup, independent of the visible guide window.
       parameters:
         - $ref: '#/components/parameters/LineupId'
       responses:
@@ -798,7 +1052,9 @@ paths:
   /watch/lineups/{lineup_id}/guide:
     get:
       operationId: getWatchGuide
+      description: Bounded schedule query. The response includes coverage with requested_from/to, available_from/to, generated_at, and nullable source_updated_at (unknown when not available). Windows are at most 72 hours; query individual windows to browse up to seven days ahead.
       parameters:
+        - $ref: '#/components/parameters/VisibleChannelIDs'
         - $ref: '#/components/parameters/LineupId'
         - $ref: '#/components/parameters/GroupId'
         - $ref: '#/components/parameters/Search'
@@ -919,6 +1175,7 @@ paths:
   /stream/telemetry:
     post:
       operationId: recordPlayerTelemetry
+      description: TV timing event codes are tv_tune_request (manifest ready), tv_first_frame, tv_rebuffer, tv_tune_cancelled and tv_recovery. Details include tune_id, tune_requested_at, duration_ms, manifest_ready_ms, buffer_preset and optional post_manifest_first_frame_ms. Durations are monotonic client measurements, not provider guarantees.
       requestBody:
         required: true
         content:
@@ -1577,6 +1834,10 @@ paths:
           content: { text/event-stream: { schema: { type: string } } }
 components:
   securitySchemes:
+    tvDPoP:
+      type: http
+      scheme: DPoP
+      description: Opaque TV access token, plus an ES256 DPoP proof with method, HTTPS resource URI without query or fragment, iat, unique jti and ath. Viewer-only even for an administrator. Unbound Bearer fallback is forbidden.
     cookieAuth:
       type: apiKey
       in: cookie
@@ -1598,6 +1859,17 @@ components:
       name: access_token
       description: Full internal device credential restricted by lineup and network scope. Short owner-visible output aliases resolve to this credential without exposing it for manual entry.
   parameters:
+    DPoPProof:
+      name: DPoP
+      in: header
+      required: true
+      schema: { type: string, maxLength: 8192 }
+      description: ES256 dpop+jwt proof; include the server nonce when challenged on pairing/token requests. Resource requests additionally bind the access token using ath.
+    VisibleChannelIDs:
+      name: channel_ids
+      in: query
+      schema: { type: string }
+      description: Comma-separated positive channel IDs, at most 100, restricted to this authorized lineup. Stable channel numbering is preserved.
     LineupId:
       { name: lineup_id, in: path, required: true, schema: { type: integer, format: int64 } }
     GroupIdPath:
@@ -1657,6 +1929,49 @@ components:
               job_id: { type: integer, format: int64 }
               status: { type: string, enum: [queued] }
   schemas:
+    TVSessionEnvelope:
+      type: object
+      required:
+        [
+          principal,
+          device_id,
+          token_type,
+          access_token,
+          access_expires_at,
+          expires_in,
+          refresh_token
+        ]
+      properties:
+        principal: { $ref: '#/components/schemas/SessionPrincipal' }
+        device_id: { type: integer, format: int64 }
+        token_type: { type: string, const: DPoP }
+        access_token: { type: string }
+        access_expires_at: { type: string, format: date-time }
+        expires_in: { type: integer, const: 900 }
+        refresh_token: { type: string }
+    ViewerPreferences:
+      type: object
+      required: [revision, favorites, hidden, order]
+      properties:
+        revision: { type: integer, format: int64, minimum: 0 }
+        favorites:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            required: [id, name, channels]
+            properties:
+              id: { type: string, minLength: 1, maxLength: 80 }
+              name: { type: string, minLength: 1, maxLength: 80 }
+              channels:
+                {
+                  type: array,
+                  maxItems: 10000,
+                  uniqueItems: true,
+                  items: { type: string, pattern: '^[1-9][0-9]*:[1-9][0-9]*$' }
+                }
+        hidden: { type: array, maxItems: 10000, uniqueItems: true, items: { type: string } }
+        order: { type: array, maxItems: 10000, uniqueItems: true, items: { type: string } }
     VirtualTunerDevice:
       type: object
       required:
@@ -1752,19 +2067,11 @@ components:
         password: { type: string, format: password }
     AuthSessionMetadata:
       type: object
-      required:
-        [
-          id,
-          transport_scope,
-          created_at,
-          last_seen_at,
-          idle_expires_at,
-          absolute_expires_at,
-          client_ip
-        ]
+      description: Browser and phone sessions have expiry fields; paired TV sessions deliberately have no scheduled expiry.
+      required: [id, created_at, last_seen_at, client_ip]
       properties:
         id: { type: integer, format: int64 }
-        client_type: { type: string, enum: [browser, mobile] }
+        client_type: { type: string, enum: [browser, mobile, tv] }
         device_name: { type: string }
         transport_scope: { type: string, enum: [https, lan_http] }
         created_at: { type: string, format: date-time }
@@ -2591,19 +2898,35 @@ components:
     GuideChannelPage:
       allOf:
         - { $ref: '#/components/schemas/PageMetadata' }
-        - {
-            type: object,
-            properties:
-              { items: { type: array, items: { $ref: '#/components/schemas/GuideChannel' } } }
-          }
+        - type: object
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/GuideChannel' } }
+            coverage:
+              type: object
+              description: Present on guide responses. Availability describes this returned page; unknown source-import freshness is null, not the response generation time.
+              required:
+                [
+                  requested_from,
+                  requested_to,
+                  available_from,
+                  available_to,
+                  generated_at,
+                  source_updated_at
+                ]
+              properties:
+                requested_from: { type: string, format: date-time }
+                requested_to: { type: string, format: date-time }
+                available_from: { type: [string, 'null'], format: date-time }
+                available_to: { type: [string, 'null'], format: date-time }
+                generated_at: { type: string, format: date-time }
+                source_updated_at: { type: [string, 'null'], format: date-time }
     WatchGroupPage:
       allOf:
         - { $ref: '#/components/schemas/PageMetadata' }
-        - {
-            type: object,
-            properties:
-              { items: { type: array, items: { $ref: '#/components/schemas/WatchGroupSummary' } } }
-          }
+        - type: object
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/WatchGroupSummary' } }
+            on_now_categories: { type: array, items: { type: string } }
     StudioGroupPage:
       allOf:
         - { $ref: '#/components/schemas/PageMetadata' }

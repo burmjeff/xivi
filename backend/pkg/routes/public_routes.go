@@ -11,7 +11,7 @@ import (
 // PublicRoutes func for describe group of public routes.
 func PublicRoutes(a *fiber.App) {
 	a.Get("/healthz", middleware.DeclareRoutePolicy("anonymous"), func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok", "mobile_api_version": 1})
+		return c.JSON(fiber.Map{"status": "ok", "mobile_api_version": 1, "tv_api_version": 1})
 	})
 	// Create routes group.
 	api := a.Group("/api", middleware.DeclareRoutePolicy("admin"), middleware.RequireAdmin(), middleware.RequirePasswordChanged(), middleware.BoundedRateLimit(240, time.Minute, true), middleware.CSRFProtected(), middleware.SanitizeLegacyServerErrors())

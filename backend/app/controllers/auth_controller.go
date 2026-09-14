@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -736,15 +737,37 @@ func V2MFARegenerateRecoveryCodes(c *fiber.Ctx) error {
 
 func V2AccountSessions(c *fiber.Ctx) error {
 	principal, _ := middleware.Principal(c)
-	browserItems, err := database.Db.ListUserSessions(c.UserContext(), principal.UserID)
+	return v2ListUserSessions(c, principal.UserID)
+}
+
+func V2StudioUserSessions(c *fiber.Ctx) error {
+	id, ok := security.ParsePositiveID(c.Params("user_id"))
+	if !ok {
+		return v2Error(c, 400, "invalid_user", "Invalid user.", false)
+	}
+	if _, err := database.Db.GetUserByID(c.UserContext(), id); err != nil {
+		return v2Error(c, 404, "user_not_found", "User not found.", false)
+	}
+	return v2ListUserSessions(c, id)
+}
+
+func v2ListUserSessions(c *fiber.Ctx, userID int64) error {
+	browserItems, err := database.Db.ListUserSessions(c.UserContext(), userID)
 	if err != nil {
 		return v2Error(c, 500, "sessions_unavailable", "Sessions could not be loaded.", true)
 	}
-	mobileItems, err := database.Db.ListUserMobileSessions(c.UserContext(), principal.UserID)
+	mobileItems, err := database.Db.ListUserMobileSessions(c.UserContext(), userID)
 	if err != nil {
 		return v2Error(c, 500, "sessions_unavailable", "Sessions could not be loaded.", true)
 	}
-	items := make([]any, 0, len(browserItems)+len(mobileItems))
+	tvItems, err := database.Db.ListTVDevices(c.UserContext(), userID)
+	if err != nil {
+		return v2Error(c, 500, "sessions_unavailable", "Sessions could not be loaded.", true)
+	}
+	items := make([]any, 0, len(browserItems)+len(mobileItems)+len(tvItems))
+	for _, item := range tvItems {
+		items = append(items, item)
+	}
 	for _, item := range browserItems {
 		items = append(items, item)
 	}
@@ -755,21 +778,40 @@ func V2AccountSessions(c *fiber.Ctx) error {
 }
 
 func V2RevokeAccountSession(c *fiber.Ctx) error {
+	principal, _ := middleware.Principal(c)
+	return v2RevokeUserSession(c, principal.UserID)
+}
+
+func V2RevokeStudioUserSession(c *fiber.Ctx) error {
+	userID, ok := security.ParsePositiveID(c.Params("user_id"))
+	if !ok {
+		return v2Error(c, 400, "invalid_user", "Invalid user.", false)
+	}
+	return v2RevokeUserSession(c, userID)
+}
+
+func v2RevokeUserSession(c *fiber.Ctx, userID int64) error {
 	id, ok := security.ParsePositiveID(c.Params("session_id"))
 	if !ok {
 		return v2Error(c, 400, "invalid_session", "The session id is invalid.", false)
 	}
-	principal, _ := middleware.Principal(c)
 	sessionType := strings.ToLower(strings.TrimSpace(c.Params("session_type", "browser")))
 	var revoked bool
 	var err error
 	resourceType := "session"
 	switch sessionType {
 	case "", "browser":
-		revoked, err = database.Db.RevokeUserSessionByID(c.UserContext(), id, principal.UserID)
+		revoked, err = database.Db.RevokeUserSessionByID(c.UserContext(), id, userID)
 	case "mobile":
 		resourceType = "mobile_session"
-		revoked, err = database.Db.RevokeMobileSession(c.UserContext(), id, principal.UserID)
+		revoked, err = database.Db.RevokeMobileSession(c.UserContext(), id, userID)
+	case "tv":
+		resourceType = "tv_device"
+		err = database.Db.RevokeTVDevice(c.UserContext(), id, userID)
+		revoked = err == nil
+		if errors.Is(err, sql.ErrNoRows) {
+			err = nil
+		}
 	default:
 		return v2Error(c, 400, "invalid_session_type", "The session type is invalid.", false)
 	}
@@ -780,10 +822,10 @@ func V2RevokeAccountSession(c *fiber.Ctx) error {
 		return v2Error(c, 404, "session_not_found", "The session was not found.", false)
 	}
 	streaming.DefaultManager.DisconnectAuthorizedClients(resourceType, id, 0)
-	if current, currentOK := middleware.CurrentSession(c); currentOK && current.ID == id {
+	if current, currentOK := middleware.CurrentSession(c); currentOK && current.ID == id && resourceType == "session" {
 		middleware.ClearSessionCookie(c, current.TransportScope)
 	}
-	auditSecurity(c, "session_revoke", "success", resourceType, strconv.FormatInt(id, 10), "", &principal.UserID)
+	auditSecurity(c, "session_revoke", "success", resourceType, strconv.FormatInt(id, 10), "", &userID)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 

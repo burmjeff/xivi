@@ -11,7 +11,6 @@ import (
 	"xivi/backend/pkg/channelmatch"
 	"xivi/backend/pkg/logoassets"
 	"xivi/backend/pkg/security"
-	"xivi/backend/platform/settings"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -133,10 +132,37 @@ func (q *ExperienceQueries) GetWatchLineupGroups(ctx context.Context, lineupID i
 }
 
 func (q *ExperienceQueries) GetGuideChannels(ctx context.Context, lineupID int64, groupID *int64, search string, from, to time.Time, limit, offset int) ([]models.GuideChannel, int64, error) {
+	return q.GetGuideChannelsWithOptions(ctx, lineupID, groupID, search, from, to, limit, offset, false, nil)
+}
+
+func (q *ExperienceQueries) GetGuideChannelsWithOptions(ctx context.Context, lineupID int64, groupID *int64, search string, from, to time.Time, limit, offset int, metadataOnly bool, channelIDs []int64, onNowCategory ...string) ([]models.GuideChannel, int64, error) {
 	where := []string{"tgi.template_id = ?", "EXISTS (SELECT 1 FROM templatechannelitem ti WHERE ti.channel_id = tc.id)"}
 	args := []any{lineupID}
 	pageWhere := []string{}
 	pageFilterArgs := []any{}
+	if len(onNowCategory) > 0 && strings.TrimSpace(onNowCategory[0]) != "" {
+		category := strings.ToLower(strings.TrimSpace(onNowCategory[0]))
+		if len(category) > 80 {
+			return nil, 0, fmt.Errorf("category is too long")
+		}
+		now := epgQueryTime(time.Now().UTC())
+		where = append(where, `EXISTS(SELECT 1 FROM epgprogramme p WHERE p.channel=tc.tvgid AND p.start<=? AND p.stop>? AND instr(','||replace(lower(COALESCE(p.categories,'')),', ', ',')||',',?)>0)`)
+		pageWhere = append(pageWhere, `EXISTS(SELECT 1 FROM epgprogramme p WHERE p.channel=tvgid AND p.start<=? AND p.stop>? AND instr(','||replace(lower(COALESCE(p.categories,'')),', ', ',')||',',?)>0)`)
+		args = append(args, now, now, ","+category+",")
+		pageFilterArgs = append(pageFilterArgs, now, now, ","+category+",")
+	}
+	if len(channelIDs) > 100 {
+		return nil, 0, fmt.Errorf("at most 100 channel IDs may be requested")
+	}
+	if len(channelIDs) > 0 {
+		marks := strings.TrimSuffix(strings.Repeat("?,", len(channelIDs)), ",")
+		where = append(where, "tc.id IN ("+marks+")")
+		pageWhere = append(pageWhere, "id IN ("+marks+")")
+		for _, id := range channelIDs {
+			args = append(args, id)
+			pageFilterArgs = append(pageFilterArgs, id)
+		}
+	}
 	if groupID != nil {
 		where = append(where, "tg.id = ?")
 		args = append(args, *groupID)
@@ -187,6 +213,9 @@ func (q *ExperienceQueries) GetGuideChannels(ctx context.Context, lineupID int64
 		return nil, 0, err
 	}
 
+	if metadataOnly {
+		to = from
+	}
 	if err := q.enrichGuideChannels(ctx, channels, from, to); err != nil {
 		return nil, 0, err
 	}
@@ -207,7 +236,7 @@ func (q *ExperienceQueries) enrichGuideChannels(ctx context.Context, channels []
 			tvgIDs = append(tvgIDs, *channels[i].TVGID)
 		}
 	}
-	if len(tvgIDs) == 0 {
+	if len(tvgIDs) == 0 || !to.After(from) {
 		return nil
 	}
 
@@ -254,17 +283,6 @@ func (q *ExperienceQueries) enrichGuideChannels(ctx context.Context, channels []
 		}
 	}
 	return nil
-}
-
-// EPG timestamps are persisted using the configured application timezone.
-// Keep query bounds in that same location so SQLite's DATETIME comparisons do
-// not compare UTC and local wall-clock representations as plain text.
-func epgQueryTime(value time.Time) time.Time {
-	location, err := time.LoadLocation(settings.Current().Application.TZ)
-	if err != nil {
-		location = time.UTC
-	}
-	return value.In(location)
 }
 
 func (q *ExperienceQueries) GetGuideChannel(ctx context.Context, channelID int64, from, to time.Time) (*models.GuideChannel, error) {

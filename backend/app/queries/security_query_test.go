@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
 	"testing"
 	"time"
 	"xivi/backend/app/models"
@@ -31,6 +32,11 @@ func securityTestQueries(t *testing.T) *SecurityQueries {
 		lineup_id INTEGER NOT NULL REFERENCES template(id) ON DELETE CASCADE,
 		PRIMARY KEY(user_id, lineup_id))`)
 	db.MustExec(`CREATE TABLE user_mfa (user_id INTEGER PRIMARY KEY REFERENCES app_user(id))`)
+	tvMigration, err := os.ReadFile("../../platform/database/migrations/000031_add_tv_devices_and_preferences.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.MustExec(string(tvMigration))
 	db.MustExec(`CREATE TABLE user_mfa_recovery_code (
 		id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES app_user(id),
 		used_at TIMESTAMP NULL)`)

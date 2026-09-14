@@ -1,0 +1,6 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp" android:height="180dp" android:viewportWidth="320" android:viewportHeight="180">
+    <path android:fillColor="#0D171C" android:pathData="M0,0h320v180h-320z" />
+    <!-- Xivi wordmark as paths: banner does not depend on installed fonts. -->
+    <path android:fillColor="#69E2CE" android:pathData="M48,55h18l22,29 22,-29h18l-31,40 32,40h-19l-22,-30 -23,30h-18l32,-40z M140,79h15v56h-15z M140,55h15v14h-15z M167,79h16l16,38 16,-38h16l-26,56h-12z M244,79h15v56h-15z M244,55h15v14h-15z" />
+</vector>

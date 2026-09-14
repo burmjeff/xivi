@@ -172,7 +172,11 @@ func V2WatchLineupGroups(c *fiber.Ctx) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "groups_unavailable", "Groups could not be loaded.", true)
 	}
-	return c.JSON(fiber.Map{"items": items, "next_cursor": nil, "total": len(items)})
+	categories, err := database.Db.WatchOnNowCategories(c.UserContext(), lineupID)
+	if err != nil {
+		return v2Error(c, 500, "categories_unavailable", "Current programme categories could not be loaded.", true)
+	}
+	return c.JSON(fiber.Map{"items": items, "next_cursor": nil, "total": len(items), "on_now_categories": categories})
 }
 
 func v2LineupChannels(c *fiber.Ctx, guide bool) error {
@@ -195,7 +199,26 @@ func v2LineupChannels(c *fiber.Ctx, guide bool) error {
 	if err != nil {
 		return v2Error(c, fiber.StatusBadRequest, "invalid_cursor", "The page cursor is invalid or expired.", false)
 	}
-	items, total, err := database.Db.GetGuideChannels(c.UserContext(), lineupID, groupID, strings.TrimSpace(c.Query("q")), from, to, limit, offset)
+	ids := []int64{}
+	if raw := c.Query("channel_ids"); raw != "" {
+		parts := strings.Split(raw, ",")
+		if len(parts) > 100 {
+			return v2Error(c, 400, "invalid_channel_ids", "Request at most 100 visible channels.", false)
+		}
+		for _, part := range parts {
+			id, ok := security.ParsePositiveID(part)
+			if !ok {
+				return v2Error(c, 400, "invalid_channel_ids", "Channel IDs must be positive integers.", false)
+			}
+			ids = append(ids, id)
+		}
+	}
+	metadataOnly := !guide && c.Query("metadata_only") == "true"
+	category := strings.TrimSpace(c.Query("on_now_category"))
+	if len(category) > 80 {
+		return v2Error(c, 400, "invalid_category", "Category must be at most 80 characters.", false)
+	}
+	items, total, err := database.Db.GetGuideChannelsWithOptions(c.UserContext(), lineupID, groupID, strings.TrimSpace(c.Query("q")), from, to, limit, offset, metadataOnly, ids, category)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "channels_unavailable", "Channels could not be loaded.", true)
 	}
@@ -205,6 +228,22 @@ func v2LineupChannels(c *fiber.Ctx, guide bool) error {
 	cursor, err := nextCursor(c, offset, len(items), total)
 	if err != nil {
 		return v2Error(c, fiber.StatusInternalServerError, "cursor_unavailable", "The next page could not be created.", true)
+	}
+	if guide {
+		var first, last *time.Time
+		for _, channel := range items {
+			for _, p := range channel.Programmes {
+				if first == nil || p.Start.Before(*first) {
+					v := p.Start
+					first = &v
+				}
+				if last == nil || p.End.After(*last) {
+					v := p.End
+					last = &v
+				}
+			}
+		}
+		return c.JSON(fiber.Map{"items": items, "next_cursor": cursor, "total": total, "coverage": fiber.Map{"requested_from": from, "requested_to": to, "available_from": first, "available_to": last, "generated_at": time.Now().UTC(), "source_updated_at": nil}})
 	}
 	return c.JSON(models.Paginated[models.GuideChannel]{Items: items, NextCursor: cursor, Total: total})
 }

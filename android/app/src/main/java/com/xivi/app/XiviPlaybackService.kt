@@ -3,14 +3,10 @@ package com.xivi.app
 import android.app.PendingIntent
 import android.content.Intent
 import android.util.Log
-import androidx.media3.common.AudioAttributes
-import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import org.json.JSONObject
@@ -26,20 +22,7 @@ class XiviPlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         auth = AuthRepository.get(this)
-        val dataSource = OkHttpDataSource.Factory(auth.mediaClient())
-            .setUserAgent("Xivi Android/${BuildConfig.VERSION_NAME}")
-        player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSource))
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
-                    .setUsage(C.USAGE_MEDIA)
-                    .build(),
-                true
-            )
-            .setHandleAudioBecomingNoisy(true)
-            .setWakeMode(C.WAKE_MODE_NETWORK)
-            .build()
+        player = NativePlayback.create(this, auth)
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) = publishState()
             override fun onPlaybackStateChanged(playbackState: Int) {

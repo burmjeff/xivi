@@ -20,6 +20,8 @@ func V2Routes(a *fiber.App) {
 	v2.Post("/mobile/auth/login", middleware.DeclareRoutePolicy("anonymous-mobile"), middleware.LoginIngressRateLimit(), controllers.V2MobileLogin)
 	v2.Post("/mobile/auth/login/mfa", middleware.DeclareRoutePolicy("anonymous-mobile"), middleware.LoginIngressRateLimit(), controllers.V2MobileCompleteMFALogin)
 	v2.Post("/mobile/auth/refresh", middleware.DeclareRoutePolicy("anonymous-mobile"), middleware.BoundedRateLimit(120, time.Minute, false), controllers.V2MobileRefresh)
+	v2.Post("/tv/auth/device", middleware.DeclareRoutePolicy("anonymous-tv"), middleware.BoundedRateLimit(12, time.Minute, false), controllers.V2TVDevice)
+	v2.Post("/tv/auth/token", middleware.DeclareRoutePolicy("anonymous-tv"), middleware.BoundedRateLimit(120, time.Minute, false), controllers.V2TVToken)
 
 	mobile := v2.Group("/mobile/auth", middleware.DeclareRoutePolicy("mobile-authenticated"), middleware.RequireAuthenticated(), middleware.CSRFProtected())
 	mobile.Post("/logout", controllers.V2MobileLogout)
@@ -31,6 +33,9 @@ func V2Routes(a *fiber.App) {
 	auth.Post("/auth/password", middleware.CSRFProtected(), controllers.V2ChangePassword)
 
 	ready := auth.Group("", middleware.RequirePasswordChanged())
+	ready.Get("/tv/auth/decision", middleware.BoundedRateLimit(20, time.Minute, true), controllers.V2TVDecision)
+	ready.Post("/tv/auth/decision", middleware.BoundedRateLimit(20, time.Minute, true), middleware.CSRFProtected(), controllers.V2TVDecision)
+	ready.Post("/tv/auth/logout", middleware.CSRFProtected(), controllers.V2TVLogout)
 	ready.Post("/auth/reauth", middleware.BoundedRateLimit(20, 15*time.Minute, false), middleware.CSRFProtected(), controllers.V2Reauthenticate)
 	ready.Post("/auth/mfa/enroll", middleware.CSRFProtected(), middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2MFAEnroll)
 	ready.Post("/auth/mfa/confirm", middleware.CSRFProtected(), middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2MFAConfirm)
@@ -46,6 +51,9 @@ func V2Routes(a *fiber.App) {
 
 	watch := ready.Group("", middleware.DeclareRoutePolicy("viewer"), middleware.RequestBudget(1, "watch"))
 	watch.Get("/watch/lineups", controllers.V2WatchLineups)
+	watch.Get("/watch/search", middleware.RequestBudget(2, "search"), controllers.V2WatchSearch)
+	watch.Get("/watch/preferences", controllers.V2WatchPreferences)
+	watch.Patch("/watch/preferences", middleware.CSRFProtected(), controllers.V2WatchPreferences)
 	watch.Get("/watch/lineups/:lineup_id/groups", middleware.RequireLineupAccess("lineup_id"), controllers.V2WatchLineupGroups)
 	watch.Get("/watch/lineups/:lineup_id/channels", middleware.RequireLineupAccess("lineup_id"), controllers.V2WatchChannels)
 	watch.Get("/watch/lineups/:lineup_id/channels/:channel_id/neighbors", middleware.RequireLineupAccess("lineup_id"), controllers.V2WatchChannelNeighbors)
@@ -63,6 +71,8 @@ func V2Routes(a *fiber.App) {
 
 	studio := v2.Group("/studio", middleware.DeclareRoutePolicy("admin"), middleware.RequireAdmin(), middleware.RequirePasswordChanged(), middleware.BoundedRateLimit(240, time.Minute, true), middleware.RequestBudget(1, "studio"), middleware.CSRFProtected())
 	studio.Get("/users", controllers.V2StudioUsers)
+	studio.Get("/users/:user_id/sessions", controllers.V2StudioUserSessions)
+	studio.Delete("/users/:user_id/sessions/:session_type/:session_id", middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2RevokeStudioUserSession)
 	studio.Get("/security/audit", controllers.V2StudioSecurityAudit)
 	studio.Get("/security/auth-protection", controllers.V2StudioAuthProtection)
 	studio.Delete("/security/auth-protection/:bucket_id", middleware.RequireRecentReauthentication(5*time.Minute), controllers.V2ClearStudioAuthProtection)

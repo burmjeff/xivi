@@ -31,6 +31,8 @@ func SvelteRoutes(a *fiber.App) {
 	router.Get("/guide", func(c *fiber.Ctx) error { return security.SendFileLiteral(c, "./build/index.html") })
 	router.Get("/login", func(c *fiber.Ctx) error { return security.SendFileLiteral(c, "./build/index.html") })
 	router.Get("/account", func(c *fiber.Ctx) error { return security.SendFileLiteral(c, "./build/index.html") })
+	router.Get("/tv/pair", func(c *fiber.Ctx) error { return security.SendFileLiteral(c, "./build/index.html") })
+	router.Get("/watch/preferences", func(c *fiber.Ctx) error { return security.SendFileLiteral(c, "./build/index.html") })
 	router.Get("/watch/channel/:id", func(c *fiber.Ctx) error { return security.SendFileLiteral(c, "./build/index.html") })
 	router.Get("/studio", func(c *fiber.Ctx) error { return security.SendFileLiteral(c, "./build/index.html") })
 	router.Get("/studio/*", func(c *fiber.Ctx) error { return security.SendFileLiteral(c, "./build/index.html") })

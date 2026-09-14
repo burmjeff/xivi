@@ -140,6 +140,9 @@ func ClearTrustedBrowserCookie(c *fiber.Ctx, scope string) {
 }
 
 func AuthenticateSession(c *fiber.Ctx) error {
+	if strings.HasPrefix(strings.TrimSpace(c.Get(fiber.HeaderAuthorization)), "DPoP ") {
+		return authenticateTVDevice(c)
+	}
 	if strings.HasPrefix(strings.TrimSpace(c.Get(fiber.HeaderAuthorization)), "Bearer ") {
 		return authenticateMobileSession(c)
 	}
@@ -316,6 +319,9 @@ func RequirePasswordChanged() fiber.Handler {
 
 func RequireAdmin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		if _, tv := CurrentTVDevice(c); tv {
+			return securityError(c, fiber.StatusForbidden, "tv_viewer_only", "TV devices cannot access administration.")
+		}
 		principal, ok := Principal(c)
 		if !ok {
 			return securityError(c, fiber.StatusUnauthorized, "authentication_required", "Sign in to continue.")
@@ -349,6 +355,9 @@ func CSRFProtected() fiber.Handler {
 			return securityError(c, fiber.StatusUnauthorized, "authentication_required", "Sign in to continue.")
 		}
 		if _, ok := CurrentMobileSession(c); ok {
+			return c.Next()
+		}
+		if _, ok := CurrentTVDevice(c); ok {
 			return c.Next()
 		}
 		token := CurrentSessionToken(c)

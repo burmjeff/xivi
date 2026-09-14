@@ -56,7 +56,9 @@
 			safeNext.startsWith('/swagger');
 		const next = principal.role === 'viewer' && adminOnlyNext ? '/' : safeNext;
 		if (principal.must_change_password) {
-			await goto('/account?change-password=required', { replaceState: true });
+			await goto(`/account?change-password=required&next=${encodeURIComponent(next)}`, {
+				replaceState: true
+			});
 			return;
 		}
 		if (next.startsWith('/docs/') || next.startsWith('/swagger')) {

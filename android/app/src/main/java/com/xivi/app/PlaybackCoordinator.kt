@@ -54,6 +54,7 @@ data class PlaybackState(
         .put("lineupId", lineupId)
 }
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 object PlaybackCoordinator {
     const val ACTION_PLAY = "com.xivi.app.PLAY"
     const val ACTION_STOP = "com.xivi.app.STOP"

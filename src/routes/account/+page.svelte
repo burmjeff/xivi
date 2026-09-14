@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import {
 		Copy,
@@ -42,7 +43,7 @@
 	};
 	type Session = {
 		id: number;
-		client_type: 'browser' | 'mobile';
+		client_type: 'browser' | 'mobile' | 'tv';
 		device_name?: string;
 		transport_scope?: string;
 		created_at: string;
@@ -212,6 +213,9 @@
 			newPasswordConfirmation = '';
 			passwordMFA = '';
 			status = 'Password changed. Other sessions and trusted-browser approvals were revoked.';
+			const next = page.url.searchParams.get('next');
+			if (next?.startsWith('/') && !next.startsWith('//') && !next.includes('\\'))
+				await goto(next, { replaceState: true });
 		});
 	}
 	async function updateProfile(event: SubmitEvent) {
@@ -641,11 +645,13 @@
 						>
 							<div>
 								<strong
-									>{session.client_type === 'mobile'
-										? session.device_name || 'Mobile device'
-										: session.transport_scope === 'https'
-											? 'Public HTTPS'
-											: 'Direct LAN'}</strong
+									>{session.client_type === 'tv'
+										? `${session.device_name || 'TV'} (paired TV)`
+										: session.client_type === 'mobile'
+											? session.device_name || 'Mobile device'
+											: session.transport_scope === 'https'
+												? 'Public HTTPS'
+												: 'Direct LAN'}</strong
 								><span
 									>{session.client_ip} · Last seen {new Date(
 										session.last_seen_at
@@ -657,7 +663,7 @@
 									onclick={() =>
 										requestConfirmation({
 											title: 'Revoke this session?',
-											description: `The ${session.client_type === 'mobile' ? session.device_name || 'mobile device' : session.transport_scope === 'https' ? 'Public HTTPS' : 'Direct LAN'} session from ${session.client_ip} will be signed out immediately.`,
+											description: `The ${session.client_type === 'tv' ? session.device_name || 'TV' : session.client_type === 'mobile' ? session.device_name || 'mobile device' : session.transport_scope === 'https' ? 'Public HTTPS' : 'Direct LAN'} session from ${session.client_ip} will be signed out immediately.`,
 											confirmLabel: 'Revoke session',
 											action: () => revokeSession(session.id, session.client_type)
 										})}>Revoke</button

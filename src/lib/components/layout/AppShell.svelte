@@ -49,7 +49,8 @@
 	const watchNav = [
 		{ href: '/', label: 'Home', icon: House },
 		{ href: '/guide', label: 'Guide', icon: ListVideo },
-		{ href: '/channels', label: 'Channels', icon: Radio }
+		{ href: '/channels', label: 'Channels', icon: Radio },
+		{ href: '/watch/preferences', label: 'Lists', icon: Settings }
 	];
 	const studioNav = [
 		{ href: '/studio', label: 'Overview', icon: PanelsTopLeft },

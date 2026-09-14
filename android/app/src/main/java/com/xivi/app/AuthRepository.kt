@@ -17,7 +17,7 @@ data class NativeHttpResponse(
     val body: String
 )
 
-class AuthRepository private constructor(context: Context) {
+class AuthRepository private constructor(context: Context) : NativeApi {
     private val applicationContext = context.applicationContext
     private val tokens = SecureTokenStore(applicationContext)
     private val refreshLock = Any()
@@ -52,7 +52,7 @@ class AuthRepository private constructor(context: Context) {
         }
         .build()
 
-    fun server(): String? = tokens.server()
+    override fun server(): String? = tokens.server()
 
     fun hasRefreshCredential(): Boolean =
         !tokens.refreshToken().isNullOrBlank() && tokens.refreshExpiryMillis() > System.currentTimeMillis()
@@ -90,7 +90,7 @@ class AuthRepository private constructor(context: Context) {
         tokens.setServer(null)
     }
 
-    fun absoluteUrl(path: String): String {
+    override fun absoluteUrl(path: String): String {
 		val root = server() ?: throw IllegalStateException("Sign in on your phone")
 		val rootUrl = root.toHttpUrl()
 		val parsed = path.toHttpUrlOrNullSafe()
@@ -102,9 +102,9 @@ class AuthRepository private constructor(context: Context) {
         return root + path
     }
 
-    fun mediaClient(): OkHttpClient = authenticatedClient
+    override fun mediaClient(): OkHttpClient = authenticatedClient
 
-    fun download(path: String): Pair<ByteArray, String> {
+    override fun download(path: String): Pair<ByteArray, String> {
         val request = Request.Builder().url(absoluteUrl(path)).header("Accept", "image/*").get().build()
         authenticatedClient.newCall(request).execute().use { response ->
             require(response.isSuccessful) { "Artwork is unavailable" }
@@ -114,11 +114,11 @@ class AuthRepository private constructor(context: Context) {
         }
     }
 
-    fun request(
+    override fun request(
         path: String,
         method: String,
-        suppliedHeaders: Map<String, String> = emptyMap(),
-        suppliedBody: String? = null
+        suppliedHeaders: Map<String, String>,
+        suppliedBody: String?
     ): NativeHttpResponse {
         val mapping = mapWebAuthRequest(path, suppliedBody)
         val publicRequest = mapping.path == "/api/v2/mobile/auth/login" ||

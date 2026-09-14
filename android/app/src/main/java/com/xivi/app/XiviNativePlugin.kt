@@ -11,6 +11,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 @CapacitorPlugin(name = "XiviNative")
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class XiviNativePlugin : Plugin() {
     private val executor: ExecutorService = Executors.newCachedThreadPool()
     private lateinit var repository: AuthRepository

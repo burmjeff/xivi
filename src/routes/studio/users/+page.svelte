@@ -19,6 +19,33 @@
 		lineup_ids: number[];
 	};
 	type Lineup = { id: number; name: string };
+	type DeviceSession = {
+		id: number;
+		client_type: 'browser' | 'mobile' | 'tv';
+		device_name?: string;
+		last_seen_at: string;
+		revoked_at?: string;
+	};
+	let deviceSessions = $state<Record<number, DeviceSession[]>>({});
+	let showingSessions = $state<number | null>(null);
+	async function showSessions(user: User) {
+		try {
+			deviceSessions[user.id] = (
+				await api<{ items: DeviceSession[] }>(`/api/v2/studio/users/${user.id}/sessions`)
+			).items;
+			showingSessions = user.id;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not load sessions.';
+		}
+	}
+	async function revokeDeviceSession(user: User, session: DeviceSession) {
+		await runSensitive('revoke a device session', async () => {
+			await api(`/api/v2/studio/users/${user.id}/sessions/${session.client_type}/${session.id}`, {
+				method: 'DELETE'
+			});
+			await showSessions(user);
+		});
+	}
 	type Response = { items: User[]; lineups: Lineup[] };
 	type AuditEvent = {
 		id: number;
@@ -439,6 +466,35 @@
 								>{/each}
 						</fieldset>{/if}
 					<div class="actions">
+						<button class="app-button app-button--secondary" onclick={() => showSessions(user)}
+							>Browser, phone and TV sessions</button
+						>
+						{#if showingSessions === user.id}
+							<div class="identity-edit">
+								{#each deviceSessions[user.id] ?? [] as session (`${session.client_type}:${session.id}`)}
+									<div>
+										<strong>{session.device_name || session.client_type}</strong> · {session.client_type}
+										· Last seen {new Date(session.last_seen_at).toLocaleString()}
+										{#if !session.revoked_at}<button
+												class="app-button app-button--quiet"
+												onclick={() =>
+													requestConfirmation({
+														title: 'Revoke this device?',
+														description:
+															'It will be signed out immediately. A TV will need to be paired again.',
+														confirmLabel: 'Revoke',
+														action: () => revokeDeviceSession(user, session)
+													})}>Revoke</button
+											>{:else}
+											· Revoked{/if}
+									</div>
+								{/each}
+								<button
+									class="app-button app-button--quiet"
+									onclick={() => (showingSessions = null)}>Close sessions</button
+								>
+							</div>
+						{/if}
 						{#if identityFor === user.id}<div class="identity-edit">
 								<input
 									aria-label="Username"

@@ -509,7 +509,10 @@ func (q *SecurityQueries) RevokeMobileSession(ctx context.Context, id, userID in
 func (q *SecurityQueries) RevokeUserMobileSessions(ctx context.Context, userID int64) error {
 	_, err := q.ExecContext(ctx, `UPDATE mobile_session SET revoked_at = CURRENT_TIMESTAMP
 		WHERE user_id = ? AND revoked_at IS NULL`, userID)
-	return err
+	if err != nil {
+		return err
+	}
+	return q.RevokeUserTVDevices(ctx, userID)
 }
 
 func (q *SecurityQueries) ListUserMobileSessions(ctx context.Context, userID int64) ([]models.MobileSessionMetadata, error) {
@@ -1252,6 +1255,20 @@ func (q *SecurityQueries) ListSecurityAuditEvents(ctx context.Context, beforeID 
 
 func (q *SecurityQueries) PruneSecurityData(ctx context.Context, sessionBefore, auditBefore time.Time, maxAudit int) error {
 	return q.WithTransactionContext(ctx, func(ctx context.Context, tx *sqlx.Tx) error {
+		now := time.Now().UTC()
+		if _, err := tx.ExecContext(ctx, `DELETE FROM tv_pairing WHERE expires_at<=?`, now); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM tv_access_token WHERE expires_at<=?`, now); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM tv_dpop_replay WHERE expires_at<=?`, now); err != nil {
+			return err
+		}
+		// Active household TVs deliberately have no idle or absolute expiry.
+		if _, err := tx.ExecContext(ctx, `DELETE FROM tv_device WHERE revoked_at IS NOT NULL AND revoked_at<?`, auditBefore); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM auth_session WHERE absolute_expires_at < ? OR revoked_at < ?`, sessionBefore, sessionBefore); err != nil {
 			return err
 		}

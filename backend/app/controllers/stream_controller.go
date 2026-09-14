@@ -114,7 +114,9 @@ func streamClientMetadata(c *fiber.Ctx, protocol, id string) streaming.ClientMet
 	metadata := streaming.ClientMetadata{ID: strings.Clone(id), Protocol: protocol, RemoteIP: security.RequestNetworkInfo(c).IP.String(),
 		Method: c.Method() + " " + c.Path(), UserAgent: strings.Clone(c.Get(fiber.HeaderUserAgent))}
 	if principal, ok := middleware.Principal(c); ok {
-		if session, sessionOK := middleware.CurrentMobileSession(c); sessionOK {
+		if device, tv := middleware.CurrentTVDevice(c); tv {
+			metadata.AuthKind, metadata.AuthID, metadata.OwnerUserID = "tv_device", device.ID, principal.UserID
+		} else if session, sessionOK := middleware.CurrentMobileSession(c); sessionOK {
 			metadata.AuthKind, metadata.AuthID, metadata.OwnerUserID = "mobile_session", session.ID, principal.UserID
 		} else if session, sessionOK := middleware.CurrentSession(c); sessionOK {
 			metadata.AuthKind, metadata.AuthID, metadata.OwnerUserID = "session", session.ID, principal.UserID
@@ -140,6 +142,9 @@ type streamAuthorization struct {
 
 func captureStreamAuthorization(c *fiber.Ctx) streamAuthorization {
 	if principal, ok := middleware.Principal(c); ok {
+		if device, tv := middleware.CurrentTVDevice(c); tv {
+			return streamAuthorization{kind: "tv_device", id: device.ID}
+		}
 		if session, sessionOK := middleware.CurrentMobileSession(c); sessionOK {
 			return streamAuthorization{kind: "mobile_session", id: session.ID}
 		}
@@ -162,6 +167,8 @@ func (authorization streamAuthorization) allows(ctx context.Context, streamID st
 	var allowed bool
 	var err error
 	switch authorization.kind {
+	case "tv_device":
+		allowed, err = database.Db.TVDeviceCanAccessChannel(ctx, authorization.id, streamID)
 	case "session":
 		allowed, err = database.Db.SessionCanAccessChannel(ctx, authorization.id, streamID)
 	case "mobile_session":
