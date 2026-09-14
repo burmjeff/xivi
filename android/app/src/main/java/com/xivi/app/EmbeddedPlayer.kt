@@ -31,7 +31,7 @@ import kotlin.math.roundToInt
 @UnstableApi
 class EmbeddedPlayer(private val activity: MainActivity, private val webView: WebView) {
     private val container = activity.findViewById<FrameLayout>(android.R.id.content)
-    private val stage = LayoutInflater.from(activity).inflate(R.layout.embedded_player, container, false)
+    private val stage = LayoutInflater.from(activity).inflate(R.layout.embedded_player, container, false) as MiniPlayerLayout
     internal val playerView: PlayerView = stage.findViewById(R.id.player_view)
     private var future: ListenableFuture<MediaController>? = null
     private var removeObserver: (() -> Unit)? = null
@@ -39,6 +39,9 @@ class EmbeddedPlayer(private val activity: MainActivity, private val webView: We
     private var connectionError: String? = null
     private var destroyed = false
     private var fullscreen = false
+    private var miniX = 1f
+    private var miniY = 1f
+    private var miniBounds = Rect()
     private val initialLightStatusBars = WindowCompat.getInsetsController(activity.window, container).isAppearanceLightStatusBars
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = updateStatus()
@@ -47,6 +50,25 @@ class EmbeddedPlayer(private val activity: MainActivity, private val webView: We
     init {
         container.addView(stage, FrameLayout.LayoutParams(1, 1))
         stage.visibility = View.GONE
+        stage.setOnClickListener { if (stage.miniMode) activity.openPlayingChannel() }
+        stage.findViewById<View>(R.id.player_mini_close).setOnClickListener { PlaybackCoordinator.stop(activity) }
+        stage.onMove = { dx, dy ->
+            val horizontalRange = (miniBounds.width() - stage.width).coerceAtLeast(0)
+            val verticalRange = (miniBounds.height() - stage.height).coerceAtLeast(0)
+            // Accumulate every touch delta, including events arriving before the next layout pass.
+            if (horizontalRange > 0) miniX = (miniX + dx / horizontalRange).coerceIn(0f, 1f)
+            if (verticalRange > 0) miniY = (miniY + dy / verticalRange).coerceIn(0f, 1f)
+            updateLayout()
+        }
+        stage.onMoveFinished = {
+            miniX = if (miniX < 0.5f) 0f else 1f
+            updateLayout()
+        }
+        stage.outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: android.graphics.Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, 12 * activity.resources.displayMetrics.density)
+            }
+        }
         stage.findViewById<View>(R.id.player_retry).setOnClickListener {
             if (playerView.player == null || connectionError != null) connect()
             PlaybackCoordinator.item()?.let { PlaybackCoordinator.play(activity, it, false) }
@@ -111,6 +133,13 @@ class EmbeddedPlayer(private val activity: MainActivity, private val webView: We
         val pip = activity.isInPictureInPictureMode
         val active = PlaybackCoordinator.state().active
         val mode = frame?.optString("mode") ?: "hidden"
+        val mini = mode == "mini" && !pip
+        stage.miniMode = mini
+        stage.isClickable = mini
+        stage.isFocusable = mini
+        stage.contentDescription = if (mini) activity.getString(R.string.player_mini_restore) else null
+        stage.clipToOutline = mini
+        stage.elevation = if (mini) 8 * activity.resources.displayMetrics.density else 0f
         val show = pip || (active && mode != "hidden")
         WindowCompat.getInsetsController(activity.window, container).isAppearanceLightStatusBars =
             if (show) false else initialLightStatusBars
@@ -133,21 +162,41 @@ class EmbeddedPlayer(private val activity: MainActivity, private val webView: We
             val scale = webView.width / value.optDouble("viewportWidth", 1.0).coerceAtLeast(1.0)
             val webLocation = IntArray(2).also { webView.getLocationOnScreen(it) }
             val parentLocation = IntArray(2).also { container.getLocationOnScreen(it) }
-            FrameLayout.LayoutParams(
+            val layout = FrameLayout.LayoutParams(
                 (value.optDouble("width") * scale).roundToInt().coerceAtLeast(1),
                 (value.optDouble("height") * scale).roundToInt().coerceAtLeast(1)
             ).apply {
                 leftMargin = webLocation[0] - parentLocation[0] + (value.optDouble("x") * scale).roundToInt()
                 topMargin = webLocation[1] - parentLocation[1] + (value.optDouble("y") * scale).roundToInt()
             }
+            if (mini) {
+                val bounds = value.optJSONObject("movementBounds")
+                val originX = webLocation[0] - parentLocation[0]
+                val originY = webLocation[1] - parentLocation[1]
+                val margin = (12 * activity.resources.displayMetrics.density).roundToInt()
+                val insets = androidx.core.view.ViewCompat.getRootWindowInsets(container)?.getInsets(
+                    WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.ime())
+                val left = maxOf(originX + ((bounds?.optDouble("left") ?: 12.0) * scale).roundToInt(), (insets?.left ?: 0) + margin)
+                val top = maxOf(originY + ((bounds?.optDouble("top") ?: 12.0) * scale).roundToInt(), (insets?.top ?: 0) + margin)
+                val right = minOf(originX + ((bounds?.optDouble("right") ?: (webView.width / scale - 12)) * scale).roundToInt(), container.width - (insets?.right ?: 0) - margin).coerceAtLeast(left + 1)
+                val bottom = minOf(originY + ((bounds?.optDouble("bottom") ?: (webView.height / scale - 12)) * scale).roundToInt(), container.height - (insets?.bottom ?: 0) - margin).coerceAtLeast(top + 1)
+                miniBounds.set(left, top, right, bottom)
+                layout.width = minOf(layout.width, miniBounds.width(), miniBounds.height() * 16 / 9).coerceAtLeast(1)
+                layout.height = (layout.width * 9 / 16).coerceAtLeast(1)
+                layout.leftMargin = left + ((miniBounds.width() - layout.width) * miniX).roundToInt()
+                layout.topMargin = top + ((miniBounds.height() - layout.height) * miniY).roundToInt()
+            }
+            layout
         }
         val old = stage.layoutParams as FrameLayout.LayoutParams
         if (old.width != params.width || old.height != params.height || old.leftMargin != params.leftMargin || old.topMargin != params.topMargin) {
             stage.layoutParams = params
         }
-        playerView.useController = !pip
-        stage.findViewById<View>(R.id.player_pip).visibility = if (!pip && supportsPip()) View.VISIBLE else View.GONE
-        updatePipParams()
+        playerView.useController = !pip && !mini
+        playerView.importantForAccessibility = if (mini) View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS else View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+        stage.findViewById<View>(R.id.player_pip).visibility = if (!pip && !mini && supportsPip()) View.VISIBLE else View.GONE
+        stage.findViewById<View>(R.id.player_mini_close).visibility = if (mini) View.VISIBLE else View.GONE
+        updateStatus()
     }
 
     private fun updateStatus() {
@@ -156,7 +205,7 @@ class EmbeddedPlayer(private val activity: MainActivity, private val webView: We
             activity.getString(R.string.player_stream_error)
         }
         stage.findViewById<View>(R.id.player_error_panel).visibility =
-            if (error != null && !activity.isInPictureInPictureMode) View.VISIBLE else View.GONE
+            if (error != null && !activity.isInPictureInPictureMode && !stage.miniMode) View.VISIBLE else View.GONE
         stage.findViewById<TextView>(R.id.player_error).text = error
         stage.findViewById<View>(R.id.player_connecting).visibility =
             if (player == null && error == null) View.VISIBLE else View.GONE

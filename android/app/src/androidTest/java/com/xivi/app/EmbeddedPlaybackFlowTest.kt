@@ -65,7 +65,8 @@ class EmbeddedPlaybackFlowTest {
                         activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                         activity.bridge.webView.loadUrl("https://app.xivi.local/watch/channel/42?lineup=1")
                     }
-                    waitFor { js(scenario, "!!document.querySelector('.native-video-surface')") == "true" }
+                    // A fresh emulator can take longer to initialize its first WebView.
+                    waitFor(timeoutMs = 60_000) { js(scenario, "!!document.querySelector('.native-video-surface')") == "true" }
                     waitFor { onActivity(scenario) { it.embeddedPlayer!!.playerView.player?.isPlaying == true } }
                     waitFor { onActivity(scenario) { (it.embeddedPlayer!!.playerView.videoSurfaceView as? android.view.TextureView)?.bitmap?.let { bitmap ->
                         val colorful = bitmap.getPixel(bitmap.width / 2, bitmap.height / 2) != android.graphics.Color.BLACK
@@ -89,17 +90,37 @@ class EmbeddedPlaybackFlowTest {
                     waitFor { PlaybackCoordinator.state().channelId == 43L && PlaybackCoordinator.state().playing }
                     scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
                     waitFor { js(scenario, "!!document.querySelector('.mini-video')") == "true" }
+                    waitForMiniPlayer(scenario, portrait = true)
                     assertSame(originalController, onActivity(scenario) { it.embeddedPlayer!!.playerView.player })
+                    val initialMini = stageRect(scenario)
+                    assertTrue("Mini-player should take less than half the screen width", initialMini.width() < onActivity(scenario) { it.bridge.webView.width } / 2)
                     screenshot("channel-mini.png")
-                    scenario.onActivity { activity ->
-                        assertTrue(activity.findViewById<View>(R.id.player_pip).performClick())
-                    }
+                    gesture(initialMini.exactCenterX(), initialMini.exactCenterY(), 24f, initialMini.top / 2f)
+                    waitFor { stageRect(scenario).left < initialMini.left && stageRect(scenario).top < initialMini.top }
+                    assertEquals("Dragging must not open the channel", "true", js(scenario, "location.pathname === '/channels'"))
+                    assertTrue(PlaybackCoordinator.state().playing)
+                    assertSame(originalController, onActivity(scenario) { it.embeddedPlayer!!.playerView.player })
+                    screenshot("channel-mini-moved.png")
+                    scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+                    waitFor { onActivity(scenario) { it.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE } }
+                    waitForMiniPlayer(scenario, portrait = false)
+                    assertTrue(stageRect(scenario).bottom <= onActivity(scenario) { it.findViewById<View>(android.R.id.content).height })
+                    scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+                    waitFor { onActivity(scenario) { it.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT } }
+                    waitForMiniPlayer(scenario, portrait = true)
+                    val movedMini = stageRect(scenario)
+                    gesture(movedMini.exactCenterX(), movedMini.exactCenterY())
+                    waitFor { js(scenario, "location.pathname === '/watch/channel/43'") == "true" }
+                    assertSame(originalController, onActivity(scenario) { it.embeddedPlayer!!.playerView.player })
+                    scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+                    waitFor { js(scenario, "!!document.querySelector('.mini-video')") == "true" }
+                    waitFor { stageRect(scenario).left < initialMini.left }
+                    // Leaving Xivi from the in-app mini-player enters system PiP.
+                    instrumentation.uiAutomation.executeShellCommand("input keyevent KEYCODE_HOME").close()
                     waitFor { onActivity(scenario) { it.isInPictureInPictureMode } }
                     assertTrue(PlaybackCoordinator.state().playing)
                     screenshot("channel-pip.png")
-                    scenario.onActivity { activity ->
-                        (activity.embeddedPlayer!!.playerView.player as MediaController).sessionActivity!!.send()
-                    }
+                    context.startActivity(context.packageManager.getLaunchIntentForPackage(context.packageName))
                     waitFor { onActivity(scenario) { !it.isInPictureInPictureMode && it.hasWindowFocus() } }
                     waitFor { js(scenario, "location.pathname === '/watch/channel/43' && !!document.querySelector('.native-video-surface')") == "true" }
                     assertSame(originalController, onActivity(scenario) { it.embeddedPlayer!!.playerView.player })
@@ -114,6 +135,14 @@ class EmbeddedPlaybackFlowTest {
                     waitFor { js(scenario, "!![...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Start watching')") == "true" }
                     js(scenario, "[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Start watching').click()")
                     waitFor { PlaybackCoordinator.state().playing && onActivity(scenario) { it.embeddedPlayer!!.playerView.isShown } }
+                    scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+                    waitFor { js(scenario, "!!document.querySelector('.mini-video')") == "true" }
+                    val close = stageRect(scenario, R.id.player_mini_close)
+                    gesture(close.exactCenterX(), close.exactCenterY())
+                    waitFor { !PlaybackCoordinator.state().active }
+                    assertEquals("true", js(scenario, "location.pathname === '/channels'"))
+                    js(scenario, "document.querySelector('a[href*=\"/watch/channel/42\"]').click()")
+                    waitFor { PlaybackCoordinator.state().channelId == 42L && PlaybackCoordinator.state().playing }
                     instrumentation.uiAutomation.executeShellCommand("input keyevent KEYCODE_HOME").close()
                     waitFor { onActivity(scenario) { it.isInPictureInPictureMode } }
                     assertTrue(PlaybackCoordinator.state().playing)
@@ -160,6 +189,41 @@ class EmbeddedPlaybackFlowTest {
         }
     }
 
+    private fun waitForMiniPlayer(scenario: ActivityScenario<MainActivity>, portrait: Boolean) {
+        // Configuration callbacks precede the WebView resize and its native frame update.
+        waitFor { js(scenario, "(innerWidth < innerHeight) === $portrait") == "true" }
+        waitFor {
+            val css = JSONObject(js(scenario, "(() => { const r = document.querySelector('.mini-video').getBoundingClientRect(); return {width:r.width, viewport:innerWidth}; })()"))
+            val expected = css.getDouble("width") * onActivity(scenario) { it.bridge.webView.width } / css.getDouble("viewport")
+            onActivity(scenario) { it.findViewById<MiniPlayerLayout>(R.id.player_stage).miniMode } &&
+                kotlin.math.abs(stageRect(scenario).width() - expected) <= 2
+        }
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+    }
+
+    private fun stageRect(scenario: ActivityScenario<MainActivity>, viewId: Int = R.id.player_stage): android.graphics.Rect =
+        onActivity(scenario) {
+            val view = it.findViewById<View>(viewId)
+            val location = IntArray(2).also { point -> view.getLocationOnScreen(point) }
+            android.graphics.Rect(location[0], location[1], location[0] + view.width, location[1] + view.height)
+        }
+
+    private fun gesture(fromX: Float, fromY: Float, toX: Float = fromX, toY: Float = fromY) {
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val start = SystemClock.uptimeMillis()
+        fun send(action: Int, x: Float, y: Float) {
+            val event = android.view.MotionEvent.obtain(start, SystemClock.uptimeMillis(), action, x, y, 0)
+            assertTrue(automation.injectInputEvent(event, true))
+            event.recycle()
+        }
+        send(android.view.MotionEvent.ACTION_DOWN, fromX, fromY)
+        if (fromX != toX || fromY != toY) for (step in 1..12) {
+            SystemClock.sleep(20)
+            send(android.view.MotionEvent.ACTION_MOVE, fromX + (toX - fromX) * step / 12, fromY + (toY - fromY) * step / 12)
+        }
+        send(android.view.MotionEvent.ACTION_UP, toX, toY)
+    }
+
     private fun findClose(node: android.view.accessibility.AccessibilityNodeInfo?): android.view.accessibility.AccessibilityNodeInfo? {
         if (node == null) return null
         if (node.contentDescription?.toString() in listOf("Close", "Dismiss") && node.isClickable) return node
@@ -204,8 +268,8 @@ class EmbeddedPlaybackFlowTest {
         return result.get()
     }
 
-    private fun waitFor(predicate: () -> Boolean) {
-        val deadline = SystemClock.elapsedRealtime() + 20_000
+    private fun waitFor(timeoutMs: Long = 20_000, predicate: () -> Boolean) {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMs
         while (SystemClock.elapsedRealtime() < deadline) {
             if (predicate()) return
             SystemClock.sleep(100)

@@ -199,7 +199,19 @@ const server = http.createServer((req, res) => {
 			mini.y + mini.height <= navigation.y,
 			'The mini-player must leave app navigation accessible'
 		);
-		await page.getByRole('button', { name: 'Open', exact: true }).click();
+		assert(mini.width <= 192 && mini.width < 390 / 2, 'The mini-player should stay compact');
+		assert(
+			Math.abs(mini.height - (mini.width * 9) / 16) < 2,
+			'No details panel should increase the mini-player height'
+		);
+		assert.equal(await page.locator('.native-now-playing button').count(), 0);
+		const movement = await page.evaluate(() => window.__frames.at(-1).movementBounds);
+		assert(
+			movement.top > 0 && movement.bottom <= navigation.y,
+			'Native drag bounds should protect app navigation'
+		);
+		// The native video surface owns gestures and emits the existing open-player event on a tap.
+		await page.evaluate(() => window.__openPlayer({ channelId: 42, lineupId: 1 }));
 		await page.waitForFunction(() => window.__frames.at(-1)?.mode === 'inline');
 		assert.equal(
 			await page.evaluate(() => window.__playCalls.length),

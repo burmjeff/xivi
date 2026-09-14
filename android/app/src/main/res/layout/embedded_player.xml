@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.xivi.app.MiniPlayerLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/player_stage"
     android:layout_width="match_parent"
@@ -53,4 +53,15 @@
             android:backgroundTint="#FF6B5E"
             android:textColor="#080A0F" />
     </LinearLayout>
-</FrameLayout>
+    <ImageButton
+        android:id="@+id/player_mini_close"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:padding="14dp"
+        android:src="@android:drawable/ic_menu_close_clear_cancel"
+        app:tint="#FFFFFF"
+        android:background="#55000000"
+        android:contentDescription="@string/player_mini_close"
+        android:visibility="gone" />
+</com.xivi.app.MiniPlayerLayout>

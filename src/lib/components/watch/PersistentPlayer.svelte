@@ -609,13 +609,7 @@
 			error = 'The player could not stop. Please try again.';
 		}
 	}
-	async function returnToNativeChannel() {
-		if (nativeState.channelId && nativeState.lineupId) {
-			await goto(`/watch/channel/${nativeState.channelId}?lineup=${nativeState.lineupId}`);
-		} else {
-			await playbackController.reopen();
-		}
-	}
+
 	$effect(() => {
 		if (!playerRoute || !channelQuery.data) return;
 		activeChannel = channelQuery.data;
@@ -832,17 +826,6 @@
 {#if playbackController.native && !playerRoute && nativeState.active}
 	<aside class="native-now-playing" aria-label="Now playing">
 		<div class="mini-video"><NativeVideoSurface mode="mini" /></div>
-		<div class="mini-details">
-			<span>Live</span><strong>{nativeState.name}</strong><small
-				>{nativeState.programme ?? 'Schedule unavailable'}</small
-			>
-		</div>
-		<button class="app-button app-button--primary" onclick={() => void returnToNativeChannel()}
-			>Open</button
-		>
-		<button class="app-button app-button--quiet" onclick={() => void stopNativePlayback()}
-			>Stop</button
-		>
 	</aside>
 {/if}
 
@@ -879,39 +862,15 @@
 	}
 	.native-now-playing {
 		position: fixed;
-		z-index: 70;
-		right: 1rem;
+		right: 12px;
 		bottom: calc(5rem + env(safe-area-inset-bottom));
-		width: min(19rem, calc(100vw - 2rem));
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto auto;
-		align-items: center;
-		gap: 0.7rem;
-		border: 1px solid var(--line);
-		border-radius: 1rem;
-		background: color-mix(in oklch, var(--surface-raised) 94%, transparent);
-		box-shadow: 0 18px 50px rgb(0 0 0 / 0.4);
-		padding: 0 0.6rem 0.6rem;
-		overflow: hidden;
-		backdrop-filter: blur(18px);
-	}
-	.native-now-playing .mini-details {
-		display: grid;
-		min-width: 0;
+		width: min(45vw, 192px);
+		aspect-ratio: 16 / 9;
+		pointer-events: none;
 	}
 	.mini-video {
-		grid-column: 1 / -1;
-		aspect-ratio: 16 / 9;
-		margin: 0 -0.6rem;
-	}
-	.native-now-playing span,
-	.native-now-playing small {
-		color: var(--muted);
-		font-size: 0.72rem;
-	}
-	.native-now-playing strong,
-	.native-now-playing small {
-		overflow-wrap: anywhere;
+		width: 100%;
+		height: 100%;
 	}
 	.player-page.pip-background {
 		position: fixed;

@@ -15,6 +15,12 @@ import androidx.media3.common.util.UnstableApi
 class MainActivity : BridgeActivity() {
     internal var embeddedPlayer: EmbeddedPlayer? = null
         private set
+    private var restoreChannelAfterPip = false
+    private var activityResumed = false
+
+    internal fun openPlayingChannel() {
+        (bridge.getPlugin("XiviNative")?.instance as? XiviNativePlugin)?.openPlayingChannel()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         registerPlugin(XiviNativePlugin::class.java)
@@ -53,15 +59,27 @@ class MainActivity : BridgeActivity() {
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (isInPictureInPictureMode) restoreChannelAfterPip = true
         embeddedPlayer?.onPipChanged()
+        restoreChannelIfNeeded()
+    }
+
+    private fun restoreChannelIfNeeded() {
+        if (restoreChannelAfterPip && activityResumed && !isInPictureInPictureMode && !isFinishing) {
+            restoreChannelAfterPip = false
+            if (PlaybackCoordinator.state().active) openPlayingChannel()
+        }
     }
 
     override fun onResume() {
         super.onResume()
+        activityResumed = true
         embeddedPlayer?.onResume()
+        restoreChannelIfNeeded()
     }
 
     override fun onPause() {
+        activityResumed = false
         embeddedPlayer?.onPause()
         super.onPause()
     }

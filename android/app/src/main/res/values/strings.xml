@@ -1,5 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
+    <string name="player_mini_close">Close video</string>
+    <string name="player_mini_restore">Return to channel. Drag to move video.</string>
     <string name="player_pip">Picture in picture</string>
     <string name="player_pip_unavailable">Picture in picture is unavailable. Check the PiP permission for Xivi in Android settings.</string>
     <string name="app_name">Xivi</string>

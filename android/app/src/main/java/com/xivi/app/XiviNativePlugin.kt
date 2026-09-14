@@ -25,9 +25,13 @@ class XiviNativePlugin : Plugin() {
 
     override fun handleOnNewIntent(intent: Intent) {
         if (intent.action == PlaybackCoordinator.ACTION_OPEN_PLAYER) {
-            PlaybackCoordinator.restore(context)?.let {
-                notifyListeners("openPlayer", JSObject(it.toJson().toString()), true)
-            }
+            openPlayingChannel()
+        }
+    }
+
+    internal fun openPlayingChannel() {
+        PlaybackCoordinator.restore(context)?.let {
+            notifyListeners("openPlayer", JSObject(it.toJson().toString()), true)
         }
     }
 

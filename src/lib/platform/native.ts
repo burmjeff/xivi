@@ -33,6 +33,7 @@ export interface NativePlayerFrame {
 	width?: number;
 	height?: number;
 	viewportWidth?: number;
+	movementBounds?: { left: number; top: number; right: number; bottom: number };
 }
 
 interface XiviNativePlugin {
