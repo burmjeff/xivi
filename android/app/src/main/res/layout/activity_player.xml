@@ -1,7 +1,103 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.media3.ui.PlayerView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/player_view"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/player_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#000000"
-    android:keepScreenOn="true" />
+    android:orientation="vertical"
+    android:background="#080A0F">
+    <LinearLayout
+        android:id="@+id/player_toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="12dp">
+        <Button
+            android:id="@+id/player_back"
+            style="@style/Widget.AppCompat.Button.Borderless"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:text="@string/player_back"
+            android:textColor="#F7F7F2" />
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="end"
+            android:text="@string/player_live"
+            android:textColor="#FF6B5E"
+            android:textStyle="bold" />
+    </LinearLayout>
+    <FrameLayout
+        android:id="@+id/player_stage"
+        android:layout_width="match_parent"
+        android:layout_height="220dp"
+        android:background="#000000">
+        <androidx.media3.ui.PlayerView
+            android:id="@+id/player_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:keepScreenOn="true"
+            app:show_buffering="when_playing" />
+        <ProgressBar
+            android:id="@+id/player_connecting"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_gravity="center"
+            android:contentDescription="@string/player_connecting" />
+        <LinearLayout
+            android:id="@+id/player_error_panel"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="24dp"
+            android:background="#E6080A0F"
+            android:visibility="gone">
+            <TextView
+                android:id="@+id/player_error"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:textColor="#F7F7F2"
+                android:textSize="16sp"
+                android:accessibilityLiveRegion="polite" />
+            <Button
+                android:id="@+id/player_retry"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginTop="12dp"
+                android:text="@string/player_retry"
+                android:backgroundTint="#FF6B5E"
+                android:textColor="#080A0F" />
+        </LinearLayout>
+    </FrameLayout>
+    <LinearLayout
+        android:id="@+id/player_details"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+        <TextView
+            android:id="@+id/player_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#F7F7F2"
+            android:textSize="26sp"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/player_programme"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="#A8B2C7"
+            android:textSize="16sp" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/player_rotate_hint"
+            android:textColor="#A8B2C7"
+            android:textSize="14sp" />
+    </LinearLayout>
+</LinearLayout>

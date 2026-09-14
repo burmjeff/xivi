@@ -70,6 +70,9 @@
 		playing: false
 	});
 	let nativeRequestedStream = '';
+	let nativeChannelActive = $derived(
+		nativeState.active && nativeState.channelId === activeChannel?.id
+	);
 	let removeNativeListener: (() => void) | undefined;
 	if (playbackController.native) {
 		void playbackController.state().then((state) => (nativeState = state));
@@ -527,6 +530,35 @@
 			void reportPlayerEvent(url, 'error', 'hls_unsupported', error);
 		}
 	}
+	async function openNativePlayer(reuseSession = true) {
+		if (!activeChannel || !lineupId) return;
+		error = '';
+		try {
+			if (reuseSession && nativeChannelActive && !nativeState.error) {
+				await playbackController.reopen();
+			} else {
+				await playbackController.playVideo({
+					channelId: activeChannel.id,
+					lineupId,
+					name: activeChannel.name,
+					programme: activeChannel.current?.title,
+					logoUrl: activeChannel.logo_url,
+					streamUrl: activeChannel.stream_url
+				});
+			}
+		} catch (playError) {
+			error =
+				playError instanceof Error ? playError.message : 'The player could not start this channel.';
+		}
+	}
+	async function stopNativePlayback() {
+		try {
+			await playbackController.stop();
+			error = '';
+		} catch {
+			error = 'The player could not stop. Please try again.';
+		}
+	}
 	$effect(() => {
 		if (!playerRoute || !channelQuery.data) return;
 		activeChannel = channelQuery.data;
@@ -535,19 +567,7 @@
 			error = '';
 			if (nativeRequestedStream === channelQuery.data.stream_url) return;
 			nativeRequestedStream = channelQuery.data.stream_url;
-			void playbackController
-				.playVideo({
-					channelId: channelQuery.data.id,
-					lineupId,
-					name: channelQuery.data.name,
-					programme: channelQuery.data.current?.title,
-					logoUrl: channelQuery.data.logo_url,
-					streamUrl: channelQuery.data.stream_url
-				})
-				.catch(() => {
-					nativeRequestedStream = '';
-					error = 'The native player could not start this channel.';
-				});
+			void openNativePlayer(false);
 		} else if (video && channelQuery.data.stream_url) void attach(channelQuery.data.stream_url);
 	});
 	$effect(() => {
@@ -586,19 +606,29 @@
 		<div class="player-stage">
 			{#if playbackController.native}
 				<div class="native-player-launch">
-					<Radio size={38} />
-					<h2>Native player active</h2>
+					<h2>{nativeChannelActive ? 'Now playing' : 'Watch live'}</h2>
 					<p>
-						Video, picture-in-picture, media controls, and audio focus are handled securely by
-						Android.
+						{error ||
+							(nativeChannelActive && nativeState.error) ||
+							(nativeChannelActive
+								? nativeState.loading
+									? 'Connecting to the channel…'
+									: 'Return to your video to keep watching.'
+								: 'Open the player to watch this channel.')}
 					</p>
 					<div>
 						<button
 							class="app-button app-button--primary"
-							onclick={() => void playbackController.reopen()}>Open player</button
+							disabled={!activeChannel || !lineupId}
+							onclick={() => void openNativePlayer()}
+						>
+							{nativeChannelActive && !nativeState.error
+								? 'Return to video'
+								: 'Start watching'}</button
 						><button
 							class="app-button app-button--secondary"
-							onclick={() => void playbackController.stop()}>Stop</button
+							disabled={!nativeChannelActive}
+							onclick={() => void stopNativePlayback()}>Stop</button
 						>
 					</div>
 				</div>
@@ -637,7 +667,7 @@
 					<p>This channel may have been moved or removed.</p>
 					<a class="app-button app-button--primary" href="/channels">Back to channels</a>
 				</div>
-			{:else if playerRoute && activeChannel}
+			{:else if playerRoute && activeChannel && !playbackController.native}
 				{#if loading && !error}<div class="stream-overlay">
 						<span></span>
 						<p>Tuning {activeChannel.name}…</p>
@@ -724,12 +754,15 @@
 	}
 	.native-player-launch {
 		display: grid;
-		min-height: 24rem;
+		height: 100%;
 		place-items: center;
 		align-content: center;
-		gap: 0.75rem;
-		padding: 2rem;
+		gap: 0.6rem;
+		padding: 1rem;
 		text-align: center;
+	}
+	.native-player-launch h2 {
+		font-size: 1.1rem;
 	}
 	.native-player-launch h2,
 	.native-player-launch p {
@@ -738,6 +771,7 @@
 	.native-player-launch p {
 		max-width: 34rem;
 		color: var(--muted);
+		font-size: 0.85rem;
 	}
 	.native-player-launch > div {
 		display: flex;

@@ -21,6 +21,8 @@ export interface NativePlaybackState {
 	name?: string;
 	programme?: string;
 	playing: boolean;
+	loading?: boolean;
+	error?: string;
 }
 
 interface XiviNativePlugin {

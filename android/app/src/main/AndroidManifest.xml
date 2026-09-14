@@ -31,7 +31,7 @@
 			android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|uiMode"
 			android:exported="false"
 			android:launchMode="singleTask"
-			android:screenOrientation="sensorLandscape"
+			android:screenOrientation="fullUser"
 			android:supportsPictureInPicture="true"
 			android:theme="@style/AppTheme.NoActionBar" />
 

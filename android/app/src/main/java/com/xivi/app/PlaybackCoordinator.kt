@@ -38,7 +38,9 @@ data class PlaybackState(
     val channelId: Long? = null,
     val name: String? = null,
     val programme: String? = null,
-    val playing: Boolean = false
+    val playing: Boolean = false,
+    val loading: Boolean = false,
+    val error: String? = null
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("active", active)
@@ -46,6 +48,8 @@ data class PlaybackState(
         .put("name", name)
         .put("programme", programme)
         .put("playing", playing)
+        .put("loading", loading)
+        .put("error", error)
 }
 
 object PlaybackCoordinator {
@@ -73,8 +77,8 @@ object PlaybackCoordinator {
         val intent = Intent(context, XiviPlaybackService::class.java)
             .setAction(ACTION_PLAY)
             .putExtra(EXTRA_ITEM, item.toJson().toString())
+        update(PlaybackState(true, item.channelId, item.name, item.programme, loading = true))
         context.startService(intent)
-        update(PlaybackState(true, item.channelId, item.name, item.programme, true))
         if (openPlayer) {
             context.startActivity(Intent(context, PlayerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         }
@@ -87,8 +91,11 @@ object PlaybackCoordinator {
     }
 
     fun reopen(context: Context) {
-        if (state.active) {
+        val item = restore(context) ?: throw IllegalStateException("Choose a channel to start watching.")
+        if (state.active && state.error == null) {
             context.startActivity(Intent(context, PlayerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        } else {
+            play(context, item, openPlayer = true)
         }
     }
 
