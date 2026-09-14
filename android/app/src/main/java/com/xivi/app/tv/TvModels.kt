@@ -34,7 +34,7 @@ data class TvChannel(
 }
 
 data class TvLineup(val id: Long, val name: String)
-enum class TvSurface { LIVE, QUICK, GUIDE, MINI, FILTERS, FAVORITES, DETAILS, RECENTS, SEARCH, SETTINGS, CHANNELS, HELP, AUDIO, CAPTIONS, PLAYBACK, DATE }
+enum class TvSurface { LIVE, QUICK, GUIDE, MINI, FILTERS, FAVORITES, DETAILS, RECENTS, SEARCH, SETTINGS, CHANNELS, HELP, AUDIO, CAPTIONS, PLAYBACK, DATE, ABOUT }
 enum class GuideDensity(val rows: Int, val minutes: Int) { STANDARD(7, 120), COMPACT(10, 180), LARGE(5, 90) }
 enum class BufferPreset(val startupMs: Int) { FAST(500), BALANCED(1000), STABLE(2000) }
 enum class TvAuthState { UNCONFIGURED, UNPAIRED, CONNECTING, AUTHENTICATED, DISCONNECTED, REVOKED }

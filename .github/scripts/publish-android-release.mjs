@@ -23,6 +23,11 @@ try {
 	assert.equal(metadata.applicationId, 'com.xivi.app');
 	assert.equal(metadata.version, plan.version);
 	assert.equal(metadata.versionCode, plan.versionCode);
+	assert.equal(metadata.license, 'AGPL-3.0-only');
+	assert.equal(
+		metadata.sourceArchive,
+		`https://github.com/${repo}/archive/${process.env.GITHUB_SHA}.tar.gz`
+	);
 	const preview = process.env.RELEASE_CHANNEL === 'preview';
 	const body = [
 		`Xivi Android ${plan.version} (versionCode ${plan.versionCode}) — ${preview ? 'preview for hardware testing' : 'stable'}.`,
@@ -34,7 +39,8 @@ try {
 			? 'Preview: hardware acceptance and performance targets are not implied by a successful CI run.'
 			: 'Stable publication was explicitly selected and approved through the android-release environment.',
 		'',
-		`Source commit: ${process.env.GITHUB_SHA}`,
+		`[Matching Xivi source archive](${metadata.sourceArchive}) · [Source commit](https://github.com/${repo}/tree/${process.env.GITHUB_SHA})`,
+		'License: AGPL-3.0-only. See LICENSE.txt, NOTICE.txt and LICENSING.md alongside these downloads. Third-party components retain their own licenses.',
 		`Signing certificate SHA-256: ${metadata.signingCertificateSha256}`,
 		`Build: ${metadata.workflowRun}`,
 		'',
@@ -46,6 +52,10 @@ try {
 		'Xivi.apk',
 		'release.json',
 		'signing-certificate.txt',
+		'LICENSE.txt',
+		'NOTICE.txt',
+		'THIRD_PARTY_NOTICES.md',
+		'LICENSING.md',
 		'SHA256SUMS'
 	];
 	// Read and hash all assets before creating anything remotely.

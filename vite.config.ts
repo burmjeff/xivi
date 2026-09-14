@@ -1,12 +1,17 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
+import { legalPlugin } from './scripts/legal.mjs';
 
 const port = process.env.SERVER_PORT || 3000;
 const backend = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit()],
+	plugins: [
+		tailwindcss(),
+		sveltekit(),
+		legalPlugin(process.cwd(), process.env.VITE_XIVI_SOURCE_URL)
+	],
 	server: {
 		host: '0.0.0.0',
 		port: 5173,

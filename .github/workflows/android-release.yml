@@ -10,6 +10,14 @@ on:
         options: [preview, stable]
         default: preview
         required: true
+      source_compliance_confirmed:
+        description: 'I verified license notices and corresponding-source access for Xivi and bundled dependencies (LICENSING.md)'
+        type: boolean
+        default: false
+        required: true
+
+env:
+  XIVI_SOURCE_COMPLIANCE_CONFIRMED: ${{ inputs.source_compliance_confirmed }}
 
 permissions:
   contents: read
@@ -80,6 +88,7 @@ jobs:
       - name: Build unsigned phone and TV APK without signing secrets
         env:
           XIVI_KEYSTORE_PATH: ''
+          VITE_XIVI_SOURCE_URL: https://github.com/${{ github.repository }}/archive/${{ github.sha }}.tar.gz
         run: |
           npm ci
           npm run build:mobile

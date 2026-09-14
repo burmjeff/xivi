@@ -1,0 +1,18 @@
+Xivi — self-hosted live TV
+Copyright (C) 2023-2026 Xivi contributors
+
+Except for separately identified third-party material, Xivi's original source
+code and documentation in this version are licensed under the GNU Affero
+General Public License, version 3 only (SPDX: AGPL-3.0-only).
+
+You may redistribute and modify Xivi under that license. Xivi is distributed
+WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+or FITNESS FOR A PARTICULAR PURPOSE. See LICENSE for the complete terms.
+
+Third-party code, fonts, icons, libraries and build tools retain their own
+copyrights and licenses. See THIRD_PARTY_NOTICES.md and the notices accompanying
+each dependency. This notice does not relicense third-party material or revoke
+permissions previously granted for earlier versions of Xivi.
+
+Project and source: https://github.com/burmjeff/xivi
+Licensing and distribution guidance: LICENSING.md

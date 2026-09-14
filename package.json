@@ -1,7 +1,7 @@
 {
 	"name": "xivi",
 	"version": "0.1.0",
-	"license": "MIT",
+	"license": "AGPL-3.0-only",
 	"private": true,
 	"scripts": {
 		"prepare": "svelte-kit sync",
@@ -14,6 +14,7 @@
 		"dev:force": "vite dev --force",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:license": "node --test scripts/legal.test.mjs",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"lint": "prettier --check src package.json docs/openapi-v2.yaml vite.config.ts tsconfig.json svelte.config.js && eslint ./src/**/*.{ts,svelte}",
 		"format": "prettier --write . && go fmt ./...",

@@ -43,6 +43,7 @@ jobs:
           npm ci
           npm audit --audit-level=low
           npm run check
+          npm run check:license
           node --test .github/scripts/android-release.test.mjs
           npm run build:mobile
           bash android/gradlew -p android :app:testDebugUnitTest :app:lintDebug :app:assembleDebug

@@ -26,6 +26,16 @@ badging=$("$build_tools/aapt" dump badging "$input_apk")
 [[ "$badging" == *"package: name='com.xivi.app' versionCode='$VERSION_CODE' versionName='$VERSION'"* ]]
 [[ "$badging" == *"sdkVersion:'28'"* && "$badging" == *"targetSdkVersion:'36'"* ]]
 [[ "$badging" != *"application-debuggable"* ]]
+# Ensure the APK includes the license and exact source offer from this checkout.
+unzip -p "$input_apk" assets/public/legal/LICENSE.txt | cmp -s LICENSE -
+# Template expressions below belong to JavaScript, not the shell.
+# shellcheck disable=SC2016
+unzip -p "$input_apk" assets/public/legal/source.json | node --input-type=module -e '
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+const data = JSON.parse(readFileSync(0, "utf8"));
+assert.equal(data.sourceUrl, `https://github.com/${process.env.GITHUB_REPOSITORY}/archive/${process.env.GITHUB_SHA}.tar.gz`);
+'
 expected_cert=$(node --input-type=module -e 'import { fingerprint } from "./.github/scripts/android-release-policy.mjs"; console.log(fingerprint(process.env.XIVI_SIGNING_CERT_SHA256));')
 
 signing_tmp=$(mktemp -d "$RUNNER_TEMP/xivi-sign.XXXXXX")
@@ -46,6 +56,10 @@ actual_cert=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' release/sign
 [[ "$actual_cert" == "$expected_cert" ]] || { echo 'Release certificate does not match the pinned existing signing identity' >&2; exit 1; }
 "$build_tools/zipalign" -c -P 16 4 "$versioned_apk"
 cp "$versioned_apk" release/Xivi.apk
+cp LICENSE release/LICENSE.txt
+cp NOTICE release/NOTICE.txt
+cp THIRD_PARTY_NOTICES.md release/THIRD_PARTY_NOTICES.md
+cp LICENSING.md release/LICENSING.md
 export VERIFIED_SIGNING_CERT_SHA256="$actual_cert"
 node --input-type=module <<'NODE'
 import { writeFileSync } from 'node:fs';
@@ -55,6 +69,8 @@ writeFileSync('release/release.json', JSON.stringify({
   versionCode: Number(process.env.VERSION_CODE),
   sourceRepository: process.env.GITHUB_REPOSITORY,
   sourceCommit: process.env.GITHUB_SHA,
+  sourceArchive: `https://github.com/${process.env.GITHUB_REPOSITORY}/archive/${process.env.GITHUB_SHA}.tar.gz`,
+  license: 'AGPL-3.0-only',
   channel: process.env.RELEASE_CHANNEL,
   minSdk: 28,
   targetSdk: 36,
@@ -66,5 +82,5 @@ writeFileSync('release/release.json', JSON.stringify({
 NODE
 (
   cd release
-  sha256sum "Xivi-$VERSION.apk" Xivi.apk release.json signing-certificate.txt > SHA256SUMS
+  sha256sum "Xivi-$VERSION.apk" Xivi.apk release.json signing-certificate.txt LICENSE.txt NOTICE.txt THIRD_PARTY_NOTICES.md LICENSING.md > SHA256SUMS
 )

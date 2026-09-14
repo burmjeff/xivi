@@ -5,8 +5,9 @@
 .env*
 Dockerfile
 Makefile
-LICENSE
 **/*.md
+!THIRD_PARTY_NOTICES.md
+!LICENSING.md
 **/auth.key
 **/*.db
 **/*.db-shm

@@ -21,8 +21,8 @@ import (
 // @title API
 // @version 1.0
 // @description Legacy administrator API. The security and product interface contract is docs/openapi-v2.yaml.
-// @license.name Apache 2.0
-// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+// @license.name GNU Affero General Public License v3.0 only
+// @license.url https://www.gnu.org/licenses/agpl-3.0.html
 // @BasePath /api
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {

@@ -40,6 +40,7 @@
 			queryClient.clear();
 		}
 		cachedUserID = userID;
+		if (page.url.pathname === '/about') return;
 		const login = page.url.pathname === '/login';
 		if (!auth.principal && !login) {
 			const next = `${page.url.pathname}${page.url.search}`;
@@ -60,7 +61,9 @@
 </script>
 
 <QueryClientProvider client={queryClient}>
-	{#if auth.status === 'loading'}
+	{#if page.url.pathname === '/about'}
+		{@render children?.()}
+	{:else if auth.status === 'loading'}
 		<div class="session-loading" role="status" aria-live="polite">
 			<div class="session-pulse"></div>
 			<span>Checking your session…</span>
@@ -91,7 +94,21 @@
 	{/if}
 </QueryClientProvider>
 
+{#if page.url.pathname !== '/about'}
+	<footer class="legal-footer"><a href="/about">About, license &amp; source</a></footer>
+{/if}
+
 <style>
+	.legal-footer {
+		padding: 1rem 1.5rem 6rem;
+		text-align: center;
+		font-size: 0.8rem;
+		color: var(--muted);
+	}
+	.legal-footer a {
+		text-decoration: underline;
+		text-underline-offset: 0.2em;
+	}
 	.session-loading {
 		display: grid;
 		min-height: 100dvh;

@@ -16,7 +16,8 @@
 		PanelLeftOpen,
 		Users,
 		CircleUserRound,
-		FileJson2
+		FileJson2,
+		Info
 	} from '@lucide/svelte';
 	import { auth } from '$lib/state/auth.svelte';
 	import SignalMark from '$lib/components/brand/SignalMark.svelte';
@@ -116,6 +117,9 @@
 					><CircleUserRound size={18} /><span>Account</span></a
 				>
 				<ThemeSwitcher />
+				<a href="/about" aria-label="About, license and source" title="About, license and source"
+					><Info size={18} /><span>About &amp; source</span></a
+				>
 			</div>
 		</aside>
 	{:else}
@@ -126,6 +130,12 @@
 					>{/each}
 			</nav>
 			<div class="header-actions">
+				<a
+					class="account-link"
+					href="/about"
+					aria-label="About, license and source"
+					title="About, license and source"><Info size={19} /></a
+				>
 				<CommandMenu compact iconOnly triggerLabel="Search Xivi" />
 				{#if !mobile && auth.principal?.role === 'admin'}<a class="studio-link" href="/studio"
 						>Studio</a

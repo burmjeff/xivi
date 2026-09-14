@@ -109,7 +109,16 @@ export async function checkEnvironment() {
 	);
 }
 
+export function assertSourceCompliance(value) {
+	assert.equal(
+		value,
+		'true',
+		'Review LICENSING.md and confirm corresponding-source and dependency-notice compliance before releasing'
+	);
+}
+
 export function localPlan() {
+	assertSourceCompliance(process.env.XIVI_SOURCE_COMPLIANCE_CONFIRMED);
 	assert.equal(
 		process.env.GITHUB_REF,
 		'refs/heads/main',

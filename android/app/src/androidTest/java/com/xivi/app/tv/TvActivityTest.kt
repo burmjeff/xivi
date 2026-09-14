@@ -11,6 +11,16 @@ import org.junit.Test
 
 @UnstableApi
 class TvActivityTest {
+    @Test fun licenseAndSourceNoticesAreBundledOffline() {
+        val assets = InstrumentationRegistry.getInstrumentation().targetContext.assets
+        val license = assets.open("public/legal/LICENSE.txt").bufferedReader().use { it.readText() }
+        assertTrue(license.contains("GNU AFFERO GENERAL PUBLIC LICENSE"))
+        assertTrue(license.contains("END OF TERMS AND CONDITIONS"))
+        val source = assets.open("public/legal/source.json").bufferedReader().use { org.json.JSONObject(it.readText()) }
+        assertTrue(source.getString("sourceUrl").startsWith("https://"))
+        val dependencies = assets.open("public/legal/WEB_DEPENDENCY_NOTICES.txt").bufferedReader().use { it.readText() }
+        assertTrue(dependencies.contains("SIL OPEN FONT LICENSE"))
+    }
     @Test fun leanbackEntryIsNativeAndHasNoPip() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val launch = context.packageManager.getLeanbackLaunchIntentForPackage(context.packageName)

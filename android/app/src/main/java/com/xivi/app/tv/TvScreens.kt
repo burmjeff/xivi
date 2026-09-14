@@ -90,7 +90,9 @@ fun TvApp(vm: TvViewModel) {
                         if (settings.highContrast) view.subtitleView?.setStyle(CaptionStyleCompat(android.graphics.Color.WHITE, android.graphics.Color.BLACK, android.graphics.Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_OUTLINE, android.graphics.Color.BLACK, null))
                         else view.subtitleView?.setUserDefaultStyle()
                     })
-                if (auth in listOf(TvAuthState.UNCONFIGURED, TvAuthState.UNPAIRED, TvAuthState.REVOKED)) {
+                if (surface == TvSurface.ABOUT) {
+                    AboutScreen(vm)
+                } else if (auth in listOf(TvAuthState.UNCONFIGURED, TvAuthState.UNPAIRED, TvAuthState.REVOKED)) {
                     Onboarding(vm, auth)
                 } else {
                     screenState.SaveableStateProvider(surface.name) { when (surface) {
@@ -117,6 +119,7 @@ fun TvApp(vm: TvViewModel) {
                         TvSurface.CHANNELS -> ChannelEditor(vm)
                         TvSurface.HELP -> ControlsHelp(vm)
                         TvSurface.AUDIO, TvSurface.CAPTIONS -> TrackScreen(vm, surface == TvSurface.CAPTIONS)
+                        TvSurface.ABOUT -> Unit // Rendered above, also available before pairing.
                     } }
                 }
                 if (digits.isNotBlank()) Text(digits, Modifier.align(Alignment.TopEnd).padding(32.dp).background(Canvas).padding(20.dp), fontSize = 40.sp)
@@ -131,7 +134,7 @@ fun TvApp(vm: TvViewModel) {
 
 @UnstableApi
 @Composable
-private fun TvAction(label: String, vm: TvViewModel, modifier: Modifier = Modifier, first: Boolean = false, onClick: () -> Unit) {
+internal fun TvAction(label: String, vm: TvViewModel, modifier: Modifier = Modifier, first: Boolean = false, onClick: () -> Unit) {
     val requester = remember { FocusRequester() }
     val screen by vm.surface.collectAsStateWithLifecycle()
     val initial = remember { vm.menuFocus[screen] ?: if (first) label else "" }
@@ -186,6 +189,7 @@ private fun Onboarding(vm: TvViewModel, state: TvAuthState) {
                 Text("Code expires after 10 minutes. Your paired TV stays signed in until revoked.", color = Muted, fontSize = 16.sp)
                 TvAction("Request new code", vm, first = true) { vm.beginPairing() }
             }
+            TvAction("About, license & source", vm) { vm.show(TvSurface.ABOUT) }
         }
         pairing?.getString("verification_uri_complete")?.let { approvalURL ->
             val bitmap by produceState<Bitmap?>(null, approvalURL) {
@@ -360,7 +364,7 @@ private fun RowScope.ScheduleCells(channel: TvChannel, focus: GuideFocus, start:
 }
 
 @Composable
-private fun PanelPage(title: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun PanelPage(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize().background(Canvas.copy(alpha = .97f)).padding(32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(title, color = Aqua, fontSize = 28.sp, fontWeight = FontWeight.Bold)
         content()
@@ -561,6 +565,7 @@ private fun SettingsScreen(vm: TvViewModel, playbackOnly: Boolean) = PanelPage(i
             item { TvAction("High contrast: ${yes(s.highContrast)}", vm) { vm.updateSettings(s.copy(highContrast = !s.highContrast)) } }
             item { TvAction("Reduced motion: ${yes(s.reducedMotion)}", vm) { vm.updateSettings(s.copy(reducedMotion = !s.reducedMotion)) } }
             item { TvAction("Controls help", vm) { vm.show(TvSurface.HELP) } }
+            item { TvAction("About, license & source", vm) { vm.show(TvSurface.ABOUT) } }
         }
         item { TvAction("${if (advanced) "Hide" else "Show"} advanced settings", vm, first = playbackOnly) { advanced = !advanced } }
         if (advanced) {

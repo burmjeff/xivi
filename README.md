@@ -1,73 +1,166 @@
-## XIVI
+<p align="center">
+  <img src="static/brand/signal-tile.svg" alt="" width="80" height="80" />
+</p>
 
-### ToDo
+<h1 align="center">Xivi</h1>
 
-- [ ] Fix all the things
+<p align="center">
+  <strong>Your channels. One guide.</strong><br />
+  Self-hosted live TV for the web, Android, and Android TV.
+</p>
 
-### DEV ENV
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#your-first-lineup">First lineup</a> ·
+  <a href="#android">Android</a> ·
+  <a href="#development">Development</a>
+</p>
 
-1. https://code.visualstudio.com/docs/devcontainers/containers
-2. https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers
+---
 
-### Secure production cutover
+Xivi brings your M3U playlists and XMLTV programme guides together. Organize channels in **Studio**, watch them in **Watch**, and share your lineups with compatible players.
 
-Internet-facing installations require authentication, HTTPS through a trusted reverse proxy, a persistent authentication key, explicit trusted-network CIDRs, and replacement media-key URLs for players. Xivi creates `/xivi/config/auth.key` on first startup and reuses it from the config volume. Follow [the secure deployment and recovery guide](docs/security-deployment.md) before upgrading a populated instance.
+Bring your own sources: Xivi does not include TV channels, subscriptions, or programme listings. Only connect content you are authorized to access.
 
-There is no public registration. On the first server start Xivi creates a temporary `xivi` / `xivi` administrator. It is accepted through any normally permitted Xivi transport, including public HTTPS, and opens only the required password-change screen; Watch, Studio, streams, images, MFA, sessions, and device access remain locked until it is replaced. Change it immediately. Administrators manage viewers and lineup grants in Studio → Users. Users create revocable, reusable M3U/XMLTV links in Account → Device access.
+## What you can do
 
-### RUN
+- **Build your guide.** Combine sources, match programme listings, and arrange channels into groups and ordered lineups.
+- **Find something to watch.** Browse the guide, search channels and programmes, and manage favorites.
+- **Manage playback.** Share an upstream stream across viewers, set source connection limits, and configure ordered failover.
+- **Control access.** Create viewer accounts, grant access per lineup, enable MFA, and revoke sessions or player links.
+- **Connect your screens.** Use the browser, native Android playback, or M3U/XMLTV and virtual-tuner outputs.
 
-1. Install onnxruntime
-2. Setup: npm run setup-all
-3. For production, create a root-owned environment file using the variables in
-   [the secure deployment guide](docs/security-deployment.md). Development can
-   continue to use the defaults in `config.yaml.example`.
-4. Build it: npm run build-all
-5. Run it: npm run serve
-6. Sign in as an administrator and open the current API documentation at [127.0.0.1:3000/docs/](http://127.0.0.1:3000/docs/). The deprecated administrator API remains labeled separately at `/docs/legacy/`.
+| Where you watch         | Experience                                                                        |
+| ----------------------- | --------------------------------------------------------------------------------- |
+| Web browser             | Live playback, guide, search, and the administrator's Studio                      |
+| Android phone or tablet | Shared Watch interface with native playback and picture-in-picture                |
+| Android TV / Google TV  | Native, remote-friendly guide and phone-assisted pairing                          |
+| Compatible players      | Authenticated M3U/XMLTV links; optional virtual tuner for Plex, Emby, or Jellyfin |
 
-### Shared streaming and source limits
+**Status:** actively developed. Android clients are in preview; real-device and signed-update validation are still in progress. Xivi is live-first: no built-in DVR, downloads, or offline playback.
 
-When stream proxying is enabled, Xivi opens one GStreamer producer per active
-channel and shares it across MPEG-TS and HLS viewers. Configure **Maximum stream
-connections** for each playlist in Studio → Sources. Cold starts, retries,
-make-before-break recovery, and optional channel prewarming all consume the same
-per-source budget and never exceed it. A limit of `1` disables parallel recovery
-against that source; ordered variants from a different source can still be
-prepared when their own budget permits.
+## Quick start
 
-Studio → Streams shows current source-budget use and per-session media,
-connections, bitrate, failovers, and errors. Studio → Settings → Streaming
-controls the startup race, recovery hedge, prewarm pool, and browser HLS
-compatibility mode. The compatibility mode transcodes only codecs browsers
-commonly reject and leaves the canonical MPEG-TS branch unchanged.
+Use a **Linux x86-64 Docker host**, or Docker Desktop running Linux containers. The current server image targets `linux/amd64`; other architectures require emulation. No separate database server is needed.
 
-### Android
+The commands below use a Bash-compatible shell and start a **local-only** instance on the Docker host.
 
-The Capacitor Android client lives in `android/` and uses the shared Svelte Watch UI with native Kotlin authentication and Media3 playback. Build and signing instructions are in [docs/android-release.md](docs/android-release.md).
-
-### Virtual tuner device outputs
-
-Enable **Tuner** on an individual lineup in Studio's Device outputs panel to advertise only that lineup as a virtual network tuner. Each enabled lineup receives a stable device ID and rotatable signed credential for its own `discover.json`, `lineup.json`, and MPEG-TS stream URLs. Plex, Emby, and Jellyfin can therefore add the lineups independently.
-
-Discovery uses the native network-tuner broadcast protocol on UDP port `65001`
-and only answers clients inside `TRUSTED_LAN_CIDRS`. A Linux Docker deployment
-should use host networking so LAN broadcasts reach Xivi:
+### 1. Build the server
 
 ```sh
-docker run --network host \
-  --user 10001:10001 --read-only --cap-drop ALL \
+git clone https://github.com/burmjeff/xivi.git
+cd xivi
+docker build --platform linux/amd64 -t xivi:local .
+```
+
+The first build downloads the frontend, Go, and native media dependencies.
+
+### 2. Start Xivi
+
+```sh
+docker run -d --name xivi \
+  --restart unless-stopped \
+  --read-only --cap-drop ALL \
   --security-opt no-new-privileges:true \
   --tmpfs /tmp:rw,noexec,nosuid,size=64m \
   --log-driver local --log-opt max-size=10m --log-opt max-file=3 \
-  --env-file /srv/xivi/xivi.env \
-  -v /srv/xivi/serve:/xivi/serve \
-  -v /srv/xivi/config:/xivi/config xivi
+  -p 127.0.0.1:3000:3000 \
+  -e LOCAL_BASE_URL=http://127.0.0.1:3000 \
+  -v xivi-config:/xivi/config \
+  -v xivi-serve:/xivi/serve \
+  xivi:local
 ```
 
-Xivi writes application logs to stdout/stderr rather than duplicating them in
-its data volume. The bounded Docker logging options above prevent the container
-runtime's logs from growing without limit. Configure an equivalent rotation
-policy when using another container orchestrator.
+### 3. Sign in
 
-Publishing only `65001/udp` through Docker's bridge does not reliably forward LAN broadcast traffic. When auto-discovery is unavailable, copy a lineup's **Tuner** address from Device outputs and add that address manually in the media server.
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000) on that computer. On a fresh installation, sign in with username **`xivi`** and password **`xivi`**, then immediately choose a new password. Playback and administration stay locked until you do.
+
+> **Before connecting other devices or exposing Xivi to the internet:** follow the [secure deployment guide](docs/security-deployment.md). The example above deliberately listens only on loopback. Android requires a reachable HTTPS server with a trusted certificate; it cannot use this localhost-only setup.
+
+## Your first lineup
+
+1. **Studio → Sources:** add an M3U URL. Set **Maximum stream connections** to the limit allowed by your provider.
+2. **Studio → Guide data:** add your XMLTV source, if available.
+3. **Studio → Lineups:** create a lineup, add channels or source groups, arrange their order, and select **Publish** to generate its outputs.
+4. Open **Watch** to browse and play. To share access, create viewers and assign their lineups in **Studio → Users**.
+
+For an external player, create an entry in **Account → Device access** and copy its M3U/XMLTV links. Treat those links like passwords; revoke them when a device is no longer yours.
+
+For a virtual tuner, enable **Tuner** in a lineup's **Device outputs**. Automatic discovery needs LAN broadcast access on UDP `65001`, which generally means Linux host networking. Otherwise, add the lineup's tuner address manually. See the [networking guidance](docs/security-deployment.md#3-start-the-hardened-container).
+
+## Keep your data safe
+
+The quick start creates two [Docker named volumes](https://docs.docker.com/engine/storage/volumes/), which persist when the container is replaced:
+
+| Volume        | Contents                                       |
+| ------------- | ---------------------------------------------- |
+| `xivi-config` | Configuration, SQLite database, and `auth.key` |
+| `xivi-serve`  | Generated outputs, artwork, and working caches |
+
+Stop Xivi and back up both volumes before upgrading. Keep the matching `auth.key` with your protected backups: losing it makes encrypted provider credentials and MFA secrets unrecoverable. Do not delete the volumes when updating.
+
+To check an installation:
+
+```sh
+docker logs --tail 100 xivi
+docker exec xivi /xivi/xivi healthcheck
+```
+
+Use the [deployment and recovery guide](docs/security-deployment.md) for HTTPS, trusted proxies, storage migration, backups, and administrator recovery. Never expose port `3000` directly to the public internet.
+
+## Android
+
+**One APK serves phones, tablets, and TVs.** Each launcher opens the appropriate interface. The app supports Android 9+ and connects to your own Xivi server over trusted HTTPS.
+
+- **Phone/tablet:** enter your server address and sign in.
+- **TV:** enter the server address, then approve pairing on your phone using the QR code or short code. Pairing persists until revoked or app data/device keys are lost.
+- **Updates:** install a newer APK signed with the same key over the existing app. Uninstalling or clearing app data removes local sign-in and preferences.
+
+To build a development APK, install Node.js 24, Android Studio, and Android SDK Platform 36. Gradle selects the project's configured JDK automatically. From the repository root:
+
+```sh
+npm ci
+npm run build:mobile
+cd android
+./gradlew assembleDebug
+```
+
+On Windows, use `.\gradlew.bat assembleDebug` for the last command. The APK is written to `android/app/build/outputs/apk/debug/`. Debug builds are for development, not a replacement for a release-signed installation.
+
+For remote controls, pairing, and testing details, see the [Android TV guide](docs/android-tv.md).
+
+## Development
+
+The web interface uses **SvelteKit**; the server uses **Go, SQLite, GStreamer, libvips, and ONNX Runtime**. Android adds **Kotlin, Media3, and Compose for TV**.
+
+The included [development container](.devcontainer/devcontainer.json) supplies the server's native dependencies. Open the repository in VS Code and choose **Dev Containers: Reopen in Container**; setup installs the project dependencies.
+
+Build and run the complete web/server application inside that container:
+
+```sh
+npm run build-all
+npm run serve
+```
+
+For frontend hot reload, leave the server running and use `npm run dev` in another terminal, then open port `5173`. The Vite development server forwards API requests to port `3000`.
+
+Run the frontend check with `npm run check`. Run the Docker-backed server tests and dependency audits from the repository root:
+
+```sh
+docker build --platform linux/amd64 --target security-tests \
+  --no-cache-filter security-tests .
+```
+
+The [security workflow](.github/workflows/security.yml) adds static analysis, final-image vulnerability scanning, and an SBOM. The current API contract is [OpenAPI v2](docs/openapi-v2.yaml); administrators can also open `/docs/` on their running server.
+
+## Feedback
+
+Found a bug or have an idea? [Open an issue](https://github.com/burmjeff/xivi/issues) with your version, device/browser, and steps to reproduce.
+
+Redact passwords, provider URLs, cookies, tokens, and device-access links from logs and screenshots. Do not attach databases or signing keys, and do not disclose security vulnerabilities in public issues; report those privately to the maintainer.
+
+## License
+
+Xivi is licensed under [GNU AGPLv3 only](LICENSE). You can use, modify, and redistribute it, including commercially, subject to the license's source-sharing requirements. It comes without warranty.
+
+Third-party components retain their [own licenses](THIRD_PARTY_NOTICES.md). See [licensing and distribution](LICENSING.md) for source availability, releases, and contributions.

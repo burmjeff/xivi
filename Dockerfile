@@ -16,12 +16,16 @@ FROM golang:${GO_VERSION}-bookworm AS go-toolchain
 FROM node-toolchain AS app-builder
 
 WORKDIR /app
+ARG VITE_XIVI_SOURCE_URL
+ENV VITE_XIVI_SOURCE_URL=${VITE_XIVI_SOURCE_URL}
 COPY .npmrc package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     npm ci --ignore-scripts
 
 # Keep backend-only changes from invalidating the frontend build.
 COPY svelte.config.js tsconfig.json vite.config.ts ./
+COPY LICENSE NOTICE THIRD_PARTY_NOTICES.md ./
+COPY scripts/legal.mjs /app/scripts/legal.mjs
 COPY src/ /app/src
 COPY static/ /app/static
 RUN npx svelte-kit sync && npm run build
@@ -161,6 +165,7 @@ COPY --chown=ubuntu:ubuntu . ./
 # Dependency downloads and pinned tool installation remain cached above.
 RUN --mount=type=cache,target=/home/ubuntu/.npm,uid=1000,gid=1000,sharing=locked \
     npm audit --audit-level=low \
+    && npm run check:license \
     && npm run check \
     && npm run build
 RUN --mount=type=cache,target=/home/ubuntu/.cache/go-build,uid=1000,gid=1000,sharing=locked \
@@ -174,6 +179,9 @@ RUN --mount=type=cache,target=/home/ubuntu/.cache/go-build,uid=1000,gid=1000,sha
 #
 
 FROM native-runtime AS deployment
+
+LABEL org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.source="https://github.com/burmjeff/xivi"
 
 # environment variables
 ENV APP_VERSION="1.0" \
@@ -189,6 +197,7 @@ RUN rm -f /usr/bin/pebble \
     && mkdir -p /xivi/config /xivi/serve \
     && chown -R xivi:xivi /xivi
 WORKDIR /xivi
+COPY --chown=xivi:xivi LICENSE NOTICE LICENSING.md THIRD_PARTY_NOTICES.md /xivi/
 
 COPY --chown=xivi:xivi --from=app-builder /app/build /xivi/build
 COPY --chown=xivi:xivi --from=server-builder ["/build/xivi", "/xivi/"]
