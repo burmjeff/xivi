@@ -4,7 +4,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import { ChevronDown, ChevronLeft, ChevronRight, RotateCcw, Radio, Play } from '@lucide/svelte';
 	import { api } from '$lib/api/client';
 	import type {
@@ -16,7 +16,8 @@
 	import { preferences, selectLineup } from '$lib/state/preferences.svelte';
 	import LogoTile from '$lib/components/brand/LogoTile.svelte';
 	import { playbackController } from '$lib/playback/controller';
-	import type { NativePlaybackState } from '$lib/platform/native';
+	import { XiviNative, type NativePlaybackState } from '$lib/platform/native';
+	import NativeVideoSurface from './NativeVideoSurface.svelte';
 
 	let routeMatch = $derived(page.url.pathname.match(/^\/watch\/channel\/(\d+)\/?$/));
 	let channelId = $derived(routeMatch ? Number(routeMatch[1]) : 0);
@@ -70,17 +71,49 @@
 		playing: false
 	});
 	let nativeRequestedStream = '';
+	let nativeStateReady = $state(!playbackController.native);
 	let nativeChannelActive = $derived(
-		nativeState.active && nativeState.channelId === activeChannel?.id
+		nativeState.active &&
+			nativeState.channelId === activeChannel?.id &&
+			nativeState.lineupId === lineupId
 	);
 	let removeNativeListener: (() => void) | undefined;
+	let removeOpenListener: (() => void) | undefined;
+	let destroyed = false;
+	onMount(() => {
+		const minimize = () => {
+			if (playerRoute) void goto('/channels');
+		};
+		window.addEventListener('xiviMinimizePlayer', minimize);
+		return () => window.removeEventListener('xiviMinimizePlayer', minimize);
+	});
 	if (playbackController.native) {
-		void playbackController.state().then((state) => (nativeState = state));
+		let receivedState = false;
 		void playbackController
-			.subscribe((state) => (nativeState = state))
-			.then((remove) => {
-				removeNativeListener = remove;
+			.state()
+			.then((state) => {
+				if (!receivedState) nativeState = state;
+				nativeStateReady = true;
+			})
+			.catch(() => {
+				nativeStateReady = true;
 			});
+		void playbackController
+			.subscribe((state) => {
+				receivedState = true;
+				nativeState = state;
+				nativeStateReady = true;
+			})
+			.then((remove) => {
+				if (destroyed) remove();
+				else removeNativeListener = remove;
+			});
+		void XiviNative.addListener('openPlayer', (item) => {
+			void goto(`/watch/channel/${item.channelId}?lineup=${item.lineupId}`);
+		}).then((handle) => {
+			if (destroyed) void handle.remove();
+			else removeOpenListener = () => void handle.remove();
+		});
 	}
 	function ensureViewerId() {
 		if (!viewerId) {
@@ -140,6 +173,23 @@
 	}
 	let previous = $derived(neighborsQuery.data?.previous);
 	let next = $derived(neighborsQuery.data?.next);
+	let upcoming = $derived.by(() => {
+		const channel = activeChannel;
+		if (!channel) return [];
+		const now = Date.now();
+		return [
+			...new Map(
+				[...(channel.next ? [channel.next] : []), ...(channel.programmes ?? [])]
+					.filter(
+						(programme) =>
+							programme.id !== channel.current?.id && new Date(programme.start).getTime() > now
+					)
+					.map((programme) => [programme.id, programme])
+			).values()
+		]
+			.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
+			.slice(0, 5);
+	});
 	const prewarmed = new Set<string>();
 	$effect(() => {
 		if (!playbackReady || !playerRoute) return;
@@ -559,15 +609,33 @@
 			error = 'The player could not stop. Please try again.';
 		}
 	}
+	async function returnToNativeChannel() {
+		if (nativeState.channelId && nativeState.lineupId) {
+			await goto(`/watch/channel/${nativeState.channelId}?lineup=${nativeState.lineupId}`);
+		} else {
+			await playbackController.reopen();
+		}
+	}
 	$effect(() => {
 		if (!playerRoute || !channelQuery.data) return;
 		activeChannel = channelQuery.data;
 		if (playbackController.native && lineupId) {
+			if (!nativeStateReady) return;
 			loading = false;
 			error = '';
-			if (nativeRequestedStream === channelQuery.data.stream_url) return;
-			nativeRequestedStream = channelQuery.data.stream_url;
-			void openNativePlayer(false);
+			const key = `${lineupId}:${channelQuery.data.id}:${channelQuery.data.stream_url}`;
+			if (nativeRequestedStream === key) return;
+			nativeRequestedStream = key;
+			// Returning from PiP or the notification must keep the current stream and position.
+			untrack(() => {
+				if (
+					nativeState.active &&
+					nativeState.channelId === channelQuery.data?.id &&
+					nativeState.lineupId === lineupId
+				)
+					return;
+				void openNativePlayer(false);
+			});
 		} else if (video && channelQuery.data.stream_url) void attach(channelQuery.data.stream_url);
 	});
 	$effect(() => {
@@ -578,7 +646,9 @@
 		stopPlayback();
 	});
 	onDestroy(() => {
+		destroyed = true;
 		removeNativeListener?.();
+		removeOpenListener?.();
 		if (!playbackController.native) stopPlayback();
 	});
 	function programmeTime(value?: string) {
@@ -592,46 +662,59 @@
 	{#if playerRoute && activeChannel}<title>{activeChannel.name} · Xivi</title>{/if}
 </svelte:head>
 <svelte:window onpagehide={releasePlayback} />
-<section class="player-page" class:pip-background={!playerRoute} aria-hidden={!playerRoute}>
+<section
+	class="player-page"
+	class:native={playbackController.native}
+	class:pip-background={!playerRoute}
+	aria-hidden={!playerRoute}
+>
 	<div class="player-dock">
 		<div class="player-bar">
 			<button
 				type="button"
 				aria-label="Minimize player"
 				title="Minimize player"
-				onclick={() => (history.length > 1 ? history.back() : goto('/'))}
-				><ChevronDown size={20} aria-hidden="true" /><span>Minimize</span></button
-			><span class="live-pill">Live</span>
+				onclick={() =>
+					playbackController.native
+						? goto('/channels')
+						: history.length > 1
+							? history.back()
+							: goto('/')}><ChevronDown size={20} aria-hidden="true" /><span>Minimize</span></button
+			>
+			<div class="player-bar-actions">
+				{#if playbackController.native && nativeChannelActive}<button
+						onclick={() => void stopNativePlayback()}>Stop</button
+					>{/if}
+				<span class="live-pill">Live</span>
+			</div>
 		</div>
 		<div class="player-stage">
 			{#if playbackController.native}
-				<div class="native-player-launch">
-					<h2>{nativeChannelActive ? 'Now playing' : 'Watch live'}</h2>
-					<p>
-						{error ||
-							(nativeChannelActive && nativeState.error) ||
-							(nativeChannelActive
-								? nativeState.loading
-									? 'Connecting to the channel…'
-									: 'Return to your video to keep watching.'
-								: 'Open the player to watch this channel.')}
-					</p>
-					<div>
-						<button
-							class="app-button app-button--primary"
-							disabled={!activeChannel || !lineupId}
-							onclick={() => void openNativePlayer()}
-						>
-							{nativeChannelActive && !nativeState.error
-								? 'Return to video'
-								: 'Start watching'}</button
-						><button
-							class="app-button app-button--secondary"
-							disabled={!nativeChannelActive}
-							onclick={() => void stopNativePlayback()}>Stop</button
-						>
+				{#if nativeChannelActive && playerRoute && !error}
+					<NativeVideoSurface mode="inline" />
+				{:else}
+					<div class="native-player-launch">
+						<h2>Watch live</h2>
+						<p>
+							{error ||
+								(nativeChannelActive && nativeState.error) ||
+								(nativeChannelActive
+									? nativeState.loading
+										? 'Connecting to the channel…'
+										: 'The live signal is ready.'
+									: 'Watch this channel here.')}
+						</p>
+						<div>
+							<button
+								class="app-button app-button--primary"
+								disabled={!activeChannel || !lineupId}
+								onclick={() => void openNativePlayer()}
+							>
+								Start watching</button
+							>
+						</div>
 					</div>
-				</div>
+				{/if}
 			{:else}
 				<media-controller class="media-controller">
 					<!-- svelte-ignore a11y_media_has_caption: live streams do not expose a separate VTT captions track -->
@@ -727,20 +810,37 @@
 						aria-label="Next channel"><ChevronRight size={23} /></a
 					>
 				</div>
+				<div class="upcoming-programmes">
+					<p class="eyebrow">Up next</p>
+					{#if upcoming.length}
+						<ol>
+							{#each upcoming as programme (programme.id)}
+								<li>
+									<time>{programmeTime(programme.start)}–{programmeTime(programme.end)}</time>
+									<div>
+										<h3>{programme.title}</h3>
+										{#if programme.description}<p>{programme.description}</p>{/if}
+									</div>
+								</li>
+							{/each}
+						</ol>
+					{:else}<p class="schedule-empty">No upcoming schedule available.</p>{/if}
+				</div>
 			</div>{/if}
 	</div>
 </section>
 {#if playbackController.native && !playerRoute && nativeState.active}
 	<aside class="native-now-playing" aria-label="Now playing">
-		<div>
+		<div class="mini-video"><NativeVideoSurface mode="mini" /></div>
+		<div class="mini-details">
 			<span>Live</span><strong>{nativeState.name}</strong><small
 				>{nativeState.programme ?? 'Schedule unavailable'}</small
 			>
 		</div>
-		<button class="app-button app-button--primary" onclick={() => void playbackController.reopen()}
+		<button class="app-button app-button--primary" onclick={() => void returnToNativeChannel()}
 			>Open</button
 		>
-		<button class="app-button app-button--quiet" onclick={() => void playbackController.stop()}
+		<button class="app-button app-button--quiet" onclick={() => void stopNativePlayback()}
 			>Stop</button
 		>
 	</aside>
@@ -782,7 +882,7 @@
 		z-index: 70;
 		right: 1rem;
 		bottom: calc(5rem + env(safe-area-inset-bottom));
-		left: 1rem;
+		width: min(19rem, calc(100vw - 2rem));
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto auto;
 		align-items: center;
@@ -791,12 +891,18 @@
 		border-radius: 1rem;
 		background: color-mix(in oklch, var(--surface-raised) 94%, transparent);
 		box-shadow: 0 18px 50px rgb(0 0 0 / 0.4);
-		padding: 0.7rem;
+		padding: 0 0.6rem 0.6rem;
+		overflow: hidden;
 		backdrop-filter: blur(18px);
 	}
-	.native-now-playing div {
+	.native-now-playing .mini-details {
 		display: grid;
 		min-width: 0;
+	}
+	.mini-video {
+		grid-column: 1 / -1;
+		aspect-ratio: 16 / 9;
+		margin: 0 -0.6rem;
 	}
 	.native-now-playing span,
 	.native-now-playing small {
@@ -805,9 +911,7 @@
 	}
 	.native-now-playing strong,
 	.native-now-playing small {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		overflow-wrap: anywhere;
 	}
 	.player-page.pip-background {
 		position: fixed;
@@ -855,6 +959,11 @@
 		background: transparent;
 		color: var(--muted);
 		cursor: pointer;
+	}
+	.player-bar-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.8rem;
 	}
 	.player-stage {
 		position: relative;
@@ -964,11 +1073,9 @@
 		font-size: 0.7rem;
 	}
 	.station h1 {
-		overflow: hidden;
 		margin: 0.15rem 0 0;
 		font-size: 1.5rem;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		overflow-wrap: anywhere;
 	}
 	.show {
 		min-width: 0;
@@ -976,19 +1083,49 @@
 		padding-left: 1.25rem;
 	}
 	.show h2 {
-		overflow: hidden;
 		margin: 0;
 		font-size: 1.35rem;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		overflow-wrap: anywhere;
 	}
 	.show > p:last-child {
-		overflow: hidden;
 		margin: 0.3rem 0 0;
 		color: var(--muted);
 		font-size: 0.75rem;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		line-height: 1.6;
+	}
+	.upcoming-programmes {
+		grid-column: 1 / -1;
+		border-top: 1px solid var(--line);
+		padding-top: 1rem;
+	}
+	.upcoming-programmes ol {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+	}
+	.upcoming-programmes li {
+		display: grid;
+		grid-template-columns: 7rem minmax(0, 1fr);
+		gap: 1rem;
+		padding: 0.8rem 0;
+	}
+	.upcoming-programmes li + li {
+		border-top: 1px solid var(--line);
+	}
+	.upcoming-programmes time,
+	.upcoming-programmes li p,
+	.schedule-empty {
+		color: var(--muted);
+		font-size: 0.8rem;
+		line-height: 1.6;
+	}
+	.upcoming-programmes h3 {
+		margin: 0;
+		font-size: 1rem;
+		overflow-wrap: anywhere;
+	}
+	.upcoming-programmes li p {
+		margin: 0.3rem 0 0;
 	}
 	.channel-skip {
 		position: relative;
@@ -1065,6 +1202,49 @@
 		}
 		.player-bar button span {
 			display: none;
+		}
+	}
+	@media (orientation: portrait) {
+		.native .player-dock {
+			display: flex;
+			flex-direction: column;
+			height: 100dvh;
+		}
+		.native .player-bar {
+			flex-shrink: 0;
+		}
+		.native .player-stage {
+			flex: 0 0 auto;
+			aspect-ratio: 16 / 9;
+			max-height: none;
+		}
+		.native .now-playing {
+			flex: 1 1 auto;
+			min-height: 0;
+			overflow-y: auto;
+			align-content: start;
+			align-items: start;
+			padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+			grid-template-columns: minmax(0, 1fr) auto;
+		}
+		.native .now-playing :global(.logo-tile) {
+			display: none;
+		}
+		.native .station {
+			grid-column: 1;
+		}
+		.native .channel-skip {
+			grid-column: 2;
+			grid-row: 1;
+			flex-wrap: wrap;
+			justify-content: end;
+			max-width: 9rem;
+		}
+		.native .show {
+			grid-row: 2;
+			grid-column: 1 / -1;
+			padding: 0;
+			border: 0;
 		}
 	}
 </style>

@@ -29,7 +29,11 @@
 	let playerComponent = $state<Component | null>(null);
 	let playerLoading = false;
 	$effect(() => {
-		if (playerComponent || playerLoading || !page.url.pathname.startsWith('/watch/channel/'))
+		if (
+			playerComponent ||
+			playerLoading ||
+			(!mobile && !page.url.pathname.startsWith('/watch/channel/'))
+		)
 			return;
 		playerLoading = true;
 		void import('$lib/components/watch/PersistentPlayer.svelte')

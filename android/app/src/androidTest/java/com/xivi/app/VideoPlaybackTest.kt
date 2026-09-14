@@ -1,6 +1,8 @@
 package com.xivi.app
 
 import android.content.pm.ActivityInfo
+import android.content.Context
+import org.json.JSONObject
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.os.SystemClock
@@ -54,8 +56,9 @@ class VideoPlaybackTest {
         val failure = AtomicReference<PlaybackException?>()
         var player: ExoPlayer? = null
 
-        ActivityScenario.launch(PlayerActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             try {
+                scenario.onActivity { setupFrame(it) }
                 waitFor(scenario) { it.findViewById<PlayerView>(R.id.player_view).player is MediaController }
                 scenario.onActivity { activity ->
                     assertEquals(ActivityInfo.SCREEN_ORIENTATION_FULL_USER, activity.requestedOrientation)
@@ -69,6 +72,10 @@ class VideoPlaybackTest {
                         override fun onPlayerError(error: PlaybackException) { failure.set(error); firstFrame.countDown() }
                     })
                     activity.findViewById<PlayerView>(R.id.player_view).player = exo
+                    exo.repeatMode = Player.REPEAT_MODE_ONE
+                    exo.addListener(object : Player.Listener {
+                        override fun onEvents(player: Player, events: Player.Events) { activity.embeddedPlayer!!.updateLayout() }
+                    })
                     val item = PlaybackItem(42, 1, "Test channel", "Video test", null, "/stream/hls/fixture")
                     exo.setMediaItem(item.toMediaItem("https://playback.test/stream/hls/fixture"))
                     exo.prepare()
@@ -83,7 +90,7 @@ class VideoPlaybackTest {
                         stage.width > 0 && kotlin.math.abs(stage.height - stage.width * 9 / 16) <= 1
                 }
                 scenario.onActivity { activity ->
-                    assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.player_details).visibility)
+                    assertTrue(activity.findViewById<View>(R.id.player_stage).top > 0)
                     assertTrue(player!!.videoSize.width > 0)
                     assertTrue(player!!.videoSize.height > 0)
                     activity.findViewById<PlayerView>(R.id.player_view).hideController()
@@ -92,12 +99,11 @@ class VideoPlaybackTest {
                 scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
                 waitFor(scenario) { activity ->
                     val stage = activity.findViewById<View>(R.id.player_stage)
-                    val root = activity.findViewById<View>(R.id.player_root)
+                    val root = activity.findViewById<View>(android.R.id.content)
                     activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
                         stage.height == root.height && stage.width == root.width
                 }
                 scenario.onActivity { activity ->
-                    assertEquals(View.GONE, activity.findViewById<View>(R.id.player_details).visibility)
                     assertSame(player, activity.findViewById<PlayerView>(R.id.player_view).player)
                 }
                 screenshot("playback-landscape.png")
@@ -110,11 +116,16 @@ class VideoPlaybackTest {
                 scenario.onActivity { activity ->
                     assertSame(player, activity.findViewById<PlayerView>(R.id.player_view).player)
                     assertNull(player!!.playerError)
+                    activity.embeddedPlayer!!.setFrame(JSONObject().put("mode", "mini")
+                        .put("x", 120).put("y", 400).put("width", 240).put("height", 135).put("viewportWidth", 400))
                 }
+                waitFor(scenario) { it.findViewById<View>(R.id.player_stage).width < it.bridge.webView.width }
+                screenshot("playback-mini.png")
             } finally {
                 scenario.onActivity { activity ->
                     activity.findViewById<PlayerView>(R.id.player_view).player = null
                     player?.release()
+                    PlaybackCoordinator.stop(activity)
                 }
             }
         }
@@ -124,29 +135,32 @@ class VideoPlaybackTest {
 
     @Test
     fun playbackErrorShowsRetryInsteadOfABlackScreen() {
-        ActivityScenario.launch(PlayerActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { setupFrame(it) }
             waitFor(scenario) { it.findViewById<PlayerView>(R.id.player_view).player is MediaController }
             scenario.onActivity { activity ->
-                val controller = activity.findViewById<PlayerView>(R.id.player_view).player!!
-                controller.setMediaItem(PlaybackItem(42, 1, "Unavailable channel", null, null, "/stream/hls/invalid")
-                    .toMediaItem("unsupported://playback.test/stream/hls/invalid"))
-                controller.prepare()
-                controller.play()
+                // A cross-server URL is rejected by the real service before a network request.
+                PlaybackCoordinator.play(activity,
+                    PlaybackItem(42, 1, "Unavailable channel", null, null, "unsupported://playback.test/stream/hls/invalid"), false)
             }
             waitFor(scenario) { it.findViewById<View>(R.id.player_error_panel).visibility == View.VISIBLE }
             scenario.onActivity { activity ->
                 val retry = activity.findViewById<View>(R.id.player_retry)
                 assertTrue(retry.isShown)
                 assertTrue(retry.performClick())
-                activity.findViewById<PlayerView>(R.id.player_view).player?.let { player ->
-                    player.stop()
-                    player.clearMediaItems()
-                }
             }
+            waitFor(scenario) { it.findViewById<View>(R.id.player_retry).isShown }
+            scenario.onActivity { PlaybackCoordinator.stop(it) }
         }
     }
 
-    private fun waitFor(scenario: ActivityScenario<PlayerActivity>, predicate: (PlayerActivity) -> Boolean) {
+    private fun setupFrame(activity: MainActivity) {
+        PlaybackCoordinator.update(PlaybackState(active = true, channelId = 42, lineupId = 1))
+        activity.embeddedPlayer!!.setFrame(JSONObject().put("mode", "inline")
+            .put("x", 0).put("y", 56).put("width", 400).put("height", 225).put("viewportWidth", 400))
+    }
+
+    private fun waitFor(scenario: ActivityScenario<MainActivity>, predicate: (MainActivity) -> Boolean) {
         val deadline = SystemClock.elapsedRealtime() + 10_000
         while (SystemClock.elapsedRealtime() < deadline) {
             var ready = false

@@ -55,7 +55,7 @@ class XiviPlaybackService : MediaSessionService() {
         val activityIntent = PendingIntent.getActivity(
             this,
             0,
-            Intent(this, MainActivity::class.java),
+            PlaybackCoordinator.playerIntent(this),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         session = MediaSession.Builder(this, player)
@@ -84,6 +84,12 @@ class XiviPlaybackService : MediaSessionService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = session
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Swiping Xivi away must not leave an unreachable audio-only session.
+        PlaybackCoordinator.stop(this)
+        super.onTaskRemoved(rootIntent)
+    }
 
     override fun onDestroy() {
         session.release()
@@ -124,7 +130,8 @@ class XiviPlaybackService : MediaSessionService() {
                     programme = item.programme,
                     playing = player.isPlaying,
                     loading = player.playbackState == Player.STATE_BUFFERING,
-                    error = playbackError
+                    error = playbackError,
+                    lineupId = item.lineupId
                 )
             }
         )

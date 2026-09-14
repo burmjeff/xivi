@@ -40,7 +40,8 @@ data class PlaybackState(
     val programme: String? = null,
     val playing: Boolean = false,
     val loading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val lineupId: Long? = null
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("active", active)
@@ -50,11 +51,13 @@ data class PlaybackState(
         .put("playing", playing)
         .put("loading", loading)
         .put("error", error)
+        .put("lineupId", lineupId)
 }
 
 object PlaybackCoordinator {
     const val ACTION_PLAY = "com.xivi.app.PLAY"
     const val ACTION_STOP = "com.xivi.app.STOP"
+    const val ACTION_OPEN_PLAYER = "com.xivi.app.OPEN_PLAYER"
     const val EXTRA_ITEM = "item"
 
     private val listeners = CopyOnWriteArraySet<(PlaybackState) -> Unit>()
@@ -77,10 +80,10 @@ object PlaybackCoordinator {
         val intent = Intent(context, XiviPlaybackService::class.java)
             .setAction(ACTION_PLAY)
             .putExtra(EXTRA_ITEM, item.toJson().toString())
-        update(PlaybackState(true, item.channelId, item.name, item.programme, loading = true))
+        update(PlaybackState(true, item.channelId, item.name, item.programme, loading = true, lineupId = item.lineupId))
         context.startService(intent)
         if (openPlayer) {
-            context.startActivity(Intent(context, PlayerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            context.startActivity(playerIntent(context))
         }
     }
 
@@ -93,11 +96,15 @@ object PlaybackCoordinator {
     fun reopen(context: Context) {
         val item = restore(context) ?: throw IllegalStateException("Choose a channel to start watching.")
         if (state.active && state.error == null) {
-            context.startActivity(Intent(context, PlayerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            context.startActivity(playerIntent(context))
         } else {
             play(context, item, openPlayer = true)
         }
     }
+
+    fun playerIntent(context: Context): Intent = Intent(context, MainActivity::class.java)
+        .setAction(ACTION_OPEN_PLAYER)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
 
     fun stop(context: Context) {
         context.startService(Intent(context, XiviPlaybackService::class.java).setAction(ACTION_STOP))

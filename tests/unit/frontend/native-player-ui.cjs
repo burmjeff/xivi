@@ -46,9 +46,35 @@ const server = http.createServer((req, res) => {
 			window.androidBridge = {};
 			window.__playCalls = [];
 			window.__reopenCalls = 0;
+			window.__frames = [];
 			window.__state = { active: false, playing: false };
-			const listeners = [];
-			const emit = () => listeners.forEach((fn) => fn(window.__state));
+			const listeners = {};
+			const emit = () => (listeners.playbackState || []).forEach((fn) => fn(window.__state));
+			window.__openPlayer = (item) => (listeners.openPlayer || []).forEach((fn) => fn(item));
+			const programme = (id, title, offset) => ({
+				id,
+				title,
+				channel_id: 'fixture',
+				categories: [],
+				description: title + ' description.',
+				start: new Date(Date.now() + offset * 3600000).toISOString(),
+				end: new Date(Date.now() + (offset + 1) * 3600000).toISOString()
+			});
+			const current = programme(1, 'Current programme', -0.5);
+			const next = programme(2, 'Next programme', 0.5);
+			const channel = (id) => ({
+				id,
+				number: id,
+				name:
+					id === 42
+						? 'Test channel with a long full station name that wraps onto multiple lines'
+						: 'Second channel',
+				group_name: 'Test',
+				stream_url: '/stream/hls/fixture-' + id,
+				current,
+				next,
+				programmes: [current, next, programme(3, 'Later programme', 1.5)]
+			});
 			window.Capacitor = {
 				PluginHeaders: [
 					{
@@ -58,6 +84,8 @@ const server = http.createServer((req, res) => {
 								'request',
 								'getServer',
 								'getPlaybackState',
+								'setPlayerFrame',
+								'enterPictureInPicture',
 								'playVideo',
 								'reopenPlayer',
 								'stopPlayback',
@@ -69,10 +97,15 @@ const server = http.createServer((req, res) => {
 					}
 				],
 				nativeCallback: async (_, method, options, callback) => {
-					if (method === 'addListener') listeners.push(callback);
+					if (method === 'addListener') (listeners[options.eventName] ||= []).push(callback);
 					return 'listener';
 				},
 				nativePromise: async (_, method, options) => {
+					if (method === 'setPlayerFrame') {
+						window.__frames.push(options);
+						return;
+					}
+					if (method === 'enterPictureInPicture') return { entered: true };
 					if (method === 'getServer') return { url: 'https://playback.test' };
 					if (method === 'getPlaybackState') return window.__state;
 					if (method === 'playVideo') {
@@ -85,6 +118,7 @@ const server = http.createServer((req, res) => {
 							active: true,
 							playing: true,
 							channelId: options.channelId,
+							lineupId: options.lineupId,
 							name: options.name
 						};
 						emit();
@@ -115,15 +149,13 @@ const server = http.createServer((req, res) => {
 							};
 						else if (route === '/api/v2/watch/lineups')
 							data = { items: [{ id: 1, name: 'Test lineup', channel_count: 1 }], total: 1 };
-						else if (route === '/api/v2/watch/channels/42')
-							data = {
-								id: 42,
-								number: 42,
-								name: 'Test channel',
-								group_name: 'Test',
-								stream_url: '/stream/hls/fixture'
-							};
-						else if (route.endsWith('/neighbors')) data = { previous: null, next: null };
+						else if (/^\/api\/v2\/watch\/channels\/\d+$/.test(route))
+							data = channel(Number(route.split('/').pop()));
+						else if (route.endsWith('/neighbors'))
+							data = { previous: channel(42), next: channel(43) };
+						else if (route.endsWith('/groups')) data = { items: [], total: 0 };
+						else if (route.endsWith('/channels'))
+							data = { items: [channel(42), channel(43)], total: 2 };
 						else throw Error('Unexpected API request: ' + options.path);
 						return {
 							status: 200,
@@ -140,29 +172,69 @@ const server = http.createServer((req, res) => {
 		await page.waitForFunction(() => window.__playCalls.length === 1);
 		assert.equal(await page.locator('video').count(), 0);
 		assert.equal(await page.locator('.play-prompt').count(), 0);
-		await page.getByRole('button', { name: 'Return to video', exact: true }).click();
-		assert.equal(await page.evaluate(() => window.__reopenCalls), 1);
+		await page.waitForFunction(() => window.__frames.at(-1)?.mode === 'inline');
+		await page.getByRole('heading', { name: 'Current programme', exact: true }).waitFor();
+		await page.getByRole('heading', { name: 'Next programme', exact: true }).waitFor();
+		await page.getByRole('heading', { name: 'Later programme', exact: true }).waitFor();
+		assert(
+			await page
+				.locator('.station h1')
+				.evaluate((node) => node.clientHeight > parseFloat(getComputedStyle(node).lineHeight)),
+			'The full channel title should wrap'
+		);
+		const stage = await page.locator('.player-stage').boundingBox();
+		assert(
+			Math.abs(stage.height - (stage.width * 9) / 16) < 2,
+			'Portrait video must remain bounded at 16:9'
+		);
+		assert.equal(
+			await page.getByRole('button', { name: 'Return to video', exact: true }).count(),
+			0
+		);
+		await page.getByRole('button', { name: 'Minimize player', exact: true }).click();
+		await page.waitForFunction(() => window.__frames.at(-1)?.mode === 'mini');
+		const mini = await page.locator('.native-now-playing').boundingBox();
+		const navigation = await page.locator('.watch-bottom').boundingBox();
+		assert(
+			mini.y + mini.height <= navigation.y,
+			'The mini-player must leave app navigation accessible'
+		);
+		await page.getByRole('button', { name: 'Open', exact: true }).click();
+		await page.waitForFunction(() => window.__frames.at(-1)?.mode === 'inline');
+		assert.equal(
+			await page.evaluate(() => window.__playCalls.length),
+			1,
+			'Restoring the mini-player must not restart the stream'
+		);
+		await page.getByRole('link', { name: 'Next channel', exact: true }).click();
+		await page.waitForFunction(
+			() => window.__playCalls.length === 2 && window.__state.channelId === 43
+		);
+		await page.getByRole('heading', { name: 'Second channel', exact: true }).waitFor();
+		// Android's notification event routes back to the current channel from another app screen.
+		await page.evaluate(() => window.dispatchEvent(new Event('xiviMinimizePlayer')));
+		await page.waitForFunction(() => window.__frames.at(-1)?.mode === 'mini');
+		await page.evaluate(() => window.__openPlayer({ channelId: 43, lineupId: 1 }));
+		await page.waitForFunction(() => window.__frames.at(-1)?.mode === 'inline');
+		assert.equal(await page.evaluate(() => window.__playCalls.length), 2);
 		await page.getByRole('button', { name: 'Stop', exact: true }).click();
+		await page.waitForFunction(() => window.__frames.at(-1)?.mode === 'hidden');
 		await page.getByRole('button', { name: 'Start watching', exact: true }).click();
-		await page.waitForFunction(() => window.__playCalls.length === 2 && window.__state.active);
+		await page.waitForFunction(() => window.__playCalls.length === 3 && window.__state.active);
 		await page.getByRole('button', { name: 'Stop', exact: true }).click();
 		await page.evaluate(() => (window.__rejectNext = true));
 		await page.getByRole('button', { name: 'Start watching', exact: true }).click();
 		await page.getByText('Fixture playback failed', { exact: true }).waitFor();
 		await page.getByRole('button', { name: 'Start watching', exact: true }).click();
-		await page.waitForFunction(() => window.__playCalls.length === 4 && window.__state.active);
-		const box = await page
-			.getByRole('button', { name: 'Return to video', exact: true })
-			.boundingBox();
-		const stage = await page.locator('.player-stage').boundingBox();
-		assert(
-			box.y >= stage.y && box.y + box.height <= stage.y + stage.height,
-			'Native controls must fit in the portrait stage'
+		await page.waitForFunction(() => window.__playCalls.length === 5 && window.__state.active);
+		await page.getByRole('link', { name: 'Previous channel', exact: true }).click();
+		await page.waitForFunction(
+			() => window.__playCalls.length === 6 && window.__state.channelId === 42
 		);
 		assert.deepEqual(pageErrors, []);
 		await page.screenshot({ path: 'tmp/native-player-web.png' });
 		console.log(
-			'PASS: native initial play, return to video, stop/start, failed start/retry, and visible portrait controls'
+			'PASS: embedded video bounds, wrapping titles, current/upcoming programmes, channel switching, mini-player, notification return without restarting, and stop/retry'
 		);
 	} finally {
 		await browser.close();

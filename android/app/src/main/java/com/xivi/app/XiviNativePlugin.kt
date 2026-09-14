@@ -1,5 +1,6 @@
 package com.xivi.app
 
+import android.content.Intent
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
@@ -19,6 +20,14 @@ class XiviNativePlugin : Plugin() {
         repository = AuthRepository.get(context)
         removePlaybackObserver = PlaybackCoordinator.observe { state ->
             notifyListeners("playbackState", JSObject(state.toJson().toString()), true)
+        }
+    }
+
+    override fun handleOnNewIntent(intent: Intent) {
+        if (intent.action == PlaybackCoordinator.ACTION_OPEN_PLAYER) {
+            PlaybackCoordinator.restore(context)?.let {
+                notifyListeners("openPlayer", JSObject(it.toJson().toString()), true)
+            }
         }
     }
 
@@ -89,7 +98,25 @@ class XiviNativePlugin : Plugin() {
     @PluginMethod
     fun playVideo(call: PluginCall) = playbackCommand(call) {
         val item = playbackItem(call)
-        PlaybackCoordinator.play(context, item, openPlayer = true)
+        PlaybackCoordinator.play(context, item, openPlayer = false)
+    }
+
+    @PluginMethod
+    fun setPlayerFrame(call: PluginCall) {
+        activity.runOnUiThread {
+            playbackCommand(call) {
+                val host = (activity as? MainActivity)?.embeddedPlayer
+                    ?: throw IllegalStateException("The channel screen is not available.")
+                host.setFrame(call.data)
+            }
+        }
+    }
+
+    @PluginMethod
+    fun enterPictureInPicture(call: PluginCall) {
+        activity.runOnUiThread {
+            call.resolve(JSObject().put("entered", (activity as? MainActivity)?.embeddedPlayer?.enterPip() == true))
+        }
     }
 
     @PluginMethod

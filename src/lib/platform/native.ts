@@ -23,6 +23,16 @@ export interface NativePlaybackState {
 	playing: boolean;
 	loading?: boolean;
 	error?: string;
+	lineupId?: number;
+}
+
+export interface NativePlayerFrame {
+	mode: 'inline' | 'mini' | 'hidden';
+	x?: number;
+	y?: number;
+	width?: number;
+	height?: number;
+	viewportWidth?: number;
 }
 
 interface XiviNativePlugin {
@@ -44,6 +54,12 @@ interface XiviNativePlugin {
 	reopenPlayer(): Promise<void>;
 	stopPlayback(): Promise<void>;
 	getPlaybackState(): Promise<NativePlaybackState>;
+	setPlayerFrame(options: NativePlayerFrame): Promise<void>;
+	enterPictureInPicture(): Promise<{ entered: boolean }>;
+	addListener(
+		eventName: 'openPlayer',
+		listener: (item: NativePlaybackItem) => void
+	): Promise<PluginListenerHandle>;
 	addListener(
 		eventName: 'playbackState',
 		listener: (state: NativePlaybackState) => void

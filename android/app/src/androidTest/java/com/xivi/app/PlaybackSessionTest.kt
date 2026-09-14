@@ -25,7 +25,7 @@ class PlaybackSessionTest {
     @Test
     fun playbackServiceResolvesAndConnects() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        // Exercise Android's installed manifest lookup, just as PlayerActivity does.
+        // Exercise Android's installed manifest lookup, just as the embedded player does.
         val token = SessionToken(context, ComponentName(context, XiviPlaybackService::class.java))
         assertEquals(SessionToken.TYPE_SESSION_SERVICE, token.type)
 
@@ -47,8 +47,8 @@ class PlaybackSessionTest {
     }
 
     @Test
-    fun playerActivityLaunchesWithoutCrashing() {
-        ActivityScenario.launch(PlayerActivity::class.java).use { scenario ->
+    fun mainActivityContainsThePlayerWithoutASeparateWindow() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 assertNotNull(activity.findViewById<PlayerView>(R.id.player_view))
             }
